@@ -1,6 +1,6 @@
 # bioinformatics-claude-skills
 
-Claude Code custom skills (slash commands) for bioinformatics pipelines at the Koch Institute.
+Claude Code custom skills (slash commands) for RNA-seq pipelines at the Koch Institute — covering both **pipeline setup** (nf-core/rnaseq, nf-core/scrnaseq) and **downstream analysis** (bulk RNA-seq with DESeq2/edgeR, single-cell with Seurat), all wired for SLURM + Singularity on HPC.
 
 ## What are skills?
 
