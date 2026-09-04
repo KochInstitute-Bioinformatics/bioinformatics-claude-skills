@@ -305,6 +305,11 @@ Write `{TODAY_YYMMDD}_{WD_NAME}_03_gsea.Rmd`. **Use in-R `fgsea` — self-contai
 
 1. Build ranked vector per contrast from the DESeq2 Wald `stat` (dedup by gene, drop NA, `arrange(desc(stat))`).
 2. Gene sets via `msigdbr` over `{GSEA_COLLECTIONS}`. **Mouse: `msigdbr(db_species = "HS", species = "Mus musculus", collection = ..., subcollection = ...)`** then split `gene_symbol` by `gs_name` into a named list for fgsea. (Use current API: `collection`/`subcollection`, not deprecated `category`/`subcategory`.)
+   - **`C2:CP` ("canonical pathways") is NOT one subcollection — do not query `subcollection = "CP"` directly.** msigdbr splits canonical pathways across `CP`, `CP:BIOCARTA`, `CP:KEGG_LEGACY`, `CP:KEGG_MEDICUS`, `CP:PID`, `CP:REACTOME`, `CP:WIKIPATHWAYS`; an exact match on `"CP"` only returns the small generic bucket (~17 gene sets) and silently misses Reactome/KEGG/BioCarta/PID/Wiki entirely (~3,000+ sets). For "C2:CP" as commonly meant (all canonical pathways), fetch the whole collection and filter locally instead:
+     ```r
+     all_c2 <- msigdbr(db_species = "HS", species = "Mus musculus", collection = "C2")
+     cp_sets <- all_c2[grepl("^CP", all_c2$gs_subcollection), ]   # excludes CGP (chemical/genetic perturbations)
+     ```
    - **Caveat — `msigdbr` 26.x fetches its gene-set data at runtime** (via the `msigdbdf` data package) instead of bundling it; the first `msigdbr()` call downloads tens of MB. The render therefore **needs internet on the compute node**. On an offline-compute cluster the GSEA step will hang — pre-seed the `msigdbdf` cache (run `msigdbr::msigdbr()` once on a node with internet, or bake `msigdbdf` into the image) before submitting `run_03`.
 3. `fgsea(pathways = sets, stats = gene_ranks, minSize = 10, maxSize = 500)` per collection per contrast; `padj < 0.05`.
 4. NES bar/dot plots (colour by sign); leading-edge genes per significant set to xlsx (one sheet per collection).
@@ -411,6 +416,7 @@ Submission order:
 - Prefer in-R `fgsea` ranked by Wald `stat` over the external Java preranked GSEA — self-contained and reproducible inside the container.
 - Collections are a **per-project biology choice** — always ask, never hardcode Hallmark.
 - **msigdbr current API:** `collection=` / `subcollection=` (not `category`/`subcategory`). **Mouse:** `db_species = "HS", species = "Mus musculus"` — msigdbr ortholog-maps the human DB to mouse symbols (the mouse-native DB is typically not installed). Columns: `gs_name`, `gene_symbol`.
+- **`C2:CP` spans multiple subcollections — never query `subcollection = "CP"` alone.** Canonical pathways are split into `CP`, `CP:BIOCARTA`, `CP:KEGG_LEGACY`, `CP:KEGG_MEDICUS`, `CP:PID`, `CP:REACTOME`, `CP:WIKIPATHWAYS`; an exact `"CP"` match silently returns only ~17 sets instead of the ~3,000+ across all canonical-pathway sources (observed directly: a run using exact-match `"CP"` tested 17 sets, and after fixing to `grepl("^CP", gs_subcollection)` tested 3,094 sets with a materially different significant-set count). Fetch the whole `C2` collection and filter subcollection names with a `"^CP"` prefix match instead (excludes `CGP`, which is a different category — chemical/genetic perturbations, not canonical pathways).
 - **msigdbr 26.x downloads gene-set data at runtime** (the `msigdbdf` data package), so the GSEA render needs internet on the compute node. On offline-compute clusters, pre-seed the `msigdbdf` cache or bake it into the image before submitting `run_03`, or it will hang on the first `msigdbr()` call.
 - `GseaVis::gseaNb` chunks need `fig.width >= 14` or the p-value table is cropped.
 
