@@ -1,0 +1,51 @@
+{
+  "report_meta": {
+    "slug": "auth-token-refresh-fix",
+    "gist": "Fixed the expiring-token bug in the auth client and added a regression test; one follow-up open on refresh-race handling.",
+    "title": "Auth token refresh fix"
+  },
+  "annotations": [
+    {
+      "annotation_type": "session_narrative",
+      "interpretation_source": "mixed",
+      "blocks": {
+        "summary": "Diagnosed and fixed the auth client dropping refreshed tokens, with a regression test.",
+        "details": "The client cached the first access token and never re-read it after refresh. Moved the read inside the request path (src/auth/client.rs:88-104) and added a regression test (tests/auth_refresh.rs:12). `cargo test -p auth` passes (42 tests).",
+        "agent_guidance": "Start from tests/auth_refresh.rs to understand the expected refresh behavior before touching the client.",
+        "caveats": "Only the single-threaded refresh path is covered; concurrent refresh is the open question below."
+      },
+      "verification_status": "verified",
+      "evidence_refs": [
+        {"evidence_type": "file", "ref": "src/auth/client.rs:88-104"},
+        {"evidence_type": "command", "ref": "cargo test -p auth", "excerpt": "test result: ok. 42 passed; 0 failed"}
+      ]
+    },
+    {
+      "annotation_type": "decision",
+      "interpretation_source": "user_stated",
+      "created_by": "user",
+      "blocks": {
+        "summary": "Read the token inside the request path rather than caching it on the client.",
+        "details": "User preferred correctness over the micro-optimization of caching; re-reading per request is cheap here."
+      },
+      "verification_status": "verified"
+    },
+    {
+      "annotation_type": "open_question",
+      "blocks": {
+        "summary": "How should concurrent refreshes be coordinated?",
+        "details": "Two in-flight requests can both trigger a refresh and race on the token store. Needs a single-flight or lock around refresh."
+      },
+      "must_verify_before_use": true,
+      "verification_status": "unverified"
+    },
+    {
+      "annotation_type": "handoff_note",
+      "blocks": {
+        "summary": "Resume here: implement single-flight refresh.",
+        "details": "Next session: add a single-flight guard around the refresh call in src/auth/client.rs and a concurrency test. The fix and test from this session are the baseline.",
+        "agent_guidance": "Reproduce the race first with a 2-thread test before adding the guard."
+      }
+    }
+  ]
+}

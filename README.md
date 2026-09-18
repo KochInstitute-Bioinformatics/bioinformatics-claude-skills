@@ -17,6 +17,12 @@ cp bioinformatics-claude-skills/nfcore-rnaseq-setup/nfcore-rnaseq-setup.md ~/.cl
 
 The skill is immediately available — no restart required.
 
+Folder skills that bundle scripts (currently `handoff`) are copied as a whole folder into `~/.claude/skills/` instead:
+
+```bash
+cp -r bioinformatics-claude-skills/handoff ~/.claude/skills/
+```
+
 ## Available skills
 
 | Skill | Command | Description |
@@ -25,6 +31,7 @@ The skill is immediately available — no restart required.
 | nf-core/scrnaseq setup | `/nfcore-scrnaseq-setup` | Interactive setup wizard for nf-core/scrnaseq single-cell RNA-seq (cellranger / star / simpleaf / kallisto, CellBender, 10x v2–v4) on SLURM + Singularity |
 | Bulk RNA-seq pipeline | `/bulk-rnaseq-pipeline` | Generates a full bulk RNA-seq downstream analysis pipeline (tximport → DESeq2/edgeR → GSEA) from nf-core/rnaseq star_salmon output as R Markdown + SLURM scripts |
 | Seurat scRNA-seq pipeline | `/seurat-scrna-pipeline` | Generates a full single-cell RNA-seq downstream analysis pipeline (QC → Harmony integration → annotation → DEG/GSEA/LIANA) as R Markdown + SLURM scripts |
+| Session handoff | `/handoff` | Writes a structured, validated end-of-session report under `.claude/reports/` and indexes it in the project `CLAUDE.md` so the next session can resume. Folder skill: install to `~/.claude/skills/` (see [handoff/README.md](handoff/README.md)) |
 
 ## Requirements
 
@@ -39,3 +46,5 @@ The skill is immediately available — no restart required.
 Add new skills as folders named after the slash command, each containing:
 - `<skill-name>.md` — the skill definition
 - `README.md` — documentation
+
+A skill that needs bundled scripts or reference files can instead be a folder skill: `SKILL.md` plus its supporting files and a `README.md`, installed to `~/.claude/skills/<skill-name>/`.
