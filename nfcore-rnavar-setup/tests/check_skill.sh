@@ -114,6 +114,14 @@ need "gunzip -c"
 need "## Step 13"
 need "## Notes for the assistant"
 need "read-only"
+need "never leave a bare"
+need "already ends in"
+need "{ENS_VERSION}"
+need "where \`{TOOL}\` is"
+forbid '{KNOWN_SITES_LINES}\'
+forbid '{VARIANT_LINES}\'
+forbid '{ANNOTATION_LINES}\'
+forbid "{VERSION_ENS}"
 # --- end Task 5
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1

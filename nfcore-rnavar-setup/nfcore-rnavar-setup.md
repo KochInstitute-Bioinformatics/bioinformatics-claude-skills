@@ -272,14 +272,14 @@ nextflow run nf-core/rnavar -r {VERSION} -c nextflow.config -profile slurm,singu
 --star_index '{STAR_INDEX}' \
 --read_length {READ_LENGTH} \
 --seq_platform illumina \
-{KNOWN_SITES_LINES}\
-{VARIANT_LINES}\
-{ANNOTATION_LINES}\
+{KNOWN_SITES_LINES}
+{VARIANT_LINES}
+{ANNOTATION_LINES}
 --multiqc_title {MULTIQC_TITLE} \
 --outdir {OUTDIR}
 ```
 
-Each `{..._LINES}` placeholder is either empty or one-or-more complete lines ending in ` \`. The final line has no trailing backslash. Show the full file and instruct:
+Each `{..._LINES}` placeholder line is replaced by its complete lines, each of which already ends in ` \` (Steps 7-9 define them that way). If a placeholder is empty, delete that placeholder line entirely — never leave a bare `\` line and never produce a doubled `\\`. The last line, `--outdir {OUTDIR}`, has no trailing backslash. Show the full file and instruct:
 ```
 Script written: nf-core_rnavar_{VERSION}.sh
 To submit:  sbatch nf-core_rnavar_{VERSION}.sh
@@ -292,7 +292,7 @@ If any helper script (Step 12) was generated, list the order: helpers first, the
 
 Generate only what is missing. Each is an `sbatch` script (`#SBATCH -N 1 -n 8 --mem=64G -t 8:00:00 -p bcc --mail-type=END,FAIL`), run on a compute node — never on the login node. Always use `gunzip -c file.gz > file` (never `gunzip -k`; not available on CentOS 7).
 
-**`build_star_index_rnavar_{ASSEMBLY}_ens{VERSION_ENS}.sh`** — downloads (`wget -c`) and decompresses the FASTA and GTF if absent, then:
+**`build_star_index_rnavar_{ASSEMBLY}_ens{ENS_VERSION}.sh`** — downloads (`wget -c`) and decompresses the FASTA and GTF if absent, then:
 
 ```bash
 module add star/2.7.9a
@@ -308,7 +308,7 @@ STAR \
 
 **`prepare_known_sites_{ASSEMBLY}.sh`** — for the URLs the user confirmed in Step 7: `wget -c` each file into `{GENOME_DIR}/known_sites/`, then `module add htslib` (or the site's tabix module) and `tabix -p vcf` each VCF that lacks a `.tbi`.
 
-**`prepare_annotation_cache_{TOOL}.sh`** — only if the user has no cache: a script the user runs where internet is available, using the tool's own cache installer (`vep_install` or `snpEff download`) into the directory passed to `--vep_cache` / `--snpeff_cache`.
+**`prepare_annotation_cache_{TOOL}.sh`** — only if the user has no cache: a script the user runs where internet is available, using the tool's own cache installer (`vep_install` or `snpEff download`) into the directory passed to `--vep_cache` / `--snpeff_cache`, where `{TOOL}` is `snpeff` or `vep`, matching `{ANNOTATION_TOOL}` (one script per chosen tool).
 
 ---
 
