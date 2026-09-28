@@ -1,6 +1,6 @@
 # `/bulk-rnaseq-pipeline` — Bulk RNA-seq Downstream Analysis Skill
 
-An interactive Claude Code skill that generates a complete bulk RNA-seq downstream analysis pipeline (tximport → DESeq2 / edgeR → GSEA) as a series of R Markdown reports and SLURM submission scripts, starting from **nf-core/rnaseq `star_salmon` output** and running inside a Singularity container on an HPC cluster. It is the bulk companion to [`/seurat-scrna-pipeline`](../seurat-scrna-pipeline) and picks up where [`/nfcore-rnaseq-setup`](../nfcore-rnaseq-setup) leaves off.
+An interactive Claude Code skill that generates a complete bulk RNA-seq downstream analysis pipeline (tximport → DESeq2 / edgeR → GSEA, optional DTU) as a series of R Markdown reports and SLURM submission scripts, starting from **nf-core/rnaseq `star_salmon` output** and running inside a Singularity container on an HPC cluster. It is the bulk companion to [`/seurat-scrna-pipeline`](../seurat-scrna-pipeline) and picks up where [`/nfcore-rnaseq-setup`](../nfcore-rnaseq-setup) leaves off.
 
 ---
 
@@ -28,7 +28,7 @@ Then invoke it in Claude Code:
 | Starting data | nf-core/rnaseq `star_salmon` output — per-sample `quant.sf` + multiqc general stats |
 | Internet access | Required from compute node for `msigdbr` 26.x (fetches gene-set data at runtime) if GSEA is used |
 
-The container bundles tximport, DESeq2, edgeR, apeglm, fgsea, msigdbr (26.x), GseaVis, openxlsx, tidyverse, matrixStats, ggrepel, showtext, and pandoc.
+The container bundles tximport, DESeq2, edgeR, apeglm, fgsea, msigdbr (26.x), GseaVis, DRIMSeq, DEXSeq, stageR, openxlsx, tidyverse, matrixStats, ggrepel, showtext, and pandoc.
 
 ---
 
@@ -44,6 +44,9 @@ Builds `dds` (mode-branched — see below), runs DESeq2, per-contrast `lfcShrink
 
 ### Rmd 03 — GSEA *(optional)*
 In-R `fgsea` ranked by the DESeq2 Wald statistic, over user-chosen **MSigDB collections** (per-project biology choice — never hardcoded Hallmark), NES plots, leading-edge tables, and optional `GseaVis::gseaNb` enrichment curves.
+
+### Rmd 04 — Differential Transcript Usage *(optional, paired-end only)*
+Isoform-proportion changes between two conditions, reusing the same Salmon `quant.sf` files (no new upstream run). Transcript-level re-import (`tximport(txOut = TRUE, countsFromAbundance = "scaledTPM")`), DRIMSeq filtering, DEXSeq testing, and **stageR** two-stage gene/transcript FDR control. Outputs a DTU results workbook and isoform-proportion plots for the top genes. Disabled for 3′ DGE libraries (a 3′ tag carries no isoform information). Isoform-switch consequence annotation (IsoformSwitchAnalyzeR) is intentionally not included — its external predictors generally need internet.
 
 ### Summary / client report
 A self-contained summary HTML linking every stage report and data deliverable, plus an optional **consolidated client report** Rmd that re-loads saved outputs and embeds all figures/tables as a single portable file (base64, zero external `src`).
@@ -69,11 +72,11 @@ Getting the mode wrong silently corrupts every downstream fold change, so it is 
 
 | File | Description |
 |------|-------------|
-| `{date}_{project}_01_import_qc.Rmd` … `_03_gsea.Rmd` | One R Markdown per analysis stage |
-| `run_01_import_qc.sh` … `run_03_gsea.sh` | Matching SLURM submission scripts |
+| `{date}_{project}_01_import_qc.Rmd` … `_04_dtu.Rmd` | One R Markdown per analysis stage |
+| `run_01_import_qc.sh` … `run_04_dtu.sh` | Matching SLURM submission scripts |
 | `ref/tx2gene.tsv`, `ref/gene2typesym.tsv` | Staged annotation (transcript→gene, gene→biotype/symbol) |
 | `results/{date}_{project}/` | Rendered HTML reports, checkpoint RDS, xlsx tables, GEO matrices, figures |
-| `*_supplemental.xlsx`, `*_DEG_summary.xlsx`, `*_GSEA_fgsea.xlsx` | Per-gene table, DEG counts, GSEA leading-edge sheets |
+| `*_supplemental.xlsx`, `*_DEG_summary.xlsx`, `*_GSEA_fgsea.xlsx`, `*_DTU_results.xlsx` | Per-gene table, DEG counts, GSEA leading-edge sheets, DTU gene/transcript tables |
 | `{project}_summary_report.html` | Standalone summary with links to all outputs |
 
 ---
@@ -86,6 +89,7 @@ sbatch -p bcc run_01_import_qc.sh
 sbatch -p bcc run_02_deg.sh
 # Review volcano plots and *_supplemental.xlsx
 sbatch -p bcc run_03_gsea.sh          # if requested
+sbatch -p bcc run_04_dtu.sh           # if requested (paired-end only)
 ```
 
 ---
@@ -113,6 +117,7 @@ Hard-won lessons baked into the skill so you don't rediscover them:
 - **apeglm drops the `stat` column** — the Wald statistic is recovered from `dds@rowRanges` and used as the GSEA ranking metric.
 - **Volcano labelling** ranks by `abs(stat)` (top ~20), not a LFC/padj threshold, to avoid an unreadable wall of labels on large DEG sets.
 - **msigdbr 26.x** uses `collection=`/`subcollection=` and fetches data at runtime (needs internet); for mouse it ortholog-maps from the human DB (`db_species = "HS"`).
+- **DTU (Rmd 04)** uses transcript-level `scaledTPM` counts through DRIMSeq → DEXSeq → stageR and reports the stageR-adjusted calls; paired-end only.
 - **Namespace masking** — load DESeq2/Bioc before tidyverse so dplyr verbs win; `cache = FALSE` in every Rmd (chunks mutate a shared `assembleDat`).
 
 ---

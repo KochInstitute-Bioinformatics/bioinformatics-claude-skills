@@ -46,9 +46,9 @@ ls /net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif 2>/dev
   ```bash
   module load singularity/3.5.0
   singularity exec /net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif \
-    Rscript -e 'for (p in c("tximport","DESeq2","edgeR","apeglm","fgsea","msigdbr","GseaVis","openxlsx","tidyverse","matrixStats","ggrepel","showtext")) cat(sprintf("%-12s %s\n", p, requireNamespace(p, quietly=TRUE)))'
+    Rscript -e 'for (p in c("tximport","DESeq2","edgeR","apeglm","fgsea","msigdbr","GseaVis","DRIMSeq","DEXSeq","stageR","openxlsx","tidyverse","matrixStats","ggrepel","showtext")) cat(sprintf("%-12s %s\n", p, requireNamespace(p, quietly=TRUE)))'
   ```
-  `tximport`, `DESeq2`, `edgeR`, `apeglm`, `fgsea` are mandatory. `msigdbr` is needed only if GSEA is requested; `GseaVis` only for `gseaNb` enrichment curves; `showtext` only for unicode-label PCA figures. (`rtracklayer` is no longer required — annotation is staged as TSVs, not parsed from the GTF in R.) If a mandatory one is `FALSE`, stop and tell the user the image must be rebuilt (packages go in the Docker image, never `install.packages()` at runtime).
+  `tximport`, `DESeq2`, `edgeR`, `apeglm`, `fgsea` are mandatory. `msigdbr` is needed only if GSEA is requested; `GseaVis` only for `gseaNb` enrichment curves; `DRIMSeq`, `DEXSeq` and `stageR` only if the DTU module is requested; `showtext` only for unicode-label PCA figures. (`rtracklayer` is no longer required — annotation is staged as TSVs, not parsed from the GTF in R.) If a mandatory one is `FALSE`, stop and tell the user the image must be rebuilt (packages go in the Docker image, never `install.packages()` at runtime).
 - **Not found**: tell the user to pull it on a compute node first (not the login node):
   ```bash
   cd /net/bmc-lab3/data/bcc/shared/singularity_images
@@ -96,7 +96,7 @@ awk -F'\t' 'NR==1{for(i=1;i<=NF;i++){if($i ~ /properly_paired_percent/)pp=i; if(
 Present the inferred mode and the evidence, then **ask the user to confirm**:
 "Detected **{MODE}** (evidence: …). Is that correct? [paired-end / 3pDGE]"
 
-Store as `{MODE}` ∈ {`paired-end`, `3pDGE`}. This drives Step 9 (import) and Step 12 (DESeq2 construction).
+Store as `{MODE}` ∈ {`paired-end`, `3pDGE`}. This drives Step 11 (import), Step 12 (DESeq2 construction), and whether the DTU module (Step 8 item 5 / Step 13b) is available — **DTU is disabled for `3pDGE`** (see Step 8).
 
 ---
 
@@ -184,8 +184,9 @@ Ask which optional downstream modules to generate (multi-select):
 2. **GseaVis enrichment plots** — `gseaNb` curves for named gene sets of interest.
 3. **Counts-of-interest plots** — `plotCounts` jitter plots for a user-supplied gene list (e.g. sex genes `Xist`/`Ddx3y` for sex-check, or pathway genes).
 4. **Heatmap** — `ComplexHeatmap` of top variable / top DE genes.
+5. **Differential transcript usage (DTU)** — isoform-proportion changes between conditions from the same `quant.sf` files (no new upstream run): DRIMSeq filter → DEXSeq → stageR. **Paired-end only: if `{MODE}` = `3pDGE`, do not offer this item** — a 3′ tag library carries no isoform-level information and the results would be meaningless; say so if the user asks. Ask for: the single contrast to test (DEXSeq runs one contrast at a time; default = the first contrast from above; more can be added as extra runs), and filter thresholds (defaults: `min_samps_gene_expr` = n samples, `min_gene_expr` = 10, `min_samps_feature_expr` = smallest condition size, `min_feature_expr` = 10, `min_samps_feature_prop` = smallest condition size, `min_feature_prop` = 0.1). Store as `{DTU_CONTRAST}` and `{DTU_FILTERS}`.
 
-`msigdbr` + `fgsea` must be in the image for module 1; `GseaVis` for module 2 (verified in Step 2).
+`msigdbr` + `fgsea` must be in the image for module 1; `GseaVis` for module 2; `DRIMSeq` + `DEXSeq` + `stageR` for module 5 (verified in Step 2).
 
 ---
 
@@ -193,7 +194,7 @@ Ask which optional downstream modules to generate (multi-select):
 
 Bulk RNAseq is light compared with scRNA. Defaults:
 1. Standard (≤ 24 samples) — 32G, 2h, 4 CPUs
-2. Large (> 24 samples, or many contrasts/GSEA collections) — 64G, 4h, 8 CPUs
+2. Large (> 24 samples, or many contrasts/GSEA collections, or the DTU module) — 64G, 4h, 8 CPUs (DEXSeq on transcript-level counts is the slowest step; use this tier for `run_04_dtu.sh` regardless of sample count)
 3. Custom
 
 Never run R or Singularity on the login node.
@@ -317,6 +318,61 @@ Write `{TODAY_YYMMDD}_{WD_NAME}_03_gsea.Rmd`. **Use in-R `fgsea` — self-contai
 
 ---
 
+## Step 13b — Generate Rmd 04: Differential Transcript Usage (if requested; paired-end only)
+
+Write `{TODAY_YYMMDD}_{WD_NAME}_04_dtu.Rmd`. **Self-contained**; `knitr::opts_chunk$set(cache = FALSE)`; `options(scipen = 9)`; **load `DRIMSeq`/`DEXSeq`/`stageR`/`tximport` BEFORE `tidyverse`** (namespace masking, see Notes). Load `samples` from the Rmd 01 checkpoint and `tx2gene` from `{TX2GENE_TSV}`. This module does **not** reuse the gene-level `txi` — it re-imports at transcript level. It tests one contrast, `{DTU_CONTRAST}` (subset `samples` to the two conditions involved before filtering).
+
+1. **Transcript-level import** — the key difference from Rmd 01 (`txOut = TRUE`, no `tx2gene` collapse):
+   ```r
+   files <- file.path(dir, samples$Folder, "quant.sf"); names(files) <- samples$Sample
+   stopifnot(all(file.exists(files)))
+   txi_tx <- tximport(files, type = "salmon", txOut = TRUE, countsFromAbundance = "scaledTPM")
+   cts <- txi_tx$counts[rowSums(txi_tx$counts) > 0, ]
+   txdf <- tx2gene[match(rownames(cts), tx2gene$transcript_id), ]
+   stopifnot(!any(is.na(txdf$gene_id)))          # fail loudly on a tx2gene / quant.sf mismatch
+   counts <- data.frame(gene_id = txdf$gene_id, feature_id = txdf$transcript_id, cts, check.names = FALSE)
+   ```
+   `scaledTPM` (not `lengthScaledTPM`) is the recommended setting for DTU: it corrects for library size but preserves within-gene length information, so proportions are not distorted by transcript length.
+2. **DRIMSeq filter** (used only for filtering, not testing), thresholds from `{DTU_FILTERS}`:
+   ```r
+   d <- dmDSdata(counts = counts,
+                 samples = data.frame(sample_id = samples$Sample, condition = samples$Condition))
+   d <- dmFilter(d, min_samps_gene_expr = .., min_gene_expr = .., min_samps_feature_expr = ..,
+                 min_feature_expr = .., min_samps_feature_prop = .., min_feature_prop = ..)
+   ```
+   Report how many genes/transcripts survive (and how many genes have ≥ 2 transcripts — single-isoform genes cannot show DTU). Stop with a clear message if almost nothing passes.
+3. **DEXSeq** — transcripts as "exons", genes as groups; **round** the (non-integer) `scaledTPM` counts:
+   ```r
+   sample.data <- DRIMSeq::samples(d)
+   count.data  <- round(as.matrix(DRIMSeq::counts(d)[, -c(1, 2)]))
+   dxd <- DEXSeqDataSet(countData = count.data, sampleData = sample.data,
+                        design = ~ sample + exon + condition:exon,
+                        featureID = DRIMSeq::counts(d)$feature_id,
+                        groupID   = DRIMSeq::counts(d)$gene_id)
+   dxd <- estimateSizeFactors(dxd)
+   dxd <- estimateDispersions(dxd, quiet = TRUE)
+   dxd <- testForDEU(dxd, reducedModel = ~ sample + exon)
+   dxr <- DEXSeqResults(dxd, independentFiltering = FALSE)   # stageR does its own filtering logic
+   qval <- perGeneQValue(dxr)                                # gene-level q-values (screening stage)
+   ```
+   Set `BPPARAM = BiocParallel::MulticoreParam({CPUS})` on the DEXSeq calls if the job has > 1 CPU.
+4. **stageR two-stage testing** — stage 1 screens genes (`qval`), stage 2 confirms which transcripts, controlling the overall FDR (OFDR) across both:
+   ```r
+   pConfirmation <- matrix(dxr$pvalue, ncol = 1, dimnames = list(dxr$featureID, "transcript"))
+   pScreen <- qval
+   tx2g <- data.frame(transcript = dxr$featureID, gene = dxr$groupID)
+   stageRObj <- stageRTx(pScreen = pScreen, pConfirmation = pConfirmation,
+                         pScreenAdjusted = TRUE, tx2gene = tx2g)
+   stageRObj <- stageWiseAdjustment(stageRObj, method = "dtu", alpha = 0.05, allowNA = TRUE)
+   padj <- getAdjustedPValues(stageRObj, order = FALSE, onlySignificantGenes = FALSE)
+   ```
+   Report **stageR-adjusted** gene and transcript calls (`gene` / `transcript` columns of `padj`) as the significant sets — not the raw DEXSeq per-transcript padj, which is not gene-level FDR-controlled.
+5. **Summary table** — per contrast: genes tested, transcripts tested, DTU genes (stageR gene padj < 0.05), DTU transcripts (stageR transcript padj < 0.05). Add a `DTU_summary` sheet.
+6. **Isoform-proportion plots** — for the top N (default 12) DTU genes ranked by stageR gene padj: mean isoform proportion (`count / gene total`, per sample, then per condition) as stacked bars or per-sample dots, one panel per gene, facetted, transcripts labelled by `transcript_id`. Join `gene_name` from `gene2typesym` for panel titles. Same compact tiling as the PCA panel (`fig.show="hold"`, `out.width`).
+7. **Write outputs** into `{RESULTS_DIR}`: `*_DTU_results.xlsx` with sheets `DTU_summary`, `genes` (gene_id, gene_name, DEXSeq gene q, stageR gene padj), `transcripts` (transcript_id, gene_id, gene_name, log2fold change from `dxr`, raw p, stageR transcript padj, per-condition mean proportion). Plus a checkpoint `dtu_checkpoint.rds` (`dxr`, `padj`, filtered `counts`).
+
+---
+
 ## Step 14 — Generate SLURM scripts
 
 One script per Rmd. Template:
@@ -349,7 +405,7 @@ singularity exec \
     )"
 ```
 
-Scripts: `run_01_import_qc.sh`, `run_02_deg.sh`, and (if requested) `run_03_gsea.sh`.
+Scripts: `run_01_import_qc.sh`, `run_02_deg.sh`, and (if requested) `run_03_gsea.sh` and `run_04_dtu.sh`. `run_04_dtu.sh` uses the Large tier (64G / 4h / 8 CPUs) and does not depend on Rmd 02, only on the Rmd 01 checkpoint.
 
 ---
 
@@ -358,8 +414,8 @@ Scripts: `run_01_import_qc.sh`, `run_02_deg.sh`, and (if requested) `run_03_gsea
 After the reports are rendered, write a standalone `{WD_NAME}_summary_report.html` into `{RESULTS_DIR}` — a self-contained page (inline CSS, **no external dependencies**, no R needed) that ties the deliverables together:
 - Study-design block: mode (paired-end/3pDGE), samples/conditions, organism/annotation, contrast(s), significance cutoff.
 - QC summary table (the curated multiqc metrics per sample).
-- **Card links to each stage HTML** (`_01_import_qc.html`, `_02_deg.html`, `_03_gsea.html`) and to the data deliverables (supplemental/DEG-summary/GSEA xlsx, GEO matrices).
-- Headline results: DEG up/down counts and top GSEA programs.
+- **Card links to each stage HTML** (`_01_import_qc.html`, `_02_deg.html`, `_03_gsea.html`, `_04_dtu.html`) and to the data deliverables (supplemental/DEG-summary/GSEA/DTU xlsx, GEO matrices).
+- Headline results: DEG up/down counts, top GSEA programs, and (if run) DTU gene/transcript counts.
 
 **Use relative links** (bare filenames) so the page works both over a web mount and from the local filesystem as long as it sits in `{RESULTS_DIR}` beside the reports — no need to know a web URL prefix. If the user has a web-accessible prefix (e.g. `https://bmc-data.mit.edu/BCC/...`) and wants absolute links, ask for it; otherwise default to relative. Verify every `href` target exists before finishing.
 
@@ -378,6 +434,7 @@ Submission order:
   sbatch -p bcc run_02_deg.sh
   # Review volcano plots and *_assembled.xlsx
   sbatch -p bcc run_03_gsea.sh     # if requested
+  sbatch -p bcc run_04_dtu.sh      # if requested (paired-end only; needs only the 01 checkpoint)
 ```
 
 ---
@@ -421,6 +478,16 @@ Submission order:
 - **`C2:CP` spans multiple subcollections — never query `subcollection = "CP"` alone.** Canonical pathways are split into `CP`, `CP:BIOCARTA`, `CP:KEGG_LEGACY`, `CP:KEGG_MEDICUS`, `CP:PID`, `CP:REACTOME`, `CP:WIKIPATHWAYS`; an exact `"CP"` match silently returns only ~17 sets instead of the ~3,000+ across all canonical-pathway sources (observed directly: a run using exact-match `"CP"` tested 17 sets, and after fixing to `grepl("^CP", gs_subcollection)` tested 3,094 sets with a materially different significant-set count). Fetch the whole `C2` collection and filter subcollection names with a `"^CP"` prefix match instead (excludes `CGP`, which is a different category — chemical/genetic perturbations, not canonical pathways).
 - **msigdbr 26.x downloads gene-set data at runtime** (the `msigdbdf` data package), so the GSEA render needs internet on the compute node. On offline-compute clusters, pre-seed the `msigdbdf` cache or bake it into the image before submitting `run_03`, or it will hang on the first `msigdbr()` call.
 - `GseaVis::gseaNb` chunks need `fig.width >= 14` or the p-value table is cropped.
+
+### Differential transcript usage (DTU)
+- **Paired-end only.** 3′ DGE libraries capture one tag per molecule near the 3′ end, so isoform proportions cannot be estimated. Never offer or generate Rmd 04 in `3pDGE` mode.
+- DTU = change in a transcript's **share of its gene's expression** between conditions, independent of overall gene-level change. It answers a different question from Rmd 02 (a gene can be DTU-significant with no DE, and vice versa); do not describe it as "isoform DE".
+- Uses transcript-level counts: `tximport(..., txOut = TRUE, countsFromAbundance = "scaledTPM")`, **not** the gene-level `txi` from Rmd 01. Counts are non-integer, so `round()` before `DEXSeqDataSet`.
+- Pipeline: DRIMSeq `dmFilter` (filtering only) → DEXSeq `testForDEU` → `perGeneQValue` → stageR `stageWiseAdjustment(method = "dtu")`. Report the **stageR-adjusted** calls; raw per-transcript DEXSeq padj is not gene-level FDR-controlled.
+- Filtering matters: without `dmFilter`, DEXSeq is slow and low-count transcripts inflate false positives. Single-isoform genes drop out automatically.
+- DEXSeq is the slow step (minutes to hours with many transcripts); use the Large SLURM tier and pass `BPPARAM`.
+- **IsoformSwitchAnalyzeR** (protein-domain / NMD / ORF consequence annotation of switching isoforms) is deliberately **not** in this module: it needs the transcript FASTA plus external predictors (Pfam, SignalP, CPC2, IUPred) that are usually web-based and will not work on offline compute nodes. Offer it as a separate follow-up if the user wants switch consequences.
+- Packages `DRIMSeq`, `DEXSeq`, `stageR` must be in the `yannvrb56/bulkrnaseq` image (checked in Step 2); never `install.packages()` at runtime.
 
 ### Self-contained Rmds
 - Do **not** `source('Rcode/data_formatting_tools.R')` etc. — those IGB helpers are not assumed present. Inline only the functions actually used (MPG loop, volcano builder). The example Rmds source them but barely call them; everything needed is standard `tximport`/`DESeq2`/`edgeR`/`ggplot`.
