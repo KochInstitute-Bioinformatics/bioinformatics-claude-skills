@@ -16,7 +16,7 @@ forbid() { ! grep -qF -- "$1" "$SKILL" || { echo "FAIL: forbidden text present: 
 
 # (a) every --flag in the skill is a schema parameter or an allowlisted non-rnavar flag
 schema_names=$(grep -oE '"[a-z_0-9]+": *\{' "$SCHEMA" | sed -E 's/"([a-z_0-9]+)".*/\1/' | sort -u)
-allow="runMode genomeDir genomeFastaFiles sjdbGTFfile sjdbOverhang runThreadN mail-type mail-user mem"
+allow="rename-chrs dependency runMode genomeDir genomeFastaFiles sjdbGTFfile sjdbOverhang runThreadN mail-type mail-user mem"
 for flag in $(grep -oE '(^|[ `(=])--[A-Za-z_][A-Za-z_0-9-]*' "$SKILL" | sed -E 's/^[^-]*--//' | sort -u); do
   if ! echo "$schema_names $allow" | tr ' ' '\n' | grep -qx -- "$flag"; then
     echo "FAIL: flag not in rnavar schema or allowlist: --$flag"; fail=1
@@ -123,5 +123,28 @@ forbid '{VARIANT_LINES}\'
 forbid '{ANNOTATION_LINES}\'
 forbid "{VERSION_ENS}"
 # --- end Task 5
+
+
+# --- Final-review fixes
+need "bgzipped \`.vcf.gz\` files with \`.tbi\` indexes"
+need "contig-name check"
+need "zcat FILE.vcf.gz | grep -v '^#' | head -1 | cut -f1"
+need "grep -m1 '^>' {FASTA_PATH} | cut -d' ' -f1 | sed 's/^>//'"
+need "prefer Ensembl-named variation VCFs"
+need "bcftools annotate --rename-chrs MAP.txt"
+need "chr1<->1 ... chrM<->MT"
+need "never proceed with mismatched contigs"
+need "run \`bgzip\` on any plain \`.vcf\` before \`tabix -p vcf\`"
+need "1. these are lanes of the same sample"
+need "2. these are different samples"
+need "allow the deliberate duplicates"
+need "Emit \`--download_cache\` only if the user explicitly chooses it after being warned."
+forbid "Use \`--snpeff_cache\`, \`--vep_cache\` and \`--download_cache\` only."
+need "--dependency=afterok:<helper_jobid> nf-core_rnavar_{VERSION}.sh"
+need "with \`--skip_baserecalibration\` these are the duplicate-marked BAMs"
+need "check whether \`{SAMPLESHEET_CSV}\` already exists"
+need "check whether \`nf-core_rnavar_{VERSION}.sh\` already exists"
+need "1. overwrite · 2. choose another filename"
+# --- end Final-review fixes
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1

@@ -66,13 +66,13 @@ find {CWD} -name "*.bam" -o -name "*.cram" | head -10
 
 **Sample-name sanitisation (always, before showing the user):**
 - Replace every `-` with `_`; replace spaces, `/`, `(`, `)` and other special characters with `_`. Note substitutions in the preview.
-- Check uniqueness after sanitisation. On collision warn: "⚠️ Name collision '{NAME}': in nf-core/rnavar, rows with the same sample name are treated as lanes of one sample and their reads are merged before alignment. Provide distinct names if these are different samples." Then go to custom naming.
+- Check uniqueness after sanitisation. On collision warn: "⚠️ Name collision '{NAME}': in nf-core/rnavar, rows with the same sample name are treated as lanes of one sample and their reads are merged before alignment. Provide distinct names if these are different samples." Then ask (numbered): 1. these are lanes of the same sample — keep the duplicate name (rows are merged before alignment) · 2. these are different samples — rename them (go to custom naming). Normal Illumina lane files (`X_S1_L001_R1_001`, `X_S1_L002_R1_001`) collide by design, so option 1 is expected for them.
 
 **Review and naming — order is mandatory:**
 1. Show the full samplesheet (all rows) as a table.
-2. Ask about names (numbered): 1. Use auto-generated names · 2. Provide custom names. For custom names, show numbered auto names next to filenames, ask for a plain-language description, build the mapping, show it as an auto→new table and ask "Does this mapping look correct?" Validate custom names: no `-`; no duplicates (same warning as above).
+2. Ask about names (numbered): 1. Use auto-generated names · 2. Provide custom names. For custom names, show numbered auto names next to filenames, ask for a plain-language description, build the mapping, show it as an auto→new table and ask "Does this mapping look correct?" Validate custom names: no `-`; duplicates only where the user chose option 1 above (validation must allow the deliberate duplicates); any other duplicate triggers the same warning and choice.
 3. Ask for the samplesheet filename (numbered): 1. `{SEQ_DATE}_{WD_NAME}_samplesheet.csv` · 2. `{TODAY_YYMMDD}_{WD_NAME}_samplesheet.csv` · 3. Custom.
-4. Write the file only after names and filename are confirmed. Store as `{SAMPLESHEET_CSV}`.
+4. Write the file only after names and filename are confirmed; first check whether `{SAMPLESHEET_CSV}` already exists and, if so, ask (numbered): 1. overwrite · 2. choose another filename — before writing. Store as `{SAMPLESHEET_CSV}`.
 
 ---
 
@@ -130,7 +130,14 @@ rnavar passes the known-sites files directly to GATK BaseRecalibrator and **does
    - Human: the GATK resource-bundle dbSNP and Mills/1000G known-indels VCFs for the matching assembly.
    - Mouse: Mouse Genomes Project variants (SNPs and indels) for GRCm39.
    - Check whether the files already exist under `{GENOME_DIR}/known_sites/`; if so reuse them and verify the `.tbi` indexes exist.
-   - If they do not exist, **resolve the resource URLs at run time**: use `WebFetch` on the current GATK resource-bundle page (human) or the Mouse Genomes Project / Ensembl variation FTP listing (mouse), show the exact URLs to the user, and download only after they confirm. Never type a URL from memory. Add the download and `tabix -p vcf` steps to the helper script (Step 12).
+   - The pipeline schema requires bgzipped `.vcf.gz` files with `.tbi` indexes (`dbsnp` must match `.vcf.gz`, `dbsnp_tbi` must match `.vcf.gz.tbi`). Some sources ship plain `.vcf` (with `.vcf.idx`); those must be bgzipped and re-indexed with `tabix`, never passed as-is.
+   - If they do not exist, **resolve the resource URLs at run time**: use `WebFetch` on the current GATK resource-bundle page (human) or the Mouse Genomes Project / Ensembl variation FTP listing (mouse), show the exact URLs to the user, and download only after they confirm. Never type a URL from memory. Add the download, `bgzip` and `tabix -p vcf` steps to the helper script (Step 12).
+   - **Mandatory contig-name check, before the known-sites choice is finalised.** The FASTA from Step 6 is Ensembl-named (`1`, `2`, ... `MT`), whereas GATK resource-bundle hg38 VCFs use `chr1`, `chr2`, ... `chrM`; a mismatch makes GATK BaseRecalibrator stop with "incompatible contigs" only after alignment, MarkDuplicates and SplitNCigarReads have already run. For each VCF compare its first contig with the first FASTA header:
+     ```bash
+     zcat FILE.vcf.gz | grep -v '^#' | head -1 | cut -f1
+     grep -m1 '^>' {FASTA_PATH} | cut -d' ' -f1 | sed 's/^>//'
+     ```
+     If the VCFs are not downloaded yet, run the check once they are, and state in the helper script which naming the source uses. On a mismatch, either (i) prefer Ensembl-named variation VCFs that match the Ensembl FASTA, or (ii) add a rename step to `prepare_known_sites_{ASSEMBLY}.sh`: `bcftools annotate --rename-chrs MAP.txt` (MAP.txt is a two-column, tab-separated old-name/new-name file mapping chr1<->1 ... chrM<->MT for the chromosomes present in the FASTA), then `bgzip` and `tabix -p vcf` the renamed file. The skill must never proceed with mismatched contigs; if neither fix is possible, offer option 2 (skip base recalibration) instead.
 2. **Skip base recalibration** — add `--skip_baserecalibration`. Tell the user the trade-off: base qualities are not recalibrated, which is slightly less accurate but is the right choice for organisms without a curated variant set, or to get a first result quickly.
 
 Store the result as `{KNOWN_SITES_LINES}`: the four `--dbsnp`/`--known_indels` lines for option 1, or the single line `--skip_baserecalibration \` for option 2.
@@ -165,7 +172,7 @@ If annotation is chosen, the caches must be on disk **before** submission:
 - Ask for existing cache directories → `--snpeff_cache '{DIR}'` and/or `--vep_cache '{DIR}'`, plus the matching identifiers: `--snpeff_db`, `--vep_genome`, `--vep_species`, `--vep_cache_version` (ask; do not guess versions).
 - If a cache is missing, do **not** silently add `--download_cache`: that option needs internet from compute nodes, which may not be available, and the job then stalls without a clear error. Instead tell the user this, and offer to generate a pre-download helper script (Step 12) that they run where internet is available.
 
-Note for the assistant: `annotation_cache` appears on the rnavar usage page but is not a parameter in the rnavar schema — never emit it. Use `--snpeff_cache`, `--vep_cache` and `--download_cache` only.
+Note for the assistant: `annotation_cache` appears on the rnavar usage page but is not a parameter in the rnavar schema — never emit it. Emit `--download_cache` only if the user explicitly chooses it after being warned.
 
 Collect the emitted lines as `{ANNOTATION_LINES}`.
 
@@ -250,7 +257,7 @@ rnavar's own `base.config` defines label-based resources only (`process_medium` 
 
 ## Step 11 — Generate the submission script
 
-Write `nf-core_rnavar_{VERSION}.sh` in `{CWD}`:
+Write `nf-core_rnavar_{VERSION}.sh` in `{CWD}` (first check whether `nf-core_rnavar_{VERSION}.sh` already exists and, if so, ask (numbered): 1. overwrite · 2. choose another filename — before writing):
 
 ```bash
 #!/bin/bash
@@ -284,7 +291,7 @@ Each `{..._LINES}` placeholder line is replaced by its complete lines, each of w
 Script written: nf-core_rnavar_{VERSION}.sh
 To submit:  sbatch nf-core_rnavar_{VERSION}.sh
 ```
-If any helper script (Step 12) was generated, list the order: helpers first, then the pipeline.
+If any helper script (Step 12) was generated, list the order: helpers first, then the pipeline, submitted with `sbatch --dependency=afterok:<helper_jobid> nf-core_rnavar_{VERSION}.sh` (or wait for the helper to finish) so the pipeline never starts before its resources exist.
 
 ---
 
@@ -306,7 +313,7 @@ STAR \
     --runThreadN 8
 ```
 
-**`prepare_known_sites_{ASSEMBLY}.sh`** — for the URLs the user confirmed in Step 7: `wget -c` each file into `{GENOME_DIR}/known_sites/`, then `module add htslib` (or the site's tabix module) and `tabix -p vcf` each VCF that lacks a `.tbi`.
+**`prepare_known_sites_{ASSEMBLY}.sh`** — for the URLs the user confirmed in Step 7: `wget -c` each file into `{GENOME_DIR}/known_sites/`, then `module add htslib` (or the site's tabix module), run `bgzip` on any plain `.vcf` before `tabix -p vcf` (the schema requires `.vcf.gz`), and `tabix -p vcf` each `.vcf.gz` that lacks a `.tbi`. If the Step 7 contig-name check found a mismatch and option (ii) was chosen, also load `bcftools` and rename the contigs (`bcftools annotate --rename-chrs MAP.txt IN.vcf.gz -O z -o OUT.vcf.gz`) before indexing, writing MAP.txt into `{GENOME_DIR}/known_sites/`.
 
 **`prepare_annotation_cache_{TOOL}.sh`** — only if the user has no cache: a script the user runs where internet is available, using the tool's own cache installer (`vep_install` or `snpEff download`) into the directory passed to `--vep_cache` / `--snpeff_cache`, where `{TOOL}` is `snpeff` or `vep`, matching `{ANNOTATION_TOOL}` (one script per chosen tool).
 
@@ -318,7 +325,7 @@ Print where the results will be, so later analyses can find them:
 ```
 Outputs under {OUTDIR}/ :
   variant_calling/   filtered VCFs (per sample) and, with --generate_gvcf, gVCFs
-  preprocessing/     recalibrated / duplicate-marked BAMs
+  preprocessing/     recalibrated BAMs; with `--skip_baserecalibration` these are the duplicate-marked BAMs
   multiqc/           MultiQC report
 These VCFs and BAMs are the inputs expected by the ase-pipeline skill (allele-specific expression).
 ```
