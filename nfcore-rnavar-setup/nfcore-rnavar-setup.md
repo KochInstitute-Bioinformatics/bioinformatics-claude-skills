@@ -85,3 +85,50 @@ zcat {FASTQ_FILE} | awk 'NR%4==2 {print length($0)}' | head -n 1000 | sort -n | 
 ```
 
 Run this on the first FASTQ of several different samples (up to 5). If lengths differ between samples, report the distribution, use the most common read length as `{READ_LENGTH}`, and warn that `sjdbOverhang` is tuned to it. For BAM/CRAM input, ask the user for the read length. Tell the user: "Detected read length {READ_LENGTH} bp → sjdbOverhang {READ_LENGTH − 1}." Store `{READ_LENGTH}`.
+
+---
+
+## Step 6 — Organism and genome files
+
+Ask:
+1. "What organism is this data from? (e.g. mouse, human)"
+2. "What is the base directory where genome files and indexes are stored?"
+
+Use this folder convention (shared with other nf-core skills so FASTA/GTF are reused, never re-downloaded):
+
+```
+{genome_base}/{organism}/{assembly}_ens{version}/
+├── {FASTA}.fa                    ← primary assembly FASTA
+├── {GTF}.gtf                     ← annotation GTF
+└── index/
+    └── star_rnavar_sjdb{N-1}/    ← STAR index built for THIS read length
+```
+
+- Mouse: assembly GRCm39, FASTA `Mus_musculus.GRCm39.dna.primary_assembly.fa`, GTF `Mus_musculus.GRCm39.{version}.gtf`, directory `{genome_base}/mouse/mm39_ens{version}/`.
+- Human: assembly GRCh38, FASTA `Homo_sapiens.GRCh38.dna.primary_assembly.fa`, GTF `Homo_sapiens.GRCh38.{version}.gtf`, directory `{genome_base}/human/hg38_ens{version}/`.
+- Other organisms: ask for the FASTA and GTF paths; skip the checks below.
+
+**Existing FASTA/GTF:** if present, report the paths and reuse them. If missing, fetch the latest Ensembl release from `https://ftp.ensembl.org/pub/current_README`, and generate the download commands in the helper script (Step 12).
+
+**GTF source:** inspect `grep -v "^#" {GTF_PATH} | head -3`. Gene IDs with a version suffix (`ENSG00000000003.15`) indicate GENCODE; without one, Ensembl. Report which it is, but **no flag is emitted** — rnavar's schema has no `gencode` parameter.
+
+**STAR index — always its own index per read length.** `sjdbOverhang` is fixed when the index is built, and an index made for another read length (for example one built by another pipeline) would be wrong here. Set `{SJDB_OVERHANG}` = `{READ_LENGTH} − 1` and look for `{GENOME_DIR}/index/star_rnavar_sjdb{SJDB_OVERHANG}/`:
+- Present and non-empty (`SA`, `Genome`, `sjdbList.out.tab` exist): use it, `{STAR_INDEX}` = that path.
+- Missing: add the index build to the helper script (Step 12) and tell the user it must run first.
+
+`--star_index '{STAR_INDEX}'` is always passed so rnavar never rebuilds the index inside the workflow.
+
+---
+
+## Step 7 — Known sites for base recalibration
+
+rnavar passes the known-sites files directly to GATK BaseRecalibrator and **does not skip base recalibration automatically** — if they are missing the run fails late, after alignment. So always resolve this now. Ask (numbered):
+
+1. **Use known-sites VCFs** — add `--dbsnp {DBSNP}`, `--dbsnp_tbi {DBSNP}.tbi`, `--known_indels {INDELS}`, `--known_indels_tbi {INDELS}.tbi`.
+   - Human: the GATK resource-bundle dbSNP and Mills/1000G known-indels VCFs for the matching assembly.
+   - Mouse: Mouse Genomes Project variants (SNPs and indels) for GRCm39.
+   - Check whether the files already exist under `{GENOME_DIR}/known_sites/`; if so reuse them and verify the `.tbi` indexes exist.
+   - If they do not exist, **resolve the resource URLs at run time**: use `WebFetch` on the current GATK resource-bundle page (human) or the Mouse Genomes Project / Ensembl variation FTP listing (mouse), show the exact URLs to the user, and download only after they confirm. Never type a URL from memory. Add the download and `tabix -p vcf` steps to the helper script (Step 12).
+2. **Skip base recalibration** — add `--skip_baserecalibration`. Tell the user the trade-off: base qualities are not recalibrated, which is slightly less accurate but is the right choice for organisms without a curated variant set, or to get a first result quickly.
+
+Store the result as `{KNOWN_SITES_LINES}`: the four `--dbsnp`/`--known_indels` lines for option 1, or the single line `--skip_baserecalibration \` for option 2.

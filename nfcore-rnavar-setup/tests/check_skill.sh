@@ -50,4 +50,20 @@ need "sjdbOverhang"
 forbid "strandedness,"
 # --- end Task 2
 
+# --- Task 3
+need "## Step 6"
+need "star_rnavar_sjdb"
+need "GTF source"
+need "no flag is emitted"
+need "## Step 7"
+need "--dbsnp"
+need "--dbsnp_tbi"
+need "--known_indels"
+need "--known_indels_tbi"
+need "--skip_baserecalibration"
+need "does not skip base recalibration automatically"
+need "resolve the resource URLs at run time"
+need "--star_index"
+# --- end Task 3
+
 [ $fail -eq 0 ] && echo "PASS" || exit 1
