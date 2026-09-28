@@ -168,3 +168,173 @@ If annotation is chosen, the caches must be on disk **before** submission:
 Note for the assistant: `annotation_cache` appears on the rnavar usage page but is not a parameter in the rnavar schema — never emit it. Use `--snpeff_cache`, `--vep_cache` and `--download_cache` only.
 
 Collect the emitted lines as `{ANNOTATION_LINES}`.
+
+---
+
+## Step 10 — MultiQC title, output directory, nextflow.config
+
+**MultiQC title** (numbered): 1. `{SEQ_DATE}_{WD_NAME}` · 2. `{TODAY_YYMMDD}_{WD_NAME}` · 3. Custom. Store as `{MULTIQC_TITLE}`.
+**Output directory** (numbered): same three options. Store as `{OUTDIR}`.
+
+Check for an existing config: `ls nextflow.config`. **If it exists, do not overwrite it** — instead tell the user the selectors that matter for rnavar (below) and that they can compare them. If it does not exist, write:
+
+```nextflow
+// nextflow.config — nf-core/rnavar on SLURM + Singularity
+profiles {
+    slurm {
+        process {
+            executor = 'slurm'
+            queue = 'bcc'
+            cpus = 2
+            memory = '8 GB'
+            time = '4h'
+
+            withName: '.*:STAR_ALIGN' {
+                cpus = 8
+                memory = '64 GB'
+                time = '8h'
+            }
+            withName: '.*:GATK4_SPLITNCIGARREADS' {
+                cpus = 2
+                memory = '16 GB'
+                time = '8h'
+            }
+            withName: '.*:GATK4_BASERECALIBRATOR' {
+                cpus = 2
+                memory = '16 GB'
+                time = '8h'
+            }
+            withName: '.*:GATK4_HAPLOTYPECALLER' {
+                cpus = 2
+                memory = '16 GB'
+                time = '8h'
+            }
+        }
+        executor {
+            queueSize = 10
+            submitRateLimit = '10/1min'
+            pollInterval = '30s'
+        }
+    }
+    singularity {
+        singularity {
+            enabled = true
+            autoMounts = true
+        }
+    }
+}
+
+params {
+    max_cpus   = 16
+    max_memory = '64 GB'
+    max_time   = '24h'
+}
+
+process {
+    resourceLimits = [
+        cpus:   params.max_cpus,
+        memory: params.max_memory,
+        time:   params.max_time
+    ]
+}
+
+timeline { enabled = true; file = "${params.outdir}/pipeline_info/execution_timeline.html" }
+report   { enabled = true; file = "${params.outdir}/pipeline_info/execution_report.html"   }
+trace    { enabled = true; file = "${params.outdir}/pipeline_info/execution_trace.txt"     }
+dag      { enabled = true; file = "${params.outdir}/pipeline_info/pipeline_dag.svg"        }
+```
+
+rnavar's own `base.config` defines label-based resources only (`process_medium` = 6 CPU/36 GB/8 h, `process_high` = 12 CPU/72 GB/16 h), so the `withName` overrides above use regex selectors (`'.*:NAME'`) that do not depend on the workflow-name prefix. After the first run, compare the selectors with the process names in `{OUTDIR}/pipeline_info/execution_trace.txt` and adjust if any did not match.
+
+---
+
+## Step 11 — Generate the submission script
+
+Write `nf-core_rnavar_{VERSION}.sh` in `{CWD}`:
+
+```bash
+#!/bin/bash
+#SBATCH -N 1
+#SBATCH -n 32
+#SBATCH -p bcc
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user={USER_EMAIL}
+
+module add miniconda3/v4
+source /home/software/conda/miniconda3/bin/condainit
+conda activate {CONDA_ENV}
+module add singularity/3.10.4
+
+nextflow run nf-core/rnavar -r {VERSION} -c nextflow.config -profile slurm,singularity \
+--input {SAMPLESHEET_CSV} \
+--fasta {FASTA_PATH} \
+--gtf {GTF_PATH} \
+--star_index '{STAR_INDEX}' \
+--read_length {READ_LENGTH} \
+--seq_platform illumina \
+{KNOWN_SITES_LINES}\
+{VARIANT_LINES}\
+{ANNOTATION_LINES}\
+--multiqc_title {MULTIQC_TITLE} \
+--outdir {OUTDIR}
+```
+
+Each `{..._LINES}` placeholder is either empty or one-or-more complete lines ending in ` \`. The final line has no trailing backslash. Show the full file and instruct:
+```
+Script written: nf-core_rnavar_{VERSION}.sh
+To submit:  sbatch nf-core_rnavar_{VERSION}.sh
+```
+If any helper script (Step 12) was generated, list the order: helpers first, then the pipeline.
+
+---
+
+## Step 12 — Helper scripts (only for missing resources)
+
+Generate only what is missing. Each is an `sbatch` script (`#SBATCH -N 1 -n 8 --mem=64G -t 8:00:00 -p bcc --mail-type=END,FAIL`), run on a compute node — never on the login node. Always use `gunzip -c file.gz > file` (never `gunzip -k`; not available on CentOS 7).
+
+**`build_star_index_rnavar_{ASSEMBLY}_ens{VERSION_ENS}.sh`** — downloads (`wget -c`) and decompresses the FASTA and GTF if absent, then:
+
+```bash
+module add star/2.7.9a
+mkdir -p "{GENOME_DIR}/index/star_rnavar_sjdb{SJDB_OVERHANG}"
+STAR \
+    --runMode genomeGenerate \
+    --genomeDir "{GENOME_DIR}/index/star_rnavar_sjdb{SJDB_OVERHANG}" \
+    --genomeFastaFiles "{FASTA_PATH}" \
+    --sjdbGTFfile "{GTF_PATH}" \
+    --sjdbOverhang {SJDB_OVERHANG} \
+    --runThreadN 8
+```
+
+**`prepare_known_sites_{ASSEMBLY}.sh`** — for the URLs the user confirmed in Step 7: `wget -c` each file into `{GENOME_DIR}/known_sites/`, then `module add htslib` (or the site's tabix module) and `tabix -p vcf` each VCF that lacks a `.tbi`.
+
+**`prepare_annotation_cache_{TOOL}.sh`** — only if the user has no cache: a script the user runs where internet is available, using the tool's own cache installer (`vep_install` or `snpEff download`) into the directory passed to `--vep_cache` / `--snpeff_cache`.
+
+---
+
+## Step 13 — Hand-off note
+
+Print where the results will be, so later analyses can find them:
+```
+Outputs under {OUTDIR}/ :
+  variant_calling/   filtered VCFs (per sample) and, with --generate_gvcf, gVCFs
+  preprocessing/     recalibrated / duplicate-marked BAMs
+  multiqc/           MultiQC report
+These VCFs and BAMs are the inputs expected by the ase-pipeline skill (allele-specific expression).
+```
+Before printing, confirm the actual directory names against the pipeline's `docs/output` page for `{VERSION}` with `WebFetch`, and use the real names.
+
+---
+
+## Notes for the assistant
+
+- **`gh` CLI is not available on this HPC cluster.** Use `WebFetch` for all GitHub API calls.
+- **Always present finite-choice questions as numbered lists.** Use open questions only when no reasonable discrete set exists (email, conda env, custom paths).
+- Never run heavy computation on the login node; all work through `sbatch`.
+- Raw FASTQ/BAM files are read-only; never modify them.
+- Omit flags that equal the pipeline default.
+- Never overwrite an existing `nextflow.config`.
+- `--read_length` is always emitted; a STAR index made for a different read length is never reused.
+- Known sites are never assumed — either supply all four files or `--skip_baserecalibration`.
+- Never embed a download URL that was not verified in this session.
+- Not rnavar parameters, never emit: `annotation_cache`, `gencode`, `strandedness`.

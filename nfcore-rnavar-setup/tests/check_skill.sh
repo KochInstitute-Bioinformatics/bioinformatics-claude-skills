@@ -95,4 +95,25 @@ need "needs internet from compute nodes"
 need "not a parameter in the rnavar schema"
 # --- end Task 4
 
+# --- Task 5
+need "## Step 10"
+need "do not overwrite it"
+need "resourceLimits"
+need "'.*:STAR_ALIGN'"
+need "'.*:GATK4_HAPLOTYPECALLER'"
+need "'.*:GATK4_BASERECALIBRATOR'"
+need "'.*:GATK4_SPLITNCIGARREADS'"
+need "## Step 11"
+need "nextflow run nf-core/rnavar -r {VERSION}"
+need "--seq_platform illumina"
+need "--read_length {READ_LENGTH}"
+need "--star_index '{STAR_INDEX}'"
+need "## Step 12"
+need "build_star_index_rnavar"
+need "gunzip -c"
+need "## Step 13"
+need "## Notes for the assistant"
+need "read-only"
+# --- end Task 5
+
 [ $fail -eq 0 ] && echo "PASS" || exit 1
