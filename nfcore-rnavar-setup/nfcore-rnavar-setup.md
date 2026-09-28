@@ -134,3 +134,37 @@ rnavar passes the known-sites files directly to GATK BaseRecalibrator and **does
 2. **Skip base recalibration** — add `--skip_baserecalibration`. Tell the user the trade-off: base qualities are not recalibrated, which is slightly less accurate but is the right choice for organisms without a curated variant set, or to get a first result quickly.
 
 Store the result as `{KNOWN_SITES_LINES}`: the four `--dbsnp`/`--known_indels` lines for option 1, or the single line `--skip_baserecalibration \` for option 2.
+
+---
+
+## Step 8 — Variant calling options
+
+Ask each as a numbered choice. **Omit any flag whose value equals the pipeline default** — only emit a flag when the user changes it.
+
+**a) Duplicates.** 1. Keep duplicates marked (default — omit) · 2. Remove duplicates — add `--remove_duplicates`.
+
+**b) STAR two-pass.** Two-pass mapping (`--star_twopass`) is on by default and recommended for calling; keep it. Emit `--star_twopass false` only if the user explicitly asks to disable it.
+
+**c) Calling and filtering thresholds.** Ask: 1. Pipeline defaults (recommended; emits nothing) · 2. Customise. If customising, ask for each and emit only values that differ from the default: `--gatk_hc_call_conf` (default 20), `--gatk_vf_qd_filter` (2), `--gatk_vf_fs_filter` (30), `--gatk_vf_window_size` (35), `--gatk_vf_cluster_size` (3). Offer `--skip_variantfiltration` if the user wants unfiltered calls.
+
+**d) gVCFs.** Ask: "Will you jointly call variants across samples later?" 1. No (omit) · 2. Yes — add `--generate_gvcf`.
+
+**e) Large chromosomes.** Only if the genome has chromosomes longer than 512 Mb (not human or mouse): add `--bam_csi_index` and tell the user it disables variant filtration.
+
+**f) Save intermediates.** 1. No (omit) · 2. Yes — add `--save_align_intermeds` (recommended if the BAMs will feed allele-specific expression analysis).
+
+Collect the emitted lines as `{VARIANT_LINES}`.
+
+---
+
+## Step 9 — Optional variant annotation
+
+Ask (numbered): 1. No annotation (default — omit `--tools`) · 2. SnpEff · 3. VEP · 4. Both merged. Emit `--tools snpeff`, `--tools vep`, or `--tools merge` respectively. Set `{ANNOTATION_TOOL}`.
+
+If annotation is chosen, the caches must be on disk **before** submission:
+- Ask for existing cache directories → `--snpeff_cache '{DIR}'` and/or `--vep_cache '{DIR}'`, plus the matching identifiers: `--snpeff_db`, `--vep_genome`, `--vep_species`, `--vep_cache_version` (ask; do not guess versions).
+- If a cache is missing, do **not** silently add `--download_cache`: that option needs internet from compute nodes, which may not be available, and the job then stalls without a clear error. Instead tell the user this, and offer to generate a pre-download helper script (Step 12) that they run where internet is available.
+
+Note for the assistant: `annotation_cache` appears on the rnavar usage page but is not a parameter in the rnavar schema — never emit it. Use `--snpeff_cache`, `--vep_cache` and `--download_cache` only.
+
+Collect the emitted lines as `{ANNOTATION_LINES}`.

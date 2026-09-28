@@ -70,4 +70,29 @@ need "still apply the STAR index rule below"
 need "{STAR_INDEX} is the same path"
 # --- end Task 3
 
+# --- Task 4
+need "## Step 8"
+need "--remove_duplicates"
+need "--star_twopass"
+need "--gatk_hc_call_conf"
+need "--gatk_vf_qd_filter"
+need "--gatk_vf_fs_filter"
+need "--gatk_vf_window_size"
+need "--gatk_vf_cluster_size"
+need "--skip_variantfiltration"
+need "--generate_gvcf"
+need "--bam_csi_index"
+need "## Step 9"
+need "--tools"
+need "--snpeff_cache"
+need "--vep_cache"
+need "--snpeff_db"
+need "--vep_genome"
+need "--vep_species"
+need "--vep_cache_version"
+need "--download_cache"
+need "needs internet from compute nodes"
+need "not a parameter in the rnavar schema"
+# --- end Task 4
+
 [ $fail -eq 0 ] && echo "PASS" || exit 1
