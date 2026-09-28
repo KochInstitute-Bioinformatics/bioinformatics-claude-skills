@@ -17,7 +17,7 @@ forbid() { ! grep -qF -- "$1" "$SKILL" || { echo "FAIL: forbidden text present: 
 # (a) every --flag in the skill is a schema parameter or an allowlisted non-rnavar flag
 schema_names=$(grep -oE '"[a-z_0-9]+": *\{' "$SCHEMA" | sed -E 's/"([a-z_0-9]+)".*/\1/' | sort -u)
 allow="runMode genomeDir genomeFastaFiles sjdbGTFfile sjdbOverhang runThreadN mail-type mail-user mem"
-for flag in $(grep -oE '(^|[ `(=])--[A-Za-z_0-9-]+' "$SKILL" | sed -E 's/^[^-]*--//' | sort -u); do
+for flag in $(grep -oE '(^|[ `(=])--[A-Za-z_][A-Za-z_0-9-]*' "$SKILL" | sed -E 's/^[^-]*--//' | sort -u); do
   if ! echo "$schema_names $allow" | tr ' ' '\n' | grep -qx -- "$flag"; then
     echo "FAIL: flag not in rnavar schema or allowlist: --$flag"; fail=1
   fi
