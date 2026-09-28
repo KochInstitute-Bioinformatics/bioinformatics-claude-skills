@@ -147,4 +147,17 @@ need "check whether \`nf-core_rnavar_{VERSION}.sh\` already exists"
 need "1. overwrite · 2. choose another filename"
 # --- end Final-review fixes
 
+# --- Contig-guard fix
+need "always-run contig guard"
+need 'VCF_CONTIG=$(zcat'
+need 'FASTA_CONTIG=$(grep -m1'
+need 'exit 1'
+need "the pipeline must not be run"
+need "chrM\` to \`MT\`"
+need "helper's contig guard performs the check after download"
+need "Mouse Genomes Project VCFs use Ensembl-style contig names"
+forbid "run the check once they are"
+forbid "If the Step 7 contig-name check found a mismatch and option (ii) was chosen"
+# --- end Contig-guard fix
+
 [ $fail -eq 0 ] && echo "PASS" || exit 1

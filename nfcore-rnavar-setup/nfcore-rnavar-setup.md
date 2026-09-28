@@ -137,7 +137,7 @@ rnavar passes the known-sites files directly to GATK BaseRecalibrator and **does
      zcat FILE.vcf.gz | grep -v '^#' | head -1 | cut -f1
      grep -m1 '^>' {FASTA_PATH} | cut -d' ' -f1 | sed 's/^>//'
      ```
-     If the VCFs are not downloaded yet, run the check once they are, and state in the helper script which naming the source uses. On a mismatch, either (i) prefer Ensembl-named variation VCFs that match the Ensembl FASTA, or (ii) add a rename step to `prepare_known_sites_{ASSEMBLY}.sh`: `bcftools annotate --rename-chrs MAP.txt` (MAP.txt is a two-column, tab-separated old-name/new-name file mapping chr1<->1 ... chrM<->MT for the chromosomes present in the FASTA), then `bgzip` and `tabix -p vcf` the renamed file. The skill must never proceed with mismatched contigs; if neither fix is possible, offer option 2 (skip base recalibration) instead.
+     If the VCFs already exist, this check runs in the wizard now. If they are NOT downloaded yet, tell the user that the helper's contig guard performs the check after download (see `prepare_known_sites_{ASSEMBLY}.sh` in Step 12), renames the contigs when a fix is possible, and stops with a non-zero exit on an unresolvable mismatch, and that the pipeline must therefore be submitted with `sbatch --dependency=afterok:<helper_jobid>` (Step 11) so a failed guard prevents the pipeline from starting. Mouse Genomes Project VCFs use Ensembl-style contig names, so a rename is normally not needed for mouse, but the guard still runs. On a mismatch found in the wizard, either (i) prefer Ensembl-named variation VCFs that match the Ensembl FASTA, or (ii) rely on the helper's rename step (`bcftools annotate --rename-chrs`, see Step 12). The skill must never proceed with mismatched contigs; if neither fix is possible, offer option 2 (skip base recalibration) instead.
 2. **Skip base recalibration** — add `--skip_baserecalibration`. Tell the user the trade-off: base qualities are not recalibrated, which is slightly less accurate but is the right choice for organisms without a curated variant set, or to get a first result quickly.
 
 Store the result as `{KNOWN_SITES_LINES}`: the four `--dbsnp`/`--known_indels` lines for option 1, or the single line `--skip_baserecalibration \` for option 2.
@@ -313,7 +313,22 @@ STAR \
     --runThreadN 8
 ```
 
-**`prepare_known_sites_{ASSEMBLY}.sh`** — for the URLs the user confirmed in Step 7: `wget -c` each file into `{GENOME_DIR}/known_sites/`, then `module add htslib` (or the site's tabix module), run `bgzip` on any plain `.vcf` before `tabix -p vcf` (the schema requires `.vcf.gz`), and `tabix -p vcf` each `.vcf.gz` that lacks a `.tbi`. If the Step 7 contig-name check found a mismatch and option (ii) was chosen, also load `bcftools` and rename the contigs (`bcftools annotate --rename-chrs MAP.txt IN.vcf.gz -O z -o OUT.vcf.gz`) before indexing, writing MAP.txt into `{GENOME_DIR}/known_sites/`.
+**`prepare_known_sites_{ASSEMBLY}.sh`** — for the URLs the user confirmed in Step 7: `wget -c` each file into `{GENOME_DIR}/known_sites/`, then `module add htslib` (or the site's tabix module), run `bgzip` on any plain `.vcf` before `tabix -p vcf` (the schema requires `.vcf.gz`), and `tabix -p vcf` each `.vcf.gz` that lacks a `.tbi`. Then run an always-run contig guard on every known-sites VCF (this is the enforcement point; it runs whether or not the wizard could check earlier). Load `bcftools` and, for each `FILE`, compare contig names and either continue, rename, or fail fast:
+```bash
+VCF_CONTIG=$(zcat FILE | grep -v '^#' | head -1 | cut -f1)
+FASTA_CONTIG=$(grep -m1 '^>' {FASTA_PATH} | cut -d' ' -f1 | sed 's/^>//')
+if [ "$VCF_CONTIG" != "$FASTA_CONTIG" ]; then
+  # MAP.txt (in {GENOME_DIR}/known_sites/) is generated for the needed direction, see below
+  bcftools annotate --rename-chrs MAP.txt -O z -o NEW.vcf.gz FILE
+  tabix -p vcf NEW.vcf.gz          # then use NEW.vcf.gz in place of FILE
+  VCF_CONTIG=$(zcat NEW.vcf.gz | grep -v '^#' | head -1 | cut -f1)
+  if [ "$VCF_CONTIG" != "$FASTA_CONTIG" ]; then
+    echo "ERROR: contig mismatch after rename: FILE has '$VCF_CONTIG', FASTA has '$FASTA_CONTIG'; the pipeline must not be run" >&2
+    exit 1
+  fi
+fi
+```
+MAP.txt is a two-column, tab-separated old-name/new-name file written by the helper for the direction that is needed (chr1<->1 ... chrM<->MT for the chromosomes present in the FASTA). If the VCF uses a `chr` prefix and the FASTA does not, it maps `chrN` to `N` for N = 1-22, X, Y and `chrM` to `MT`; if the FASTA uses a `chr` prefix and the VCF does not, it maps the reverse. The order is rename, then bgzip (`-O z`), then `tabix -p vcf`. The error message must name the VCF, both contig names and say that the pipeline must not be run; because the pipeline is submitted with `--dependency=afterok`, a failed guard stops it from starting.
 
 **`prepare_annotation_cache_{TOOL}.sh`** — only if the user has no cache: a script the user runs where internet is available, using the tool's own cache installer (`vep_install` or `snpEff download`) into the directory passed to `--vep_cache` / `--snpeff_cache`, where `{TOOL}` is `snpeff` or `vep`, matching `{ANNOTATION_TOOL}` (one script per chosen tool).
 

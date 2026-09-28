@@ -57,7 +57,7 @@ Flags that equal the pipeline default are omitted from the generated script.
 - **Read length is always detected and passed as `--read_length`.** rnavar's default is 150, which is wrong for most other libraries, and it sets STAR's `sjdbOverhang` (`read_length − 1`).
 - **A STAR index is built per read length**, in `{genome_base}/{organism}/{assembly}_ens{version}/index/star_rnavar_sjdb{N-1}/`. An index made for another read length (for example by another pipeline) is never reused. `--star_index` is always passed so rnavar does not rebuild it inside the workflow. FASTA/GTF are shared with the other nf-core skills' folder convention and reused, not re-downloaded.
 - **Known sites are required, or base recalibration is explicitly skipped.** rnavar does not skip BQSR automatically when known sites are missing and errors late, after alignment. The wizard therefore asks you to supply dbSNP and known-indels VCFs (with `.tbi` indexes) or adds `--skip_baserecalibration`. Download URLs are resolved at run time and shown to you for confirmation, never typed from memory.
-- **Known-sites contigs must match the FASTA.** The wizard requires bgzipped `.vcf.gz` + `.tbi` and runs a contig-name check (Ensembl `1` vs GATK `chr1`); on a mismatch it prefers Ensembl-named VCFs or adds a `bcftools annotate --rename-chrs` step, and never proceeds with mismatched contigs.
+- **Known-sites contigs must match the FASTA.** The wizard requires bgzipped `.vcf.gz` + `.tbi`. Contig names (Ensembl `1` vs GATK `chr1`) are checked against the FASTA in the wizard when the VCFs already exist; otherwise a contig guard in the `prepare_known_sites` helper script checks after download and either renames the contigs (`bcftools annotate --rename-chrs`) or fails fast with a non-zero exit. The pipeline is submitted with `--dependency=afterok`, so it cannot start after a failed guard.
 - **Annotation caches must be pre-downloaded.** The skill does not silently add `--download_cache`, because compute nodes may lack internet and the job then stalls. It offers a helper script to fetch the cache where internet is available.
 
 ---
@@ -72,7 +72,7 @@ After running the skill you will have:
 | `nextflow.config` | SLURM + Singularity resource profiles (written only if none exists; an existing one is never overwritten) |
 | `nf-core_rnavar_{version}.sh` | Pipeline SLURM submission script |
 | `build_star_index_rnavar_{assembly}_ens{version}.sh` | STAR index build for this read length (if missing) |
-| `prepare_known_sites_{assembly}.sh` | Known-sites download, `bgzip`, optional contig renaming (`bcftools annotate --rename-chrs`) and `tabix` indexing (if needed) |
+| `prepare_known_sites_{assembly}.sh` | Known-sites download, `bgzip`, `tabix` indexing (if needed) and an always-run contig guard (rename with `bcftools annotate --rename-chrs`, or fail fast with non-zero exit) |
 | `prepare_annotation_cache_{snpeff\|vep}.sh` | Annotation-cache pre-download, to run where internet is available (if no cache) |
 
 ---
