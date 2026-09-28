@@ -64,6 +64,10 @@ need "--skip_baserecalibration"
 need "does not skip base recalibration automatically"
 need "resolve the resource URLs at run time"
 need "--star_index"
+need "Store:"
+need "use the highest N unless the user asks otherwise"
+need "still apply the STAR index rule below"
+need "{STAR_INDEX} is the same path"
 # --- end Task 3
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1

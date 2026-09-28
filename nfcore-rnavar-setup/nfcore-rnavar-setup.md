@@ -104,9 +104,11 @@ Use this folder convention (shared with other nf-core skills so FASTA/GTF are re
     └── star_rnavar_sjdb{N-1}/    ← STAR index built for THIS read length
 ```
 
+Store: `{GENOME_DIR}` = `{genome_base}/{organism}/{assembly}_ens{version}`, `{FASTA_PATH}` and `{GTF_PATH}` (full paths of the FASTA and GTF files), `{ORGANISM}`, `{ASSEMBLY}` and `{ENS_VERSION}`. To determine the version: if `{genome_base}/{organism}/` already contains `{assembly}_ens{N}` directories, use the highest N unless the user asks otherwise; if none exist, use the latest Ensembl release from the `https://ftp.ensembl.org/pub/current_README` fetch.
+
 - Mouse: assembly GRCm39, FASTA `Mus_musculus.GRCm39.dna.primary_assembly.fa`, GTF `Mus_musculus.GRCm39.{version}.gtf`, directory `{genome_base}/mouse/mm39_ens{version}/`.
 - Human: assembly GRCh38, FASTA `Homo_sapiens.GRCh38.dna.primary_assembly.fa`, GTF `Homo_sapiens.GRCh38.{version}.gtf`, directory `{genome_base}/human/hg38_ens{version}/`.
-- Other organisms: ask for the FASTA and GTF paths; skip the checks below.
+- Other organisms: ask for the FASTA and GTF paths and the directory that will hold indexes (`{GENOME_DIR}`); skip only the download/version checks in this step and still apply the STAR index rule below.
 
 **Existing FASTA/GTF:** if present, report the paths and reuse them. If missing, fetch the latest Ensembl release from `https://ftp.ensembl.org/pub/current_README`, and generate the download commands in the helper script (Step 12).
 
@@ -114,7 +116,7 @@ Use this folder convention (shared with other nf-core skills so FASTA/GTF are re
 
 **STAR index — always its own index per read length.** `sjdbOverhang` is fixed when the index is built, and an index made for another read length (for example one built by another pipeline) would be wrong here. Set `{SJDB_OVERHANG}` = `{READ_LENGTH} − 1` and look for `{GENOME_DIR}/index/star_rnavar_sjdb{SJDB_OVERHANG}/`:
 - Present and non-empty (`SA`, `Genome`, `sjdbList.out.tab` exist): use it, `{STAR_INDEX}` = that path.
-- Missing: add the index build to the helper script (Step 12) and tell the user it must run first.
+- Missing: {STAR_INDEX} is the same path; the helper script (Step 12) builds it there and must run before the pipeline.
 
 `--star_index '{STAR_INDEX}'` is always passed so rnavar never rebuilds the index inside the workflow.
 
