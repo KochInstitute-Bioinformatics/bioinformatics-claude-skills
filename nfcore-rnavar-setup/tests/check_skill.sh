@@ -35,4 +35,19 @@ forbid "--gencode"
 forbid "--strandedness"
 # --- end Task 1
 
+# --- Task 2
+need "## Step 4"
+need "sample,fastq_1,fastq_2"
+need "sample,bam,bai"
+need "sample,cram,crai"
+need "Supplying FASTQ files and a BAM/CRAM file for the same sample"
+need "Replace every \`-\` with \`_\`"
+need "merged before alignment"
+need "## Step 5"
+need "--read_length"
+need "most common read length"
+need "sjdbOverhang"
+forbid "strandedness,"
+# --- end Task 2
+
 [ $fail -eq 0 ] && echo "PASS" || exit 1
