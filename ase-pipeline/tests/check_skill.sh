@@ -70,6 +70,36 @@ need "Step 5, part 2"
 need "first \`fastq_1\` of each of up to 5 distinct samples"
 forbid "strandedness"
 # --- end Task 4
+# --- Task 5 (Steps 10-11); strings chosen so only Task 5 text satisfies them
+for n in 10 11; do need "## Step $n"; done
+need 'singularity exec --bind "$BIND" "$SIF"'
+need "bcftools consensus"
+need "third allele"
+need "--waspOutputMode SAMtag"
+need "--varVCFfile"
+need "vW"
+need "MarkDuplicates"
+need "ASEReadCounter"
+need "--min-mapping-quality"
+need "--min-base-quality"
+need "--count-overlap-reads-handling"
+need "SLURM_ARRAY_TASK_ID"
+need "set -uo pipefail"
+need "needs non-empty"
+need "ase_counts/\$SAMPLE.table"
+need "--outSAMattrRGline ID:"
+need "--outSAMattributes NH HI AS nM vA vG vW"
+need "wasp_stats.tsv"
+need "prep_f1_reference.sh"
+need "prep_genotypes.sh"
+need "align_count_f1.sh"
+need "align_wasp_count.sh"
+need "extract_mgp_parental_vcf.sh"
+need "bcftools concat"
+forbid "--outSAMattributes All"
+forbid "module add bcftools"
+# --- end Task 5
+
 
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1

@@ -3,3 +3,4 @@ https://depot.galaxyproject.org/singularity/gatk4:4.4.0.0--py36hdfd78af_0 200 68
 https://depot.galaxyproject.org/singularity/bcftools:1.20--h8b25389_0 200 63160320 2026-09-29
 https://depot.galaxyproject.org/singularity/samtools:1.21--h50ea8bc_0 200 25726976 2026-09-29
 https://depot.galaxyproject.org/singularity/picard:3.1.1--hdfd78af_0 200 572932096 2026-09-29
+https://ftp.ebi.ac.uk/pub/databases/mousegenomes/REL-2112-v8-SNPs_Indels/mgp_REL2021_snps.vcf.gz 200 - 2026-09-29 (HEAD request, Task 5)

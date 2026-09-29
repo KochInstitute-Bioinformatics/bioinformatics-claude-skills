@@ -215,3 +215,346 @@ with `{ARRAY_N}` = the number of rows in `{SAMPLES_CSV}`. Set `{MEM}` and `{TIME
 - in between: `-n 8 --mem=32G -t 2:00:00`.
 
 The prep jobs (index build, reference and VCF preparation) are scaled by genome size (approximate it from `stat -c %s FASTA` or an existing `.fai`, never by reading the FASTA on the login node): over 1 Gb `-n 8 --mem=64G -t 4:00:00`; under 100 Mb `-n 4 --mem=8G -t 0:30:00`; in between `-n 8 --mem=32G -t 2:00:00`. Never request more than 64 G or 4 h unless the user asks. Every job is submitted with `sbatch -p bcc`.
+
+
+---
+
+## Step 10 — Reference and genotype preparation scripts
+
+Write every script below into `{RESULTS_DIR}/scripts/` (create `{RESULTS_DIR}/scripts`, `{RESULTS_DIR}/logs`, `{RESULTS_DIR}/tmp` first: `sbatch` silently drops output when the `-o` directory is missing, and `/tmp` is node-local, so job outputs and temporary files always go under `{RESULTS_DIR}`). Substitute the placeholders from Steps 0-9; never leave a `{...}` in a script. Every generated script starts with `set -uo pipefail` and checks the exit code of every step itself (`|| { echo "ERROR: ..." >&2; exit 1; }`), never a blind `set -e`. The prep jobs use the prep tier from Step 9 (`{PREP_RESOURCES}`, for example `-n 4 --mem=8G -t 0:30:00`) and the array jobs use `{ARRAY_RESOURCES}` (the `-n/--mem/-t` triple chosen in Step 9); every job is submitted with `sbatch -p bcc`.
+
+| Script | Mode | Purpose |
+|---|---|---|
+| `prep_f1_reference.sh` | F1 | third-allele masked genome, het-sites VCF, counting reference files, STAR index |
+| `prep_genotypes.sh` | outbred | per-individual heterozygous VCFs, counting reference files, STAR index |
+| `extract_mgp_parental_vcf.sh` | F1, optional | mouse helper: builds `{PARENTAL_VCF}` (array job plus a dependent concat job) |
+| `align_count_f1.sh`, `align_wasp_count.sh` | F1 / outbred | per-sample array job (Step 11) |
+
+### Shared block C — container wrappers (start of every script, after the `#SBATCH` header and `set -uo pipefail`)
+
+Tools come from cached Singularity biocontainers (`{STAR_SIF}`, `{GATK_SIF}`, `{BCFTOOLS_SIF}`, `{SAMTOOLS_SIF}`, `{PICARD_SIF}` from Step 2); never `module add` anything except singularity. `bcftools`, `bgzip` and `tabix` all come from the bcftools 1.20 container. Keep only the wrappers a script uses. `--bind` is required because `/net/...` paths are not auto-bound; `BIND` lists each directory once (Singularity prints "destination is already in the mount point list" for a repeated one), so add directories with `add_bind`:
+
+```bash
+module add singularity/3.10.4 || exit 1
+command -v singularity >/dev/null || { echo "ERROR: singularity not on PATH" >&2; exit 1; }
+STAR_SIF="{STAR_SIF}"; GATK_SIF="{GATK_SIF}"; BCFTOOLS_SIF="{BCFTOOLS_SIF}"; SAMTOOLS_SIF="{SAMTOOLS_SIF}"; PICARD_SIF="{PICARD_SIF}"
+fetch_sif() {   # $1 = local path, $2 = verified URL (Step 2); downloads only when the file is missing
+  [ -s "$1" ] && return 0
+  mkdir -p "$(dirname "$1")"
+  { wget -c -O "$1.part" "$2" && mv "$1.part" "$1"; } || { echo "ERROR: could not download $1" >&2; exit 1; }
+}
+fetch_sif "$BCFTOOLS_SIF" "https://depot.galaxyproject.org/singularity/bcftools:1.20--h8b25389_0"
+# ... one fetch_sif line per container this script uses (URLs from the Step 2 table)
+BIND=""
+add_bind() { case ",$BIND," in *",$1,"*) ;; *) BIND="${BIND:+$BIND,}$1" ;; esac; }
+add_bind "{CWD}"; add_bind "{GENOME_DIR}"; add_bind "$(dirname "{FASTA_PATH}")"
+star()     { local SIF="$STAR_SIF";     singularity exec --bind "$BIND" "$SIF" STAR "$@"; }
+gatk()     { local SIF="$GATK_SIF";     singularity exec --bind "$BIND" "$SIF" gatk "$@"; }
+bcftools() { local SIF="$BCFTOOLS_SIF"; singularity exec --bind "$BIND" "$SIF" bcftools "$@"; }
+bgzip()    { local SIF="$BCFTOOLS_SIF"; singularity exec --bind "$BIND" "$SIF" bgzip "$@"; }
+tabix()    { local SIF="$BCFTOOLS_SIF"; singularity exec --bind "$BIND" "$SIF" tabix "$@"; }
+samtools() { local SIF="$SAMTOOLS_SIF"; singularity exec --bind "$BIND" "$SIF" samtools "$@"; }
+picard()    { local SIF="$PICARD_SIF";  singularity exec --bind "$BIND" "$SIF" picard "$@"; }
+```
+
+Add `add_bind "$(dirname <path>)"` for every other input directory the script reads (parental or genotype VCF, FASTQ directories). If `{FASTA_PATH}` or `{GTF_PATH}` do not exist yet (Step 4 option 1), put the Step 4 download-and-decompress commands (URLs shown to the user first) before block R, with the same `wget -c -O FILE.part URL && mv FILE.part FILE || { echo "ERROR: ..." >&2; exit 1; }` pattern.
+
+### Shared block R — reference files for ASEReadCounter (both modes; `FASTA="{FASTA_PATH}"` is the ORIGINAL, unmasked FASTA)
+
+`gatk ASEReadCounter -R` needs `<fasta>.fai` and `<fasta>.dict` next to the FASTA, and counting must use the original FASTA so its sequence names match the BAM header. If the genome folder is read-only, the job fails with a clear message; copy the FASTA to a writable folder and point `{FASTA_PATH}` there.
+
+```bash
+FASTA="{FASTA_PATH}"
+[ -s "$FASTA.fai" ] || samtools faidx "$FASTA" || { echo "ERROR: cannot create $FASTA.fai (read-only genome folder?)" >&2; exit 1; }
+DICT="${FASTA%.*}.dict"
+[ -s "$DICT" ] || gatk CreateSequenceDictionary -R "$FASTA" -O "$DICT" || { echo "ERROR: cannot create $DICT" >&2; exit 1; }
+```
+
+### Shared block I — STAR index (`INDEX_FASTA` = `$REF_DIR/masked.fa` in F1 mode, `$FASTA` in outbred mode; `{STAR_INDEX}` from Step 5, part 2)
+
+```bash
+[ -s "$INDEX_FASTA.fai" ] || samtools faidx "$INDEX_FASTA" || { echo "ERROR: faidx failed for $INDEX_FASTA" >&2; exit 1; }
+SA_INDEX_NBASES=$(awk '{L+=$2} END{n=int(log(L)/log(2)/2-1); if(n>14)n=14; if(n<4)n=4; print n}' "$INDEX_FASTA.fai")
+if [ -s "{STAR_INDEX}/SA" ] && [ -s "{STAR_INDEX}/Genome" ] && [ -s "{STAR_INDEX}/sjdbList.out.tab" ]; then
+  echo "Reusing STAR index {STAR_INDEX}"
+else
+  mkdir -p "{STAR_INDEX}" || exit 1
+  star --runMode genomeGenerate --genomeDir "{STAR_INDEX}" --genomeFastaFiles "$INDEX_FASTA" \
+       --sjdbGTFfile "{GTF_PATH}" --sjdbOverhang {SJDB_OVERHANG} --genomeSAindexNbases "$SA_INDEX_NBASES" \
+       --runThreadN "${SLURM_NTASKS:-4}" --outFileNamePrefix "{RESULTS_DIR}/logs/star_index_" \
+    || { echo "ERROR: STAR genomeGenerate failed" >&2; exit 1; }
+  [ -s "{STAR_INDEX}/SA" ] || { echo "ERROR: STAR index incomplete in {STAR_INDEX}" >&2; exit 1; }
+fi
+```
+
+STAR prints "Could not move Log.out" for the index build when `--outFileNamePrefix` is set; it is harmless (the log stays in `{RESULTS_DIR}/logs`). The suffix-array parameter is computed in shell from the `.fai` (light; never read the FASTA on the login node), so the wizard never substitutes it.
+
+### `prep_f1_reference.sh` (F1 mode)
+
+Header: `#!/bin/bash`, `#SBATCH -N 1 -p bcc`, `#SBATCH {PREP_RESOURCES}`, `#SBATCH --mail-type=END,FAIL`, `#SBATCH --mail-user={USER_EMAIL}`, `#SBATCH -o {RESULTS_DIR}/logs/prep_f1_reference_%j.out`, `set -uo pipefail`, block C (STAR, GATK, BCFTOOLS, SAMTOOLS; plus `add_bind "$(dirname "{PARENTAL_VCF}")"`), then:
+
+```bash
+REF_DIR="{RESULTS_DIR}/reference"; mkdir -p "$REF_DIR" || exit 1
+FASTA="{FASTA_PATH}"; PARENTAL="{PARENTAL_VCF}"
+[ -s "$FASTA.fai" ] || samtools faidx "$FASTA" || { echo "ERROR: cannot create $FASTA.fai" >&2; exit 1; }
+
+# 1. biallelic SNP sites of the parental VCF (REF = strain A, ALT = strain B), sites only
+bcftools view -G -m2 -M2 -v snps -O v -o "$REF_DIR/parental_snps.sites.vcf" "$PARENTAL" \
+  || { echo "ERROR: bcftools view failed on $PARENTAL" >&2; exit 1; }
+N_SITES=$(grep -vc '^#' "$REF_DIR/parental_snps.sites.vcf")
+[ "$N_SITES" -gt 0 ] || { echo "ERROR: no biallelic SNP sites in $PARENTAL (contig names must match the FASTA)" >&2; exit 1; }
+echo "Parental biallelic SNP sites: $N_SITES"
+
+# 2. strain A must be the reference strain: the VCF REF must equal the FASTA base at every site
+bcftools norm -f "$FASTA" -c e -o /dev/null "$REF_DIR/parental_snps.sites.vcf" \
+  || { echo "ERROR: the REF allele of $PARENTAL differs from the FASTA; F1 mode needs strain A = the reference strain, REF = strain A, ALT = strain B (and matching contig names)" >&2; exit 1; }
+
+# 3. third-allele masking: at each site the masked genome carries the first of A, C, G, T that is
+#    neither the REF nor the ALT allele (same rule everywhere), so neither strain is favoured in mapping
+awk 'BEGIN{OFS="\t"}
+  function third(r,a,  i,c,s){ s="ACGT"; for(i=1;i<=4;i++){ c=substr(s,i,1); if(c!=r && c!=a) return c } }
+  /^##/ {print; next}
+  /^#/  {print; next}
+  { print $1,$2,$3,$4,third(toupper($4),toupper($5)),".",".","." }' \
+  "$REF_DIR/parental_snps.sites.vcf" > "$REF_DIR/masked_sites.vcf" || { echo "ERROR: masked sites failed" >&2; exit 1; }
+awk 'BEGIN{OFS="\t"} !/^#/ {print $1,$2-1,$2,$4 ">" $5}' "$REF_DIR/masked_sites.vcf" > "$REF_DIR/masked_positions.bed"
+bgzip -c "$REF_DIR/masked_sites.vcf" > "$REF_DIR/masked_sites.vcf.gz" && tabix -f -p vcf "$REF_DIR/masked_sites.vcf.gz" \
+  || { echo "ERROR: bgzip/tabix failed for masked_sites.vcf" >&2; exit 1; }
+bcftools consensus -H A -f "$FASTA" "$REF_DIR/masked_sites.vcf.gz" > "$REF_DIR/masked.fa" \
+  || { echo "ERROR: bcftools consensus failed" >&2; exit 1; }
+
+# 4. VERIFY the masked genome: it must differ from the FASTA at exactly the masked sites, and at every
+#    site the masked base must be the chosen third allele (cmp -l lists differing bytes; the .fai
+#    layouts must be identical so that a byte offset maps to one contig position)
+samtools faidx "$REF_DIR/masked.fa" || { echo "ERROR: faidx failed for masked.fa" >&2; exit 1; }
+cmp -s <(cut -f1-5 "$FASTA.fai") <(cut -f1-5 "$REF_DIR/masked.fa.fai") \
+  || { echo "ERROR: masked.fa has a different contig layout from $FASTA" >&2; exit 1; }
+VERIFY=$(cmp -l "$FASTA" "$REF_DIR/masked.fa" 2> "$REF_DIR/cmp.err" | awk -v FAI="$FASTA.fai" -v SITES="$REF_DIR/masked_sites.vcf" '
+  BEGIN { nc=0
+    while ((getline line < FAI) > 0) { split(line, f, "\t"); nc++; name[nc]=f[1]; off[nc]=f[3]+0; lb[nc]=f[4]+0; lw[nc]=f[5]+0 }
+    while ((getline line < SITES) > 0) { if (line ~ /^#/) continue; split(line, f, "\t"); k=f[1] ":" f[2]; if (!(k in want)) nwant++; want[k]=f[5]; nrec++ }
+    oct["101"]="A"; oct["103"]="C"; oct["107"]="G"; oct["124"]="T"; oct["141"]="A"; oct["143"]="C"; oct["147"]="G"; oct["164"]="T" }
+  { b=$1-1; lo=1; hi=nc
+    while (lo<hi) { mid=int((lo+hi+1)/2); if (off[mid]<=b) lo=mid; else hi=mid-1 }
+    i=b-off[lo]; pos=int(i/lw[lo])*lb[lo] + (i%lw[lo]) + 1; k=name[lo] ":" pos; ndiff++
+    if ((k in want) && oct[$3]==want[k]) ok++; else bad++ }
+  END { printf "%d %d %d %d %d\n", ndiff+0, ok+0, bad+0, nwant+0, nrec+0 }')
+read -r N_DIFF N_OK N_BAD N_WANT N_REC <<< "$VERIFY"
+echo "Masked genome check: differing positions=$N_DIFF, matching the third allele=$N_OK, wrong=$N_BAD, distinct sites=$N_WANT, site records=$N_REC"
+if grep -q EOF "$REF_DIR/cmp.err" || [ "$N_DIFF" -ne "$N_REC" ] || [ "$N_WANT" -ne "$N_REC" ] || [ "$N_OK" -ne "$N_DIFF" ] || [ "$N_BAD" -ne 0 ]; then
+  echo "ERROR: masked.fa does not match the third allele masking of the $N_REC sites; stopping" >&2; exit 1
+fi
+
+# 5. het-sites VCF for ASEReadCounter: single sample F1, genotype 0/1 at every parental SNP
+#    (bgzipped + tabix; a sites-only VCF gives 0 rows and homozygous sites are skipped)
+{ echo "##fileformat=VCFv4.2"
+  awk '{printf "##contig=<ID=%s,length=%s>\n", $1, $2}' "$FASTA.fai"
+  echo '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">'
+  printf '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tF1\n'
+  awk 'BEGIN{OFS="\t"} !/^#/ {print $1,$2,".",$4,$5,".",".",".","GT","0/1"}' "$REF_DIR/parental_snps.sites.vcf"
+} > "$REF_DIR/f1_het_sites.vcf" || { echo "ERROR: f1_het_sites.vcf failed" >&2; exit 1; }
+bgzip -c "$REF_DIR/f1_het_sites.vcf" > "$REF_DIR/f1_het_sites.vcf.gz" && tabix -f -p vcf "$REF_DIR/f1_het_sites.vcf.gz" \
+  || { echo "ERROR: bgzip/tabix failed for f1_het_sites.vcf" >&2; exit 1; }
+```
+
+`-H A` makes `bcftools consensus` apply the ALT (third) allele of the sites-only VCF; without it nothing is applied and the check in step 4 stops the job. Then block R (`.fai` and `.dict` of the original FASTA), then block I with `INDEX_FASTA="$REF_DIR/masked.fa"`, then `echo "prep_f1_reference done"`. The array job later counts against the ORIGINAL FASTA with `f1_het_sites.vcf.gz`. Third-allele masking example: REF `A`, ALT `G` gives `C`; REF `A`, ALT `C` gives `G`. Sites are the parental SNPs only (no indels), and `masked.fa` is only used to build the STAR index.
+
+### `prep_genotypes.sh` (outbred mode)
+
+Header as above (`prep_genotypes_%j.out`), block C (STAR, GATK, BCFTOOLS, SAMTOOLS plus `add_bind` for each genotype VCF directory), then one heterozygous single-sample VCF per individual. The wizard writes the `MAP` lines (individual, path, sample name inside that VCF) from `{GENOTYPE_VCFS}` and shows the two filter settings for editing: rnavar VCFs use `FILTER_EXPR='FMT/DP>=10'`; external genotypes use a genotype-quality filter such as `FILTER_EXPR='FMT/GQ>=20'`; an empty value skips the expression filter (test data). `-f PASS,.` keeps PASS and unfiltered records.
+
+```bash
+GENO_DIR="{RESULTS_DIR}/genotypes"; mkdir -p "$GENO_DIR" || exit 1
+FILTER_EXPR='FMT/DP>=10'
+MIN_SITES_WARN=1000      # human; use 20 for small test data
+cat > "$GENO_DIR/genotype_map.tsv" <<'MAP'
+{INDIVIDUAL}	{GENOTYPE_VCF}	{SAMPLE_IN_VCF}
+MAP
+while IFS=$'\t' read -r IND VCF VSAMPLE; do
+  [ -n "$IND" ] || continue
+  OUT="$GENO_DIR/$IND.het"
+  bcftools view -s "$VSAMPLE" -g het -v snps -m2 -M2 -f PASS,. -O z -o "$OUT.stage1.vcf.gz" "$VCF" \
+    || { echo "ERROR: bcftools view failed for individual $IND ($VCF, sample $VSAMPLE)" >&2; exit 1; }
+  if [ -n "$FILTER_EXPR" ]; then
+    bcftools view -i "$FILTER_EXPR" -O z -o "$OUT.vcf.gz" "$OUT.stage1.vcf.gz" \
+      || { echo "ERROR: filter '$FILTER_EXPR' failed for individual $IND" >&2; exit 1; }
+  else
+    mv "$OUT.stage1.vcf.gz" "$OUT.vcf.gz" || exit 1
+  fi
+  rm -f "$OUT.stage1.vcf.gz"
+  tabix -f -p vcf "$OUT.vcf.gz" || { echo "ERROR: tabix failed for $OUT.vcf.gz" >&2; exit 1; }
+  # plain-text copy for STAR --varVCFfile (heterozygous-only, single sample: STAR uses only the first sample)
+  bcftools view -O v -o "$OUT.vcf" "$OUT.vcf.gz" || { echo "ERROR: cannot write $OUT.vcf" >&2; exit 1; }
+  N=$(bcftools view -H "$OUT.vcf.gz" | wc -l)
+  echo "Individual $IND: $N heterozygous SNP sites"
+  [ "$N" -gt 0 ] || { echo "ERROR: individual $IND has no heterozygous SNPs after filtering" >&2; exit 1; }
+  [ "$N" -ge "$MIN_SITES_WARN" ] || echo "WARNING: individual $IND has only $N heterozygous sites (fewer than $MIN_SITES_WARN)"
+done < "$GENO_DIR/genotype_map.tsv"
+```
+
+The array job reads `{RESULTS_DIR}/genotypes/{individual}.het.vcf` (STAR) and `{individual}.het.vcf.gz` (ASEReadCounter; a plain VCF fails there). Then block R and block I with `INDEX_FASTA="$FASTA"` (the unmasked genome), then `echo "prep_genotypes done"`.
+
+### `extract_mgp_parental_vcf.sh` (F1 mode, mouse helper; optional)
+
+For the two named strains (`{STRAIN_A}` = the reference strain, for example `C57BL_6NJ`, and `{STRAIN_B}`, for example `A_J`; names exactly as in the VCF header) the helper queries the Mouse Genomes Project VCF remotely. Remote access costs about 80 s fixed overhead plus about 80 s per 10 Mb of region, so a whole-genome serial run would take about 6 hours: it is therefore **one array task per chromosome** (each well under 4 h) followed by a final dependent `bcftools concat` job. The wizard must verify the URL with a HEAD request in the session before writing it (this was verified on 2026-09-29: HTTP 200, `ase-pipeline/tests/fixtures/verified_urls.txt`):
+
+```bash
+curl -sI "https://ftp.ebi.ac.uk/pub/databases/mousegenomes/REL-2112-v8-SNPs_Indels/mgp_REL2021_snps.vcf.gz" | head -1
+```
+
+The release is GRCm39 and its contigs are `1`, `2`, ... (no `chr` prefix), so the FASTA must be GRCm39 with the same names; the script stops on a first-contig mismatch (the same guard as in `nfcore-rnavar-setup`). The wizard writes `{RESULTS_DIR}/mgp/chromosomes.txt` (one FASTA chromosome per line, taken from the `.fai`: `1` ... `19`, `X`) and sets `{N_CHROM}` to its number of lines. Header: `#SBATCH -N 1 -p bcc`, `#SBATCH --array=1-{N_CHROM}`, `#SBATCH -n 2 --mem=8G -t 4:00:00`, mail lines, `#SBATCH -o {RESULTS_DIR}/logs/extract_mgp_%A_%a.out`, `set -uo pipefail`, block C (BCFTOOLS only, plus `add_bind "{RESULTS_DIR}"`), then:
+
+```bash
+URL="https://ftp.ebi.ac.uk/pub/databases/mousegenomes/REL-2112-v8-SNPs_Indels/mgp_REL2021_snps.vcf.gz"
+A="{STRAIN_A}"; B="{STRAIN_B}"
+MGP_DIR="{RESULTS_DIR}/mgp"; OUT_VCF="{PARENTAL_VCF}"      # {RESULTS_DIR}/mgp/parental_{STRAIN_A}_{STRAIN_B}.vcf.gz
+if [ "${1:-}" = "concat" ]; then                            # final dependent job: sbatch --dependency=afterok:<array_jobid> extract_mgp_parental_vcf.sh concat
+  : > "$MGP_DIR/concat_list.txt"
+  while read -r CHR; do
+    [ -s "$MGP_DIR/$CHR.parental.vcf.gz.tbi" ] || { echo "ERROR: missing per-chromosome result for $CHR" >&2; exit 1; }
+    echo "$MGP_DIR/$CHR.parental.vcf.gz" >> "$MGP_DIR/concat_list.txt"
+  done < "$MGP_DIR/chromosomes.txt"
+  bcftools concat -f "$MGP_DIR/concat_list.txt" -O z -o "$OUT_VCF" && tabix -f -p vcf "$OUT_VCF" \
+    || { echo "ERROR: bcftools concat failed" >&2; exit 1; }
+  echo "Parental VCF: $(bcftools view -H "$OUT_VCF" | wc -l) sites"; exit 0
+fi
+CHR=$(sed -n "${SLURM_ARRAY_TASK_ID}p" "$MGP_DIR/chromosomes.txt")
+[ -n "$CHR" ] || { echo "ERROR: no chromosome for array task $SLURM_ARRAY_TASK_ID" >&2; exit 1; }
+# contig guard: first contig of the MGP header versus first FASTA header
+VCF_CONTIG=$(bcftools view -h "$URL" | awk -F'[=,>]' '/^##contig/ {print $3; exit}')
+FASTA_CONTIG=$(grep -m1 '^>' "{FASTA_PATH}" | cut -d' ' -f1 | sed 's/^>//')
+if [ -z "$VCF_CONTIG" ] || [ -z "$FASTA_CONTIG" ] || [ "$VCF_CONTIG" != "$FASTA_CONTIG" ]; then
+  echo "ERROR: contig mismatch (MGP: '$VCF_CONTIG', FASTA: '$FASTA_CONTIG'); use a GRCm39 FASTA with names 1, 2, ..." >&2; exit 1
+fi
+RAW="$MGP_DIR/$CHR.raw.vcf.gz"
+bcftools view -r "$CHR" -s "$A,$B" -f PASS -m2 -M2 -v snps -O z -o "$RAW" "$URL" \
+  || { echo "ERROR: remote query failed for chromosome $CHR" >&2; exit 1; }
+IA=$(bcftools query -l "$RAW" | awk -v s="$A" '$0==s {print NR-1}')
+IB=$(bcftools query -l "$RAW" | awk -v s="$B" '$0==s {print NR-1}')
+[ -n "$IA" ] && [ -n "$IB" ] || { echo "ERROR: strain '$A' or '$B' not found in the VCF header" >&2; exit 1; }
+# keep sites where the two strains differ and both have FMT/FI=1; strain A must carry the reference allele
+# (parental VCF convention: REF = strain A = FASTA base), strain B the alternative allele
+bcftools view -G -i "FMT/FI[$IA]=1 && FMT/FI[$IB]=1 && GT[$IA]=\"0/0\" && GT[$IB]=\"1/1\"" -O z -o "$MGP_DIR/$CHR.parental.vcf.gz" "$RAW" \
+  && tabix -f -p vcf "$MGP_DIR/$CHR.parental.vcf.gz" || { echo "ERROR: filtering failed for chromosome $CHR" >&2; exit 1; }
+echo "Chromosome $CHR: $(bcftools view -H "$RAW" | wc -l) PASS SNPs, $(bcftools view -H "$MGP_DIR/$CHR.parental.vcf.gz" | wc -l) kept"
+```
+
+Submit: `J=$(sbatch -p bcc --parsable extract_mgp_parental_vcf.sh)`, then `sbatch -p bcc --dependency=afterok:$J extract_mgp_parental_vcf.sh concat`, and `prep_f1_reference.sh` only after the concat job (`--dependency=afterok:<concat_jobid>`). Sites where strain A carries the alternative allele (the reference genome is C57BL/6J, so a substrain can differ from it) are dropped: the masked reference and the REF = strain A convention require the FASTA base to be the strain A allele.
+
+---
+
+## Step 11 — Per-sample array scripts
+
+Both scripts are SLURM array jobs (`#SBATCH --array=1-{ARRAY_N}`, `#SBATCH {ARRAY_RESOURCES}`), take row `SLURM_ARRAY_TASK_ID` of `{SAMPLES_CSV}` (data row 1 = task 1), and write the outputs below. They use block C, but the containers must already be cached by the prep job, so parallel tasks never download the same file: in these scripts define `fetch_sif` as a check only, `fetch_sif() { [ -s "$1" ] || { echo "ERROR: missing container $1 (run the prep job first)" >&2; exit 1; }; }`. `{MIN_MAPQ}` and `{MIN_BASEQ}` are the ASEReadCounter thresholds recorded in Step 8.
+
+| Output | Content |
+|---|---|
+| `{RESULTS_DIR}/bam/{sample}.bam` (+ `.bai`) | coordinate-sorted, duplicates marked (not removed: ASEReadCounter skips them), read group kept |
+| `{RESULTS_DIR}/ase_counts/{sample}.table` | ASEReadCounter table: `contig position variantID refAllele altAllele refCount altCount totalCount lowMAPQDepth lowBaseQDepth rawDepth otherBases improperPairs` |
+| `{RESULTS_DIR}/ase_counts/{sample}.wasp_stats.tsv` | outbred only: alignments by `vW` and first `vA` value before filtering |
+
+**Read group is mandatory.** STAR writes no read group by default, and ASEReadCounter's read-group filter then silently drops every read (empty table, exit 0). Both scripts therefore pass `--outSAMattrRGline ID:$SAMPLE SM:$SAMPLE PL:ILLUMINA`; Picard keeps the read group.
+
+**Common start of both scripts** (after the `#SBATCH` header, `set -uo pipefail` and block C with STAR, GATK, SAMTOOLS and PICARD wrappers):
+
+```bash
+ROW=$(awk -v n="$SLURM_ARRAY_TASK_ID" 'NR==n+1' "{SAMPLES_CSV}" | tr -d '\r')
+[ -n "$ROW" ] || { echo "ERROR: no row $SLURM_ARRAY_TASK_ID in {SAMPLES_CSV}" >&2; exit 1; }
+IFS=, read -r SAMPLE FQ1 FQ2 CONDITION CROSS INDIVIDUAL <<< "$ROW"
+case "$FQ1" in /*) ;; *) FQ1="{CWD}/$FQ1" ;; esac
+[ -z "$FQ2" ] || case "$FQ2" in /*) ;; *) FQ2="{CWD}/$FQ2" ;; esac
+add_bind "$(dirname "$FQ1")"; [ -z "$FQ2" ] || add_bind "$(dirname "$FQ2")"
+die() { echo "ERROR: sample $SAMPLE: $*" >&2; exit 1; }
+[ -s "$FQ1" ] || die "missing $FQ1"
+FASTA="{FASTA_PATH}"; R="{RESULTS_DIR}"
+STAR_DIR="$R/star/$SAMPLE"; TMPD="$R/tmp/$SAMPLE"; BAM="$R/bam/$SAMPLE.bam"; TABLE="$R/ase_counts/$SAMPLE.table"
+mkdir -p "$STAR_DIR" "$TMPD" "$R/bam" "$R/ase_counts" || die "cannot create output directories"
+rm -rf "$STAR_DIR/_STARtmp"
+```
+
+### `align_count_f1.sh` (F1 mode)
+
+After the common start (`--readFilesIn` takes one file for single-end data and two for paired-end data; the wizard writes `"$FQ1" "$FQ2"` or only `"$FQ1"` accordingly):
+
+```bash
+star --runThreadN "${SLURM_NTASKS:-4}" --genomeDir "{STAR_INDEX}" \
+     --readFilesIn "$FQ1" "$FQ2" --readFilesCommand zcat \
+     --outFileNamePrefix "$STAR_DIR/" --outSAMtype BAM SortedByCoordinate \
+     --outSAMattrRGline ID:$SAMPLE SM:$SAMPLE PL:ILLUMINA || die "STAR failed"
+RAW="$STAR_DIR/Aligned.sortedByCoord.out.bam"
+[ -s "$RAW" ] || die "STAR wrote no BAM"
+picard MarkDuplicates I="$RAW" O="$BAM" M="$R/bam/$SAMPLE.markdup_metrics.txt" \
+       TMP_DIR="$TMPD" REMOVE_DUPLICATES=false VALIDATION_STRINGENCY=SILENT || die "MarkDuplicates failed"
+samtools index "$BAM" || die "samtools index failed"
+gatk ASEReadCounter -R "$FASTA" -I "$BAM" -V "$R/reference/f1_het_sites.vcf.gz" \
+     --min-mapping-quality {MIN_MAPQ} --min-base-quality {MIN_BASEQ} \
+     --count-overlap-reads-handling COUNT_FRAGMENTS_REQUIRE_SAME_BASE \
+     --tmp-dir "$TMPD" -O "$TABLE" || die "ASEReadCounter failed"
+```
+
+Picard 3.1.1 accepts the legacy `KEY=VALUE` form used above (it prints a syntax-change notice; verified in the 3.1.1 container). `STAR --outSAMtype BAM SortedByCoordinate` already sorts, so no separate `samtools sort` step is needed. The BAM header must match the ORIGINAL FASTA (`masked.fa` only changes bases, never names).
+
+### `align_wasp_count.sh` (outbred mode)
+
+After the common start (also `[ -n "$INDIVIDUAL" ] || die "empty individual"`), with `HET_PLAIN="$R/genotypes/$INDIVIDUAL.het.vcf"` and `HET_GZ="$R/genotypes/$INDIVIDUAL.het.vcf.gz"` (both from `prep_genotypes.sh`; the STAR file must be the heterozygous-only plain VCF):
+
+```bash
+[ -s "$HET_PLAIN" ] && [ -s "$HET_GZ" ] || die "missing genotypes for individual $INDIVIDUAL (run prep_genotypes.sh)"
+star --runThreadN "${SLURM_NTASKS:-4}" --genomeDir "{STAR_INDEX}" \
+     --readFilesIn "$FQ1" "$FQ2" --readFilesCommand zcat \
+     --outFileNamePrefix "$STAR_DIR/" --varVCFfile "$HET_PLAIN" --waspOutputMode SAMtag \
+     --outSAMtype BAM SortedByCoordinate --outSAMattributes NH HI AS nM vA vG vW \
+     --outSAMattrRGline ID:$SAMPLE SM:$SAMPLE PL:ILLUMINA || die "STAR failed"
+RAW="$STAR_DIR/Aligned.sortedByCoord.out.bam"
+[ -s "$RAW" ] || die "STAR wrote no BAM"
+
+# WASP statistics from the STAR BAM BEFORE filtering: alignments by vW value (none = no tag; 1 pass;
+# 2 multi-mapping; 3 variant base N; 4 remap failed; 5 remap multi-maps; 6 remap to a different locus;
+# 7 too many variants) and by the first vA value (1 ref, 2 alt, 3 no match; - = no tag)
+STATS="$R/ase_counts/$SAMPLE.wasp_stats.tsv"
+printf 'vW\tvA\tn\n' > "$STATS" || die "cannot write $STATS"
+samtools view "$RAW" | awk 'BEGIN{OFS="\t"} { w="none"; a="-"
+    for (i=12; i<=NF; i++) { if ($i ~ /^vW:i:/) w=substr($i,6); else if ($i ~ /^vA:B:c,/) { split($i,p,","); a=p[2] } }
+    n[w OFS a]++ } END { for (k in n) print k, n[k] }' | sort -k1,1 -k2,2 >> "$STATS" || die "WASP statistics failed"
+
+# keep alignments with vW:i:1 and alignments without a vW tag; drop vW 2-7
+FILT="$STAR_DIR/wasp_filtered.bam"
+samtools view -h "$RAW" | awk '/^@/ {print; next} { keep=1
+    for (i=12; i<=NF; i++) if ($i ~ /^vW:i:/ && $i != "vW:i:1") { keep=0; break }
+    if (keep) print }' | samtools view -b -o "$FILT" - || die "vW filtering failed"
+picard MarkDuplicates I="$FILT" O="$BAM" M="$R/bam/$SAMPLE.markdup_metrics.txt" \
+       TMP_DIR="$TMPD" REMOVE_DUPLICATES=false VALIDATION_STRINGENCY=SILENT || die "MarkDuplicates failed"
+samtools index "$BAM" || die "samtools index failed"
+gatk ASEReadCounter -R "$FASTA" -I "$BAM" -V "$HET_GZ" \
+     --min-mapping-quality {MIN_MAPQ} --min-base-quality {MIN_BASEQ} \
+     --count-overlap-reads-handling COUNT_FRAGMENTS_REQUIRE_SAME_BASE \
+     --tmp-dir "$TMPD" -O "$TABLE" || die "ASEReadCounter failed"
+```
+
+Never use `--outSAMattributes` values other than the explicit list above: WASP needs `vA vG vW` spelled out. `vG` is 0-based. WASP does not promise less bias; the stats file lets Rmd 01 show how many alignments were removed and from which allele.
+
+### Empty-table guard (last block of both scripts)
+
+The tool exits 0 even when it counted nothing, so the script itself fails, and an empty table can never reach Rmd 01:
+
+```bash
+# ase_counts/$SAMPLE.table needs non-empty data rows (header only = ASEReadCounter counted nothing)
+N_ROWS=0
+[ -s "$TABLE" ] && N_ROWS=$(awk 'NR>1' "$TABLE" | wc -l)
+if [ "$N_ROWS" -lt 1 ]; then
+  echo "ERROR: sample $SAMPLE: ase_counts/$SAMPLE.table is missing or has no data rows (check the read group, the het-sites VCF and the contig names)" >&2
+  exit 1
+fi
+echo "Sample $SAMPLE: $N_ROWS sites counted"
+```
+
+### Submission order
+
+Write scripts to `{RESULTS_DIR}/scripts/`, run `mkdir -p {RESULTS_DIR}/logs {RESULTS_DIR}/tmp`, then submit with `--parsable` and `--dependency=afterok` so the array never starts before its inputs exist (when the mouse helper is used, the prep job depends on its concat job):
+
+```bash
+P=$(sbatch -p bcc --parsable {RESULTS_DIR}/scripts/prep_f1_reference.sh)      # outbred: prep_genotypes.sh
+sbatch -p bcc --dependency=afterok:$P {RESULTS_DIR}/scripts/align_count_f1.sh  # outbred: align_wasp_count.sh
+```
+
+Wait for the jobs with a bounded loop and read the job logs; on a failure show the error line and stop. Rmd 01 (next stage) reads `{RESULTS_DIR}/ase_counts/*.table`, `*.wasp_stats.tsv` and `{SAMPLES_CSV}`.
