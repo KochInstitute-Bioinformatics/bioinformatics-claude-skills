@@ -25,13 +25,13 @@ Non-goals: RNA editing detection (needs matched DNA to exclude SNPs; parked in t
 | Genotype source (outbred) | Matched WGS/array VCF when available, or the rnavar VCF; the wizard says plainly that RNA-derived genotypes are biased (see Risks) |
 | F1 SNP source | A user-supplied parental-difference VCF is the core input (any organism); a mouse helper extracts it from the Mouse Genomes Project multi-strain VCF |
 | Analyses in v1 | All four: per-sample imbalance, reciprocal F1, differential ASE, read-backed phasing (phASER) — as one spec, staged plan |
-| Upstream engine | Generated SLURM scripts and array jobs (no Nextflow/Snakemake); tools from cluster modules (STAR) and Singularity biocontainers (GATK, samtools, bcftools) |
+| Upstream engine | Generated SLURM scripts and array jobs (no Nextflow/Snakemake); tools from Singularity biocontainers (STAR, GATK, samtools, bcftools) |
 
 ## Architecture
 
 The skill is one Markdown wizard file (`ase-pipeline/ase-pipeline.md`), written in the style of `bulk-rnaseq-pipeline` (numbered steps, numbered-option questions, mode fork, "Notes for the assistant"). It generates:
 
-1. Upstream sbatch scripts: one reference-prep job, then a per-sample array job.
+1. Upstream sbatch scripts: one reference-prep job, then a per-sample array job. STAR runs from the cached 2.7.10b container for both index building and alignment.
 2. Downstream Rmd files (self-contained, no `source()` of helper files; `cache = FALSE`; Bioconductor packages loaded before tidyverse), each with its own sbatch script.
 3. A summary report page linking all outputs (same pattern as `bulk-rnaseq-pipeline` Step 15).
 
@@ -43,7 +43,7 @@ Repository layout: `ase-pipeline/ase-pipeline.md`, `ase-pipeline/README.md`, `as
 1. Email. 2. A conda environment is **not** needed (no Nextflow); the phASER stage creates its own environment.
 3. Mode: **F1 cross** or **outbred/human** (numbered, with the difference explained).
 4. Organism and reference: FASTA and GTF (custom paths or the standard folder convention used by the other skills), read length detection (mode of read lengths; `sjdbOverhang = read length − 1`, a separate index per read length, same rule as `nfcore-rnavar-setup`).
-5. Sample sheet `{WD_NAME}_samples.xlsx`, scaffolded from the FASTQs. Columns: `sample, fastq_1, fastq_2, condition`, plus `individual` (outbred) or `cross_direction` and the two strain names (F1). Validation: no dashes/spaces in names; at least one replicate per condition warned.
+5. Sample sheet `{WD_NAME}_samples.csv` (CSV, not xlsx, because no R runs on the login node), scaffolded from the FASTQs. Columns: `sample, fastq_1, fastq_2, condition`, plus `individual` (outbred) or `cross_direction` and the two strain names (F1). Validation: no dashes/spaces in names; at least one replicate per condition warned.
 6. Genotype source: (F1) the parental-difference VCF or the mouse helper; (outbred) per-individual VCF path(s) from external WGS/array data, or the rnavar `variant_calling/` VCFs.
 7. Analysis menu (numbered, multi-select) with enforced constraints: per-sample imbalance always on; reciprocal F1 only in F1 mode and only when both cross directions are present; differential ASE only with at least two conditions with replicates; phASER only in outbred mode.
 8. Site-filter and significance constants, defaults shown and editable: `MIN_DEPTH` 10 total reads per SNP, `FDR_SIG` 0.05, `ABS_DEV_SIG` 0.1 (|alt fraction − 0.5|).
@@ -57,25 +57,26 @@ Repository layout: `ase-pipeline/ase-pipeline.md`, `ase-pipeline/README.md`, `as
 1. Subset the parental-difference VCF to **biallelic SNPs** where the two strains genotype differently (indels and multi-allelic sites are excluded from counting and documented as a limitation).
 2. Build the **third-allele masked FASTA**: at each SNP position write a base that is neither strain's allele (deterministic rule: the first of A, C, G, T that is not one of the two alleles). Record the masked positions in a BED. Both parental alleles then mismatch the reference equally, so neither strain is favoured in mapping.
 3. Build a STAR index (`sjdbOverhang = read length − 1`, `--genomeSAindexNbases` from the genome length, formula as in `nfcore-rnavar-setup`).
+4. The reference-prep job also writes `f1_het_sites.vcf.gz` (single sample `F1`, genotype `0/1` at every parental SNP, bgzipped and tabix-indexed) because ASEReadCounter counts at heterozygous sites; the parental-difference VCF stays the source of truth. Task 2 confirmed that a sites-only VCF gives 0 rows, so this file is required. The reference also needs a `.fai` (`samtools faidx`) and a `.dict` (`gatk CreateSequenceDictionary`).
 
 **Per-sample array job** (`align_count_f1.sh`):
-1. STAR alignment to the masked reference, coordinate-sorted BAM, then samtools index and duplicate marking.
-2. **GATK ASEReadCounter** (GATK 4.4.0.0 container) at the parental SNP sites (original REF/ALT alleles from the parental VCF, independent of the masked FASTA base): required arguments `--input` and `--variant`; the script also passes `--reference`, `--output`, `--min-base-quality` (default 0), `--min-mapping-quality` and `--min-depth-of-non-filtered-base` from the wizard's site-filter constants, and leaves `--count-overlap-reads-handling` at its default `COUNT_FRAGMENTS_REQUIRE_SAME_BASE`. ASEReadCounter's default read filters include `NotDuplicateReadFilter`, so duplicates are **marked, not removed**, and are skipped by the tool itself. Output: the standard ASEReadCounter table.
+1. STAR alignment to the masked reference with `--outSAMattrRGline ID:{sample} SM:{sample} PL:ILLUMINA` (without a read group ASEReadCounter's default read-group filter silently drops every read), coordinate-sorted BAM, then samtools index and duplicate marking.
+2. **GATK ASEReadCounter** (GATK 4.4.0.0 container) at the parental SNP sites, using `f1_het_sites.vcf.gz` (bgzipped, tabix-indexed, heterozygous genotype column: required, verified) with the original REF/ALT alleles from the parental VCF, independent of the masked FASTA base: required arguments `--input` and `--variant`; the script also passes `--reference`, `--output`, `--min-base-quality` (default 0), `--min-mapping-quality` and `--min-depth-of-non-filtered-base` from the wizard's site-filter constants, and leaves `--count-overlap-reads-handling` at its default `COUNT_FRAGMENTS_REQUIRE_SAME_BASE`. ASEReadCounter's default read filters include `NotDuplicateReadFilter`, so duplicates are **marked, not removed**, and are skipped by the tool itself. Output: the standard ASEReadCounter table.
 3. Alleles are mapped to strains through the VCF (REF strain versus ALT strain), so every table row has strain-A and strain-B counts.
 
-**Mouse helper** (`extract_mgp_parental_vcf.sh`): extract the two named strains from the Mouse Genomes Project multi-strain VCF (about 22 GB, `.csi` index) with `bcftools view -s` and keep sites where the genotypes differ. Because the source file is very large, the helper streams by region/chromosome and never stores the full VCF twice. The release (`REL-2112-v8-SNPs_Indels`, files `mgp_REL2021_snps.vcf.gz` and `mgp_REL2021_indels.vcf.gz`) is on **GRCm39** with C57BL/6J as the reference, contains 52 strains whose VCF sample names use underscores (`A_J`, `CAST_EiJ`, `C57BL_6NJ`, `WSB_EiJ`, ...), encodes the reference allele as `0/0`, marks sites `PASS` or `LowQual`, and records per-genotype confidence in the `FI` tag (1 = high confidence): the helper keeps only genotypes with `FI=1` for both strains (verified from the release README, 2026-09-29).
+**Mouse helper** (`extract_mgp_parental_vcf.sh`): extract the two named strains from the Mouse Genomes Project multi-strain VCF (about 22 GB, `.csi` index) with `bcftools view -s` and keep sites where the genotypes differ. Because the source file is very large, the helper streams by region/chromosome and never stores the full VCF twice. It runs as a per-chromosome array job followed by `bcftools concat` (about 80 s fixed remote overhead and about 80 s per 10 Mb, so a serial whole-genome run would take about 6 hours). MGP contigs are `1`, `2`, ... (no `chr` prefix), so the FASTA must use the same names. The release (`REL-2112-v8-SNPs_Indels`, files `mgp_REL2021_snps.vcf.gz` and `mgp_REL2021_indels.vcf.gz`) is on **GRCm39** with C57BL/6J as the reference, contains 52 strains whose VCF sample names use underscores (`A_J`, `CAST_EiJ`, `C57BL_6NJ`, `WSB_EiJ`, ...), encodes the reference allele as `0/0`, marks sites `PASS` or `LowQual`, and records per-genotype confidence in the `FI` tag (1 = high confidence): the helper keeps only genotypes with `FI=1` for both strains (verified from the release README, 2026-09-29).
 
 ## Upstream — outbred / human mode
 
 **Genotype prep** (`prep_genotypes.sh`): for each individual produce a **single-sample** VCF (STAR reads genotypes from the 10th column, so multi-sample files are not used) restricted to biallelic heterozygous SNPs: `bcftools view -s SAMPLE -g het -v snps -m2 -M2`, plus quality filters (external WGS/array: `GQ` and `DP` thresholds; rnavar-derived: `FILTER=PASS`, `DP`, `QUAL`). The wizard states the RNA-derived genotype caveat.
 
-**Per-sample array job** (`align_wasp_count.sh`): STAR with `--varVCFfile <het VCF> --waspOutputMode SAMtag` and `--outSAMattributes` including `NH HI AS nM vA vG vW`; keep alignments with `vW:i:1` and alignments carrying no `vW` tag (reads not overlapping any SNP); index and mark duplicates; run **ASEReadCounter** at the individual's heterozygous sites. Reads with `vW` values 2–7 failed WASP filtering and are excluded.
+**Per-sample array job** (`align_wasp_count.sh`): STAR with `--varVCFfile <het VCF> --waspOutputMode SAMtag` (the VCF must be the heterozygous-only one: STAR does not ignore homozygous genotypes, verified) and `--outSAMattributes` including `NH HI AS nM vA vG vW`; keep alignments with `vW:i:1` and alignments carrying no `vW` tag (reads not overlapping any SNP); index and mark duplicates; run **ASEReadCounter** at the individual's heterozygous sites. Reads with `vW` values 2–7 failed WASP filtering and are excluded. The script also writes a WASP removal table per sample (alignments by `vW` code and by `vA` allele class), shown in Rmd 01.
 
 ## Downstream Rmd modules
 
 All Rmds are self-contained, use the shared constants (`MIN_DEPTH`, `FDR_SIG`, `ABS_DEV_SIG`) for tables and figures so counts can never disagree, and write xlsx tables plus a checkpoint RDS.
 
-**Rmd 01 — Import and QC.** Read the ASEReadCounter tables; apply site filters (total depth at least `MIN_DEPTH`; exclude sites with a high fraction of low-quality or other-base depth or improper pairs); map alleles to strains (F1) or REF/ALT (outbred); **reference-bias diagnostic**: distribution and mean of the reference-allele fraction across heterozygous sites per sample, flagged when the mean is outside 0.5 ± 0.02; per-sample coverage and site counts.
+**Rmd 01 — Import and QC.** Read the ASEReadCounter tables; apply site filters (total depth at least `MIN_DEPTH`; exclude sites with a high fraction of low-quality or other-base depth or improper pairs); map alleles to strains (F1) or REF/ALT (outbred); **reference-bias diagnostic**: distribution and mean of the reference-allele fraction across heterozygous sites per sample, flagged when the deviation exceeds max(0.03, 3 × SE), SE = sqrt(0.25 / total reads); per-sample coverage and site counts.
 
 **Rmd 02 — Per-sample allelic imbalance (always).** Per-SNP two-sided beta-binomial test against p = 0.5, overdispersion (ρ) estimated per sample by maximum likelihood (implemented with base R `optim`, so this stage needs no extra packages), BH adjustment per sample, significance = `FDR_SIG` and `ABS_DEV_SIG`. Gene-level results: **F1 mode** — SNPs are phased by strain, so gene counts are exact sums of the two strains' reads across the gene's SNPs, tested with the same beta-binomial model; **outbred without phasing** — SNPs cannot be pooled, so the report gives per-SNP tests and a gene-level combined p-value (Cauchy combination of the SNP p-values), explicitly labelled "unphased, no direction"; **outbred with phASER** — the gene-level haplotypic counts replace pooled SNP counts.
 
@@ -95,7 +96,7 @@ The beta-binomial GLMs in Rmd 03 and 04 use `aod::betabin` (fixed effects with a
 - R packages in the `bulkrnaseq` image (`r_packages.txt`): `aod`, `lme4`, `openxlsx`, `tidyverse`, `apeglm`, `GenomicRanges`, `rtracklayer` present; `VGAM`, `glmmTMB`, `MBASED`, `VariantAnnotation` absent.
 - Mouse Genomes Project release: GRCm39, 52 strains, sample-name format, `0/0` reference encoding, `PASS`/`LowQual`, `FI` genotype-confidence tag (see the mouse helper above).
 
-**Still to be verified and recorded in `ase-pipeline/tests/fixtures/verification.md` before Stage 1 implementation; the plan does not proceed on assumptions:**
+**Items 1-3 (STAR WASP behaviour, `.csi` region query, ASEReadCounter columns) were completed on 2026-09-29, with results in `ase-pipeline/tests/fixtures/verification.md`. Still open before Stage 1 implementation of the masking step; the plan does not proceed on assumptions:**
 1. STAR behaviour with WASP, from one small test run in the cached 2.7.10b container: whether homozygous or unphased genotypes in column 10 are ignored, whether only the first sample of a multi-sample VCF is used, which `--outSAMattributes` and `--outSAMtype` settings are required for `vW`, and the interaction with multi-mappers.
 2. Whether the Mouse Genomes Project `.csi` index supports region queries with `bcftools view -r` from the cluster, and how long extracting two strains for one chromosome takes (sizes the helper's sbatch request).
 3. The full ASEReadCounter output-table column names, from a test run on the small synthetic data (used by Rmd 01).
@@ -109,7 +110,7 @@ Static checker (`ase-pipeline/tests/check_skill.sh`), in the same style as `nfco
 
 Acceptance criteria (measurable):
 - Planted-imbalance genes are recovered at FDR 0.05; false positives among null genes are close to the nominal rate.
-- After masking (F1) or WASP (outbred), the mean reference-allele fraction is within 0.5 ± 0.02 on the synthetic null; the masked-versus-unmasked comparison is reported honestly (an earlier analysis found little difference from B6-only mapping, so no improvement is promised).
+- On the null genes only, the mean reference-allele fraction is within max(0.03, 3 × SE) of 0.5 both without and with WASP (measured +0.02 unfiltered and −0.03 filtered on the synthetic data; no improvement promised); the masked-versus-unmasked comparison is reported honestly (an earlier analysis found little difference from B6-only mapping, so no improvement is promised).
 - Under a simulated null the beta-binomial p-values are approximately uniform (calibration check run in the container).
 - Every Rmd builds from the real checkpoint files without hand edits.
 
