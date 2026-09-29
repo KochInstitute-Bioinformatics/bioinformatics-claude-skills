@@ -95,7 +95,7 @@ Store the answer as `{MODE}` = `f1` or `outbred`. Every later step that differs 
 
 ---
 
-## Step 4 — Reference and read length
+## Step 4 — Reference
 
 Ask (numbered): "1. Ensembl-style reference in the standard folder (default) · 2. Custom reference: I already have a FASTA and GTF". Never download or decompress anything on the login node in the foreground; the prep job does it.
 
@@ -104,20 +104,8 @@ Ask (numbered): "1. Ensembl-style reference in the standard folder (default) · 
 
 The reference also needs a `.fai` and a sequence `.dict`; the prep job creates them (do not create them here). In F1 mode with the mouse helper the FASTA must be GRCm39 with Ensembl-style contig names (`1`, `2`, ..., no `chr` prefix), matching the Mouse Genomes Project VCF.
 
-**Read length (always detect it).** STAR's `sjdbOverhang` is fixed when the index is built, so detect the read length from the FASTQs listed in Step 5 (run on the first FASTQ of up to 5 different samples):
+The read length, `{SJDB_OVERHANG}` and `{STAR_INDEX}` depend on the FASTQs, so they are determined at the end of Step 5, once the FASTQ directory is chosen.
 
-```bash
-zcat {FASTQ_FILE} | awk 'NR%4==2 {print length($0)}' | head -n 1000 | sort -n | uniq -c | sort -rn | head -3
-```
-
-The mode of the lengths is `{READ_LENGTH}`. If lengths differ between samples, report the distribution and warn that the index is tuned to the most common length. Set `{SJDB_OVERHANG}` = `{READ_LENGTH}` − 1 and tell the user: "Detected read length {READ_LENGTH} bp -> sjdbOverhang {SJDB_OVERHANG}."
-
-**STAR index: one index per read length and per mode.** Set `{STAR_INDEX}` to:
-
-- F1: `{GENOME_DIR}/index/star_ase_masked_sjdb{SJDB_OVERHANG}/` (built from the third-allele masked genome, so it never collides with an unmasked index of the same read length);
-- outbred: `{GENOME_DIR}/index/star_ase_sjdb{SJDB_OVERHANG}/` (built from the normal reference).
-
-If `SA`, `Genome` and `sjdbList.out.tab` already exist and are non-empty there, reuse it; otherwise the prep job builds it at that path (STAR 2.7.10b from `{STAR_SIF}`, on a compute node). The prep job computes the genome length and `genomeSAindexNbases` = min(14, floor(log2(genome length)/2 - 1)) itself, in shell at run time, because the FASTA may not exist yet when the wizard writes the script; the wizard never substitutes that value.
 
 ---
 
@@ -141,7 +129,26 @@ sample,fastq_1,fastq_2,condition,cross_direction,individual
 
 Show the full table, ask "Does this look correct?", and write the file only after confirmation (if it exists, ask: overwrite or choose another filename).
 
-**Validation rules:** no dashes or spaces in `sample`, `condition`, `cross_direction` or `individual`; sample names unique; each condition should have at least two replicates (warn, do not stop, when it has only one); reciprocal analysis needs both cross directions present (checked again in Step 7).
+**Validation rules:** no dashes or spaces in `sample`, `condition`, `cross_direction` or `individual`; sample names unique; each condition should have replicates (defined below; warn, do not stop, when it has only one sample); reciprocal analysis needs both cross directions present (checked again in Step 7).
+
+**Replicates (definition used here and in Step 7):** replicates = at least 2 samples in the condition. A condition with a single sample triggers the warning above.
+
+### Step 5, part 2 — Read length and STAR index
+
+**Read length (always detect it).** STAR's `sjdbOverhang` is fixed when the index is built. Define `{FASTQ_FILE}` as the first `fastq_1` of each of up to 5 distinct samples in `{SAMPLES_CSV}`. The `zcat | head` read below is bounded (1000 reads) and intentionally light, so it is acceptable on the login node:
+
+```bash
+zcat {FASTQ_FILE} | awk 'NR%4==2 {print length($0)}' | head -n 1000 | sort -n | uniq -c | sort -rn | head -3
+```
+
+The mode of the lengths is `{READ_LENGTH}`. If lengths differ between samples, report the distribution and warn that the index is tuned to the most common length. Set `{SJDB_OVERHANG}` = `{READ_LENGTH}` − 1 and tell the user: "Detected read length {READ_LENGTH} bp -> sjdbOverhang {SJDB_OVERHANG}."
+
+**STAR index: one index per read length and per mode.** Set `{STAR_INDEX}` to:
+
+- F1: `{GENOME_DIR}/index/star_ase_masked_sjdb{SJDB_OVERHANG}/` (built from the third-allele masked genome, so it never collides with an unmasked index of the same read length);
+- outbred: `{GENOME_DIR}/index/star_ase_sjdb{SJDB_OVERHANG}/` (built from the normal reference).
+
+If `SA`, `Genome` and `sjdbList.out.tab` already exist and are non-empty there, reuse it; otherwise the prep job builds it at that path (STAR 2.7.10b from `{STAR_SIF}`, on a compute node). The prep job computes the genome length and `genomeSAindexNbases` = min(14, max(4, floor(log2(L)/2 - 1))) with L = genome length (for example 300,000 bp gives 8; 40,001 gives 6; 3.1e9 gives 14; 2 kb gives 4) itself, in shell at run time, because the FASTA may not exist yet when the wizard writes the script; the wizard never substitutes that value.
 
 ---
 
@@ -171,7 +178,7 @@ Ask (numbered, multi-select, for example "1,3"):
 
 1. **Per-sample allelic imbalance** (always on, cannot be deselected): reference-bias diagnostic plus per-gene and per-site allelic ratios for every sample.
 2. **Reciprocal F1 analysis** (parent-of-origin versus strain effect): offered only when `{MODE}` = `f1` and both `cross_direction` values are present in `{SAMPLES_CSV}`.
-3. **Differential ASE between conditions**: offered only when at least two conditions each have replicates.
+3. **Differential ASE between conditions**: offered only when at least two conditions each have replicates (replicates = at least 2 samples in the condition, as defined in Step 5).
 4. **phASER haplotype phasing**: offered only when `{MODE}` = `outbred`.
 
 Show only the options whose preconditions hold, and say why any other is hidden. Store the selection as `{ANALYSES}`. Stage 1 implements only the always-on analysis: if the user chooses reciprocal, differential or phASER, say "available in a later stage" and continue with the per-sample analysis.
