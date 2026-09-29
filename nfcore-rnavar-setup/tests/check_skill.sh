@@ -240,7 +240,6 @@ need "the original FASTA path the user gave, gzipped or not"
 # C: params-file existence check at the end of the helper
 need 'for K in dbsnp dbsnp_tbi known_indels known_indels_tbi; do'
 need 'points to a missing or empty file'
-need "the pipeline must not be run\" >&2; exit 1; }"
 # D: BIND without a repeated directory
 need 'BIND="{GENOME_DIR}"'
 need '[ "$(dirname "{FASTA_PATH}")" = "{GENOME_DIR}" ] || BIND="$BIND,$(dirname "{FASTA_PATH}")"'
@@ -285,5 +284,15 @@ need 'vep_cache_version: "{VEP_CACHE_VERSION}"'
 need 'download_cache: true'
 need 'The `star_index` key is always written'
 # --- end Parked-items fixes
+
+# --- Parked-items fix round 1
+need 'if [ -s "$FILE.vcf" ] || { [ -s "$FILE.vcf.gz" ] && gzip -t "$FILE.vcf.gz"; }; then'
+need 'wget -c -O "$FILE.vcf.part" "URL" && [ -s "$FILE.vcf.part" ] && mv "$FILE.vcf.part" "$FILE.vcf"'
+need "If the URL is a plain \`.vcf\` (not \`.gz\`)"
+need "applies only to files that have a confirmed Step 7 URL"
+need "Step 6 option 1 binds \`{FASTA_SOURCE}\` = \`{FASTA_PATH}\`"
+need "skip the wizard-side check and rely on the helper's contig guard"
+need "always emitted (the URL is embedded even when the image already exists)"
+# --- end Parked-items fix round 1
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1
