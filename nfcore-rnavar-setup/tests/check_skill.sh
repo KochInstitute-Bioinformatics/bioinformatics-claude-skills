@@ -203,6 +203,16 @@ forbid "prepare_known_sites_{ASSEMBLY}"
 forbid "-t 8:00:00"
 # --- end Task 2 (custom reference + helpers)
 
+
+# --- Task 3 (config, hand-off)
+need "overwrite = true"
+[ "$(grep -c 'overwrite = true' "$SKILL")" -ge 4 ] || { echo "FAIL: overwrite = true must appear for timeline, report, trace and dag"; fail=1; }
+forbid "params.max_"
+forbid "max_cpus"
+need "reports/multiqc"
+forbid "  multiqc/           MultiQC report"
+need "annotation/"
+# --- end Task 3 (config, hand-off)
 # --- end Params-file rules
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1

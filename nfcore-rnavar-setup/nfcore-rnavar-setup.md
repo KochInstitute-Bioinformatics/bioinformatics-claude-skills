@@ -238,27 +238,19 @@ profiles {
     }
 }
 
-params {
-    max_cpus   = 16
-    max_memory = '64 GB'
-    max_time   = '24h'
-}
-
 process {
-    resourceLimits = [
-        cpus:   params.max_cpus,
-        memory: params.max_memory,
-        time:   params.max_time
-    ]
+    resourceLimits = [ cpus: 16, memory: '64 GB', time: '24h' ]
 }
 
-timeline { enabled = true; file = "${params.outdir}/pipeline_info/execution_timeline.html" }
-report   { enabled = true; file = "${params.outdir}/pipeline_info/execution_report.html"   }
-trace    { enabled = true; file = "${params.outdir}/pipeline_info/execution_trace.txt"     }
-dag      { enabled = true; file = "${params.outdir}/pipeline_info/pipeline_dag.svg"        }
+timeline { enabled = true; overwrite = true; file = "${params.outdir}/pipeline_info/execution_timeline.html" }
+report   { enabled = true; overwrite = true; file = "${params.outdir}/pipeline_info/execution_report.html"   }
+trace    { enabled = true; overwrite = true; file = "${params.outdir}/pipeline_info/execution_trace.txt"     }
+dag      { enabled = true; overwrite = true; file = "${params.outdir}/pipeline_info/pipeline_dag.svg"        }
 ```
 
 rnavar's own `base.config` defines label-based resources only (`process_medium` = 6 CPU/36 GB/8 h, `process_high` = 12 CPU/72 GB/16 h), so the `withName` overrides above use regex selectors (`'.*:NAME'`) that do not depend on the workflow-name prefix. After the first run, compare the selectors with the process names in `{OUTDIR}/pipeline_info/execution_trace.txt` and adjust if any did not match.
+
+The `resourceLimits` values are literal because the pipeline-level maximum-resource parameters of older nf-core templates are not rnavar 1.3.0 parameters and trigger an invalid-parameter schema warning. `overwrite = true` on the four report scopes is needed because a launch that fails early (for example at parameter validation) has already created the files in `pipeline_info/`, and a rerun would otherwise refuse to overwrite them, leaving an empty trace and no HTML reports.
 
 ---
 
@@ -374,9 +366,11 @@ MAP.txt is a two-column, tab-separated old-name/new-name file written by the hel
 Print where the results will be, so later analyses can find them:
 ```
 Outputs under {OUTDIR}/ :
-  variant_calling/   filtered VCFs (per sample) and, with `generate_gvcf: true`, gVCFs
-  preprocessing/     recalibrated BAMs; with `skip_baserecalibration: true` these are the duplicate-marked BAMs
-  multiqc/           MultiQC report
+  variant_calling/   per sample: {SAMPLE}.haplotypecaller.filtered.vcf.gz (soft-filtered), raw {SAMPLE}.haplotypecaller.vcf.gz (each with .tbi); with `generate_gvcf: true`, gVCFs too
+  preprocessing/     per sample: {SAMPLE}.md.bam (duplicate-marked) and {SAMPLE}.recal.bam (with .bai); with `skip_baserecalibration: true` these are the duplicate-marked BAMs and no recal.bam is written
+  annotation/        SnpEff / VEP output (only when `tools` is set)
+  reports/           FastQC, samtools, Picard and STAR reports; MultiQC at reports/multiqc/{MULTIQC_TITLE}_multiqc_report.html
+  pipeline_info/     execution report, timeline, trace, DAG
 These VCFs and BAMs are the inputs expected by the ase-pipeline skill (allele-specific expression).
 ```
 Before printing, confirm the actual directory names against the pipeline's `docs/output` page for `{VERSION}` with `WebFetch`, and use the real names.

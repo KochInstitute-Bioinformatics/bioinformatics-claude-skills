@@ -24,7 +24,7 @@ Then invoke it in Claude Code:
 |-------------|-------|
 | SLURM scheduler | Script targets the bcc queue |
 | Singularity ≥ 3.10 | Loaded via `module add singularity/3.10.4` |
-| Nextflow ≥ 24.04 | Available in a conda environment; needed for the `resourceLimits` directive in the generated config |
+| Nextflow ≥ 24.04 | Available in a conda environment; needed for the `resourceLimits` directive in the generated config (validated with 26.04.6) |
 | Internet access | Required from the login node (GitHub API, Ensembl, known-sites downloads); compute nodes may not have it |
 
 ---
@@ -41,24 +41,24 @@ The skill is a guided wizard that collects your settings one step at a time and 
 | 3 | nf-core/rnavar version | Auto (latest release via the GitHub API); if newer than 1.3.0 the parameter names are re-checked against that release's schema |
 | 4 | Raw data and samplesheet | FASTQ/BAM/CRAM found automatically; paired-end vs single-end and sequencing date auto-detected; sample names sanitised; you review the sheet, choose naming and filename |
 | 5 | Read length | Auto-detected from the reads (asked only for BAM/CRAM input) |
-| 6 | Organism and genome files | Organism and genome base directory asked; Ensembl version, existing FASTA/GTF and STAR index auto-detected |
+| 6 | Organism and genome files | Organism and genome base directory asked; choose an Ensembl release (version, existing FASTA/GTF and STAR index auto-detected) or a custom reference (you give the FASTA, GTF and index directory) |
 | 7 | Known sites for base recalibration | Asked: supply known-sites VCFs or skip recalibration |
 | 8 | Variant calling options | Asked: duplicates, two-pass, thresholds, gVCF, large chromosomes, save intermediates |
 | 9 | Optional annotation | Asked: none, SnpEff, VEP or both; cache locations and identifiers asked |
-| 10 | MultiQC title, output directory, `nextflow.config` | Titles asked; config written only if absent |
-| 11 | Submission script | Generated |
+| 10 | MultiQC title, output directory, `nextflow.config` | Titles asked; config written only if absent (literal `resourceLimits`, report overwrite enabled) |
+| 11 | Params file and submission script | Generated |
 | 12 | Helper scripts | Generated only for missing resources |
 | 13 | Hand-off note | Prints where results will be, confirmed against the docs for the chosen version |
 
-Flags that equal the pipeline default are omitted from the generated script.
+All pipeline parameters are written to a generated params YAML and the launch line carries only `-params-file`, so the exact settings of a run are recorded in one reviewable file and are not scattered over the command line. Parameters that equal the pipeline default are omitted.
 
 ### Key design points
 
-- **Read length is always detected and passed as `--read_length`.** rnavar's default is 150, which is wrong for most other libraries, and it sets STAR's `sjdbOverhang` (`read_length − 1`).
-- **A STAR index is built per read length**, in `{genome_base}/{organism}/{assembly}_ens{version}/index/star_rnavar_sjdb{N-1}/`. An index made for another read length (for example by another pipeline) is never reused. `--star_index` is always passed so rnavar does not rebuild it inside the workflow. FASTA/GTF are shared with the other nf-core skills' folder convention and reused, not re-downloaded.
-- **Known sites are required, or base recalibration is explicitly skipped.** rnavar does not skip BQSR automatically when known sites are missing and errors late, after alignment. The wizard therefore asks you to supply dbSNP and known-indels VCFs (with `.tbi` indexes) or adds `--skip_baserecalibration`. Download URLs are resolved at run time and shown to you for confirmation, never typed from memory.
+- **Read length is always detected and written as `read_length` in the params file.** rnavar's default is 150, which is wrong for most other libraries, and it sets STAR's `sjdbOverhang` (`read_length − 1`).
+- **A STAR index is built per read length**, in `{genome_base}/{organism}/{assembly}_ens{version}/index/star_rnavar_sjdb{N-1}/`. An index made for another read length (for example by another pipeline) is never reused. `star_index` is always set so rnavar does not rebuild it inside the workflow. FASTA/GTF are shared with the other nf-core skills' folder convention and reused, not re-downloaded.
+- **Known sites are required, or base recalibration is explicitly skipped.** rnavar does not skip BQSR automatically when known sites are missing and errors late, after alignment. The wizard therefore asks you to supply dbSNP and known-indels VCFs (with `.tbi` indexes) or sets `skip_baserecalibration: true`. Download URLs are resolved at run time and shown to you for confirmation, never typed from memory.
 - **Known-sites contigs must match the FASTA.** The wizard requires bgzipped `.vcf.gz` + `.tbi`. Contig names (Ensembl `1` vs GATK `chr1`) are checked against the FASTA in the wizard when the VCFs already exist; otherwise a contig guard in the `prepare_known_sites` helper script checks after download and either renames the contigs (`bcftools annotate --rename-chrs`) or fails fast with a non-zero exit. The pipeline is submitted with `--dependency=afterok`, so it cannot start after a failed guard.
-- **Annotation caches must be pre-downloaded.** The skill does not silently add `--download_cache`, because compute nodes may lack internet and the job then stalls. It offers a helper script to fetch the cache where internet is available.
+- **Annotation caches must be pre-downloaded.** The skill does not silently set `download_cache`, because compute nodes may lack internet and the job then stalls. It offers a helper script to fetch the cache where internet is available.
 
 ---
 
@@ -70,10 +70,11 @@ After running the skill you will have:
 |------|-------------|
 | `{date}_{project}_samplesheet.csv` | Input samplesheet for nf-core/rnavar (FASTQ, BAM or CRAM form) |
 | `nextflow.config` | SLURM + Singularity resource profiles (written only if none exists; an existing one is never overwritten) |
+| `{date}_{project}_params.yaml` | All rnavar parameters for the run, passed with `-params-file` |
 | `nf-core_rnavar_{version}.sh` | Pipeline SLURM submission script |
-| `build_star_index_rnavar_{assembly}_ens{version}.sh` | STAR index build for this read length (if missing) |
-| `prepare_known_sites_{assembly}.sh` | Known-sites download, `bgzip`, `tabix` indexing (if needed) and an always-run contig guard (rename with `bcftools annotate --rename-chrs`, or fail fast with non-zero exit) |
-| `prepare_annotation_cache_{snpeff\|vep}.sh` | Annotation-cache pre-download, to run where internet is available (if no cache) |
+| `build_star_index_rnavar_{ref_tag}.sh` | STAR index build for this read length (if missing) |
+| `prepare_known_sites_{ref_tag}.sh` | Known-sites download, `bgzip`, `tabix` indexing (if needed) and an always-run contig guard (rename with `bcftools annotate --rename-chrs`, or fail fast with non-zero exit) |
+| `prepare_annotation_cache_{tool}.sh` | Annotation-cache pre-download, to run where internet is available (if no cache) |
 
 ---
 
@@ -93,8 +94,9 @@ sbatch --dependency=afterok:<helper_jobid> nf-core_rnavar_1.3.0.sh
 ## Validation status
 
 - The skill text is checked by `nfcore-rnavar-setup/tests/check_skill.sh`, which schema-validates every `--parameter` against nf-core/rnavar 1.3.0 and asserts that required text is present and forbidden text is absent.
-- An end-to-end run on the cluster (wizard, generated script, then a `-profile test` run) has **not yet been done**.
-- The `withName` process selectors in the generated `nextflow.config` have **not yet been verified** against a real trace file.
+- **One end-to-end run on the nf-core rnavar test data was completed on the cluster** (Nextflow 26.04.6): paired-end reads, custom reference, known sites from local VCFs, no annotation. Annotation (SnpEff / VEP), BAM/CRAM input, gVCF output and the contig-guard rename branch remain untested.
+- The `withName` selectors in the generated `nextflow.config` (`STAR_ALIGN`, `GATK4_SPLITNCIGARREADS`, `GATK4_BASERECALIBRATOR`, `GATK4_HAPLOTYPECALLER`) were verified to match real tasks in that run.
+- The 1.3.0 output layout in the hand-off note (`variant_calling/`, `preprocessing/`, `reports/`, `pipeline_info/`) was confirmed from that run; `annotation/` was not observed.
 
 ---
 
@@ -104,5 +106,5 @@ sbatch --dependency=afterok:<helper_jobid> nf-core_rnavar_1.3.0.sh
 - Known sites are required, otherwise base recalibration is skipped, which is slightly less accurate
 - A separate STAR index is built for each read length
 - Parameter names were verified against rnavar 1.3.0 only; newer versions are re-checked at run time against the release schema
-- The process-name selectors in `nextflow.config` are unverified against a real run; compare them with `pipeline_info/execution_trace.txt` after the first run
+- Process-name selectors were verified against real tasks only for the four listed in the validation status; compare them with `pipeline_info/execution_trace.txt` after the first run on a new version
 - Organisms other than mouse and human require manual FASTA/GTF paths and known-sites files
