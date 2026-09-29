@@ -56,7 +56,7 @@ All repo paths are relative to `/net/bmc-lab3/data/bcc/yannvrb/Github_repos/bioi
 - Create: `ase-pipeline/tests/synthetic/simulate_ase_data.R`
 
 **Interfaces:**
-- Produces: `Rscript simulate_ase_data.R <genome.fasta> <genome.gtf> <outdir> <seed>` writes, under `<outdir>/f1/` and `<outdir>/outbred/`: paired-end FASTQs `{sample}_1.fastq.gz`/`_2.fastq.gz` (read length 100), `samples.csv`, `truth_genes.tsv` (columns `gene_id, n_snps, p_alt, class`), `truth_snps.tsv` (`chrom, pos, ref, alt, gene_id`), plus for F1 `parental_snps.vcf` (sites VCF, REF = strain A allele, ALT = strain B allele, INFO-free) and for outbred one single-sample VCF per individual `{individual}.het.vcf` (GT `0/1`) and `{individual}.all.vcf` (all genotypes incl. `0/0`/`1/1`). Later tasks depend on these names.
+- Produces: `Rscript simulate_ase_data.R <genome.fasta> <genome.gtf> <outdir> <seed>` writes, under `<outdir>/f1/` and `<outdir>/outbred/`: paired-end FASTQs `{sample}_1.fastq.gz`/`_2.fastq.gz` (read length 100), `samples.csv`, `truth_genes.tsv` (columns `gene_id, n_snps, p_alt, class`), `truth_snps.tsv` (`chrom, pos, ref, alt, gene_id`), plus for F1 `parental_snps.vcf` (sites VCF, REF = strain A allele, ALT = strain B allele, INFO-free) and for outbred one single-sample VCF per individual `{individual}.het.vcf` (GT `0/1`) and `{individual}.all.vcf` (all genotypes incl. `0/0`/`1/1`). Later tasks depend on these names. **Synthetic genome mode:** if `<genome.fasta>` and `<genome.gtf>` are both the literal `SYNTHETIC`, the script first generates a deterministic synthetic genome (one contig `chr1`, 300,000 bp of random sequence with about 45 percent GC; 20 non-overlapping `+`-strand genes with 3–5 exons of 120–300 bp and introns of 300–2000 bp; GTF lines `gene`, `transcript` and `exon` carrying `gene_id` and `transcript_id`) into `<outdir>/genome/genome.fa` and `<outdir>/genome/genome.gtf` and uses it. This mode is the default for all acceptance work, because the nf-core test genome has only 6 usable non-overlapping loci (it stays supported for smoke tests with quotas scaled down; `check_simulation.sh` reads `MIN_NULL` from the environment, default 4).
 
 - [ ] **Step 1: Write the generator test first**
 
@@ -102,7 +102,7 @@ Implement `simulate_ase_data.R` (R only; uses `Biostrings`, `rtracklayer`, base 
 - [ ] **Step 3: Run the generator and the test on the cluster**
 
 Run via `sbatch -p bcc` with the `bulkrnaseq` image (`singularity exec --bind /net/bmc-lab3 /net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif Rscript ...`; job output on the shared filesystem, e.g. `/net/bmc-lab3/data/bcc/yannvrb/ase_synthetic/`):
-`Rscript ase-pipeline/tests/synthetic/simulate_ase_data.R /net/bmc-lab3/data/bcc/yannvrb/rnavar_test/genome.fasta /net/bmc-lab3/data/bcc/yannvrb/rnavar_test/genome.gtf /net/bmc-lab3/data/bcc/yannvrb/ase_synthetic 20260929`
+`Rscript ase-pipeline/tests/synthetic/simulate_ase_data.R SYNTHETIC SYNTHETIC /net/bmc-lab3/data/bcc/yannvrb/ase_synthetic 20260929`
 then `bash ase-pipeline/tests/synthetic/check_simulation.sh /net/bmc-lab3/data/bcc/yannvrb/ase_synthetic`. Expected: `PASS`. Also run the generator a second time with the same seed into a different directory and confirm the FASTQ md5 sums are identical (determinism).
 
 - [ ] **Step 4: Commit**
@@ -130,7 +130,7 @@ Copy `/net/bmc-lab3/data/bcc/yannvrb/rnavar_test2/ase_fixtures/{star_help.txt,ga
 
 - [ ] **Step 3: STAR WASP behaviour test**
 
-On the synthetic outbred data: build a STAR index for the test genome (container 2.7.10b, `--genomeSAindexNbases 6`, `--sjdbOverhang 99`), align one outbred sample with `--varVCFfile <individual>.all.vcf --waspOutputMode SAMtag --outSAMtype BAM SortedByCoordinate --outSAMattributes NH HI AS nM vA vG vW`, then with `<individual>.het.vcf`. Record in `verification.md`: (a) whether reads overlapping homozygous SNPs receive a `vW` tag when the all-genotypes VCF is used (i.e. whether homozygous sites are ignored); (b) counts of `vW:i:1`, `vW:i:2..7` and untagged reads; (c) the mean ALT fraction at the bias gene's SNPs before and after removing `vW`≠1 reads; (d) that a multi-sample VCF uses only its first sample (test with a two-sample VCF built by `bcftools merge`).
+On the synthetic outbred data: build a STAR index for `/net/bmc-lab3/data/bcc/yannvrb/ase_synthetic/genome/genome.fa` with its GTF (container 2.7.10b, `--genomeSAindexNbases 6`, `--sjdbOverhang 99`), align one outbred sample with `--varVCFfile <individual>.all.vcf --waspOutputMode SAMtag --outSAMtype BAM SortedByCoordinate --outSAMattributes NH HI AS nM vA vG vW`, then with `<individual>.het.vcf`. Record in `verification.md`: (a) whether reads overlapping homozygous SNPs receive a `vW` tag when the all-genotypes VCF is used (i.e. whether homozygous sites are ignored); (b) counts of `vW:i:1`, `vW:i:2..7` and untagged reads; (c) the mean ALT fraction at the bias gene's SNPs before and after removing `vW`≠1 reads; (d) that a multi-sample VCF uses only its first sample (test with a two-sample VCF built by `bcftools merge`).
 
 - [ ] **Step 4: ASEReadCounter behaviour and output columns**
 
@@ -397,7 +397,7 @@ git add ase-pipeline README.md && git commit -m "ase-pipeline: summary report, R
 Run by the controller because it needs cluster jobs and judgment; the wizard is followed by hand using the answers below.
 
 - [ ] **Step 1:** Install the branch skill to `~/.claude/commands/ase-pipeline.md` (no file exists there, so nothing is overwritten) and generate the synthetic datasets with Task 1's script into `/net/bmc-lab3/data/bcc/yannvrb/ase_synthetic/`.
-- [ ] **Step 2 (F1):** In a fresh directory follow the wizard for `f1/` (custom reference `genome.fasta`/`genome.gtf`, read length 100, parental VCF from the generator, constants at defaults); submit prep → array → Rmd 01 → Rmd 02 with `--dependency=afterok`.
+- [ ] **Step 2 (F1):** In a fresh directory follow the wizard for `f1/` (custom reference `ase_synthetic/genome/genome.fa` and `genome.gtf`, read length 100, parental VCF from the generator, constants at defaults); submit prep → array → Rmd 01 → Rmd 02 with `--dependency=afterok`.
 - [ ] **Step 3 (outbred):** Same for `outbred/` with the individual VCFs; submit the chain.
 - [ ] **Step 4:** Evaluate against `truth_genes.tsv`:
   - **F1:** the four planted imbalanced genes are called significant at `FDR_SIG` 0.05 and `ABS_DEV_SIG` 0.1 with the correct **direction** (strain-B fraction above 0.5 for `p_alt` 0.70/0.85, below 0.5 for 0.30); at most one of the null genes is called (nominal rate); the mean REF fraction after masking is within 0.5 ± 0.02.
