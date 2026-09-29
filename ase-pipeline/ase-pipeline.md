@@ -195,7 +195,7 @@ Show these defaults and let the user edit any of them:
 | `FDR_SIG` | 0.05 | FDR threshold for significance |
 | `ABS_DEV_SIG` | 0.1 | minimum absolute deviation of the reference fraction from 0.5 to call a gene imbalanced |
 | `BIAS_TOL` | 0.03 | reference-bias tolerance: a sample is flagged when its reference-fraction deviation from 0.5 exceeds `max(BIAS_TOL, 3 x SE)`, SE = sqrt(0.25 / total reads) |
-| `RHO_MIN` | 0.01 | F1 gene-level tests only: floor for the per-sample overdispersion (`rho_gene = max(rho_corrected, RHO_MIN)`), so a noisy or zero estimate can never make the gene tests anti-conservative |
+| `RHO_MIN` | 0.01 | F1 only: floor for the per-sample overdispersion at SNP and gene level (`rho = max(rho_corrected, RHO_MIN)`), so a noisy or zero estimate can never make the tests anti-conservative |
 
 ASEReadCounter defaults: `--min-mapping-quality` 10 and `--min-base-quality` 10 (the tool's own defaults are 0). Record all values; they are written into the scripts and the Rmd parameters.
 
@@ -786,7 +786,7 @@ If the job stops with "sample(s) have no usable ASE count table", show the liste
 
 Write `{CWD}/{TODAY_YYMMDD}_{WD_NAME}_02_imbalance.Rmd` with the same header conventions as Step 12. It loads `ase_checkpoint.rds`, defines its own constants block (same names, same values; the Rmd stops if they differ from the checkpoint, so Rmd 01 and Rmd 02 can never disagree), pastes the statistics functions of Step 14 (the code between the two marker lines, without the marker lines) into the chunk marked below, and writes `{TODAY_YYMMDD}_{WD_NAME}_ASE_imbalance.xlsx` (sheets `SNP`, `Gene`, `Summary`) and `ase_imbalance_checkpoint.rds` to `{RESULTS_DIR}`.
 
-- Per sample, `rho_h0 <- bb_estimate_rho(alt, total)` is estimated under H0 (p = 0.5) from all filtered sites (conservative when true imbalance exists, see Step 14). **Outbred** uses `rho_h0`. **F1** uses `bb_estimate_rho_gene(alt, total, gene)`, estimated with a free mean per gene and bias-corrected (`rho_corrected`), because real imbalance inflates `rho_h0`; the gene-level tests use `rho_gene = max(rho_corrected, RHO_MIN)`; if it is `NA` (fewer than 5 genes with 2 or more SNPs) the Rmd prints a WARNING, falls back to `rho_h0` and records that in the Summary (`rho_source`). The Summary shows all the estimates, and any estimator boundary warning per sample. With fewer than 20 sites `rho_h0` is `NA` and the sample is not tested.
+- Per sample, `rho_h0 <- bb_estimate_rho(alt, total)` is estimated under H0 (p = 0.5) from all filtered sites (conservative when true imbalance exists, see Step 14). **Outbred** uses `rho_h0`. **F1** uses `bb_estimate_rho_gene(alt, total, gene)`, estimated with a free mean per gene and bias-corrected (`rho_corrected`), because real imbalance inflates `rho_h0`; the SNP-level and gene-level tests use `rho_used = rho_gene = max(rho_corrected, RHO_MIN)`; if it is `NA` (fewer than 5 genes with 2 or more SNPs) the Rmd prints a WARNING, falls back to `rho_h0` and records that in the Summary (`rho_source`). The Summary shows all the estimates, and any estimator boundary warning per sample. With fewer than 20 sites `rho_h0` is `NA` and the sample is not tested.
 - Per SNP, `bb_pvalue`, then Benjamini-Hochberg within each sample. The single column `sig` is `padj < FDR_SIG` and `|ALT fraction - 0.5| >= ABS_DEV_SIG` (F1: ALT is strain B). The Summary table and every plot use this column and nothing else; the Rmd checks that the counts drawn in the figures equal the Summary counts.
 - Gene level, both modes: SNP positions are overlapped with the GTF exons by `GenomicRanges::findOverlaps` (`gene_id` from the GTF). **F1:** counts are not summed before testing (summing and applying the per-SNP `rho` to the total inflates the variance by about `1 + (n - 1) * rho` and destroys power); each gene's SNPs share one strain-B fraction and `bb_gene_lrt` tests it against 0.5 with `rho_gene`; the table reports `phat` (strain-B fraction), p, BH within the sample, and `sig` from `FDR_SIG` and `ABS_DEV_SIG` on `|phat - 0.5|`. **Outbred:** SNPs cannot be pooled without phasing, so the gene p-value is the `acat` combination of the SNP p-values, labelled "unphased, no direction" (no direction column); the gene is `sig` when its BH-adjusted `acat` p-value is below `FDR_SIG` and at least one of its SNPs deviates by `ABS_DEV_SIG` or more.
 - The reference-bias flag from Rmd 01 is printed with the tables and written into the Summary sheet; if a sample is flagged, say so next to its ratios.
@@ -863,7 +863,7 @@ cat(nrow(pos), "SNP positions,", length(unique(snp_gene$gene_id)), "genes with a
 
 ## Per-SNP beta-binomial test
 
-The overdispersion `rho` is estimated per sample. **Outbred:** under H0 (p = 0.5) from all filtered sites (`bb_estimate_rho`); when real imbalance exists this inflates `rho`, which lowers power and never inflates false positives (conservative). **F1:** the H0-based value (`rho_h0`) is inflated by every truly imbalanced gene, so `rho` is instead estimated with a free mean per gene (`bb_estimate_rho_gene`, genes with at least 2 SNPs). That estimate (`rho_free`) is biased low, because a free mean per gene absorbs part of the variance (by about (k - 1) / k for genes with k SNPs), so it is bias-corrected (`rho_corrected`, see Step 14). The SNP-level tests use `rho_corrected`; the gene-level tests use `rho_gene = max(rho_corrected, RHO_MIN)`. If the free-mean estimate is not available (fewer than 5 usable genes) the H0-based value is used and a WARNING is printed and written to the Summary (`rho_source`). Any estimator warning (for example an estimate at the upper boundary) is printed per sample and written to `rho_warning`.
+The overdispersion `rho` is estimated per sample. **Outbred:** under H0 (p = 0.5) from all filtered sites (`bb_estimate_rho`); when real imbalance exists this inflates `rho`, which lowers power and never inflates false positives (conservative). **F1:** the H0-based value (`rho_h0`) is inflated by every truly imbalanced gene, so `rho` is instead estimated with a free mean per gene (`bb_estimate_rho_gene`, genes with at least 2 SNPs). That estimate (`rho_free`) is biased low, because a free mean per gene absorbs part of the variance (by about (k - 1) / k for genes with k SNPs), so it is bias-corrected (`rho_corrected`, see Step 14). Both the SNP-level and the gene-level tests use `rho_used = rho_gene = max(rho_corrected, RHO_MIN)` (`RHO_MIN` from Step 8), so a near-boundary corrected estimate can never make them anti-conservative. If the free-mean estimate is not available (fewer than 5 usable genes) the H0-based value is used and a WARNING is printed and written to the Summary (`rho_source`). Any estimator warning (for example an estimate at the upper boundary) is printed per sample and written to `rho_warning`.
 
 ```{r snp}
 bb_p_safe <- function(x, n, rho) if (is.na(rho)) NA_real_ else bb_pvalue(x, n, rho = rho)
@@ -880,7 +880,8 @@ snp <- dplyr::bind_rows(lapply(split(sites, sites$sample), function(d) {
     r1 <- collect_warnings(bb_estimate_rho_gene(d$alt_n, d$total, g))
     warn <- paste(c(warn, r1$warn)[nzchar(c(warn, r1$warn))], collapse = "; ")
     if (!is.na(r1$value[["corrected"]])) {
-      rho_free <- r1$value[["free"]]; rho_corrected <- r1$value[["corrected"]]; rho <- rho_corrected
+      rho_free <- r1$value[["free"]]; rho_corrected <- r1$value[["corrected"]]
+      rho <- max(rho_corrected, RHO_MIN)   # floor at SNP and gene level (F1)
       src <- "free-mean per gene, bias-corrected"
     } else {
       cat("WARNING: sample", d$sample[1], "has fewer than 5 genes with 2 or more SNPs; using the H0-based rho\n"); src <- "H0-based (fallback)" }
@@ -898,7 +899,7 @@ snp <- dplyr::bind_rows(lapply(split(sites, sites$sample), function(d) {
                 direction = dplyr::case_when(!sig ~ "none", alt_frac > 0.5 ~ paste(alt_label, "higher"),
                                              TRUE ~ paste(ref_label, "higher")))
 knitr::kable(dplyr::distinct(snp, sample, rho_h0, rho_free, rho_corrected, rho, rho_gene, rho_source), digits = 4,
-             caption = "Overdispersion per sample: rho_h0 (p = 0.5 at every site, inflated by real imbalance), rho_free (free mean per gene, biased low), rho_corrected (bias-corrected, used for SNP tests), rho_gene = max(rho_corrected, RHO_MIN) (used for gene tests); F1 only for the last three. NA = fewer than 20 sites, sample not tested")
+             caption = "Overdispersion per sample: rho_h0 (p = 0.5 at every site, inflated by real imbalance), rho_free (free mean per gene, biased low), rho_corrected (bias-corrected), rho = rho_gene = max(rho_corrected, RHO_MIN) (used for SNP and gene tests); F1 only for the last three. NA = fewer than 20 sites, sample not tested")
 ```
 
 ## Gene level

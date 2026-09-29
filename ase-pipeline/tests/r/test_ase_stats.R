@@ -39,23 +39,30 @@ ok(acat(c(1e-6, 0.999)) < 1e-3, sprintf("acat(1e-6, 0.999) = %.2e stays signific
 ok(is.na(acat(c(NA_real_, NA_real_))), "acat of only NA gives NA")
 
 # 3b. boundary handling and exact zero
-xb2 <- rbinom(2000, 50, 0.5); nb2 <- rep(50, 2000)
-ok(identical(bb_estimate_rho(xb2, nb2), 0), "binomial data gives exactly 0 from bb_estimate_rho")
-gb <- rep(1:500, each = 4); xg0 <- rbinom(2000, 60, 0.5)
-eg0 <- bb_estimate_rho_gene(xg0, rep(60, 2000), gb)
-ok(identical(unname(eg0[["free"]]), 0) && identical(unname(eg0[["corrected"]]), 0), "binomial data gives exactly 0 from bb_estimate_rho_gene")
+# the shipped default of RHO_MIN is read from the Step 8 table of the skill text (not hard-coded here)
+rm_line <- grep("^\\| `RHO_MIN` \\|", txt, value = TRUE)
+RHO_MIN <- as.numeric(trimws(strsplit(rm_line[1], "\\|")[[1]][3])); stopifnot(length(RHO_MIN) == 1, is.finite(RHO_MIN))
+ok(abs(RHO_MIN - 0.01) < 1e-12, sprintf("RHO_MIN default read from the skill = %g", RHO_MIN))
+# pure-binomial ML sits at the boundary only about half of the time (sd of rho-hat about 6.5e-4): over 10 seeds require
+# most estimates (>= 40%) to be exactly 0 and every estimate to be small
+zr <- sapply(101:110, function(s) { set.seed(s); bb_estimate_rho(rbinom(2000, 50, 0.5), rep(50, 2000)) })
+ok(mean(zr == 0) >= 0.4 && all(zr < 2e-3), sprintf("binomial data, 10 seeds, bb_estimate_rho: %d exactly 0, max %.2e", sum(zr == 0), max(zr)))
+gb <- rep(1:500, each = 4)
+zg <- sapply(101:110, function(s) { set.seed(s); bb_estimate_rho_gene(rbinom(2000, 60, 0.5), rep(60, 2000), gb) })
+ok(mean(zg["free", ] == 0) >= 0.4 && all(zg["free", ] < 2e-3), sprintf("binomial data, 10 seeds, bb_estimate_rho_gene free: %d exactly 0, max %.2e", sum(zg["free", ] == 0), max(zg["free", ])))
+ok(mean(zg["corrected", ] == 0) >= 0.4 && all(zg["corrected", ] < RHO_MIN), sprintf("binomial data, 10 seeds, bb_estimate_rho_gene corrected: %d exactly 0, max %.4f (below RHO_MIN)", sum(zg["corrected", ] == 0), max(zg["corrected", ])))
 for (xn in list(c(25, 50), c(30, 50), c(3, 10), c(0, 20), c(7, 9), c(60, 100), c(1, 2)))
   ok(abs(bb_pvalue(xn[1], xn[2], 0) - binom.test(xn[1], xn[2], 0.5)$p.value) < 1e-8, sprintf("bb_pvalue(%d, %d, 0) equals binom.test", xn[1], xn[2]))
 ok(is.na(bb_pvalue(11, 10, 0.02)) && is.na(bb_pvalue(-1, 10, 0.02)) && is.na(bb_pvalue(2.5, 10, 0.02)) && is.na(bb_pvalue(NA, 10, 0.02)), "bb_pvalue guards x > n, x < 0, non-integer and NA x")
 
 # 6. F1 free-mean overdispersion (df-corrected, floored) and gene-level LRT
 set.seed(2)
-RHO_MIN <- 0.01; rho_t <- 0.02; nn <- 60
+rho_t <- 0.02; nn <- 60
 a2 <- function(p) p * (1 - rho_t) / rho_t
-sim <- function(k, G_null = 500, frac_imb = 0.4) {
+sim <- function(k, G_null = 500, frac_imb = 0.4, nfun = function(m) rep(nn, m)) {
   G_imb <- round(G_null * frac_imb / (1 - frac_imb)); pg <- c(rep(0.5, G_null), rep(0.7, G_imb)); G <- length(pg)
-  list(x = unlist(lapply(pg, function(p) rbinom(k, nn, rbeta(k, a2(p), a2(1 - p))))), n = rep(nn, G * k),
-       gene = rep(seq_len(G), each = k), G_null = G_null)
+  pk <- rep(pg, each = k); n <- nfun(G * k)
+  list(x = rbinom(G * k, n, rbeta(G * k, a2(pk), a2(1 - pk))), n = n, gene = rep(seq_len(G), each = k), G_null = G_null)
 }
 s4 <- sim(4); e4 <- bb_estimate_rho_gene(s4$x, s4$n, s4$gene)
 r_h0 <- bb_estimate_rho(s4$x, s4$n)
@@ -64,12 +71,23 @@ ok(e4[["corrected"]] > 0.014 && e4[["corrected"]] < 0.03, sprintf("corrected fre
 ok(e4[["corrected"]] > e4[["free"]], "correction raises the free-mean estimate")
 ok(r_h0 > 2 * e4[["corrected"]], sprintf("H0-based rho %.4f is inflated (> 2 x corrected %.4f)", r_h0, e4[["corrected"]]))
 ok(all(is.na(bb_estimate_rho_gene(s4$x[1:12], rep(nn, 12), s4$gene[1:12]))), "fewer than 5 usable genes gives NA")
-for (k in c(2, 4)) {
-  s <- if (k == 4) s4 else sim(2); e <- if (k == 4) e4 else bb_estimate_rho_gene(s$x, s$n, s$gene)
+# full path (estimate rho on the mixed data, correct, floor, gene LRT on the NULL genes only), 10 seeds x 2000 null genes
+size_run <- function(seed, k, nfun) {
+  set.seed(seed); s <- sim(k, 2000, 0.4, nfun); e <- bb_estimate_rho_gene(s$x, s$n, s$gene)
   rg <- max(e[["corrected"]], RHO_MIN)
-  pn <- sapply(seq_len(s$G_null), function(g) { i <- which(s$gene == g); bb_gene_lrt(s$x[i], s$n[i], rg)$p })
-  cat(sprintf("     %d-SNP genes: uncorrected %.4f, corrected %.4f, rho_gene %.4f, null size %.3f\n", k, e[["free"]], e[["corrected"]], rg, mean(pn < 0.05)))
-  ok(mean(pn < 0.05) <= 0.07, sprintf("full-path null size at 0.05 for %d-SNP genes = %.3f (<= 0.07)", k, mean(pn < 0.05)))
+  pn <- vapply(seq_len(s$G_null), function(g) { i <- ((g - 1) * k + 1):(g * k); bb_gene_lrt(s$x[i], s$n[i], rg)$p }, numeric(1))
+  c(size = mean(pn < 0.05), free = e[["free"]], corrected = e[["corrected"]], rho_gene = rg)
+}
+cases <- list(list("2-SNP, n = 60", 2, NULL), list("4-SNP, n = 60", 4, NULL),
+              list("2-SNP, heterogeneous depth 30-200", 2, function(m) round(runif(m, 30, 200))),
+              list("4-SNP, heterogeneous depth 30-200", 4, function(m) round(runif(m, 30, 200))))
+for (cs in cases) {
+  nf <- if (is.null(cs[[3]])) function(m) rep(nn, m) else cs[[3]]
+  res <- parallel::mclapply(1:10, function(s) size_run(1000 + s, cs[[2]], nf), mc.cores = 8)
+  stopifnot(!any(vapply(res, function(r) inherits(r, "try-error"), logical(1))))
+  m <- do.call(rbind, res)
+  cat(sprintf("     %s: mean uncorrected %.4f, mean corrected %.4f, mean rho_gene %.4f, sizes %s\n", cs[[1]], mean(m[, "free"]), mean(m[, "corrected"]), mean(m[, "rho_gene"]), paste(sprintf("%.3f", m[, "size"]), collapse = " ")))
+  ok(mean(m[, "size"]) <= 0.065 && max(m[, "size"]) <= 0.08, sprintf("full-path null size, %s: pooled %.4f (<= 0.065), worst seed %.3f (<= 0.08)", cs[[1]], mean(m[, "size"]), max(m[, "size"])))
 }
 pw <- sapply(rep(c(0.7, 0.3), each = 250), function(p) bb_gene_lrt(rbinom(4, nn, rbeta(4, a2(p), a2(1 - p))), rep(nn, 4), rho_t)$p)
 ok(mean(pw < 0.05) > 0.9, sprintf("gene LRT power at p = 0.7 / 0.3 = %.2f", mean(pw < 0.05)))

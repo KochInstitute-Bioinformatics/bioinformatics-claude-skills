@@ -129,6 +129,8 @@ need "bb_estimate_rho_gene"
 need "counts are not summed before testing"
 need "RHO_MIN     <- {RHO_MIN}"
 need "rho_corrected"
+need "rho <- max(rho_corrected, RHO_MIN)"
+need '| `RHO_MIN` | 0.01 |'
 need "rho estimate at the upper boundary"
 need "frac_\", alt_label"
 need "acat <- function(p) {   # Cauchy combination with equal weights; p is capped"
