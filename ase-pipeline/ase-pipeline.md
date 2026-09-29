@@ -576,4 +576,461 @@ P=$(sbatch -p bcc --parsable {RESULTS_DIR}/scripts/prep_f1_reference.sh)      # 
 sbatch -p bcc --dependency=afterok:$P {RESULTS_DIR}/scripts/align_count_f1.sh  # outbred: align_wasp_count.sh
 ```
 
-Wait for the jobs with a bounded loop and read the job logs; on a failure show the error line and stop. Rmd 01 (next stage) reads `{RESULTS_DIR}/ase_counts/*.table`, `*.wasp_stats.tsv` and `{SAMPLES_CSV}`.
+Wait for the jobs with a bounded loop and read the job logs; on a failure show the error line and stop. Rmd 01 (Step 12) reads `{RESULTS_DIR}/ase_counts/{sample}.table` (and `{sample}.wasp_stats.tsv` in outbred mode) for every sample in `{SAMPLES_CSV}`.
+
+---
+
+## Step 12 — Rmd 01: import, site filters and reference-bias QC
+
+Write `{CWD}/{TODAY_YYMMDD}_{WD_NAME}_01_import_qc.Rmd` (ask once for `{AUTHOR}` and `{PROJECT_TITLE}`; the same two values go into Rmd 02). The Rmd is self-contained (it sources no helper files), uses `knitr::opts_chunk$set(cache = FALSE)` and `options(scipen = 9)`, loads the Bioconductor packages before `tidyverse`, and calls every dplyr verb with the `dplyr::` prefix. Substitute the placeholders from Steps 0-9 (`{MODE}`, `{STRAIN_A}`, `{STRAIN_B}`, `{SAMPLES_CSV}`, `{RESULTS_DIR}`, `{GTF_PATH}`, and the four constants of Step 8 as bare numbers); for outbred mode leave `{STRAIN_A}` and `{STRAIN_B}` as the words `REF` and `ALT`. The constants block below is the only place the four thresholds are defined; every table and figure uses these objects.
+
+**It reads `ase_counts/{sample}.table` for every sample listed in `samples.csv`, never by globbing `*.table`.** A stray or stale table from an earlier run is therefore never accepted, and the Rmd stops with an error that names every sample whose table is missing, header-only or without data rows (the Step 11 scripts delete failed tables; this is the second line of defence). In outbred mode the same rule applies to `ase_counts/{sample}.wasp_stats.tsv`.
+
+````rmd
+---
+title: "{PROJECT_TITLE} - ASE import and QC"
+author: "{AUTHOR}"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(cache = FALSE, echo = TRUE, message = FALSE, warning = FALSE, fig.width = 9, fig.height = 6)
+options(scipen = 9)
+library(GenomicRanges); library(rtracklayer); library(openxlsx)   # Bioconductor first
+library(tidyverse)
+```
+
+## Constants
+
+```{r constants}
+MODE        <- "{MODE}"                 # "f1" or "outbred"
+STRAIN_A    <- "{STRAIN_A}"             # F1: REF count = strain A; outbred: REF
+STRAIN_B    <- "{STRAIN_B}"             # F1: ALT count = strain B; outbred: ALT
+SAMPLES_CSV <- "{SAMPLES_CSV}"
+RESULTS_DIR <- "{RESULTS_DIR}"
+COUNTS_DIR  <- file.path(RESULTS_DIR, "ase_counts")
+GTF_PATH    <- "{GTF_PATH}"
+MIN_DEPTH   <- {MIN_DEPTH}              # minimum total reads at a site
+FDR_SIG     <- {FDR_SIG}                # BH threshold (used in Rmd 02)
+ABS_DEV_SIG <- {ABS_DEV_SIG}            # minimum |ALT fraction - 0.5| (used in Rmd 02)
+BIAS_TOL    <- {BIAS_TOL}               # reference-bias tolerance
+stopifnot(MODE %in% c("f1", "outbred"))
+ref_label <- STRAIN_A; alt_label <- STRAIN_B
+if (!file.exists(GTF_PATH)) stop("GTF not found: ", GTF_PATH, call. = FALSE)
+```
+
+## Samples and count tables
+
+```{r read}
+samples <- read.csv(SAMPLES_CSV, stringsAsFactors = FALSE, colClasses = "character")
+need_cols <- c("sample", "fastq_1", "fastq_2", "condition", "cross_direction", "individual")
+if (!all(need_cols %in% names(samples)))
+  stop("samples.csv lacks columns: ", paste(setdiff(need_cols, names(samples)), collapse = ", "), call. = FALSE)
+if (anyDuplicated(samples$sample)) stop("duplicated sample names in samples.csv", call. = FALSE)
+
+EXPECTED <- c("contig", "position", "variantID", "refAllele", "altAllele", "refCount", "altCount",
+              "totalCount", "lowMAPQDepth", "lowBaseQDepth", "rawDepth", "otherBases", "improperPairs")
+read_counts <- function(s) {
+  f <- file.path(COUNTS_DIR, paste0(s, ".table"))
+  if (!file.exists(f)) return(list(data = NULL, problem = "table missing"))
+  d <- tryCatch(read.delim(f, stringsAsFactors = FALSE, check.names = FALSE), error = function(e) NULL)
+  if (is.null(d)) return(list(data = NULL, problem = "table is empty or has a header but no data rows"))
+  if (!all(EXPECTED %in% names(d))) return(list(data = NULL, problem = "table lacks the ASEReadCounter columns"))
+  if (nrow(d) == 0) return(list(data = NULL, problem = "table has a header but no data rows"))
+  d$sample <- s
+  list(data = d, problem = NA_character_)
+}
+read_wasp <- function(s) {
+  f <- file.path(COUNTS_DIR, paste0(s, ".wasp_stats.tsv"))
+  if (!file.exists(f)) return(list(data = NULL, problem = "wasp_stats.tsv missing"))
+  d <- tryCatch(read.delim(f, stringsAsFactors = FALSE, colClasses = c("character", "character", "numeric")),
+                error = function(e) NULL)
+  if (is.null(d) || nrow(d) == 0 || !identical(names(d), c("vW", "vA", "n")))
+    return(list(data = NULL, problem = "wasp_stats.tsv empty or malformed"))
+  d$sample <- s
+  list(data = d, problem = NA_character_)
+}
+res <- lapply(samples$sample, read_counts); names(res) <- samples$sample
+problems <- vapply(res, function(r) r$problem, character(1))
+if (MODE == "outbred") {
+  wres <- lapply(samples$sample, read_wasp); names(wres) <- samples$sample
+  wprob <- vapply(wres, function(r) r$problem, character(1))
+  problems <- ifelse(is.na(problems), wprob, ifelse(is.na(wprob), problems, paste(problems, wprob, sep = "; ")))
+}
+problems <- problems[!is.na(problems)]
+if (length(problems) > 0)
+  stop(length(problems), " sample(s) have no usable ASE count table in ", COUNTS_DIR, ":\n",
+       paste0("  - ", names(problems), ": ", problems, collapse = "\n"),
+       "\nRe-run the per-sample array script for these samples; tables of samples not listed in samples.csv are ignored.",
+       call. = FALSE)
+extra <- setdiff(sub("\\.table$", "", list.files(COUNTS_DIR, pattern = "\\.table$")), samples$sample)
+if (length(extra) > 0) message("Ignoring tables of samples not in samples.csv: ", paste(extra, collapse = ", "))
+sites_raw <- dplyr::bind_rows(lapply(res, function(r) r$data))
+knitr::kable(dplyr::count(sites_raw, sample, name = "sites_in_table"), caption = "Sites per sample in the ASEReadCounter tables")
+```
+
+## Site filters
+
+Sites are kept when total depth is at least `MIN_DEPTH`, when low-MAPQ + low-base-quality + other-base depth is at most 10 percent of the raw depth, and when no improper pairs overlap the site. Each filter is applied to the sites left by the previous one; the table shows how many sites each removed.
+
+```{r filters}
+s0 <- sites_raw
+s1 <- dplyr::filter(s0, totalCount >= MIN_DEPTH)
+s2 <- dplyr::filter(s1, (lowMAPQDepth + lowBaseQDepth + otherBases) <= 0.1 * rawDepth)
+s3 <- dplyr::filter(s2, improperPairs == 0)
+cnt <- function(d) as.integer(table(factor(d$sample, levels = samples$sample)))
+filter_log <- data.frame(sample = samples$sample, sites_in = cnt(s0),
+  removed_low_depth = cnt(s0) - cnt(s1), removed_low_quality_or_other_bases = cnt(s1) - cnt(s2),
+  removed_improper_pairs = cnt(s2) - cnt(s3), sites_kept = cnt(s3))
+knitr::kable(filter_log, caption = paste0("Sites removed by each filter (MIN_DEPTH = ", MIN_DEPTH, ")"))
+if (any(filter_log$sites_kept == 0))
+  stop("no sites left after filtering for: ", paste(filter_log$sample[filter_log$sites_kept == 0], collapse = ", "), call. = FALSE)
+n_mismatch <- sum(s3$refCount + s3$altCount != s3$totalCount)
+if (n_mismatch > 0) message(n_mismatch, " kept sites have refCount + altCount different from totalCount; ref + alt is used")
+```
+
+## Allele mapping
+
+F1 mode: the REF count is strain A and the ALT count is strain B (the het-sites VCF was built with REF = strain A). Outbred mode: REF and ALT. All later tables use `ref_n`, `alt_n`, `total = ref_n + alt_n` and `alt_frac`.
+
+```{r alleles}
+sites <- s3 %>%
+  dplyr::transmute(sample, contig, position,
+                   SNP = paste0(contig, ":", position, ":", refAllele, ">", altAllele),
+                   refAllele, altAllele, ref_n = refCount, alt_n = altCount,
+                   total = refCount + altCount, ref_frac = refCount / (refCount + altCount),
+                   alt_frac = altCount / (refCount + altCount)) %>%
+  dplyr::left_join(samples[, c("sample", "condition", "cross_direction", "individual")], by = "sample")
+cat("REF count =", ref_label, "; ALT count =", alt_label, "\n")
+```
+
+## Coverage and site counts
+
+```{r coverage}
+coverage <- sites %>% dplyr::group_by(sample) %>%
+  dplyr::summarise(sites = dplyr::n(), total_reads = sum(total), median_depth = median(total),
+                   min_depth = min(total), max_depth = max(total), .groups = "drop")
+knitr::kable(coverage, caption = "Filtered sites and coverage per sample")
+ggplot(sites, aes(total)) + geom_histogram(bins = 40) + scale_x_log10() + facet_wrap(~sample) +
+  labs(x = "total reads at site (log10)", y = "sites") + theme_bw()
+```
+
+## Reference-bias diagnostic
+
+For every sample the mean REF fraction is REF reads divided by REF + ALT reads summed over the filtered sites. A sample is flagged when its deviation from 0.5 exceeds `max(BIAS_TOL, 3 * SE)` with `SE = sqrt(0.25 / total reads)`. **This is a screen, not a test.** On data with planted or real allelic imbalance the all-sites mean is not expected to be 0.5, so a flag says "look at the ratios with caution", not "the sample is wrong"; a benign spread of about +0.02 to -0.03 was seen on synthetic data with no imbalance at about 2000 reads per sample.
+
+```{r bias}
+bias <- sites %>% dplyr::group_by(sample) %>%
+  dplyr::summarise(n_sites = dplyr::n(), total_reads = sum(total), ref_reads = sum(ref_n), .groups = "drop") %>%
+  dplyr::mutate(mean_ref_frac = ref_reads / total_reads, deviation = mean_ref_frac - 0.5,
+                SE = sqrt(0.25 / total_reads), threshold = pmax(BIAS_TOL, 3 * SE),
+                flagged = abs(deviation) > threshold)
+knitr::kable(bias, digits = 4, caption = paste0("Reference-bias diagnostic (REF = ", ref_label, ")"))
+if (any(bias$flagged)) cat("FLAGGED samples:", paste(bias$sample[bias$flagged], collapse = ", "),
+                           "- show this flag next to every ratio table and figure.\n") else cat("No sample is flagged.\n")
+ggplot(sites, aes(ref_frac)) + geom_histogram(bins = 25) + geom_vline(xintercept = 0.5, linetype = 2) +
+  geom_vline(data = bias, aes(xintercept = mean_ref_frac, colour = flagged)) +
+  scale_colour_manual(values = c(`FALSE` = "steelblue", `TRUE` = "firebrick")) +
+  facet_wrap(~sample) + labs(x = paste0("REF (", ref_label, ") fraction per site"), y = "sites") + theme_bw()
+```
+
+## WASP removal (outbred only)
+
+STAR's `vW` tag: 1 passed; 2 multi-mapping read; 3 variant base N; 4 remapping failed; 5 remapped read multi-maps; 6 remapped read maps to a different locus; 7 too many variants; `none` = the alignment overlaps no variant. `vA` is the first allele class of the alignment: 1 REF, 2 ALT, 3 no match, `-` = no tag. Alignments with `vW` 2-7 are removed, so the tables show how many were removed and from which allele class. WASP does not promise less bias; the REF fraction before and after is reported as measured.
+
+```{r wasp, eval = (MODE == "outbred")}
+wasp <- dplyr::bind_rows(lapply(wres, function(r) r$data))
+knitr::kable(tidyr::pivot_wider(dplyr::count(wasp, sample, vW, wt = n, name = "alignments"),
+                                names_from = vW, values_from = alignments, values_fill = 0),
+             caption = "Alignments by vW code")
+knitr::kable(tidyr::pivot_wider(dplyr::count(dplyr::filter(wasp, vW != "none"), sample, vA, wt = n, name = "alignments"),
+                                names_from = vA, values_from = alignments, values_fill = 0),
+             caption = "Tagged alignments by allele class (vA: 1 REF, 2 ALT, 3 no match)")
+wasp_ref <- wasp %>% dplyr::filter(vA %in% c("1", "2")) %>% dplyr::group_by(sample) %>%
+  dplyr::summarise(tagged_before = sum(n), ref_frac_before = sum(n[vA == "1"]) / sum(n),
+                   tagged_after_vW1 = sum(n[vW == "1"]), ref_frac_after_vW1 = sum(n[vW == "1" & vA == "1"]) / sum(n[vW == "1"]),
+                   removed_ref = sum(n[vW != "1" & vA == "1"]), removed_alt = sum(n[vW != "1" & vA == "2"]), .groups = "drop")
+knitr::kable(wasp_ref, digits = 4, caption = "REF fraction among tagged alignments before and after keeping vW = 1")
+```
+
+## Checkpoint
+
+```{r checkpoint}
+constants <- list(MODE = MODE, STRAIN_A = STRAIN_A, STRAIN_B = STRAIN_B, MIN_DEPTH = MIN_DEPTH,
+                  FDR_SIG = FDR_SIG, ABS_DEV_SIG = ABS_DEV_SIG, BIAS_TOL = BIAS_TOL, GTF_PATH = GTF_PATH)
+saveRDS(list(sites = sites, samples = samples, constants = constants, bias = bias, filter_log = filter_log,
+             wasp = if (MODE == "outbred") wasp else NULL),
+        file.path(RESULTS_DIR, "ase_checkpoint.rds"))
+cat("wrote", file.path(RESULTS_DIR, "ase_checkpoint.rds"), "\n")
+sessionInfo()
+```
+````
+
+Render it as an `sbatch -p bcc` job from the container (`run_01_import_qc.sh`, `-n 2 --mem=8G -t 0:30:00`, output under `{RESULTS_DIR}/logs`):
+
+```bash
+module add singularity/3.10.4 || { echo "ERROR: cannot load singularity" >&2; exit 1; }
+singularity exec --bind {CWD} {R_SIF} Rscript -e 'rmarkdown::render("{CWD}/{TODAY_YYMMDD}_{WD_NAME}_01_import_qc.Rmd", output_dir = "{RESULTS_DIR}")' || { echo "ERROR: Rmd 01 failed" >&2; exit 1; }
+```
+
+If the job stops with "sample(s) have no usable ASE count table", show the listed samples to the user; do not delete anything, and do not work around it by globbing.
+
+---
+
+## Step 13 — Rmd 02: per-sample allelic imbalance
+
+Write `{CWD}/{TODAY_YYMMDD}_{WD_NAME}_02_imbalance.Rmd` with the same header conventions as Step 12. It loads `ase_checkpoint.rds`, defines its own constants block (same names, same values; the Rmd stops if they differ from the checkpoint, so Rmd 01 and Rmd 02 can never disagree), pastes the statistics functions of Step 14 (the code between the two marker lines, without the marker lines) into the chunk marked below, and writes `{TODAY_YYMMDD}_{WD_NAME}_ASE_imbalance.xlsx` (sheets `SNP`, `Gene`, `Summary`) and `ase_imbalance_checkpoint.rds` to `{RESULTS_DIR}`.
+
+- Per sample, `rho <- bb_estimate_rho(alt, total)` is estimated under H0 (p = 0.5) from all filtered sites (conservative when true imbalance exists, see Step 14). With fewer than 20 sites `rho` is `NA` and the sample is not tested (stated in the Summary).
+- Per SNP, `bb_pvalue`, then Benjamini-Hochberg within each sample. The single column `sig` is `padj < FDR_SIG` and `|ALT fraction - 0.5| >= ABS_DEV_SIG` (F1: ALT is strain B). The Summary table and every plot use this column and nothing else; the Rmd checks that the counts drawn in the figures equal the Summary counts.
+- Gene level, both modes: SNP positions are overlapped with the GTF exons by `GenomicRanges::findOverlaps` (`gene_id` from the GTF). **F1:** the two strains' reads are summed per gene and tested with the same beta-binomial model (the sample's `rho`); direction is given. **Outbred:** SNPs cannot be pooled without phasing, so the gene p-value is the `acat` combination of the SNP p-values, labelled "unphased, no direction" (no direction column); the gene is `sig` when its BH-adjusted `acat` p-value is below `FDR_SIG` and at least one of its SNPs deviates by `ABS_DEV_SIG` or more.
+- The reference-bias flag from Rmd 01 is printed with the tables and written into the Summary sheet; if a sample is flagged, say so next to its ratios.
+
+````rmd
+---
+title: "{PROJECT_TITLE} - ASE per-sample imbalance"
+author: "{AUTHOR}"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(cache = FALSE, echo = TRUE, message = FALSE, warning = FALSE, fig.width = 10, fig.height = 7)
+options(scipen = 9)
+library(GenomicRanges); library(rtracklayer); library(openxlsx)   # Bioconductor first
+library(tidyverse)
+```
+
+## Constants and checkpoint
+
+```{r constants}
+MODE        <- "{MODE}"
+STRAIN_A    <- "{STRAIN_A}"
+STRAIN_B    <- "{STRAIN_B}"
+RESULTS_DIR <- "{RESULTS_DIR}"
+GTF_PATH    <- "{GTF_PATH}"
+DATE_TAG    <- "{TODAY_YYMMDD}_{WD_NAME}"
+MIN_DEPTH   <- {MIN_DEPTH}
+FDR_SIG     <- {FDR_SIG}
+ABS_DEV_SIG <- {ABS_DEV_SIG}
+BIAS_TOL    <- {BIAS_TOL}
+ref_label <- STRAIN_A; alt_label <- STRAIN_B
+ck <- readRDS(file.path(RESULTS_DIR, "ase_checkpoint.rds"))
+same <- c(MODE = identical(ck$constants$MODE, MODE),
+          vapply(c("MIN_DEPTH", "FDR_SIG", "ABS_DEV_SIG", "BIAS_TOL"),
+                 function(k) isTRUE(all.equal(ck$constants[[k]], get(k))), logical(1)))
+if (!all(same)) stop("constants differ from the Rmd 01 checkpoint (", paste(names(same)[!same], collapse = ", "),
+                     "); re-render Rmd 01 with the same values", call. = FALSE)
+sites <- ck$sites; bias <- ck$bias
+knitr::kable(bias, digits = 4, caption = paste0("Reference-bias diagnostic from Rmd 01 (REF = ", ref_label, "); a screen, not a test"))
+bias_note <- ifelse(bias$flagged, "FLAGGED: reference bias above tolerance, read ratios with caution", "not flagged")
+names(bias_note) <- bias$sample
+if (any(bias$flagged)) cat("FLAGGED samples:", paste(bias$sample[bias$flagged], collapse = ", "), "\n")
+```
+
+## Statistics functions
+
+```{r stats}
+# <<< paste here the code of Step 14 between the two marker lines (the marker lines themselves are not pasted) >>>
+```
+
+## Per-SNP beta-binomial test
+
+The overdispersion `rho` is estimated per sample under H0 (p = 0.5) from all filtered sites. When real imbalance exists this inflates `rho`, which lowers power and never inflates false positives (conservative).
+
+```{r snp}
+bb_p_safe <- function(x, n, rho) if (is.na(rho)) NA_real_ else bb_pvalue(x, n, rho = rho)
+snp <- dplyr::bind_rows(lapply(split(sites, sites$sample), function(d) {
+  rho <- bb_estimate_rho(d$alt_n, d$total)
+  d$rho <- rho
+  d$p <- mapply(bb_p_safe, d$alt_n, d$total, MoreArgs = list(rho = rho))
+  d$padj <- p.adjust(d$p, method = "BH")
+  d
+})) %>%
+  dplyr::mutate(dev = abs(alt_frac - 0.5),
+                sig = !is.na(padj) & padj < FDR_SIG & dev >= ABS_DEV_SIG,
+                direction = dplyr::case_when(!sig ~ "none", alt_frac > 0.5 ~ paste(alt_label, "higher"),
+                                             TRUE ~ paste(ref_label, "higher")))
+knitr::kable(dplyr::distinct(snp, sample, rho), digits = 4, caption = "Overdispersion rho per sample (NA = fewer than 20 sites, sample not tested)")
+```
+
+## Gene level
+
+```{r gene}
+gtf <- rtracklayer::import(GTF_PATH)
+if (is.null(gtf$gene_id)) stop("the GTF has no gene_id attribute", call. = FALSE)
+ex <- gtf[gtf$type == "exon" & !is.na(gtf$gene_id)]
+pos <- unique(snp[, c("contig", "position")])
+gr <- GenomicRanges::GRanges(pos$contig, IRanges::IRanges(pos$position, width = 1))
+gr_chr <- unique(as.character(GenomicRanges::seqnames(gr))); ex_chr <- unique(as.character(GenomicRanges::seqnames(ex)))
+if (length(intersect(gr_chr, ex_chr)) == 0)
+  stop("no contig names in common between the count tables (", paste(head(gr_chr, 3), collapse = ", "),
+       ") and the GTF (", paste(head(ex_chr, 3), collapse = ", "), ")", call. = FALSE)
+hits <- GenomicRanges::findOverlaps(gr, ex)
+snp_gene <- data.frame(contig = pos$contig[S4Vectors::queryHits(hits)], position = pos$position[S4Vectors::queryHits(hits)],
+                       gene_id = ex$gene_id[S4Vectors::subjectHits(hits)], stringsAsFactors = FALSE) %>% dplyr::distinct()
+cat(nrow(pos), "SNP positions,", length(unique(snp_gene$gene_id)), "genes with at least one SNP\n")
+snp_by_gene <- dplyr::inner_join(snp, snp_gene, by = c("contig", "position"))
+
+if (MODE == "f1") {
+  gene <- snp_by_gene %>% dplyr::group_by(sample, gene_id) %>%
+    dplyr::summarise(n_snps = dplyr::n(), ref_n = sum(ref_n), alt_n = sum(alt_n), total = sum(total),
+                     rho = dplyr::first(rho), .groups = "drop") %>%
+    dplyr::mutate(alt_frac = alt_n / total, dev = abs(alt_frac - 0.5),
+                  p = mapply(bb_p_safe, alt_n, total, rho)) %>%
+    dplyr::group_by(sample) %>% dplyr::mutate(padj = p.adjust(p, method = "BH")) %>% dplyr::ungroup() %>%
+    dplyr::mutate(sig = !is.na(padj) & padj < FDR_SIG & dev >= ABS_DEV_SIG,
+                  direction = dplyr::case_when(!sig ~ "none", alt_frac > 0.5 ~ paste(alt_label, "higher"),
+                                               TRUE ~ paste(ref_label, "higher")))
+} else {
+  gene <- snp_by_gene %>% dplyr::filter(!is.na(p)) %>% dplyr::group_by(sample, gene_id) %>%
+    dplyr::summarise(n_snps = dplyr::n(), acat_p = acat(p), max_dev = max(dev), .groups = "drop") %>%
+    dplyr::group_by(sample) %>% dplyr::mutate(padj = p.adjust(acat_p, method = "BH")) %>% dplyr::ungroup() %>%
+    dplyr::mutate(sig = !is.na(padj) & padj < FDR_SIG & max_dev >= ABS_DEV_SIG,
+                  note = "unphased, no direction")
+}
+gene <- dplyr::arrange(gene, sample, gene_id)
+snp_annot <- snp_gene %>% dplyr::group_by(contig, position) %>%
+  dplyr::summarise(Gene = paste(unique(gene_id), collapse = ";"), .groups = "drop")
+snp <- dplyr::left_join(snp, snp_annot, by = c("contig", "position"))
+knitr::kable(head(dplyr::filter(gene, sig), 30), digits = 4, caption = "Significant genes (first 30)")
+```
+
+## Summary
+
+```{r summary}
+snp_plot <- dplyr::filter(snp, !is.na(p))      # data behind the SNP figure
+gene_plot <- dplyr::filter(gene, if (MODE == "f1") !is.na(p) else !is.na(acat_p))   # data behind the gene figure
+summary_tbl <- snp %>% dplyr::group_by(sample) %>%
+  dplyr::summarise(rho = dplyr::first(rho), sites_tested = sum(!is.na(p)), sig_sites = sum(sig),
+                   sig_sites_alt_higher = sum(sig & alt_frac > 0.5), sig_sites_ref_higher = sum(sig & alt_frac < 0.5),
+                   .groups = "drop")
+gsum <- if (MODE == "f1") {
+  gene %>% dplyr::group_by(sample) %>%
+    dplyr::summarise(genes_tested = sum(!is.na(p)), sig_genes = sum(sig),
+                     sig_genes_alt_higher = sum(sig & alt_frac > 0.5), sig_genes_ref_higher = sum(sig & alt_frac < 0.5), .groups = "drop")
+} else {
+  gene %>% dplyr::group_by(sample) %>%
+    dplyr::summarise(genes_tested = sum(!is.na(acat_p)), sig_genes = sum(sig), .groups = "drop")
+}
+summary_tbl <- summary_tbl %>% dplyr::left_join(gsum, by = "sample") %>%
+  dplyr::left_join(dplyr::select(bias, sample, mean_ref_frac, ref_bias_flagged = flagged), by = "sample") %>%
+  dplyr::mutate(ref_bias_note = bias_note[sample],
+                gene_level = if (MODE == "f1") "strain-summed beta-binomial" else "unphased, no direction (acat of SNP p-values)")
+knitr::kable(summary_tbl, digits = 4, caption = "Summary per sample (FDR_SIG, ABS_DEV_SIG as in the constants block)")
+# the figures are drawn from snp_plot / gene_plot: their sig counts must equal the Summary counts
+fig_sites <- tapply(snp_plot$sig, factor(snp_plot$sample, levels = summary_tbl$sample), sum)
+fig_genes <- tapply(gene_plot$sig, factor(gene_plot$sample, levels = summary_tbl$sample), sum)
+fig_sites[is.na(fig_sites)] <- 0; fig_genes[is.na(fig_genes)] <- 0
+stopifnot(identical(as.integer(fig_sites), as.integer(summary_tbl$sig_sites)),
+          identical(as.integer(fig_genes), as.integer(summary_tbl$sig_genes)))
+cat("Figure sig counts equal Summary counts: TRUE\n")
+```
+
+## Figures
+
+```{r figures}
+cols <- c(`FALSE` = "grey60", `TRUE` = "firebrick")
+lab_sites <- snp_plot %>% dplyr::group_by(sample) %>%
+  dplyr::summarise(lab = paste0(dplyr::first(sample), ": ", sum(sig), " significant of ", dplyr::n(), " sites"), .groups = "drop")
+p1 <- dplyr::left_join(snp_plot, lab_sites, by = "sample") %>%
+  ggplot(aes(total, alt_frac, colour = sig)) + geom_hline(yintercept = 0.5, linetype = 2) + geom_point(alpha = 0.7) +
+  scale_x_log10() + scale_colour_manual(values = cols) + facet_wrap(~lab) +
+  labs(x = "total reads at site (log10)", y = paste0(alt_label, " fraction"), colour = "sig",
+       caption = paste0("sig: BH < ", FDR_SIG, " and |fraction - 0.5| >= ", ABS_DEV_SIG,
+                        if (any(bias$flagged)) "; some samples flagged for reference bias" else "")) + theme_bw()
+print(p1)
+ggsave(file.path(RESULTS_DIR, paste0(DATE_TAG, "_ASE_sites_vs_depth.pdf")), p1, width = 10, height = 7)
+if (MODE == "f1") {
+  lab_genes <- gene_plot %>% dplyr::group_by(sample) %>%
+    dplyr::summarise(lab = paste0(dplyr::first(sample), ": ", sum(sig), " significant of ", dplyr::n(), " genes"), .groups = "drop")
+  p2 <- dplyr::left_join(gene_plot, lab_genes, by = "sample") %>%
+    ggplot(aes(gene_id, alt_frac, colour = sig)) + geom_hline(yintercept = 0.5, linetype = 2) + geom_point(size = 2) +
+    scale_colour_manual(values = cols) + facet_wrap(~lab) + coord_flip() +
+    labs(x = NULL, y = paste0(alt_label, " fraction (strain-summed reads)"), colour = "sig") + theme_bw()
+} else {
+  lab_genes <- gene_plot %>% dplyr::group_by(sample) %>%
+    dplyr::summarise(lab = paste0(dplyr::first(sample), ": ", sum(sig), " significant of ", dplyr::n(), " genes"), .groups = "drop")
+  p2 <- dplyr::left_join(gene_plot, lab_genes, by = "sample") %>%
+    ggplot(aes(gene_id, -log10(padj), colour = sig)) + geom_point(size = 2) + scale_colour_manual(values = cols) +
+    facet_wrap(~lab) + coord_flip() +
+    labs(x = NULL, y = "-log10 adjusted acat p (unphased, no direction)", colour = "sig") + theme_bw()
+}
+print(p2)
+ggsave(file.path(RESULTS_DIR, paste0(DATE_TAG, "_ASE_genes.pdf")), p2, width = 10, height = 7)
+```
+
+## Export
+
+```{r export}
+rename_out <- function(d) {
+  names(d) <- sub("^ref_n$", paste0("reads_", ref_label), names(d))
+  names(d) <- sub("^alt_n$", paste0("reads_", alt_label), names(d))
+  names(d) <- sub("alt_higher", paste0(alt_label, "_higher"), names(d))
+  names(d) <- sub("ref_higher", paste0(ref_label, "_higher"), names(d))
+  d
+}
+xlsx_file <- file.path(RESULTS_DIR, paste0(DATE_TAG, "_ASE_imbalance.xlsx"))
+wb <- openxlsx::createWorkbook()
+for (nm in c("SNP", "Gene", "Summary")) openxlsx::addWorksheet(wb, nm)
+openxlsx::writeData(wb, "SNP", rename_out(dplyr::select(snp, SNP, Gene, sample, condition, contig, position, ref_n, alt_n, total, alt_frac, rho, p, padj, dev, sig, direction)))
+openxlsx::writeData(wb, "Gene", rename_out(gene))
+openxlsx::writeData(wb, "Summary", rename_out(summary_tbl))
+openxlsx::saveWorkbook(wb, xlsx_file, overwrite = TRUE)
+saveRDS(list(snp = snp, gene = gene, summary = summary_tbl, constants = ck$constants),
+        file.path(RESULTS_DIR, "ase_imbalance_checkpoint.rds"))
+cat("wrote", xlsx_file, "\n")
+sessionInfo()
+```
+````
+
+Render it with `run_02_imbalance.sh` (same pattern as `run_01_import_qc.sh`, Rmd 02 file name, `-n 2 --mem=16G -t 1:00:00`, submitted with `sbatch -p bcc --dependency=afterok:<Rmd 01 job>`).
+
+---
+
+## Step 14 — Statistics functions
+
+These four base-R functions are pasted verbatim into Rmd 02 (`{TODAY_YYMMDD}_{WD_NAME}_02_imbalance.Rmd`); the marker lines delimit the code that `ase-pipeline/tests/r/test_ase_stats.R` extracts from this file and unit-tests, so the tested code is the shipped code. They need no packages beyond base R.
+
+```r
+# --- ase-stats-begin
+bb_negloglik <- function(par, x, n, p0 = 0.5) {
+  rho <- plogis(par)
+  if (rho < 1e-8) return(-sum(dbinom(x, n, p0, log = TRUE)))
+  a <- p0 * (1 - rho) / rho; b <- (1 - p0) * (1 - rho) / rho
+  -sum(lchoose(n, x) + lbeta(x + a, n - x + b) - lbeta(a, b))
+}
+bb_estimate_rho <- function(x, n, p0 = 0.5) {
+  keep <- n > 0; x <- x[keep]; n <- n[keep]
+  if (length(x) < 20) return(NA_real_)
+  fit <- optimize(bb_negloglik, interval = c(-12, 2), x = x, n = n, p0 = p0)
+  rho <- plogis(fit$minimum)
+  if (rho < 1e-6) 0 else rho
+}
+bb_pvalue <- function(x, n, rho, p0 = 0.5) {
+  if (is.na(n) || n <= 0) return(NA_real_)
+  k <- 0:n
+  lp <- if (rho < 1e-8) dbinom(k, n, p0, log = TRUE) else {
+    a <- p0 * (1 - rho) / rho; b <- (1 - p0) * (1 - rho) / rho
+    lchoose(n, k) + lbeta(k + a, n - k + b) - lbeta(a, b)
+  }
+  min(1, sum(exp(lp[lp <= lp[x + 1] + 1e-9])))
+}
+acat <- function(p) {   # Cauchy combination with equal weights
+  p <- pmin(pmax(p[!is.na(p)], 1e-15), 1); if (length(p) == 0) return(NA_real_)
+  0.5 - atan(mean(tan((0.5 - p) * pi))) / pi
+}
+# --- ase-stats-end
+```
+
+- `bb_pvalue` is the two-sided exact beta-binomial test against `p0`: the p-value is the total probability of all outcomes that are no more likely than the observed count. With `rho = 0` it is the exact binomial test.
+- **`rho` (overdispersion) is estimated per sample under H0 (p = 0.5) from all filtered sites.** When real imbalance exists, the extra variance is absorbed into `rho`, which inflates it. An inflated `rho` lowers power but never inflates false positives, so the estimate is conservative. It is estimated by maximum likelihood on the logistic scale (`optimize`), and a value below 1e-6 is reported as 0 (pure binomial). Fewer than 20 sites gives `NA` and the sample is not tested.
+- `acat` is the Cauchy combination test with equal weights; it is valid for correlated p-values, which is why it is used for the SNPs of one gene. It carries no direction.
+- The unit tests check the null size and uniformity of the p-values, power, recovery of `rho` (including `rho` near 0), the edge cases (`n = 0`, `x = 0`, `x = n`) and `acat`. Run them from the repository root with `singularity exec --bind /net/bmc-lab3 <bulkrnaseq sif> Rscript ase-pipeline/tests/r/test_ase_stats.R ase-pipeline/ase-pipeline.md` inside an `sbatch -p bcc` job.

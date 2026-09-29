@@ -103,6 +103,26 @@ need "rm -f \"\$TABLE\" \"\$STATS\""
 need "faidx -n 60"
 need "soft-masked"
 # --- end Task 5
+# --- Task 6 (Steps 12-14); strings chosen so only Task 6 text satisfies them
+for n in 12 13 14; do need "## Step $n"; done
+need "# --- ase-stats-begin"
+need "# --- ase-stats-end"
+need "bb_pvalue"
+need "acat"
+need "ase_checkpoint.rds"
+need "_ASE_imbalance.xlsx"
+need "MIN_DEPTH"
+need "never by globbing"
+need "GenomicRanges::findOverlaps"
+need "unphased, no direction"
+need "_01_import_qc.Rmd"
+need "_02_imbalance.Rmd"
+need "cache = FALSE"
+need "options(scipen = 9)"
+forbid "source("
+[ "$(grep -c '^# --- ase-stats-begin' "$SKILL")" -eq 1 ] || { echo "FAIL: need exactly one ase-stats-begin marker"; fail=1; }
+[ "$(grep -c '^# --- ase-stats-end' "$SKILL")" -eq 1 ] || { echo "FAIL: need exactly one ase-stats-end marker"; fail=1; }
+# --- end Task 6
 
 
 
