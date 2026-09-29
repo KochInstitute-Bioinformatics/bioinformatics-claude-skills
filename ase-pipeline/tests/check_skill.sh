@@ -123,6 +123,11 @@ forbid "source("
 [ "$(grep -c '^# --- ase-stats-begin' "$SKILL")" -eq 1 ] || { echo "FAIL: need exactly one ase-stats-begin marker"; fail=1; }
 [ "$(grep -c '^# --- ase-stats-end' "$SKILL")" -eq 1 ] || { echo "FAIL: need exactly one ase-stats-end marker"; fail=1; }
 # --- end Task 6
+# --- Task 6 fix (F1 gene level: free-mean rho and gene LRT)
+need "bb_gene_lrt"
+need "bb_estimate_rho_gene"
+need "counts are not summed before testing"
+# --- end Task 6 fix
 
 
 

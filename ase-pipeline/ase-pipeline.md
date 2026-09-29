@@ -785,9 +785,9 @@ If the job stops with "sample(s) have no usable ASE count table", show the liste
 
 Write `{CWD}/{TODAY_YYMMDD}_{WD_NAME}_02_imbalance.Rmd` with the same header conventions as Step 12. It loads `ase_checkpoint.rds`, defines its own constants block (same names, same values; the Rmd stops if they differ from the checkpoint, so Rmd 01 and Rmd 02 can never disagree), pastes the statistics functions of Step 14 (the code between the two marker lines, without the marker lines) into the chunk marked below, and writes `{TODAY_YYMMDD}_{WD_NAME}_ASE_imbalance.xlsx` (sheets `SNP`, `Gene`, `Summary`) and `ase_imbalance_checkpoint.rds` to `{RESULTS_DIR}`.
 
-- Per sample, `rho <- bb_estimate_rho(alt, total)` is estimated under H0 (p = 0.5) from all filtered sites (conservative when true imbalance exists, see Step 14). With fewer than 20 sites `rho` is `NA` and the sample is not tested (stated in the Summary).
+- Per sample, `rho_h0 <- bb_estimate_rho(alt, total)` is estimated under H0 (p = 0.5) from all filtered sites (conservative when true imbalance exists, see Step 14). **Outbred** uses `rho_h0`. **F1** uses `rho_f1 <- bb_estimate_rho_gene(alt, total, gene)`, estimated with a free mean per gene, because real imbalance inflates `rho_h0`; if it is `NA` (fewer than 5 genes with 2 or more SNPs) the Rmd prints a WARNING, falls back to `rho_h0` and records that in the Summary (`rho_source`). The Summary shows both estimates. With fewer than 20 sites `rho_h0` is `NA` and the sample is not tested.
 - Per SNP, `bb_pvalue`, then Benjamini-Hochberg within each sample. The single column `sig` is `padj < FDR_SIG` and `|ALT fraction - 0.5| >= ABS_DEV_SIG` (F1: ALT is strain B). The Summary table and every plot use this column and nothing else; the Rmd checks that the counts drawn in the figures equal the Summary counts.
-- Gene level, both modes: SNP positions are overlapped with the GTF exons by `GenomicRanges::findOverlaps` (`gene_id` from the GTF). **F1:** the two strains' reads are summed per gene and tested with the same beta-binomial model (the sample's `rho`); direction is given. **Outbred:** SNPs cannot be pooled without phasing, so the gene p-value is the `acat` combination of the SNP p-values, labelled "unphased, no direction" (no direction column); the gene is `sig` when its BH-adjusted `acat` p-value is below `FDR_SIG` and at least one of its SNPs deviates by `ABS_DEV_SIG` or more.
+- Gene level, both modes: SNP positions are overlapped with the GTF exons by `GenomicRanges::findOverlaps` (`gene_id` from the GTF). **F1:** counts are not summed before testing (summing and applying the per-SNP `rho` to the total inflates the variance by about `1 + (n - 1) * rho` and destroys power); each gene's SNPs share one strain-B fraction and `bb_gene_lrt` tests it against 0.5 with `rho_f1`; the table reports `phat` (strain-B fraction), p, BH within the sample, and `sig` from `FDR_SIG` and `ABS_DEV_SIG` on `|phat - 0.5|`. **Outbred:** SNPs cannot be pooled without phasing, so the gene p-value is the `acat` combination of the SNP p-values, labelled "unphased, no direction" (no direction column); the gene is `sig` when its BH-adjusted `acat` p-value is below `FDR_SIG` and at least one of its SNPs deviates by `ABS_DEV_SIG` or more.
 - The reference-bias flag from Rmd 01 is printed with the tables and written into the Summary sheet; if a sample is flagged, say so next to its ratios.
 
 ````rmd
@@ -841,33 +841,13 @@ if (any(bias$flagged)) cat("FLAGGED samples:", paste(bias$sample[bias$flagged], 
 # <<< paste here the code of Step 14 between the two marker lines (the marker lines themselves are not pasted) >>>
 ```
 
-## Per-SNP beta-binomial test
+## SNP to gene map
 
-The overdispersion `rho` is estimated per sample under H0 (p = 0.5) from all filtered sites. When real imbalance exists this inflates `rho`, which lowers power and never inflates false positives (conservative).
-
-```{r snp}
-bb_p_safe <- function(x, n, rho) if (is.na(rho)) NA_real_ else bb_pvalue(x, n, rho = rho)
-snp <- dplyr::bind_rows(lapply(split(sites, sites$sample), function(d) {
-  rho <- bb_estimate_rho(d$alt_n, d$total)
-  d$rho <- rho
-  d$p <- mapply(bb_p_safe, d$alt_n, d$total, MoreArgs = list(rho = rho))
-  d$padj <- p.adjust(d$p, method = "BH")
-  d
-})) %>%
-  dplyr::mutate(dev = abs(alt_frac - 0.5),
-                sig = !is.na(padj) & padj < FDR_SIG & dev >= ABS_DEV_SIG,
-                direction = dplyr::case_when(!sig ~ "none", alt_frac > 0.5 ~ paste(alt_label, "higher"),
-                                             TRUE ~ paste(ref_label, "higher")))
-knitr::kable(dplyr::distinct(snp, sample, rho), digits = 4, caption = "Overdispersion rho per sample (NA = fewer than 20 sites, sample not tested)")
-```
-
-## Gene level
-
-```{r gene}
+```{r genemap}
 gtf <- rtracklayer::import(GTF_PATH)
 if (is.null(gtf$gene_id)) stop("the GTF has no gene_id attribute", call. = FALSE)
 ex <- gtf[gtf$type == "exon" & !is.na(gtf$gene_id)]
-pos <- unique(snp[, c("contig", "position")])
+pos <- unique(sites[, c("contig", "position")])
 gr <- GenomicRanges::GRanges(pos$contig, IRanges::IRanges(pos$position, width = 1))
 gr_chr <- unique(as.character(GenomicRanges::seqnames(gr))); ex_chr <- unique(as.character(GenomicRanges::seqnames(ex)))
 if (length(intersect(gr_chr, ex_chr)) == 0)
@@ -877,14 +857,52 @@ hits <- GenomicRanges::findOverlaps(gr, ex)
 snp_gene <- data.frame(contig = pos$contig[S4Vectors::queryHits(hits)], position = pos$position[S4Vectors::queryHits(hits)],
                        gene_id = ex$gene_id[S4Vectors::subjectHits(hits)], stringsAsFactors = FALSE) %>% dplyr::distinct()
 cat(nrow(pos), "SNP positions,", length(unique(snp_gene$gene_id)), "genes with at least one SNP\n")
+```
+
+## Per-SNP beta-binomial test
+
+The overdispersion `rho` is estimated per sample. **Outbred:** under H0 (p = 0.5) from all filtered sites (`bb_estimate_rho`); when real imbalance exists this inflates `rho`, which lowers power and never inflates false positives (conservative). **F1:** the H0-based value is inflated by every truly imbalanced gene, so `rho` is instead estimated with a free mean per gene (`bb_estimate_rho_gene`, genes with at least 2 SNPs), which removes that inflation; both values are reported. If the free-mean estimate is not available (fewer than 5 usable genes) the H0-based value is used and a WARNING is printed and written to the Summary (`rho_source`). The `rho` column is the value used for the tests.
+
+```{r snp}
+bb_p_safe <- function(x, n, rho) if (is.na(rho)) NA_real_ else bb_pvalue(x, n, rho = rho)
+snp <- dplyr::bind_rows(lapply(split(sites, sites$sample), function(d) {
+  rho_h0 <- bb_estimate_rho(d$alt_n, d$total)
+  rho_free <- NA_real_; rho <- rho_h0; src <- "H0-based"
+  if (MODE == "f1") {
+    g <- snp_gene$gene_id[match(paste(d$contig, d$position), paste(snp_gene$contig, snp_gene$position))]
+    rho_free <- bb_estimate_rho_gene(d$alt_n, d$total, g)
+    if (!is.na(rho_free)) { rho <- rho_free; src <- "free-mean per gene" } else {
+      cat("WARNING: sample", d$sample[1], "has fewer than 5 genes with 2 or more SNPs; using the H0-based rho\n"); src <- "H0-based (fallback)" }
+  }
+  d$rho_h0 <- rho_h0; d$rho_free <- rho_free; d$rho <- rho; d$rho_source <- src
+  d$p <- mapply(bb_p_safe, d$alt_n, d$total, MoreArgs = list(rho = rho))
+  d$padj <- p.adjust(d$p, method = "BH")
+  d
+})) %>%
+  dplyr::mutate(dev = abs(alt_frac - 0.5),
+                sig = !is.na(padj) & padj < FDR_SIG & dev >= ABS_DEV_SIG,
+                direction = dplyr::case_when(!sig ~ "none", alt_frac > 0.5 ~ paste(alt_label, "higher"),
+                                             TRUE ~ paste(ref_label, "higher")))
+knitr::kable(dplyr::distinct(snp, sample, rho_h0, rho_free, rho, rho_source), digits = 4,
+             caption = "Overdispersion per sample: H0-based (p = 0.5 at every site, inflated by real imbalance) and free-mean per gene (F1 only); rho = value used (NA = fewer than 20 sites, sample not tested)")
+```
+
+## Gene level
+
+**F1: counts are not summed before testing.** Summing the two strains' reads over a gene's SNPs and applying the per-SNP overdispersion to the total would inflate the variance by `1 + (n - 1) * rho` on the summed depth `n` (about 45 at n = 450), which destroys power. Instead each gene's SNPs share one strain-B fraction `p`, and `bb_gene_lrt` runs a likelihood-ratio test of `p = 0.5` against `p` free on the SNP-level counts with the sample's `rho`; `phat` is the strain-B fraction estimate (`alt_frac` in the table). The summed reads are shown for information only. **Outbred:** `acat` over the SNP p-values.
+
+```{r gene}
 snp_by_gene <- dplyr::inner_join(snp, snp_gene, by = c("contig", "position"))
 
 if (MODE == "f1") {
-  gene <- snp_by_gene %>% dplyr::group_by(sample, gene_id) %>%
-    dplyr::summarise(n_snps = dplyr::n(), ref_n = sum(ref_n), alt_n = sum(alt_n), total = sum(total),
-                     rho = dplyr::first(rho), .groups = "drop") %>%
-    dplyr::mutate(alt_frac = alt_n / total, dev = abs(alt_frac - 0.5),
-                  p = mapply(bb_p_safe, alt_n, total, rho)) %>%
+  gene <- dplyr::bind_rows(lapply(split(snp_by_gene, snp_by_gene$sample), function(d) {
+    dplyr::bind_rows(lapply(split(d, d$gene_id), function(g) {
+      r <- if (is.na(g$rho[1])) list(p = NA_real_, phat = NA_real_) else bb_gene_lrt(g$alt_n, g$total, g$rho[1])
+      data.frame(sample = g$sample[1], gene_id = g$gene_id[1], n_snps = nrow(g), ref_n = sum(g$ref_n), alt_n = sum(g$alt_n),
+                 total = sum(g$total), rho = g$rho[1], alt_frac = r$phat, p = r$p, stringsAsFactors = FALSE)
+    }))
+  })) %>%
+    dplyr::mutate(dev = abs(alt_frac - 0.5)) %>%
     dplyr::group_by(sample) %>% dplyr::mutate(padj = p.adjust(p, method = "BH")) %>% dplyr::ungroup() %>%
     dplyr::mutate(sig = !is.na(padj) & padj < FDR_SIG & dev >= ABS_DEV_SIG,
                   direction = dplyr::case_when(!sig ~ "none", alt_frac > 0.5 ~ paste(alt_label, "higher"),
@@ -909,7 +927,7 @@ knitr::kable(head(dplyr::filter(gene, sig), 30), digits = 4, caption = "Signific
 snp_plot <- dplyr::filter(snp, !is.na(p))      # data behind the SNP figure
 gene_plot <- dplyr::filter(gene, if (MODE == "f1") !is.na(p) else !is.na(acat_p))   # data behind the gene figure
 summary_tbl <- snp %>% dplyr::group_by(sample) %>%
-  dplyr::summarise(rho = dplyr::first(rho), sites_tested = sum(!is.na(p)), sig_sites = sum(sig),
+  dplyr::summarise(rho_h0 = dplyr::first(rho_h0), rho_free = dplyr::first(rho_free), rho_used = dplyr::first(rho), rho_source = dplyr::first(rho_source), sites_tested = sum(!is.na(p)), sig_sites = sum(sig),
                    sig_sites_alt_higher = sum(sig & alt_frac > 0.5), sig_sites_ref_higher = sum(sig & alt_frac < 0.5),
                    .groups = "drop")
 gsum <- if (MODE == "f1") {
@@ -923,7 +941,7 @@ gsum <- if (MODE == "f1") {
 summary_tbl <- summary_tbl %>% dplyr::left_join(gsum, by = "sample") %>%
   dplyr::left_join(dplyr::select(bias, sample, mean_ref_frac, ref_bias_flagged = flagged), by = "sample") %>%
   dplyr::mutate(ref_bias_note = bias_note[sample],
-                gene_level = if (MODE == "f1") "strain-summed beta-binomial" else "unphased, no direction (acat of SNP p-values)")
+                gene_level = if (MODE == "f1") "per-gene LRT on SNP-level counts (shared strain fraction)" else "unphased, no direction (acat of SNP p-values)")
 knitr::kable(summary_tbl, digits = 4, caption = "Summary per sample (FDR_SIG, ABS_DEV_SIG as in the constants block)")
 # the figures are drawn from snp_plot / gene_plot: their sig counts must equal the Summary counts
 fig_sites <- tapply(snp_plot$sig, factor(snp_plot$sample, levels = summary_tbl$sample), sum)
@@ -997,7 +1015,7 @@ Render it with `run_02_imbalance.sh` (same pattern as `run_01_import_qc.sh`, Rmd
 
 ## Step 14 — Statistics functions
 
-These four base-R functions are pasted verbatim into Rmd 02 (`{TODAY_YYMMDD}_{WD_NAME}_02_imbalance.Rmd`); the marker lines delimit the code that `ase-pipeline/tests/r/test_ase_stats.R` extracts from this file and unit-tests, so the tested code is the shipped code. They need no packages beyond base R.
+These base-R functions are pasted verbatim into Rmd 02 (`{TODAY_YYMMDD}_{WD_NAME}_02_imbalance.Rmd`); the marker lines delimit the code that `ase-pipeline/tests/r/test_ase_stats.R` extracts from this file and unit-tests, so the tested code is the shipped code. They need no packages beyond base R.
 
 ```r
 # --- ase-stats-begin
@@ -1027,6 +1045,32 @@ acat <- function(p) {   # Cauchy combination with equal weights
   p <- pmin(pmax(p[!is.na(p)], 1e-15), 1); if (length(p) == 0) return(NA_real_)
   0.5 - atan(mean(tan((0.5 - p) * pi))) / pi
 }
+bb_ll <- function(x, n, p, rho) {   # summed beta-binomial log-likelihood over vectors; rho < 1e-8 -> binomial
+  if (rho < 1e-8) return(sum(dbinom(x, n, p, log = TRUE)))
+  a <- p * (1 - rho) / rho; b <- (1 - p) * (1 - rho) / rho
+  sum(lchoose(n, x) + lbeta(x + a, n - x + b) - lbeta(a, b))
+}
+bb_gene_lrt <- function(x, n, rho) {   # H0: p = 0.5 vs H1: p free; the gene's SNPs share ONE p (counts are NOT summed)
+  keep <- n > 0; x <- x[keep]; n <- n[keep]
+  if (length(x) == 0) return(list(p = NA_real_, phat = NA_real_))
+  ll0 <- bb_ll(x, n, 0.5, rho)
+  fit <- optimize(function(p) -bb_ll(x, n, p, rho), interval = c(1e-6, 1 - 1e-6))
+  stat <- max(0, 2 * (-fit$objective - ll0))
+  list(p = pchisq(stat, 1, lower.tail = FALSE), phat = fit$minimum)
+}
+bb_estimate_rho_gene <- function(x, n, gene) {   # rho with a FREE mean per gene (removes the inflation caused by true imbalance)
+  keep <- n > 0 & !is.na(gene); x <- x[keep]; n <- n[keep]; gene <- gene[keep]
+  idx <- split(seq_along(x), gene)
+  idx <- idx[vapply(idx, length, integer(1)) >= 2]
+  if (length(idx) < 5) return(NA_real_)
+  nll <- function(par) {
+    rho <- plogis(par)
+    sum(vapply(idx, function(i) optimize(function(p) -bb_ll(x[i], n[i], p, rho), interval = c(1e-6, 1 - 1e-6))$objective, numeric(1)))
+  }
+  fit <- optimize(nll, interval = c(-12, 2))
+  rho <- plogis(fit$minimum)
+  if (rho < 1e-6) 0 else rho
+}
 # --- ase-stats-end
 ```
 
@@ -1034,3 +1078,4 @@ acat <- function(p) {   # Cauchy combination with equal weights
 - **`rho` (overdispersion) is estimated per sample under H0 (p = 0.5) from all filtered sites.** When real imbalance exists, the extra variance is absorbed into `rho`, which inflates it. An inflated `rho` lowers power but never inflates false positives, so the estimate is conservative. It is estimated by maximum likelihood on the logistic scale (`optimize`), and a value below 1e-6 is reported as 0 (pure binomial). Fewer than 20 sites gives `NA` and the sample is not tested.
 - `acat` is the Cauchy combination test with equal weights; it is valid for correlated p-values, which is why it is used for the SNPs of one gene. It carries no direction.
 - The unit tests check the null size and uniformity of the p-values, power, recovery of `rho` (including `rho` near 0), the edge cases (`n = 0`, `x = 0`, `x = n`) and `acat`. Run them from the repository root with `singularity exec --bind /net/bmc-lab3 <bulkrnaseq sif> Rscript ase-pipeline/tests/r/test_ase_stats.R ase-pipeline/ase-pipeline.md` inside an `sbatch -p bcc` job.
+- **F1 gene level uses `bb_estimate_rho_gene` and `bb_gene_lrt`, not summed counts.** `bb_estimate_rho` (H0, p = 0.5 everywhere) treats the between-SNP spread caused by true imbalance as overdispersion, so with many imbalanced genes it is inflated (in the unit test more than twice the true value), and applying it to counts summed over a gene multiplies the variance by about `1 + (n - 1) * rho`. `bb_estimate_rho_gene` maximises the likelihood with a free mean for every gene (genes with at least 2 SNPs; `NA` below 5 such genes), which recovers the true `rho`; `bb_gene_lrt` then tests `p = 0.5` against a shared free `p` per gene on the SNP-level counts and returns `phat`. Outbred mode keeps `bb_estimate_rho`, `bb_pvalue` and `acat`.
