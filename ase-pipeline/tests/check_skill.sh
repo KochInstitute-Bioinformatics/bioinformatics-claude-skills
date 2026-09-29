@@ -45,5 +45,27 @@ forbid "module add gatk"
 forbid "module add picard"
 forbid "module load htslib"
 # --- end Task 3
+# --- Task 4 (Steps 4-9)
+for n in 4 5 6 7 8 9; do need "## Step $n"; done
+need "star_ase_sjdb"
+need "star_ase_masked_sjdb"
+need "genomeSAindexNbases"
+need "{SAMPLES_CSV}"
+need "cross_direction"
+need "individual"
+need "MIN_DEPTH"
+need "FDR_SIG"
+need "ABS_DEV_SIG"
+need "BIAS_TOL"
+need "reciprocal"
+need "phASER"
+need "--array"
+need "-t 4:00:00"
+need "available in a later stage"
+need "f1_het_sites.vcf.gz"
+need "RNA-derived"
+forbid "strandedness"
+# --- end Task 4
+
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1
