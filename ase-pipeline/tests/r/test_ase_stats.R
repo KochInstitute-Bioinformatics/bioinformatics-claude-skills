@@ -98,4 +98,76 @@ ok(is.finite(bb_gene_lrt(c(30, 35), c(60, 60), 0)$p), "gene LRT with rho = 0 wor
 b1 <- bb_gene_lrt(c(0, 0, 0), c(60, 60, 60), rho_t); ok(is.finite(b1$p) && b1$p < 1e-6 && b1$phat < 0.01, "boundary p-hat (all-REF gene) does not error")
 b2 <- bb_gene_lrt(c(60, 60), c(60, 60), 0.05); ok(is.finite(b2$p) && b2$phat > 0.99, "boundary p-hat (all-ALT gene) does not error")
 
+# 7. Outbred: trimmed (central-sites, truncation-corrected) rho, per-SNP bb_pvalue and gene-level ACAT, unphased data
+#    (task 8 fix D1: the all-sites H0 rho was inflated by real imbalance and detected 0 of 16 planted genes)
+stopifnot(exists("bb_estimate_rho_trim"))
+dep_syn <- function(m) round(runif(m, 30, 200))          # depth range of the synthetic acceptance data
+sim_ob <- function(G, rho_t, frac_imb, depth = dep_syn) {
+  k <- sample(1:4, G, replace = TRUE); imb <- runif(G) < frac_imb
+  pg <- ifelse(imb, sample(c(0.85, 0.7, 0.3), G, replace = TRUE), 0.5)
+  gene <- rep(seq_len(G), k); p <- pg[gene]; p <- ifelse(runif(length(p)) < 0.5, 1 - p, p)   # unphased: orientation random per SNP
+  n <- depth(length(p))
+  pr <- if (rho_t > 0) rbeta(length(p), p * (1 - rho_t) / rho_t, (1 - p) * (1 - rho_t) / rho_t) else p
+  list(x = rbinom(length(p), n, pr), n = n, gene = gene, imb = imb, pg = pg)
+}
+ob_path <- function(s, rho) {   # the Rmd 02 outbred path: floor, per-SNP test, ACAT per gene, BH within the sample
+  r <- max(rho, RHO_MIN); p <- mapply(bb_pvalue, s$x, s$n, MoreArgs = list(rho = r))
+  gp <- tapply(p, s$gene, acat); list(p = p, gp = gp, gpadj = p.adjust(gp, "BH"))
+}
+ob_run <- function(seed, rho_t, frac_imb, G = 300) {
+  set.seed(seed); s <- sim_ob(G, rho_t, frac_imb)
+  tr <- bb_estimate_rho_trim(s$x, s$n); h0 <- bb_estimate_rho(s$x, s$n)
+  a <- ob_path(s, tr[["rho"]]); b <- ob_path(s, h0); nullsnp <- !s$imb[s$gene]
+  c(rho_trim = tr[["rho"]], rho_h0 = h0, snp_size = mean(a$p[nullsnp] < 0.05), gene_size = mean(a$gp[!s$imb] < 0.05),
+    pow85 = mean(a$gpadj[s$imb & s$pg == 0.85] < 0.05), pow70_30 = mean(a$gpadj[s$imb & s$pg != 0.85] < 0.05),
+    h0_pow85 = mean(b$gpadj[s$imb & s$pg == 0.85] < 0.05))
+}
+ob_cases <- list(list("binomial, 1/3 genes imbalanced", 0, 1/3), list("rho 0.01, 1/3 imbalanced", 0.01, 1/3),
+                 list("rho 0.02, 1/3 imbalanced", 0.02, 1/3), list("rho 0.02, no imbalance", 0.02, 0),
+                 list("rho 0.05, no imbalance", 0.05, 0), list("rho 0.02, 10% imbalanced", 0.02, 0.1))
+ob <- list()
+for (cs in ob_cases) {
+  res <- parallel::mclapply(1:10, function(s) ob_run(2000 + s, cs[[2]], cs[[3]]), mc.cores = 8)
+  stopifnot(!any(vapply(res, function(r) inherits(r, "try-error"), logical(1))))
+  m <- do.call(rbind, res); ob[[cs[[1]]]] <- m
+  cat(sprintf("     outbred %s: rho_trim %.4f (%.4f-%.4f), rho_h0 %.4f, SNP size %.4f, gene size %.4f (worst %.3f), power 0.85 %.3f, power 0.70/0.30 %.3f, H0-rho power 0.85 %.3f\n",
+              cs[[1]], mean(m[, "rho_trim"]), min(m[, "rho_trim"]), max(m[, "rho_trim"]), mean(m[, "rho_h0"]), mean(m[, "snp_size"]),
+              mean(m[, "gene_size"]), max(m[, "gene_size"]), mean(m[, "pow85"], na.rm = TRUE), mean(m[, "pow70_30"], na.rm = TRUE), mean(m[, "h0_pow85"], na.rm = TRUE)))
+  ok(mean(m[, "snp_size"]) <= 0.06 && mean(m[, "gene_size"]) <= 0.06 && max(m[, "gene_size"]) <= 0.10,
+     sprintf("outbred null size, %s: SNP %.4f, gene %.4f pooled (<= 0.06), worst seed %.3f (<= 0.10)", cs[[1]], mean(m[, "snp_size"]), mean(m[, "gene_size"]), max(m[, "gene_size"])))
+  if (cs[[2]] > 0) ok(min(m[, "rho_trim"]) > 0.5 * cs[[2]] && max(m[, "rho_trim"]) < 0.5,
+                      sprintf("rho_trim neither collapses nor blows up, %s: %.4f-%.4f", cs[[1]], min(m[, "rho_trim"]), max(m[, "rho_trim"])))
+}
+m <- ob[["binomial, 1/3 genes imbalanced"]]
+ok(mean(m[, "pow85"]) >= 0.95 && mean(m[, "pow70_30"]) >= 0.75,
+   sprintf("outbred power at the synthetic depth (binomial): 0.85 genes %.3f (>= 0.95), 0.70/0.30 genes %.3f (>= 0.75)", mean(m[, "pow85"]), mean(m[, "pow70_30"])))
+ok(mean(m[, "h0_pow85"]) < 0.1, sprintf("the all-sites H0 rho (%.3f) kills power in the same data: 0.85 genes %.3f", mean(m[, "rho_h0"]), mean(m[, "h0_pow85"])))
+m <- ob[["rho 0.01, 1/3 imbalanced"]]
+ok(mean(m[, "pow85"]) >= 0.9 && mean(m[, "rho_trim"]) < mean(m[, "rho_h0"]) / 3,
+   sprintf("rho 0.01 with imbalance: power 0.85 genes %.3f (>= 0.9); rho_trim %.4f < rho_h0 %.4f / 3", mean(m[, "pow85"]), mean(m[, "rho_trim"]), mean(m[, "rho_h0"])))
+for (nm in c("rho 0.02, no imbalance", "rho 0.05, no imbalance")) {
+  m <- ob[[nm]]; tru <- if (grepl("0.05", nm)) 0.05 else 0.02
+  ok(abs(mean(m[, "rho_trim"]) / tru - 1) < 0.15, sprintf("%s: mean rho_trim %.4f within 15%% of %.2f", nm, mean(m[, "rho_trim"]), tru))
+}
+# synthetic-acceptance-sized sample: 12 genes (4 planted 0.85/0.70/0.30/0.70), about 30 sites, binomial, 100 seeds
+small <- do.call(rbind, parallel::mclapply(1:100, function(sd) { set.seed(3000 + sd)
+  k <- rep(c(4, 2, 3), 4); pg <- c(0.85, 0.7, 0.3, 0.7, rep(0.5, 8)); gene <- rep(1:12, k); p <- pg[gene]
+  p <- ifelse(runif(length(p)) < 0.5, 1 - p, p); n <- dep_syn(length(p)); x <- rbinom(length(p), n, p)
+  tr <- bb_estimate_rho_trim(x, n); a <- ob_path(list(x = x, n = n, gene = gene), tr[["rho"]])
+  c(rho = tr[["rho"]], det = sum(a$gpadj[1:4] < 0.05), fp = sum(a$gpadj[5:12] < 0.05)) }, mc.cores = 8))
+cat(sprintf("     small (30 sites): rho_trim median %.4f, 95th pct %.4f, max %.4f; planted detected %.2f of 4; null FP %.3f of 8\n",
+            median(small[, "rho"]), quantile(small[, "rho"], 0.95), max(small[, "rho"]), mean(small[, "det"]), mean(small[, "fp"])))
+# with only about 30 sites (11 imbalanced) the trimmed fit sometimes cannot separate them and stays near the naive value
+# (conservative); it must never run away to a U-shaped fit (which would make central counts significant)
+ok(all(is.finite(small[, "rho"])) && median(small[, "rho"]) < 0.01 && max(small[, "rho"]) < 0.3,
+   sprintf("small samples: rho_trim finite, median %.4f < 0.01, max %.4f < 0.3 (no run-away)", median(small[, "rho"]), max(small[, "rho"])))
+ok(mean(small[, "det"]) >= 3 && mean(small[, "fp"]) / 8 <= 0.05,
+   sprintf("small samples: %.2f of 4 planted genes detected (>= 3), null FP rate %.4f (<= 0.05)", mean(small[, "det"]), mean(small[, "fp"]) / 8))
+ok(all(is.na(bb_estimate_rho_trim(rbinom(19, 50, 0.5), rep(50, 19)))), "rho_trim with fewer than 20 sites gives NA")
+zt <- sapply(101:110, function(s) { set.seed(s); bb_estimate_rho_trim(rbinom(2000, 50, 0.5), rep(50, 2000))[["rho"]] })
+ok(mean(zt == 0) >= 0.4 && all(zt < 3e-3), sprintf("binomial data, 10 seeds, rho_trim: %d exactly 0, max %.2e", sum(zt == 0), max(zt)))
+w <- NULL; withCallingHandlers({ set.seed(7); s <- sim_ob(3000, 0.02, 0.2, function(m) round(exp(runif(m, log(10), log(1000))))); tt <- system.time(bb_estimate_rho_trim(s$x, s$n)) },
+                               warning = function(cond) { w <<- conditionMessage(cond); invokeRestart("muffleWarning") })
+ok(is.null(w), sprintf("rho_trim converges without a warning on %d sites at depth 10-1000 (%.1f s)", length(s$x), tt[["elapsed"]]))
+
 quit(status = fail)

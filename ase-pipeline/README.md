@@ -26,9 +26,9 @@ Then invoke it in Claude Code:
 |-------------|-------|
 | SLURM scheduler | Every job is submitted with `sbatch -p bcc`; nothing heavy runs on the login node |
 | Singularity >= 3.10 | Loaded via `module add singularity/3.10.4`; the only module the skill ever loads |
-| Cached biocontainers | In `$NXF_SINGULARITY_CACHEDIR` (or `~/.singularity/cache`): STAR 2.7.10b, GATK 4.4.0.0, bcftools 1.20, samtools 1.21, Picard 3.1.1 (`depot.galaxyproject.org-singularity-*.img`); a missing image is downloaded by the generated helper script, never in the foreground on the login node |
+| Cached biocontainers | In `$NXF_SINGULARITY_CACHEDIR` (or `~/.singularity/cache`): STAR 2.7.10b, GATK 4.4.0.0, bcftools 1.20, samtools 1.21, Picard 3.1.1 (`depot.galaxyproject.org-singularity-*.img`); a missing image is downloaded by the prep job (it fetches all five, Picard included, so the per-sample array job only checks for them), never in the foreground on the login node |
 | `bulkrnaseq` image | `/net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif`, the only place R is available; needs `aod`, `lme4`, `openxlsx`, `tidyverse`, `GenomicRanges`, `rtracklayer` (checked by a tiny `sbatch` job in Step 2) |
-| Genotypes | F1: a parental-difference VCF, or the built-in Mouse Genomes Project helper (needs internet on a compute node). Outbred: one VCF per individual |
+| Genotypes | F1: a parental-difference VCF (plain `.vcf` or bgzipped; sites-only is fine, strain names default to `C57BL_6NJ` / `A_J` when the header has none), or the built-in Mouse Genomes Project helper (needs internet on a compute node). Outbred: one VCF per individual |
 | Internet access | Only for downloading missing containers, references and the Mouse Genomes Project data |
 
 ---
@@ -58,13 +58,13 @@ Then invoke it in Claude Code:
 
 ## Output files
 
-Everything is written under `{CWD}/results/{YYMMDD}_{WD_NAME}/` (raw FASTQ, BAM and VCF inputs are never modified):
+Everything is written under `{CWD}/results/{YYYY-MM-DD}_{WD_NAME}/` (for example `results/2026-09-29_proj/`) (raw FASTQ, BAM and VCF inputs are never modified):
 
 | Output | Description |
 |--------|-------------|
 | `scripts/` | Generated `sbatch` scripts: prep (`prep_f1_reference.sh` or `prep_genotypes.sh`), optional mouse helper, per-sample array (`align_count_f1.sh` or `align_wasp_count.sh`), `run_01_import_qc.sh`, `run_02_imbalance.sh` |
 | `bam/` | Coordinate-sorted BAMs with read groups, duplicates marked (not removed), plus indexes |
-| `ase_counts/` | ASEReadCounter table per sample (and `wasp_stats.tsv` per sample in outbred mode) |
+| `ase_counts/` | ASEReadCounter table per sample; outbred mode also `{sample}.wasp_stats.tsv` and `{sample}.unfiltered.table` (the same count before the WASP filter, for the before/after REF fraction in Rmd 01, reported for information, not a gate; Rmd 01 reads every table by sample name, never by glob) |
 | `ase_checkpoint.rds`, `ase_imbalance_checkpoint.rds` | Checkpoints of Rmd 01 and Rmd 02 |
 | `{date}_{project}_01_import_qc.html`, `..._02_imbalance.html` | The two stage reports |
 | `{date}_{project}_ASE_imbalance.xlsx` | Sheets `SNP`, `Gene`, `Summary` |
@@ -80,7 +80,7 @@ The jobs run in one dependency chain: prep -> per-sample array (`afterok`) -> Rm
 
 - **F1 mapping bias: third-allele masked reference.** At every parental SNP the genome base is replaced with a third allele (neither strain's), so neither strain is favoured in mapping; STAR runs on the masked genome and ASEReadCounter counts against the het-sites VCF.
 - **Outbred mapping bias: WASP.** STAR's WASP re-mapping filter tags every alignment (`vW`); alignments with `vW` 2-7 are removed before counting, and Rmd 01 reports how many were removed and from which allele. WASP does not promise less bias, and none is claimed.
-- **Per-sample beta-binomial tests.** Each sample gets its own overdispersion. F1 uses a free-mean-per-gene estimate with a bias correction (a plain H0-based estimate is inflated by real imbalance), floored at `RHO_MIN`, for both SNP-level exact tests and a gene-level likelihood-ratio test on the SNP-level counts (counts are not summed). Outbred uses the H0-based estimate.
+- **Per-sample beta-binomial tests.** Each sample gets its own overdispersion. F1 uses a free-mean-per-gene estimate with a bias correction (a plain H0-based estimate is inflated by real imbalance), floored at `RHO_MIN`, for both SNP-level exact tests and a gene-level likelihood-ratio test on the SNP-level counts (counts are not summed). Outbred (unphased, so no per-gene mean can be fitted) uses a trimmed estimate: the H0 beta-binomial fitted on the central sites only (each site's central 90 percent region), with a truncated likelihood that corrects for the trimming, floored at `RHO_MIN`. The naive all-sites H0 estimate is shown only for comparison (`rho_h0_naive`): real imbalance inflates it, and on the synthetic acceptance data it detected 0 of 16 planted outbred genes.
 - **Unphased outbred data.** Without phasing, SNPs of a gene cannot be pooled: per-SNP tests are combined per gene with ACAT and labelled "unphased, no direction".
 - **Honest reference-bias diagnostic.** For every sample the mean reference-allele fraction over the filtered sites is compared with 0.5, and the sample is flagged when the deviation exceeds `max(BIAS_TOL, 3 x SE)`. It is a screen, not a test; flags are shown next to every ratio table and figure and at the top of the summary page.
 - **Duplicates are marked, not removed.** ASEReadCounter skips duplicate-flagged reads itself.
@@ -95,12 +95,13 @@ What has been exercised:
 
 - **Verification gate on synthetic data** (STAR, GATK, samtools, bcftools in the cached containers): read group, indexed VCF, heterozygous genotype column and reference requirements of ASEReadCounter, STAR WASP behaviour, the Mouse Genomes Project access pattern. Results: `tests/fixtures/verification.md`.
 - **Script smoke tests**: one F1 sample and one outbred sample run through the generated scripts.
-- **Unit-tested statistics**: null size of the F1 gene-level test 0.047-0.056 pooled (worst seed 0.064) and power 0.99, plus rho recovery, edge cases and ACAT (`tests/r/test_ase_stats.R`; needs a job with at least 8 CPUs).
+- **Unit-tested statistics**: null size of the F1 gene-level test 0.047-0.056 pooled (worst seed 0.064) and power 0.99; outbred path (trimmed rho, per-SNP test, ACAT per gene) on unphased simulated data: null gene size 0.003-0.053 pooled across six scenarios (worst seed 0.083), power 1.00 / 0.88 for planted 0.85 / 0.70-0.30 genes on binomial data where the naive H0 rho gave 0; plus rho recovery, edge cases and ACAT (`tests/r/test_ase_stats.R`; needs a job with at least 8 CPUs).
 - **Rmd rendering tests** on perturbed copies of one synthetic sample (F1 and outbred, Rmd 01 and Rmd 02), including the `summary_numbers.tsv` output.
+- **End-to-end synthetic acceptance run** (2026-09-29, both modes, whole Step 15 chain): F1 passed (24 of 24 planted gene x sample tests with the correct direction, 0 of 42 null false positives). Outbred ran end to end but detected 0 of 16 planted genes because the naive H0 rho was inflated by the imbalance itself; the trimmed outbred rho fixes that: re-rendering Rmd 02 on the same count tables detects 10 of 16 (0 of 28 null false positives). The same fix round added the pre-WASP `unfiltered.table`, the YYYY-MM-DD results directory and the Picard fetch in the prep job.
 
-What is **PENDING**: the full end-to-end synthetic acceptance run (all samples, all scripts chained with the dependencies of Step 15, recovery of the planted genes with the correct direction) has not been completed yet; its result will be recorded here when it is completed.
+What is **PENDING**: a full end-to-end re-run of the Step 15 chain with the fixed skill (new prep and array scripts included); the fixes were verified on copies of the acceptance outputs (Rmd renders, and the new unfiltered ASEReadCounter block run on the acceptance STAR BAMs), not by a fresh chain.
 
-What was **never run**: the Step 15 summary HTML page (it has never been generated; only its input `summary_numbers.tsv` was checked against the Summary sheet of the xlsx); the run scripts `run_01_import_qc.sh` and `run_02_imbalance.sh` (never submitted; the Rmd renders above used direct `rmarkdown::render` calls); the full sbatch dependency chain of Step 15 (never submitted end to end); and the href-existence check of the summary page.
+What was **never run**: the mouse helper scripts `extract_mgp_parental_vcf.sh` and `concat_mgp_parental_vcf.sh` were never submitted (the acceptance run used a user parental VCF), and the summary page has not been regenerated with the new `summary_numbers.tsv` columns.
 
 **Nothing on real biological data has been run.**
 
@@ -110,6 +111,7 @@ What was **never run**: the Step 15 summary HTML page (it has never been generat
 
 - The overdispersion correction is a first-order approximation; on real data the gene-level test size is only approximate.
 - One overdispersion (rho) per sample cannot capture gene-to-gene variation.
+- Outbred rho is a trimmed fit on the central sites: with real overdispersion and many imbalanced sites it stays above the truth (lower power for moderate imbalance, no extra false positives), and with only a few dozen sites it sometimes cannot separate the imbalanced ones and stays near the naive value.
 - The requirement of at least 5 usable genes (2 or more SNPs) to estimate rho at gene level is weak.
 - Unphased outbred data cannot give gene-level direction.
 - F1 mode requires strain A to carry the reference assembly's allele: sites where a substrain differs from the assembly are dropped (for example C57BL_6NJ against the B6J assembly GRCm39).

@@ -166,6 +166,61 @@ grep -q "/ase-pipeline" "$HERE/../../README.md" 2>/dev/null || { echo "FAIL: roo
 grep -qF "Nothing on real biological data" "$HERE/../README.md" 2>/dev/null || { echo "FAIL: ase-pipeline/README.md must state: Nothing on real biological data"; fail=1; }
 grep -qF "never submitted" "$HERE/../README.md" 2>/dev/null || { echo "FAIL: ase-pipeline/README.md must state which scripts were never submitted"; fail=1; }
 # --- end Task 7
+# --- Task 8 fix (acceptance-run defects D1-D7); each string is absent from the pre-fix skill (f20ba79)
+# D1: outbred rho from the central sites with a truncation-corrected likelihood; the naive H0 fit is a diagnostic only
+need "bb_estimate_rho_trim <- function"
+need "truncated likelihood"
+need "rho <- if (is.na(rho_trim)) NA_real_ else max(rho_trim, RHO_MIN)"
+need "rho_robust = dplyr::first(if (MODE == \"f1\") rho_corrected else rho_trim)"
+need "rho_used, rho_robust, rho_h0_naive, mean_ref_frac, ref_frac_before_wasp, ref_frac_after_wasp,"
+need "\`rho_used\`, \`rho_robust\`, \`rho_h0_naive\`, \`mean_ref_frac\`, \`ref_frac_before_wasp\`, \`ref_frac_after_wasp\`, \`bias_flag\`"
+need '| `RHO_MIN` | 0.01 | both modes'
+need "Outbred mode uses \`bb_estimate_rho_trim\`"
+forbid "**Outbred** uses \`rho_h0\`"
+forbid "never inflates false positives (conservative)"
+forbid "so the estimate is conservative"
+forbid "rho_used, rho_h0, mean_ref_frac"
+forbid "TRIM_RESULTS_PLACEHOLDER"
+# D2: results directory uses YYYY-MM-DD (user data-safety rule); one date placeholder everywhere
+need "formatted as \`YYYY-MM-DD\`"
+need "\`{RESULTS_DIR}\` = \`{CWD}/results/{TODAY}_{WD_NAME}\`"
+need "DATE_TAG    <- \"{TODAY}_{WD_NAME}\""
+need "\`{TODAY}_{WD_NAME}_01_import_qc.html\`"
+forbid "TODAY_YYMMDD"
+forbid "YYMMDD"
+# D3: the prep job caches all five containers, Picard included (the array job only checks)
+need 'fetch_sif "$PICARD_SIF" "https://depot.galaxyproject.org/singularity/picard:3.1.1--hdfd78af_0"'
+need "fetches all five containers"
+forbid "block C (STAR, GATK, BCFTOOLS, SAMTOOLS; plus"
+forbid "block C (STAR, GATK, BCFTOOLS, SAMTOOLS plus"
+# D4: unfiltered (pre-WASP) counts, before/after REF fraction, information only; tables read per sample, never globbed
+need 'UNF_TABLE="$R/ase_counts/$SAMPLE.unfiltered.table"'
+need 'rm -f "$UNF_TABLE"'
+need 'check_table "$TABLE"'
+need 'check_table "$UNF_TABLE"'
+need "ref_frac_before_wasp"
+need "ref_frac_after_wasp"
+need "reported for information, not a gate"
+need 'stopifnot(setequal(unique(sites_raw$sample), samples$sample))'
+need '!grepl("\\.unfiltered\\.table$", tbl_files)'
+forbid 'list.files(COUNTS_DIR, pattern = "\\.table$")), samples$sample)'
+# D5: array log pattern
+need "#SBATCH -o {RESULTS_DIR}/logs/align_count_f1_%A_%a.out"
+need "#SBATCH -o {RESULTS_DIR}/logs/align_wasp_count_%A_%a.out"
+# D6: ready-made --bind lines for the Rmd run scripts
+need '`{GTF_DIR}` inside `{CWD}`: `singularity exec --bind {CWD} {R_SIF} \`'
+need '`{GTF_DIR}` outside `{CWD}`: `singularity exec --bind {CWD},{GTF_DIR} {R_SIF} \`'
+# D7: plain parental VCF accepted; explicit fallback strain names
+need "a plain \`.vcf\` is accepted"
+need "\`{STRAIN_A}\` = \`C57BL_6NJ\` and \`{STRAIN_B}\` = \`A_J\`"
+forbid "biallelic SNP VCF (bgzipped and tabix-indexed) where"
+# README (repo file) follows the same fixes
+RD="$HERE/../README.md"
+grep -qF "central sites" "$RD" || { echo "FAIL: ase-pipeline/README.md must describe the trimmed outbred rho (central sites)"; fail=1; }
+! grep -qF "Outbred uses the H0-based estimate" "$RD" || { echo "FAIL: ase-pipeline/README.md still says outbred uses the H0-based estimate"; fail=1; }
+! grep -qF "YYMMDD" "$RD" || { echo "FAIL: ase-pipeline/README.md still uses YYMMDD"; fail=1; }
+grep -qF "unfiltered.table" "$RD" || { echo "FAIL: ase-pipeline/README.md must list the outbred unfiltered.table"; fail=1; }
+# --- end Task 8 fix
 
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1

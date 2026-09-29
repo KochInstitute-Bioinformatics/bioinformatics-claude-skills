@@ -19,8 +19,8 @@ Before anything else, run `pwd` to record the current working directory (`{CWD}`
 
 Also derive:
 - `{WD_NAME}` = basename of `{CWD}`
-- `{TODAY_YYMMDD}` = today's date formatted as `YYMMDD`
-- `{RESULTS_DIR}` = `{CWD}/results/{TODAY_YYMMDD}_{WD_NAME}` (create it with `mkdir -p` when the first output is written)
+- `{TODAY}` = today's date formatted as `YYYY-MM-DD` (for example `2026-09-29`; the same format as the `results/YYYY-MM-DD_*` data-safety convention), used for the results directory and as the prefix of the Rmd and report file names
+- `{RESULTS_DIR}` = `{CWD}/results/{TODAY}_{WD_NAME}`, for example `results/2026-09-29_proj` (create it with `mkdir -p` when the first output is written)
 
 ---
 
@@ -124,7 +124,7 @@ sample,fastq_1,fastq_2,condition,cross_direction,individual
 ```
 
 - `condition`: ask the user (plain-language description of the groups, then map samples to it).
-- **F1:** ask once for the two strain names, `{STRAIN_A}` (the reference strain) and `{STRAIN_B}`, and, per sample, `cross_direction` (for example `AxB` or `BxA`, maternal strain first). Leave `individual` equal to `sample` (each F1 animal is its own individual).
+- **F1:** ask once for the two strain names, `{STRAIN_A}` (the reference strain) and `{STRAIN_B}` (names from the VCF header, or the fallback of Step 6), and, per sample, `cross_direction` (for example `AxB` or `BxA`, maternal strain first). Leave `individual` equal to `sample` (each F1 animal is its own individual).
 - **Outbred:** `individual` per row (which person/animal the sample comes from; several samples may share one); leave `cross_direction` as `NA`.
 
 Show the full table, ask "Does this look correct?", and write the file only after confirmation (if it exists, ask: overwrite or choose another filename).
@@ -158,7 +158,8 @@ The allelic analysis needs heterozygous SNP positions.
 
 **F1 mode.** Ask (numbered): "1. I have a parental-difference VCF · 2. Build it from the Mouse Genomes Project (mouse helper)".
 
-1. `{PARENTAL_VCF}`: a biallelic SNP VCF (bgzipped and tabix-indexed) where the REF allele is `{STRAIN_A}` (the reference strain) and the ALT allele is `{STRAIN_B}`. Check with `bcftools` (from `{BCFTOOLS_SIF}`, in a compute job, never on the login node) that contig names match the FASTA.
+1. `{PARENTAL_VCF}`: a biallelic SNP VCF where the REF allele is `{STRAIN_A}` (the reference strain) and the ALT allele is `{STRAIN_B}`. Either form works: a plain `.vcf` is accepted (the prep job only reads it with `bcftools view`, which needs no index), and a bgzipped `.vcf.gz` works too; no bgzip or tabix step is needed, and the input is never modified. A sites-only VCF (no sample columns) is fine, because the prep job writes its own genotyped het-sites VCF. Check with `bcftools` (from `{BCFTOOLS_SIF}`, in a compute job, never on the login node) that contig names match the FASTA.
+   **Strain names.** If the VCF header has two sample columns, offer those names for `{STRAIN_A}` and `{STRAIN_B}`. If it has no names (sites-only VCF), ask the user; when no names are given, fall back to the Mouse Genomes Project spellings of the B6 x AJ example, `{STRAIN_A}` = `C57BL_6NJ` and `{STRAIN_B}` = `A_J`, and say so. The names only label tables and figures; REF is always strain A and ALT always strain B.
 2. The mouse helper queries the Mouse Genomes Project (release REL-2112-v8, GRCm39, contigs `1`, `2`, ... without `chr`) for the two strains as a per-chromosome array job and writes `{PARENTAL_VCF}` with the same convention. It is a compute job; do not run it on the login node.
 
 Either way the prep job also writes `f1_het_sites.vcf.gz`, a bgzipped and tabix-indexed het-sites VCF (single sample `F1`, genotype `0/1` at every parental SNP), beside the parental-difference VCF. ASEReadCounter needs this genotype column and an indexed VCF; a sites-only VCF gives zero counts.
@@ -195,7 +196,7 @@ Show these defaults and let the user edit any of them:
 | `FDR_SIG` | 0.05 | FDR threshold for significance |
 | `ABS_DEV_SIG` | 0.1 | minimum absolute deviation of the reference fraction from 0.5 to call a gene imbalanced |
 | `BIAS_TOL` | 0.03 | reference-bias tolerance: a sample is flagged when its reference-fraction deviation from 0.5 exceeds `max(BIAS_TOL, 3 x SE)`, SE = sqrt(0.25 / total reads) |
-| `RHO_MIN` | 0.01 | F1 only: floor for the per-sample overdispersion at SNP and gene level (`rho = max(rho_corrected, RHO_MIN)`), so a noisy or zero estimate can never make the tests anti-conservative |
+| `RHO_MIN` | 0.01 | both modes: floor for the per-sample overdispersion used by the tests (F1: `rho = max(rho_corrected, RHO_MIN)` at SNP and gene level; outbred: `rho = max(rho_trim, RHO_MIN)`), so a noisy or zero estimate can never make the tests anti-conservative |
 
 ASEReadCounter defaults: `--min-mapping-quality` 10 and `--min-base-quality` 10 (the tool's own defaults are 0). Record all values; they are written into the scripts and the Rmd parameters.
 
@@ -259,6 +260,16 @@ samtools() { local SIF="$SAMTOOLS_SIF"; singularity exec --bind "$BIND" "$SIF" s
 picard()    { local SIF="$PICARD_SIF";  singularity exec --bind "$BIND" "$SIF" picard "$@"; }
 ```
 
+**Prep container fetch (both prep scripts).** The prep job (`prep_f1_reference.sh` or `prep_genotypes.sh`) fetches all five containers, not only the ones it runs itself: the per-sample array job of Step 11 only checks that its containers exist (so parallel tasks never download the same file) and needs Picard, which no prep step uses. In both prep scripts the `fetch_sif` lines of block C are therefore exactly:
+
+```bash
+fetch_sif "$STAR_SIF" "https://depot.galaxyproject.org/singularity/star:2.7.10b--h9ee0642_0"
+fetch_sif "$GATK_SIF" "https://depot.galaxyproject.org/singularity/gatk4:4.4.0.0--py36hdfd78af_0"
+fetch_sif "$BCFTOOLS_SIF" "https://depot.galaxyproject.org/singularity/bcftools:1.20--h8b25389_0"
+fetch_sif "$SAMTOOLS_SIF" "https://depot.galaxyproject.org/singularity/samtools:1.21--h50ea8bc_0"
+fetch_sif "$PICARD_SIF" "https://depot.galaxyproject.org/singularity/picard:3.1.1--hdfd78af_0"
+```
+
 Add `add_bind "$(dirname <path>)"` for every other input directory the script reads (parental or genotype VCF, FASTQ directories). If `{FASTA_PATH}` or `{GTF_PATH}` do not exist yet (Step 4 option 1), put the Step 4 download-and-decompress commands (URLs shown to the user first) before block R, with the same `wget -c -O FILE.part URL && mv FILE.part FILE || { echo "ERROR: ..." >&2; exit 1; }` pattern.
 
 ### Shared block R — reference files for ASEReadCounter (both modes; `FASTA="{FASTA_PATH}"` is the ORIGINAL, unmasked FASTA)
@@ -293,7 +304,7 @@ STAR prints "Could not move Log.out" for the index build when `--outFileNamePref
 
 ### `prep_f1_reference.sh` (F1 mode)
 
-Header: `#!/bin/bash`, `#SBATCH -N 1 -p bcc`, `#SBATCH {PREP_RESOURCES}`, `#SBATCH --mail-type=END,FAIL`, `#SBATCH --mail-user={USER_EMAIL}`, `#SBATCH -o {RESULTS_DIR}/logs/prep_f1_reference_%j.out`, `set -uo pipefail`, block C (STAR, GATK, BCFTOOLS, SAMTOOLS; plus `add_bind "$(dirname "{PARENTAL_VCF}")"`), then:
+Header: `#!/bin/bash`, `#SBATCH -N 1 -p bcc`, `#SBATCH {PREP_RESOURCES}`, `#SBATCH --mail-type=END,FAIL`, `#SBATCH --mail-user={USER_EMAIL}`, `#SBATCH -o {RESULTS_DIR}/logs/prep_f1_reference_%j.out`, `set -uo pipefail`, block C with the prep container fetch below (all five wrappers are defined; plus `add_bind "$(dirname "{PARENTAL_VCF}")"`), then:
 
 ```bash
 REF_DIR="{RESULTS_DIR}/reference"; mkdir -p "$REF_DIR" || exit 1
@@ -372,7 +383,7 @@ bgzip -c "$REF_DIR/f1_het_sites.vcf" > "$REF_DIR/f1_het_sites.vcf.gz" && tabix -
 
 ### `prep_genotypes.sh` (outbred mode)
 
-Header as above (`prep_genotypes_%j.out`), block C (STAR, GATK, BCFTOOLS, SAMTOOLS plus `add_bind` for each genotype VCF directory), then one heterozygous single-sample VCF per individual. The wizard writes the `MAP` lines (individual, path, sample name inside that VCF) from `{GENOTYPE_VCFS}` and shows the two filter settings for editing: rnavar VCFs use `FILTER_EXPR='FMT/DP>=10'`; external genotypes use a genotype-quality filter such as `FILTER_EXPR='FMT/GQ>=20'`; an empty value skips the expression filter (test data). `-f PASS,.` keeps PASS and unfiltered records.
+Header as above (`prep_genotypes_%j.out`), block C with the prep container fetch below (plus `add_bind` for each genotype VCF directory), then one heterozygous single-sample VCF per individual. The wizard writes the `MAP` lines (individual, path, sample name inside that VCF) from `{GENOTYPE_VCFS}` and shows the two filter settings for editing: rnavar VCFs use `FILTER_EXPR='FMT/DP>=10'`; external genotypes use a genotype-quality filter such as `FILTER_EXPR='FMT/GQ>=20'`; an empty value skips the expression filter (test data). `-f PASS,.` keeps PASS and unfiltered records.
 
 ```bash
 GENO_DIR="{RESULTS_DIR}/genotypes"; mkdir -p "$GENO_DIR" || exit 1
@@ -464,13 +475,14 @@ Sites where strain A carries the alternative allele (the reference genome is C57
 
 ## Step 11 — Per-sample array scripts
 
-Both scripts are SLURM array jobs (`#SBATCH --array=1-{ARRAY_N}`, `#SBATCH {ARRAY_RESOURCES}`), take row `SLURM_ARRAY_TASK_ID` of `{SAMPLES_CSV}` (data row 1 = task 1), and write the outputs below. They use block C, but the containers must already be cached by the prep job, so parallel tasks never download the same file: in these scripts define `fetch_sif` as a check only, `fetch_sif() { [ -s "$1" ] || { echo "ERROR: missing container $1 (run the prep job first)" >&2; exit 1; }; }`. `{MIN_MAPQ}` and `{MIN_BASEQ}` are the ASEReadCounter thresholds recorded in Step 8.
+Both scripts are SLURM array jobs (`#SBATCH --array=1-{ARRAY_N}`, `#SBATCH {ARRAY_RESOURCES}`), take row `SLURM_ARRAY_TASK_ID` of `{SAMPLES_CSV}` (data row 1 = task 1), and write the outputs below. Header: `#!/bin/bash`, `#SBATCH -N 1 -p bcc`, `#SBATCH --array=1-{ARRAY_N}`, `#SBATCH {ARRAY_RESOURCES}`, `#SBATCH --mail-type=END,FAIL`, `#SBATCH --mail-user={USER_EMAIL}`, and one log per array task, `%A` = array job id and `%a` = task id: `#SBATCH -o {RESULTS_DIR}/logs/align_count_f1_%A_%a.out` (F1) or `#SBATCH -o {RESULTS_DIR}/logs/align_wasp_count_%A_%a.out` (outbred). They use block C, but the containers must already be cached by the prep job (it fetches all five, see "Prep container fetch" in Step 10), so parallel tasks never download the same file: in these scripts define `fetch_sif` as a check only, `fetch_sif() { [ -s "$1" ] || { echo "ERROR: missing container $1 (run the prep job first)" >&2; exit 1; }; }`. `{MIN_MAPQ}` and `{MIN_BASEQ}` are the ASEReadCounter thresholds recorded in Step 8.
 
 | Output | Content |
 |---|---|
 | `{RESULTS_DIR}/bam/{sample}.bam` (+ `.bai`) | coordinate-sorted, duplicates marked (not removed: ASEReadCounter skips them), read group kept |
 | `{RESULTS_DIR}/ase_counts/{sample}.table` | ASEReadCounter table: `contig position variantID refAllele altAllele refCount altCount totalCount lowMAPQDepth lowBaseQDepth rawDepth otherBases improperPairs` |
 | `{RESULTS_DIR}/ase_counts/{sample}.wasp_stats.tsv` | outbred only: alignments by `vW` and first `vA` value before filtering |
+| `{RESULTS_DIR}/ase_counts/{sample}.unfiltered.table` | outbred only: the same ASEReadCounter count on the STAR BAM BEFORE the WASP filter (duplicates marked the same way), for the before/after REF fraction in Rmd 01; reported for information, not a gate. Rmd 01 reads it per sample from `{SAMPLES_CSV}` and never mistakes it for a sample table |
 
 **Read group is mandatory.** STAR writes no read group by default, and ASEReadCounter's read-group filter then silently drops every read (empty table, exit 0). Both scripts therefore pass `--outSAMattrRGline ID:$SAMPLE SM:$SAMPLE PL:ILLUMINA`; Picard keeps the read group.
 
@@ -486,9 +498,11 @@ add_bind "$(dirname "$FQ1")"; [ -z "$FQ2" ] || add_bind "$(dirname "$FQ2")"
 die() { echo "ERROR: sample $SAMPLE: $*" >&2; exit 1; }
 FASTA="{FASTA_PATH}"; R="{RESULTS_DIR}"
 STAR_DIR="$R/star/$SAMPLE"; TMPD="$R/tmp/$SAMPLE"; BAM="$R/bam/$SAMPLE.bam"; TABLE="$R/ase_counts/$SAMPLE.table"; STATS="$R/ase_counts/$SAMPLE.wasp_stats.tsv"
+UNF_TABLE="$R/ase_counts/$SAMPLE.unfiltered.table"   # outbred only (pre-WASP counts); never written in F1 mode
 mkdir -p "$STAR_DIR" "$TMPD" "$R/bam" "$R/ase_counts" || die "cannot create output directories"
 rm -rf "$STAR_DIR/_STARtmp"
 rm -f "$TABLE" "$STATS"      # never keep a table or stats file from an earlier run: a failed sample must have none
+rm -f "$UNF_TABLE"
 [ -s "$FQ1" ] || die "missing $FQ1"
 ```
 
@@ -548,24 +562,39 @@ gatk ASEReadCounter -R "$FASTA" -I "$BAM" -V "$HET_GZ" \
      --min-mapping-quality {MIN_MAPQ} --min-base-quality {MIN_BASEQ} \
      --count-overlap-reads-handling COUNT_FRAGMENTS_REQUIRE_SAME_BASE \
      --tmp-dir "$TMPD" -O "$TABLE" || die "ASEReadCounter failed"
+
+# the same count on the UNFILTERED STAR BAM (before WASP), same flags, duplicates marked the same way, so the
+# two tables differ only by the WASP filter; Rmd 01 reports the before/after REF fraction for information, not as a gate
+UNF_BAM="$STAR_DIR/unfiltered.markdup.bam"
+picard MarkDuplicates I="$RAW" O="$UNF_BAM" M="$STAR_DIR/unfiltered.markdup_metrics.txt" \
+       TMP_DIR="$TMPD" REMOVE_DUPLICATES=false VALIDATION_STRINGENCY=SILENT || die "MarkDuplicates (unfiltered BAM) failed"
+samtools index "$UNF_BAM" || die "samtools index (unfiltered BAM) failed"
+gatk ASEReadCounter -R "$FASTA" -I "$UNF_BAM" -V "$HET_GZ" \
+     --min-mapping-quality {MIN_MAPQ} --min-base-quality {MIN_BASEQ} \
+     --count-overlap-reads-handling COUNT_FRAGMENTS_REQUIRE_SAME_BASE \
+     --tmp-dir "$TMPD" -O "$UNF_TABLE" || die "ASEReadCounter (unfiltered BAM) failed"
 ```
 
-Never use `--outSAMattributes` values other than the explicit list above: WASP needs `vA vG vW` spelled out. `vG` is 0-based. WASP does not promise less bias; the stats file lets Rmd 01 show how many alignments were removed and from which allele.
+Never use `--outSAMattributes` values other than the explicit list above: WASP needs `vA vG vW` spelled out. `vG` is 0-based. WASP does not promise less bias; the stats file lets Rmd 01 show how many alignments were removed and from which allele, and `{sample}.unfiltered.table` lets it show the site-level REF fraction before and after the filter (for information, not a gate).
 
 ### Empty-table guard (last block of both scripts)
 
-The tool exits 0 even when it counted nothing, so the script itself fails, and an empty table can never reach Rmd 01:
+The tool exits 0 even when it counted nothing, so the script itself fails, and an empty table can never reach Rmd 01. The same guard covers the outbred unfiltered table:
 
 ```bash
 # ase_counts/$SAMPLE.table needs non-empty data rows (header only = ASEReadCounter counted nothing)
-N_ROWS=0
-[ -s "$TABLE" ] && N_ROWS=$(awk 'NR>1' "$TABLE" | wc -l)
-if [ "$N_ROWS" -lt 1 ]; then
-  echo "ERROR: sample $SAMPLE: ase_counts/$SAMPLE.table is missing or has no data rows (check the read group, the het-sites VCF and the contig names)" >&2
-  rm -f "$TABLE"          # a header-only table must not stay on disk for Rmd 01 to glob
-  exit 1
-fi
-echo "Sample $SAMPLE: $N_ROWS sites counted"
+check_table() {   # $1 = count table; a missing or header-only table is deleted and the task fails
+  local N_ROWS=0
+  [ -s "$1" ] && N_ROWS=$(awk 'NR>1' "$1" | wc -l)
+  if [ "$N_ROWS" -lt 1 ]; then
+    echo "ERROR: sample $SAMPLE: $1 is missing or has no data rows (check the read group, the het-sites VCF and the contig names)" >&2
+    rm -f "$1"            # a header-only table must not stay on disk
+    exit 1
+  fi
+  echo "Sample $SAMPLE: $N_ROWS sites counted in $(basename "$1")"
+}
+check_table "$TABLE"
+check_table "$UNF_TABLE"     # outbred (align_wasp_count.sh) only; omit this line in align_count_f1.sh
 ```
 
 ### Submission order
@@ -577,15 +606,15 @@ P=$(sbatch -p bcc --parsable {RESULTS_DIR}/scripts/prep_f1_reference.sh)      # 
 sbatch -p bcc --dependency=afterok:$P {RESULTS_DIR}/scripts/align_count_f1.sh  # outbred: align_wasp_count.sh
 ```
 
-Wait for the jobs with a bounded loop and read the job logs; on a failure show the error line and stop. Rmd 01 (Step 12) reads `{RESULTS_DIR}/ase_counts/{sample}.table` (and `{sample}.wasp_stats.tsv` in outbred mode) for every sample in `{SAMPLES_CSV}`.
+Wait for the jobs with a bounded loop and read the job logs; on a failure show the error line and stop. Rmd 01 (Step 12) reads `{RESULTS_DIR}/ase_counts/{sample}.table` (and `{sample}.wasp_stats.tsv` and `{sample}.unfiltered.table` in outbred mode) for every sample in `{SAMPLES_CSV}`, by name.
 
 ---
 
 ## Step 12 — Rmd 01: import, site filters and reference-bias QC
 
-Write `{CWD}/{TODAY_YYMMDD}_{WD_NAME}_01_import_qc.Rmd` (ask once for `{AUTHOR}` and `{PROJECT_TITLE}`; the same two values go into Rmd 02). The Rmd is self-contained (it sources no helper files), uses `knitr::opts_chunk$set(cache = FALSE)` and `options(scipen = 9)`, loads the Bioconductor packages before `tidyverse`, and calls every dplyr verb with the `dplyr::` prefix. Substitute the placeholders from Steps 0-9 (`{MODE}`, `{STRAIN_A}`, `{STRAIN_B}`, `{SAMPLES_CSV}`, `{RESULTS_DIR}`, `{GTF_PATH}`, and the four constants of Step 8 as bare numbers); for outbred mode leave `{STRAIN_A}` and `{STRAIN_B}` as the words `REF` and `ALT`. The constants block below is the only place the four thresholds are defined; every table and figure uses these objects.
+Write `{CWD}/{TODAY}_{WD_NAME}_01_import_qc.Rmd` (ask once for `{AUTHOR}` and `{PROJECT_TITLE}`; the same two values go into Rmd 02). The Rmd is self-contained (it sources no helper files), uses `knitr::opts_chunk$set(cache = FALSE)` and `options(scipen = 9)`, loads the Bioconductor packages before `tidyverse`, and calls every dplyr verb with the `dplyr::` prefix. Substitute the placeholders from Steps 0-9 (`{MODE}`, `{STRAIN_A}`, `{STRAIN_B}`, `{SAMPLES_CSV}`, `{RESULTS_DIR}`, `{GTF_PATH}`, and the four constants of Step 8 as bare numbers); for outbred mode leave `{STRAIN_A}` and `{STRAIN_B}` as the words `REF` and `ALT`. The constants block below is the only place the four thresholds are defined; every table and figure uses these objects.
 
-**It reads `ase_counts/{sample}.table` for every sample listed in `samples.csv`, never by globbing `*.table`.** A stray or stale table from an earlier run is therefore never accepted, and the Rmd stops with an error that names every sample whose table is missing, header-only or without data rows (the Step 11 scripts delete failed tables; this is the second line of defence). In outbred mode the same rule applies to `ase_counts/{sample}.wasp_stats.tsv`.
+**It reads `ase_counts/{sample}.table` for every sample listed in `samples.csv`, never by globbing `*.table`.** A stray or stale table from an earlier run is therefore never accepted, and the Rmd stops with an error that names every sample whose table is missing, header-only or without data rows (the Step 11 scripts delete failed tables; this is the second line of defence). In outbred mode the same rule applies to `ase_counts/{sample}.wasp_stats.tsv` and `ase_counts/{sample}.unfiltered.table` (the pre-WASP counts). Because tables are read by name, a `{sample}.unfiltered.table` is never picked up as a sample table: the stray-table message skips it, and the Rmd checks that the samples read are exactly the rows of `samples.csv`.
 
 ````rmd
 ---
@@ -635,8 +664,8 @@ if (anyDuplicated(samples$sample)) stop("duplicated sample names in samples.csv"
 
 EXPECTED <- c("contig", "position", "variantID", "refAllele", "altAllele", "refCount", "altCount",
               "totalCount", "lowMAPQDepth", "lowBaseQDepth", "rawDepth", "otherBases", "improperPairs")
-read_counts <- function(s) {
-  f <- file.path(COUNTS_DIR, paste0(s, ".table"))
+read_counts <- function(s, suffix = ".table") {   # suffix ".unfiltered.table" = outbred pre-WASP counts
+  f <- file.path(COUNTS_DIR, paste0(s, suffix))
   if (!file.exists(f)) return(list(data = NULL, problem = "table missing"))
   d <- tryCatch(read.delim(f, stringsAsFactors = FALSE, check.names = FALSE), error = function(e) NULL)
   if (is.null(d)) return(list(data = NULL, problem = "table is empty or has a header but no data rows"))
@@ -660,6 +689,9 @@ problems <- vapply(res, function(r) r$problem, character(1))
 if (MODE == "outbred") {
   wres <- lapply(samples$sample, read_wasp); names(wres) <- samples$sample
   wprob <- vapply(wres, function(r) r$problem, character(1))
+  ures <- lapply(samples$sample, read_counts, suffix = ".unfiltered.table"); names(ures) <- samples$sample
+  uprob <- vapply(ures, function(r) if (is.na(r$problem)) NA_character_ else paste("unfiltered", r$problem), character(1))
+  wprob <- ifelse(is.na(wprob), uprob, ifelse(is.na(uprob), wprob, paste(wprob, uprob, sep = "; ")))
   problems <- ifelse(is.na(problems), wprob, ifelse(is.na(wprob), problems, paste(problems, wprob, sep = "; ")))
 }
 problems <- problems[!is.na(problems)]
@@ -668,9 +700,12 @@ if (length(problems) > 0)
        paste0("  - ", names(problems), ": ", problems, collapse = "\n"),
        "\nRe-run the per-sample array script for these samples; tables of samples not listed in samples.csv are ignored.",
        call. = FALSE)
-extra <- setdiff(sub("\\.table$", "", list.files(COUNTS_DIR, pattern = "\\.table$")), samples$sample)
+tbl_files <- list.files(COUNTS_DIR, pattern = "\\.table$")   # only to report stray tables; nothing is read from this list
+tbl_files <- tbl_files[!grepl("\\.unfiltered\\.table$", tbl_files)]   # pre-WASP tables are not sample tables
+extra <- setdiff(sub("\\.table$", "", tbl_files), samples$sample)
 if (length(extra) > 0) message("Ignoring tables of samples not in samples.csv: ", paste(extra, collapse = ", "))
 sites_raw <- dplyr::bind_rows(lapply(res, function(r) r$data))
+stopifnot(setequal(unique(sites_raw$sample), samples$sample))   # one table per samples.csv row, read by name, never globbed
 knitr::kable(dplyr::count(sites_raw, sample, name = "sites_in_table"), caption = "Sites per sample in the ASEReadCounter tables")
 ```
 
@@ -722,7 +757,7 @@ ggplot(sites, aes(total)) + geom_histogram(bins = 40) + scale_x_log10() + facet_
 
 ## Reference-bias diagnostic
 
-For every sample the mean REF fraction is REF reads divided by REF + ALT reads summed over the filtered sites. A sample is flagged when its deviation from 0.5 exceeds `max(BIAS_TOL, 3 * SE)` with `SE = sqrt(0.25 / total reads)`. **This is a screen, not a test.** On data with planted or real allelic imbalance the all-sites mean is not expected to be 0.5, so a flag says "look at the ratios with caution", not "the sample is wrong"; a benign spread of about +0.02 to -0.03 was seen on synthetic data with no imbalance at about 2000 reads per sample.
+For every sample the mean REF fraction is REF reads divided by REF + ALT reads summed over the filtered sites. A sample is flagged when its deviation from 0.5 exceeds `max(BIAS_TOL, 3 * SE)` with `SE = sqrt(0.25 / total reads)`. **This is a screen, not a test.** On data with planted or real allelic imbalance the all-sites mean is not expected to be 0.5, so a flag says "look at the ratios with caution", not "the sample is wrong"; a benign spread of about +0.02 to -0.03 was seen on synthetic data with no imbalance at about 2000 reads per sample. In outbred mode the table also shows the site-level REF fraction before (`ref_frac_before_wasp`, counted on the unfiltered STAR BAM) and after (`ref_frac_after_wasp`) the WASP filter, on the sites kept in both tables; this is reported for information, not a gate (the flag and every test use the WASP-filtered counts only).
 
 ```{r bias}
 bias <- sites %>% dplyr::group_by(sample) %>%
@@ -730,7 +765,23 @@ bias <- sites %>% dplyr::group_by(sample) %>%
   dplyr::mutate(mean_ref_frac = ref_reads / total_reads, deviation = mean_ref_frac - 0.5,
                 SE = sqrt(0.25 / total_reads), threshold = pmax(BIAS_TOL, 3 * SE),
                 flagged = abs(deviation) > threshold)
-knitr::kable(bias, digits = 4, caption = paste0("Reference-bias diagnostic (REF = ", ref_label, ")"))
+# outbred: site-level REF fraction before (unfiltered STAR BAM) and after the WASP filter, on the sites that pass the
+# same site filters in both tables, so the two numbers differ only by the filter. Reported for information, not a gate.
+bias$sites_before_after <- NA_integer_; bias$ref_frac_before_wasp <- NA_real_; bias$ref_frac_after_wasp <- NA_real_
+if (MODE == "outbred") {
+  site_filter <- function(d) dplyr::filter(d, totalCount >= MIN_DEPTH, (lowMAPQDepth + lowBaseQDepth + otherBases) <= 0.1 * rawDepth, improperPairs == 0)
+  unf <- site_filter(dplyr::bind_rows(lapply(ures, function(r) r$data)))
+  ba <- dplyr::inner_join(dplyr::select(unf, sample, contig, position, ref_u = refCount, alt_u = altCount),
+                          dplyr::select(s3, sample, contig, position, ref_w = refCount, alt_w = altCount),
+                          by = c("sample", "contig", "position")) %>%
+    dplyr::group_by(sample) %>%
+    dplyr::summarise(sites_before_after = dplyr::n(), ref_frac_before_wasp = sum(ref_u) / sum(ref_u + alt_u),
+                     ref_frac_after_wasp = sum(ref_w) / sum(ref_w + alt_w), .groups = "drop")
+  bias <- dplyr::left_join(dplyr::select(bias, -sites_before_after, -ref_frac_before_wasp, -ref_frac_after_wasp), ba, by = "sample")
+}
+knitr::kable(bias, digits = 4, caption = paste0("Reference-bias diagnostic (REF = ", ref_label, "). ",
+  "flagged uses mean_ref_frac only. Outbred: ref_frac_before_wasp / ref_frac_after_wasp = REF fraction on the sites_before_after ",
+  "sites kept in both the unfiltered and the WASP-filtered table, reported for information, not a gate"))
 if (any(bias$flagged)) cat("FLAGGED samples:", paste(bias$sample[bias$flagged], collapse = ", "),
                            "- show this flag next to every ratio table and figure.\n") else cat("No sample is flagged.\n")
 ggplot(sites, aes(ref_frac)) + geom_histogram(bins = 25) + geom_vline(xintercept = 0.5, linetype = 2) +
@@ -771,7 +822,12 @@ sessionInfo()
 ```
 ````
 
-Render each Rmd from its own `sbatch -p bcc` script, written to `{RESULTS_DIR}/scripts/` (like every other script of this skill). `run_01_import_qc.sh` is the template; `run_02_imbalance.sh` (Step 13) is identical except for the job name, the log name and the Rmd file. Requests: `-n 1 --mem=16G -t 1:00:00` (both Rmds run single-threaded). The log goes to the shared filesystem under `{RESULTS_DIR}/logs` (never `/tmp`, which is node-local). `{GTF_DIR}` is the directory of `{GTF_PATH}`; bind each directory once, and skip `{GTF_DIR}` when it is inside `{CWD}`:
+Render each Rmd from its own `sbatch -p bcc` script, written to `{RESULTS_DIR}/scripts/` (like every other script of this skill). `run_01_import_qc.sh` is the template; `run_02_imbalance.sh` (Step 13) is identical except for the job name, the log name and the Rmd file. Requests: `-n 1 --mem=16G -t 1:00:00` (both Rmds run single-threaded). The log goes to the shared filesystem under `{RESULTS_DIR}/logs` (never `/tmp`, which is node-local). `{GTF_DIR}` is the directory of `{GTF_PATH}` (`dirname`); bind each directory once. **`--bind` line, two cases** (use exactly one; comma, no space, never a path glued to another):
+
+- `{GTF_DIR}` inside `{CWD}`: `singularity exec --bind {CWD} {R_SIF} \` (for example `--bind /data/proj` when the GTF is `/data/proj/genome/genes.gtf`);
+- `{GTF_DIR}` outside `{CWD}`: `singularity exec --bind {CWD},{GTF_DIR} {R_SIF} \` (for example `--bind /data/proj,/refs/mouse/mm39_ens112`).
+
+The template below shows the second case:
 
 ```bash
 #!/bin/bash
@@ -784,11 +840,11 @@ Render each Rmd from its own `sbatch -p bcc` script, written to `{RESULTS_DIR}/s
 set -uo pipefail
 module add singularity/3.10.4 || exit 1
 singularity exec --bind {CWD},{GTF_DIR} {R_SIF} \
-  Rscript -e "rmarkdown::render('{CWD}/{TODAY_YYMMDD}_{WD_NAME}_01_import_qc.Rmd', output_dir = '{RESULTS_DIR}', knit_root_dir = '{CWD}')" \
+  Rscript -e "rmarkdown::render('{CWD}/{TODAY}_{WD_NAME}_01_import_qc.Rmd', output_dir = '{RESULTS_DIR}', knit_root_dir = '{CWD}')" \
   || { echo "ERROR: Rmd 01 failed" >&2; exit 1; }
 ```
 
-`{RESULTS_DIR}` is inside `{CWD}`, so one bind covers the Rmd, the count tables and the output. The stage HTML is written to `{RESULTS_DIR}/{TODAY_YYMMDD}_{WD_NAME}_01_import_qc.html`. The full submission order (with dependencies) is in Step 15.
+`{RESULTS_DIR}` is inside `{CWD}`, so one bind covers the Rmd, the count tables and the output. The stage HTML is written to `{RESULTS_DIR}/{TODAY}_{WD_NAME}_01_import_qc.html`. The full submission order (with dependencies) is in Step 15.
 
 If the job stops with "sample(s) have no usable ASE count table", show the listed samples to the user; do not delete anything, and do not work around it by globbing.
 
@@ -796,9 +852,9 @@ If the job stops with "sample(s) have no usable ASE count table", show the liste
 
 ## Step 13 — Rmd 02: per-sample allelic imbalance
 
-Write `{CWD}/{TODAY_YYMMDD}_{WD_NAME}_02_imbalance.Rmd` with the same header conventions as Step 12. It loads `ase_checkpoint.rds`, defines its own constants block (same names, same values; the Rmd stops if they differ from the checkpoint, so Rmd 01 and Rmd 02 can never disagree), pastes the statistics functions of Step 14 (the code between the two marker lines, without the marker lines) into the chunk marked below, and writes `{TODAY_YYMMDD}_{WD_NAME}_ASE_imbalance.xlsx` (sheets `SNP`, `Gene`, `Summary`) and `ase_imbalance_checkpoint.rds` to `{RESULTS_DIR}`.
+Write `{CWD}/{TODAY}_{WD_NAME}_02_imbalance.Rmd` with the same header conventions as Step 12. It loads `ase_checkpoint.rds`, defines its own constants block (same names, same values; the Rmd stops if they differ from the checkpoint, so Rmd 01 and Rmd 02 can never disagree), pastes the statistics functions of Step 14 (the code between the two marker lines, without the marker lines) into the chunk marked below, and writes `{TODAY}_{WD_NAME}_ASE_imbalance.xlsx` (sheets `SNP`, `Gene`, `Summary`) and `ase_imbalance_checkpoint.rds` to `{RESULTS_DIR}`.
 
-- Per sample, `rho_h0 <- bb_estimate_rho(alt, total)` is estimated under H0 (p = 0.5) from all filtered sites (conservative when true imbalance exists, see Step 14). **Outbred** uses `rho_h0`. **F1** uses `bb_estimate_rho_gene(alt, total, gene)`, estimated with a free mean per gene and bias-corrected (`rho_corrected`), because real imbalance inflates `rho_h0`; the SNP-level and gene-level tests use `rho_used = rho_gene = max(rho_corrected, RHO_MIN)`; if it is `NA` (fewer than 5 genes with 2 or more SNPs) the Rmd prints a WARNING, falls back to `rho_h0` and records that in the Summary (`rho_source`). The Summary shows all the estimates, and any estimator boundary warning per sample. With fewer than 20 sites `rho_h0` is `NA` and the sample is not tested.
+- Per sample, `rho_h0 <- bb_estimate_rho(alt, total)` is estimated under H0 (p = 0.5) from all filtered sites. Every truly imbalanced site inflates it (on the synthetic acceptance data it was 0.08-0.10 against a binomial truth and detected 0 of 16 planted genes), so no test uses it except the F1 fallback below; it is reported as the diagnostic `rho_h0_naive`. **Outbred** uses `bb_estimate_rho_trim(alt, total)`: the H0 fit restricted to the central sites (counts folded around n/2; each site's central region holds 90 percent of the H0 probability), with the truncation corrected in the likelihood (Step 14); the tests use `rho_used = max(rho_trim, RHO_MIN)`. Unphased data allow no free mean per gene (the SNP orientation is unknown), which is why the outbred estimator trims instead. **F1** uses `bb_estimate_rho_gene(alt, total, gene)`, estimated with a free mean per gene and bias-corrected (`rho_corrected`), because real imbalance inflates `rho_h0`; the SNP-level and gene-level tests use `rho_used = rho_gene = max(rho_corrected, RHO_MIN)`; if it is `NA` (fewer than 5 genes with 2 or more SNPs) the Rmd prints a WARNING, falls back to `rho_h0` and records that in the Summary (`rho_source`). The Summary shows all the estimates, and any estimator boundary warning per sample. With fewer than 20 sites `rho_h0` is `NA` and the sample is not tested.
 - Per SNP, `bb_pvalue`, then Benjamini-Hochberg within each sample. The single column `sig` is `padj < FDR_SIG` and `|ALT fraction - 0.5| >= ABS_DEV_SIG` (F1: ALT is strain B). The Summary table and every plot use this column and nothing else; the Rmd checks that the counts drawn in the figures equal the Summary counts.
 - Gene level, both modes: SNP positions are overlapped with the GTF exons by `GenomicRanges::findOverlaps` (`gene_id` from the GTF). **F1:** counts are not summed before testing (summing and applying the per-SNP `rho` to the total inflates the variance by about `1 + (n - 1) * rho` and destroys power); each gene's SNPs share one strain-B fraction and `bb_gene_lrt` tests it against 0.5 with `rho_gene`; the table reports `phat` (strain-B fraction), p, BH within the sample, and `sig` from `FDR_SIG` and `ABS_DEV_SIG` on `|phat - 0.5|`. **Outbred:** SNPs cannot be pooled without phasing, so the gene p-value is the `acat` combination of the SNP p-values, labelled "unphased, no direction" (no direction column); the gene is `sig` when its BH-adjusted `acat` p-value is below `FDR_SIG` and at least one of its SNPs deviates by `ABS_DEV_SIG` or more.
 - The reference-bias flag from Rmd 01 is printed with the tables and written into the Summary sheet; if a sample is flagged, say so next to its ratios.
@@ -829,11 +885,11 @@ STRAIN_A    <- "{STRAIN_A}"
 STRAIN_B    <- "{STRAIN_B}"
 RESULTS_DIR <- "{RESULTS_DIR}"
 GTF_PATH    <- "{GTF_PATH}"
-DATE_TAG    <- "{TODAY_YYMMDD}_{WD_NAME}"
+DATE_TAG    <- "{TODAY}_{WD_NAME}"
 MIN_DEPTH   <- {MIN_DEPTH}
 FDR_SIG     <- {FDR_SIG}
 ABS_DEV_SIG <- {ABS_DEV_SIG}
-RHO_MIN     <- {RHO_MIN}             # F1 gene level: floor for the bias-corrected overdispersion
+RHO_MIN     <- {RHO_MIN}             # both modes: floor for the overdispersion used by the tests
 BIAS_TOL    <- {BIAS_TOL}
 ref_label <- STRAIN_A; alt_label <- STRAIN_B
 ck <- readRDS(file.path(RESULTS_DIR, "ase_checkpoint.rds"))
@@ -875,7 +931,7 @@ cat(nrow(pos), "SNP positions,", length(unique(snp_gene$gene_id)), "genes with a
 
 ## Per-SNP beta-binomial test
 
-The overdispersion `rho` is estimated per sample. **Outbred:** under H0 (p = 0.5) from all filtered sites (`bb_estimate_rho`); when real imbalance exists this inflates `rho`, which lowers power and never inflates false positives (conservative). **F1:** the H0-based value (`rho_h0`) is inflated by every truly imbalanced gene, so `rho` is instead estimated with a free mean per gene (`bb_estimate_rho_gene`, genes with at least 2 SNPs). That estimate (`rho_free`) is biased low, because a free mean per gene absorbs part of the variance (by about (k - 1) / k for genes with k SNPs), so it is bias-corrected (`rho_corrected`, see Step 14). Both the SNP-level and the gene-level tests use `rho_used = rho_gene = max(rho_corrected, RHO_MIN)` (`RHO_MIN` from Step 8), so a near-boundary corrected estimate can never make them anti-conservative. If the free-mean estimate is not available (fewer than 5 usable genes) the H0-based value is used and a WARNING is printed and written to the Summary (`rho_source`). Any estimator warning (for example an estimate at the upper boundary) is printed per sample and written to `rho_warning`.
+The overdispersion `rho` is estimated per sample. The plain H0 fit on all filtered sites (`rho_h0`, `bb_estimate_rho`) absorbs the spread of every truly imbalanced site; it is shown for comparison only (Summary column `rho_h0_naive`), because testing with it removes almost all power (0 of 16 planted genes on the synthetic acceptance data). **Outbred:** `bb_estimate_rho_trim` fits the H0 beta-binomial on the central sites only: each site's central region is the set of counts closest to n/2 that holds 90 percent of the H0 probability under the current `rho`, sites whose count falls outside it are set aside, and each kept site's likelihood is divided by the H0 probability of its region (a truncated likelihood, so trimming the tails does not shrink `rho`); region and `rho` are iterated upward from a small start to a fixed point. The tests use `rho_used = max(rho_trim, RHO_MIN)`, and `central_frac` (the fraction of sites kept) is reported. On simulated unphased data (Step 14) this keeps the null size of the SNP and ACAT gene tests at or below about 0.05 and restores the power; with real overdispersion and many imbalanced sites `rho_trim` stays somewhat inflated, which lowers power but does not add false positives. **F1:** the H0-based value (`rho_h0`) is inflated by every truly imbalanced gene, so `rho` is instead estimated with a free mean per gene (`bb_estimate_rho_gene`, genes with at least 2 SNPs). That estimate (`rho_free`) is biased low, because a free mean per gene absorbs part of the variance (by about (k - 1) / k for genes with k SNPs), so it is bias-corrected (`rho_corrected`, see Step 14). Both the SNP-level and the gene-level tests use `rho_used = rho_gene = max(rho_corrected, RHO_MIN)` (`RHO_MIN` from Step 8), so a near-boundary corrected estimate can never make them anti-conservative. If the free-mean estimate is not available (fewer than 5 usable genes) the H0-based value is used and a WARNING is printed and written to the Summary (`rho_source`). Any estimator warning (for example an estimate at the upper boundary) is printed per sample and written to `rho_warning`.
 
 ```{r snp}
 bb_p_safe <- function(x, n, rho) if (is.na(rho)) NA_real_ else bb_pvalue(x, n, rho = rho)
@@ -886,7 +942,14 @@ collect_warnings <- function(expr) {
 }
 snp <- dplyr::bind_rows(lapply(split(sites, sites$sample), function(d) {
   r0 <- collect_warnings(bb_estimate_rho(d$alt_n, d$total)); rho_h0 <- r0$value; warn <- r0$warn
-  rho_free <- NA_real_; rho_corrected <- NA_real_; rho <- rho_h0; src <- "H0-based"
+  rho_free <- NA_real_; rho_corrected <- NA_real_; rho_trim <- NA_real_; central_frac <- NA_real_; rho <- rho_h0; src <- "H0-based"
+  if (MODE == "outbred") {
+    r2 <- collect_warnings(bb_estimate_rho_trim(d$alt_n, d$total))
+    warn <- paste(c(warn, r2$warn)[nzchar(c(warn, r2$warn))], collapse = "; ")
+    rho_trim <- r2$value[["rho"]]; central_frac <- r2$value[["central_frac"]]
+    rho <- if (is.na(rho_trim)) NA_real_ else max(rho_trim, RHO_MIN)   # NA (fewer than 20 sites): sample not tested
+    src <- "central sites, truncation-corrected (trimmed H0 fit), floored at RHO_MIN"
+  }
   if (MODE == "f1") {
     g <- snp_gene$gene_id[match(paste(d$contig, d$position), paste(snp_gene$contig, snp_gene$position))]
     r1 <- collect_warnings(bb_estimate_rho_gene(d$alt_n, d$total, g))
@@ -899,7 +962,7 @@ snp <- dplyr::bind_rows(lapply(split(sites, sites$sample), function(d) {
       cat("WARNING: sample", d$sample[1], "has fewer than 5 genes with 2 or more SNPs; using the H0-based rho\n"); src <- "H0-based (fallback)" }
   }
   if (nzchar(warn)) cat("WARNING (rho estimation), sample", d$sample[1], ":", warn, "\n")
-  d$rho_h0 <- rho_h0; d$rho_free <- rho_free; d$rho_corrected <- rho_corrected; d$rho <- rho
+  d$rho_h0 <- rho_h0; d$rho_free <- rho_free; d$rho_corrected <- rho_corrected; d$rho_trim <- rho_trim; d$central_frac <- central_frac; d$rho <- rho
   d$rho_gene <- if (MODE == "f1") max(rho, RHO_MIN) else NA_real_   # floor for the gene-level tests (F1)
   d$rho_source <- src; d$rho_warning <- warn
   d$p <- mapply(bb_p_safe, d$alt_n, d$total, MoreArgs = list(rho = rho))
@@ -910,8 +973,11 @@ snp <- dplyr::bind_rows(lapply(split(sites, sites$sample), function(d) {
                 sig = !is.na(padj) & padj < FDR_SIG & dev >= ABS_DEV_SIG,
                 direction = dplyr::case_when(!sig ~ "none", alt_frac > 0.5 ~ paste(alt_label, "higher"),
                                              TRUE ~ paste(ref_label, "higher")))
-knitr::kable(dplyr::distinct(snp, sample, rho_h0, rho_free, rho_corrected, rho, rho_gene, rho_source), digits = 4,
-             caption = "Overdispersion per sample: rho_h0 (p = 0.5 at every site, inflated by real imbalance), rho_free (free mean per gene, biased low), rho_corrected (bias-corrected), rho = rho_gene = max(rho_corrected, RHO_MIN) (used for SNP and gene tests); F1 only for the last three. NA = fewer than 20 sites, sample not tested")
+knitr::kable(dplyr::distinct(snp, sample, rho_h0, rho_trim, central_frac, rho_free, rho_corrected, rho, rho_gene, rho_source), digits = 4,
+             caption = paste("Overdispersion per sample: rho_h0 (p = 0.5 at every site, inflated by real imbalance; diagnostic only, used only as the F1 fallback);",
+                             "outbred: rho_trim (H0 fit on the central sites, truncation-corrected) and central_frac (fraction of sites kept), rho = max(rho_trim, RHO_MIN) (used for the SNP tests);",
+                             "F1: rho_free (free mean per gene, biased low), rho_corrected (bias-corrected), rho = rho_gene = max(rho_corrected, RHO_MIN) (used for SNP and gene tests).",
+                             "NA = fewer than 20 sites, sample not tested"))
 ```
 
 ## Gene level
@@ -954,7 +1020,7 @@ knitr::kable(head(dplyr::filter(gene, sig), 30), digits = 4, caption = "Signific
 snp_plot <- dplyr::filter(snp, !is.na(p))      # data behind the SNP figure
 gene_plot <- dplyr::filter(gene, if (MODE == "f1") !is.na(p) else !is.na(acat_p))   # data behind the gene figure
 summary_tbl <- snp %>% dplyr::group_by(sample) %>%
-  dplyr::summarise(rho_h0 = dplyr::first(rho_h0), rho_free = dplyr::first(rho_free), rho_corrected = dplyr::first(rho_corrected), rho_used = dplyr::first(rho), rho_gene = dplyr::first(rho_gene), rho_source = dplyr::first(rho_source), rho_warning = dplyr::first(rho_warning), sites_tested = sum(!is.na(p)), sig_sites = sum(sig),
+  dplyr::summarise(rho_used = dplyr::first(rho), rho_robust = dplyr::first(if (MODE == "f1") rho_corrected else rho_trim), rho_h0_naive = dplyr::first(rho_h0), central_frac = dplyr::first(central_frac), rho_free = dplyr::first(rho_free), rho_corrected = dplyr::first(rho_corrected), rho_gene = dplyr::first(rho_gene), rho_source = dplyr::first(rho_source), rho_warning = dplyr::first(rho_warning), sites_tested = sum(!is.na(p)), sig_sites = sum(sig),
                    sig_sites_alt_higher = sum(sig & alt_frac > 0.5), sig_sites_ref_higher = sum(sig & alt_frac < 0.5),
                    .groups = "drop")
 gsum <- if (MODE == "f1") {
@@ -966,7 +1032,7 @@ gsum <- if (MODE == "f1") {
     dplyr::summarise(genes_tested = sum(!is.na(acat_p)), sig_genes = sum(sig), .groups = "drop")
 }
 summary_tbl <- summary_tbl %>% dplyr::left_join(gsum, by = "sample") %>%
-  dplyr::left_join(dplyr::select(bias, sample, mean_ref_frac, ref_bias_flagged = flagged), by = "sample") %>%
+  dplyr::left_join(dplyr::select(bias, sample, mean_ref_frac, ref_frac_before_wasp, ref_frac_after_wasp, ref_bias_flagged = flagged), by = "sample") %>%
   dplyr::mutate(ref_bias_note = bias_note[sample],
                 gene_level = if (MODE == "f1") "per-gene LRT on SNP-level counts (shared strain fraction)" else "unphased, no direction (acat of SNP p-values)")
 knitr::kable(summary_tbl, digits = 4, caption = "Summary per sample (FDR_SIG, ABS_DEV_SIG as in the constants block)")
@@ -1039,7 +1105,8 @@ summary_numbers <- summary_tbl %>%
   dplyr::left_join(dplyr::select(bias, sample, filtered_sites = n_sites), by = "sample") %>%
   dplyr::left_join(unique(ck$samples[, c("sample", "condition")]), by = "sample") %>%
   dplyr::transmute(sample, condition, filtered_sites, sig_snps = sig_sites, genes_tested, sig_genes,
-                   rho_used, rho_h0, mean_ref_frac, bias_flag = ref_bias_flagged)
+                   rho_used, rho_robust, rho_h0_naive, mean_ref_frac, ref_frac_before_wasp, ref_frac_after_wasp,
+                   bias_flag = ref_bias_flagged)
 write.table(summary_numbers, file.path(RESULTS_DIR, "summary_numbers.tsv"), sep = "\t", quote = FALSE, row.names = FALSE)
 cat("wrote", file.path(RESULTS_DIR, "summary_numbers.tsv"), "\n")
 sessionInfo()
@@ -1054,7 +1121,7 @@ Besides the xlsx, Rmd 02 writes `{RESULTS_DIR}/summary_numbers.tsv` (one row per
 
 ## Step 14 — Statistics functions
 
-These base-R functions are pasted verbatim into Rmd 02 (`{TODAY_YYMMDD}_{WD_NAME}_02_imbalance.Rmd`); the marker lines delimit the code that `ase-pipeline/tests/r/test_ase_stats.R` extracts from this file and unit-tests, so the tested code is the shipped code. They need no packages beyond base R.
+These base-R functions are pasted verbatim into Rmd 02 (`{TODAY}_{WD_NAME}_02_imbalance.Rmd`); the marker lines delimit the code that `ase-pipeline/tests/r/test_ase_stats.R` extracts from this file and unit-tests, so the tested code is the shipped code. They need no packages beyond base R.
 
 ```r
 # --- ase-stats-begin
@@ -1118,15 +1185,49 @@ bb_estimate_rho_gene <- function(x, n, gene) {   # c(free, corrected): rho with 
   k <- vapply(idx, length, integer(1)); cf <- sum(k) / sum(k - 1); m <- mean(unlist(lapply(idx, function(i) n[i])) - 1)
   c(free = free, corrected = min(cf * free + (cf - 1) / m, 0.99))
 }
+bb_estimate_rho_trim <- function(x, n, keep = 0.9, max_iter = 100) {   # c(rho, central_frac): outbred rho from the central sites, truncation-corrected
+  use <- n > 0 & !is.na(x) & !is.na(n); x <- x[use]; n <- n[use]
+  if (length(x) < 20) return(c(rho = NA_real_, central_frac = NA_real_))
+  rho <- bb_estimate_rho(x, n)                      # naive all-sites H0 fit (inflated by real imbalance)
+  if (rho == 0) return(c(rho = 0, central_frac = 1))
+  hi <- qlogis(min(rho, 0.88))                      # upper bound: trimming the tails never makes rho larger than the all-sites fit
+  rho <- min(rho, 1e-3)                             # iterate up from a small start: the lowest self-consistent value, least contaminated
+  ldb <- function(xx, nn, r) if (r < 1e-8) dbinom(xx, nn, 0.5, log = TRUE) else {
+    a <- 0.5 * (1 - r) / r; lchoose(nn, xx) + lbeta(xx + a, nn - xx + a) - lbeta(a, a) }
+  s <- rep(seq_along(n), n + 1); k <- sequence(n + 1) - 1; d <- abs(k - n[s] / 2)   # every possible count of every site, folded
+  o <- order(s, d); so <- s[o]; ko <- k[o]; do <- d[o]
+  hist <- rho; fit <- NULL
+  for (it in seq_len(max_iter)) {
+    # central region of each site: the counts closest to n/2 holding at least `keep` of the H0 probability under the current rho
+    cp <- ave(exp(ldb(ko, n[so], rho)), so, FUN = cumsum)
+    t <- as.numeric(tapply(ifelse(cp >= keep - 1e-10, do, Inf), so, min))
+    inside <- abs(x - n / 2) <= t                     # sites whose observed count lies in its central region
+    reg <- d <= t[s] & inside[s]
+    nll <- function(par) {                            # truncated likelihood: each kept site's density divided by the H0 mass of its region
+      r <- plogis(par)
+      -sum(ldb(x[inside], n[inside], r)) + sum(log(rowsum(exp(ldb(k[reg], n[s[reg]], r)), s[reg])))
+    }
+    fit <- optimize(nll, interval = c(-12, hi))
+    rn <- if (fit$minimum < -12 + 0.05 || plogis(fit$minimum) < 1e-4) 0 else plogis(fit$minimum)
+    tol <- 1e-3 * max(rn, rho) + 1e-6
+    if (abs(rn - rho) <= tol) { rho <- rn; break }
+    cyc <- which(abs(hist - rn) <= tol)               # discrete regions can make the iteration cycle: keep the largest value of the cycle
+    if (length(cyc) > 0) { rho <- max(hist[min(cyc):length(hist)], rn); break }
+    rho <- rn; hist <- c(hist, rn)
+    if (it == max_iter) warning("trimmed rho estimate did not converge in ", max_iter, " iterations; the last value is used")
+  }
+  c(rho = rho, central_frac = mean(inside))
+}
 # --- ase-stats-end
 ```
 
 - `bb_pvalue` is the two-sided exact beta-binomial test against `p0`: the p-value is the total probability of all outcomes that are no more likely than the observed count. With `rho = 0` it is the exact binomial test.
-- **`rho` (overdispersion) is estimated per sample under H0 (p = 0.5) from all filtered sites.** When real imbalance exists, the extra variance is absorbed into `rho`, which inflates it. An inflated `rho` lowers power but never inflates false positives, so the estimate is conservative. It is estimated by maximum likelihood on the logistic scale (`optimize`), and a value below 1e-6 is reported as 0 (pure binomial). Fewer than 20 sites gives `NA` and the sample is not tested.
+- **`bb_estimate_rho` is the naive H0 fit (p = 0.5) on all filtered sites.** When real imbalance exists, the between-site spread it causes is absorbed into `rho`, which inflates it; on the synthetic acceptance data (binomial truth, about a third of the sites imbalanced) it gave 0.08-0.10, and testing with it detected 0 of 16 planted outbred genes. It is therefore only a diagnostic (`rho_h0_naive`), the upper bound of the trimmed fit, and the F1 fallback. It is estimated by maximum likelihood on the logistic scale (`optimize`), and a value below 1e-4 is reported as 0 (pure binomial). Fewer than 20 sites gives `NA` and the sample is not tested.
+- **Outbred `rho`: `bb_estimate_rho_trim` (central sites, truncation-corrected).** Unphased data give no free mean per gene (the SNP orientation is unknown), so imbalanced sites are handled by trimming. Each site's counts are folded around n/2; its central region is the set of counts closest to n/2 that holds `keep` = 90 percent of the H0 beta-binomial probability under the current `rho`. Sites whose observed count falls outside their region are set aside, and `rho` is re-fitted on the kept sites with a **truncated likelihood**: each kept site's H0 density is divided by the H0 probability of its region. That division is the correction for the truncation: without it, cutting the tails would shrink `rho` and make the tests anti-conservative. Region and `rho` are iterated upward from a small start (0.001) to a fixed point, the lowest self-consistent value and so the one least contaminated by imbalanced sites (if the discrete regions make the iteration cycle, the largest value of the cycle is kept), and `rho_trim` is bounded above by the all-sites fit (trimming tails cannot make the data more overdispersed, and an unbounded fit on very few sites can run to a U-shaped distribution under which central counts look significant). `central_frac` is the fraction of sites kept. Rmd 02 tests with `max(rho_trim, RHO_MIN)`. Unit-test results: 10 seeds x 300 genes of 1-4 SNPs, unphased, depth 30-200, `bb_pvalue` per SNP and `acat` per gene. With a third of the genes imbalanced (0.85/0.70/0.30) on binomial data, as in the acceptance data, `rho_trim` is 0.0007 (naive fit 0.093), the null size is 0.004 (SNP) / 0.003 (gene) and the power is 1.00 for 0.85 genes and 0.88 for 0.70/0.30 genes, against 0 with the naive fit; with a true `rho` of 0.01 the power is 1.00 / 0.74 (null gene size 0.016). Without imbalance `rho_trim` recovers the truth (0.0196 for 0.02, 0.0497 for 0.05) and the pooled null gene size is 0.040 / 0.053 (worst seed 0.083). On samples the size of the synthetic acceptance data (about 30 sites, 4 of 12 genes planted, 100 seeds) 3.3 of 4 planted genes are detected with a null false-positive rate of 0.003; in about one sample in ten the fit cannot separate the few imbalanced sites and stays near the naive value (conservative). On the acceptance count tables themselves Rmd 02 now detects 10 of 16 planted gene x sample tests (before: 0) with 0 of 28 null false positives. The remaining limitation: with real overdispersion and many imbalanced sites, imbalanced sites that fall inside the central regions keep `rho_trim` above the truth (0.039 for a true 0.02 with a third of the genes imbalanced), which lowers the power for moderate imbalance (0.23 for 0.70/0.30 genes) but adds no false positives.
 - `acat` is the Cauchy combination test with equal weights; it is valid for correlated p-values, which is why it is used for the SNPs of one gene. It carries no direction. P-values are capped at 0.99 before the transform: `bb_pvalue` returns exactly 1 at the modal count, and `tan((0.5 - 1) * pi)` is about -1.6e16, which would swamp any signal and make the combined p-value 1. Values are also clipped at 1e-15 from below.
-- The unit tests check the null size and uniformity of the p-values, power, recovery of `rho` (including `rho` near 0), the edge cases (`n = 0`, `x = 0`, `x = n`) and `acat`. Run them from the repository root with `singularity exec --bind /net/bmc-lab3 <bulkrnaseq sif> Rscript ase-pipeline/tests/r/test_ase_stats.R ase-pipeline/ase-pipeline.md` inside an `sbatch -p bcc` job.
-- **F1 gene level uses `bb_estimate_rho_gene` and `bb_gene_lrt`, not summed counts.** `bb_estimate_rho` (H0, p = 0.5 everywhere) treats the between-SNP spread caused by true imbalance as overdispersion, so with many imbalanced genes it is inflated (in the unit test about four times the true value), and applying it to counts summed over a gene multiplies the variance by about `1 + (n - 1) * rho`. `bb_estimate_rho_gene` maximises the likelihood with a free mean for every gene (genes with at least 2 SNPs; `NA` below 5 such genes) and returns `c(free, corrected)`. The free estimate is biased low: a free mean per gene shrinks the whole variance factor `1 + (n - 1) * rho` by `(k - 1) / k` (Neyman-Scott), which for 4-SNP genes gives 0.0115 for a true 0.02. The corrected value undoes that shrinkage, `rho_corrected = cf * rho_free + (cf - 1) / m` with `cf = sum(k) / sum(k - 1)` and `m` the mean of `n - 1` (0.021 in the same test). Rmd 02 then uses `rho_gene = max(rho_corrected, RHO_MIN)` for the gene tests (`RHO_MIN`, default 0.01, from Step 8), so a noisy or zero estimate can never make them anti-conservative. `bb_gene_lrt` tests `p = 0.5` against a shared free `p` per gene on the SNP-level counts and returns `phat`. Outbred mode keeps `bb_estimate_rho`, `bb_pvalue` and `acat`.
-- Boundary handling: both `rho` estimators return exactly 0 when the optimum sits at the lower boundary (or below 1e-4), and emit a warning when it sits at the upper boundary; Rmd 02 prints such warnings per sample and writes them to the Summary (`rho_warning`). `bb_pvalue` returns `NA` for `x` below 0, above `n`, non-integer or missing.
+- The unit tests check the null size and uniformity of the p-values, power, recovery of `rho` (including `rho` near 0), the edge cases (`n = 0`, `x = 0`, `x = n`), `acat`, and the full outbred path (trimmed `rho`, floor, per-SNP test, ACAT per gene) on simulated unphased data with planted 0.85/0.70/0.30 genes. Run them from the repository root with `singularity exec --bind /net/bmc-lab3 <bulkrnaseq sif> Rscript ase-pipeline/tests/r/test_ase_stats.R ase-pipeline/ase-pipeline.md` inside an `sbatch -p bcc` job.
+- **F1 gene level uses `bb_estimate_rho_gene` and `bb_gene_lrt`, not summed counts.** `bb_estimate_rho` (H0, p = 0.5 everywhere) treats the between-SNP spread caused by true imbalance as overdispersion, so with many imbalanced genes it is inflated (in the unit test about four times the true value), and applying it to counts summed over a gene multiplies the variance by about `1 + (n - 1) * rho`. `bb_estimate_rho_gene` maximises the likelihood with a free mean for every gene (genes with at least 2 SNPs; `NA` below 5 such genes) and returns `c(free, corrected)`. The free estimate is biased low: a free mean per gene shrinks the whole variance factor `1 + (n - 1) * rho` by `(k - 1) / k` (Neyman-Scott), which for 4-SNP genes gives 0.0115 for a true 0.02. The corrected value undoes that shrinkage, `rho_corrected = cf * rho_free + (cf - 1) / m` with `cf = sum(k) / sum(k - 1)` and `m` the mean of `n - 1` (0.021 in the same test). Rmd 02 then uses `rho_gene = max(rho_corrected, RHO_MIN)` for the gene tests (`RHO_MIN`, default 0.01, from Step 8), so a noisy or zero estimate can never make them anti-conservative. `bb_gene_lrt` tests `p = 0.5` against a shared free `p` per gene on the SNP-level counts and returns `phat`. Outbred mode uses `bb_estimate_rho_trim`, `bb_pvalue` and `acat`.
+- Boundary handling: the `rho` estimators return exactly 0 when the optimum sits at the lower boundary (or below 1e-4), `bb_estimate_rho` and `bb_estimate_rho_gene` emit a warning when it sits at the upper boundary, and `bb_estimate_rho_trim` warns if it does not converge; Rmd 02 prints such warnings per sample and writes them to the Summary (`rho_warning`). `bb_pvalue` returns `NA` for `x` below 0, above `n`, non-integer or missing.
 
 ---
 
@@ -1159,13 +1260,13 @@ Without the mouse helper the three lines after the "ONLY IF" comment are deleted
 
 ### Summary report `{WD_NAME}_summary_report.html`
 
-After Rmd 02 has finished, write the standalone page `{RESULTS_DIR}/{WD_NAME}_summary_report.html`. It needs **no R** and no external dependency: inline CSS only, no scripts, no fonts, no images from a URL. Read `{RESULTS_DIR}/summary_numbers.tsv` with `awk -F'\t'` (for example `awk -F'\t' 'NR>1 {print $1, $3, $4}'`, so no number is transcribed by hand; columns: `sample`, `condition`, `filtered_sites`, `sig_snps`, `genes_tested`, `sig_genes`, `rho_used`, `rho_h0`, `mean_ref_frac`, `bias_flag`), and write the HTML yourself; never open R on the login node to produce it. The page contains:
+After Rmd 02 has finished, write the standalone page `{RESULTS_DIR}/{WD_NAME}_summary_report.html`. It needs **no R** and no external dependency: inline CSS only, no scripts, no fonts, no images from a URL. Read `{RESULTS_DIR}/summary_numbers.tsv` with `awk -F'\t'` (for example `awk -F'\t' 'NR>1 {print $1, $3, $4}'`, so no number is transcribed by hand; columns: `sample`, `condition`, `filtered_sites`, `sig_snps`, `genes_tested`, `sig_genes`, `rho_used`, `rho_robust`, `rho_h0_naive`, `mean_ref_frac`, `ref_frac_before_wasp`, `ref_frac_after_wasp`, `bias_flag`; `rho_used` is the overdispersion the tests used, `rho_robust` the estimate before the `RHO_MIN` floor (F1: bias-corrected free-mean fit; outbred: trimmed central-sites fit), `rho_h0_naive` the all-sites H0 fit shown for comparison only, and the two `ref_frac_*_wasp` columns are `NA` in F1 mode), and write the HTML yourself; never open R on the login node to produce it. The page contains:
 
 - a header with the project title, `{MODE}`, the strain names (F1: REF = `{STRAIN_A}`, ALT = `{STRAIN_B}`) or REF/ALT, the constants of Step 8 and the date;
 - the **reference-bias flags, shown prominently** at the top: one box that lists every sample with `bias_flag` = `TRUE` (with its `mean_ref_frac`) in a warning colour and the sentence "read the allelic ratios of these samples with caution", or "no sample is flagged" when none is; the per-sample table repeats the flag in its own column, with the same colour;
-- a per-sample table from `summary_numbers.tsv`: sample, condition, filtered sites, significant SNPs, genes tested, significant genes, `rho_used` (outbred: also `rho_h0`), mean REF fraction, bias flag;
-- outbred only: the WASP note, "Alignments whose vW tag is 2-7 were removed before counting; Rmd 01 shows how many were removed and from which allele. WASP does not promise less bias." Outbred gene calls are also labelled "unphased, no direction";
-- **relative links** (bare file names, no URL prefix and no absolute path, so the page works from the local filesystem and over a web mount as long as it sits in `{RESULTS_DIR}` beside the files) as cards to: `{TODAY_YYMMDD}_{WD_NAME}_01_import_qc.html`, `{TODAY_YYMMDD}_{WD_NAME}_02_imbalance.html`, `{TODAY_YYMMDD}_{WD_NAME}_ASE_imbalance.xlsx`, and the two figure PDFs `{TODAY_YYMMDD}_{WD_NAME}_ASE_sites_vs_depth.pdf` and `{TODAY_YYMMDD}_{WD_NAME}_ASE_genes.pdf`.
+- a per-sample table from `summary_numbers.tsv`: sample, condition, filtered sites, significant SNPs, genes tested, significant genes, `rho_used`, `rho_robust`, `rho_h0_naive` (labelled "naive, not used"), mean REF fraction, bias flag;
+- outbred only: the WASP note, "Alignments whose vW tag is 2-7 were removed before counting; Rmd 01 shows how many were removed and from which allele. WASP does not promise less bias." Outbred gene calls are also labelled "unphased, no direction". The per-sample table also shows `ref_frac_before_wasp` and `ref_frac_after_wasp` under the heading "REF fraction before / after WASP (reported for information, not a gate)";
+- **relative links** (bare file names, no URL prefix and no absolute path, so the page works from the local filesystem and over a web mount as long as it sits in `{RESULTS_DIR}` beside the files) as cards to: `{TODAY}_{WD_NAME}_01_import_qc.html`, `{TODAY}_{WD_NAME}_02_imbalance.html`, `{TODAY}_{WD_NAME}_ASE_imbalance.xlsx`, and the two figure PDFs `{TODAY}_{WD_NAME}_ASE_sites_vs_depth.pdf` and `{TODAY}_{WD_NAME}_ASE_genes.pdf`.
 
 **Verify before finishing.** Extract every `href` of the page and check with a shell loop that each target exists next to the page (`grep -o 'href="[^"]*"' {RESULTS_DIR}/{WD_NAME}_summary_report.html | sed 's/href="//;s/"$//' | while read -r f; do [ -s "{RESULTS_DIR}/$f" ] || echo "MISSING $f"; done`); also check that no `href` or `src` starts with `http` or `/`. Fix the page (or report the missing file) until nothing is printed. Then tell the user the paths of the summary page, the two stage HTML files, the xlsx and `summary_numbers.tsv`.
 
