@@ -165,7 +165,7 @@ forbid "If the Step 7 contig-name check found a mismatch and option (ii) was cho
 
 # --- Params-file rules
 # (1) The launch command must carry no rnavar --flag (params file only)
-launch=$(grep 'nextflow run nf-core/rnavar' "$SKILL" | head -1)
+launch=$(awk '/^nextflow run nf-core\/rnavar/{p=1} p{l=l $0; if($0 !~ /\\$/){print l; exit}}' "$SKILL" | sed 's/\\/ /g')
 if [ -z "$launch" ]; then echo "FAIL: no 'nextflow run nf-core/rnavar' launch line found"; fail=1
 elif echo "$launch" | grep -qE ' --[A-Za-z_]'; then echo "FAIL: launch line carries a --flag (must use -params-file only): $launch"; fail=1
 fi
