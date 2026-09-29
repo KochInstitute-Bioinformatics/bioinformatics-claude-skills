@@ -84,7 +84,7 @@ All Rmds are self-contained, use the shared constants (`MIN_DEPTH`, `FDR_SIG`, `
 
 **Rmd 04 — Differential ASE (at least two conditions with replicates).** `logit(p) = β0 + β1·condition`, with an individual term for outbred samples; per-SNP tests pair the same SNP across conditions within an individual; F1 mode also tests per gene on strain-summed counts.
 
-The beta-binomial GLMs in Rmd 03 and 04 use `aod::betabin` (fixed effects with a dispersion parameter), and `lme4::glmer` for the individual random effect in Rmd 04; both are **already in the `bulkrnaseq` image** (aod 1.3.3, lme4 2.0.6, verified 2026-09-29), so no image rebuild is needed. `VGAM`, `glmmTMB`, `MBASED` and `VariantAnnotation` are absent and are not used. The wizard's package check (Step 2 style of `bulk-rnaseq-pipeline`) verifies `aod` and `lme4` and stops with a rebuild request if either is missing.
+The beta-binomial GLMs in Rmd 03 and 04 use `aod::betabin` (fixed effects with a dispersion parameter), and `lme4::glmer` for the individual random effect in Rmd 04; both are **already in the `bulkrnaseq` image** (aod 1.3.3, lme4 2.0.6, verified 2026-09-29), so no image rebuild is needed. `VGAM`, `glmmTMB`, `MBASED` and `VariantAnnotation` are absent and are not used. The wizard's package check (Step 2 style of `bulk-rnaseq-pipeline`) verifies the six mandatory packages (`aod`, `lme4`, `openxlsx`, `tidyverse`, `GenomicRanges`, `rtracklayer`) and stops with a rebuild request if any is missing.
 
 **Stage 3 — phASER (outbred only, gated).** A helper creates a conda environment from phASER's current `environment.yml` (Python 3.9 or later, conda-forge and bioconda packages), runs phASER per sample on the alignment BAM and the genotype VCF, then runs the gene-level haplotypic expression step with a gene-annotation BED. The stage is kept only if the environment installs and a test run succeeds during Stage 3; otherwise it is dropped and documented.
 
@@ -97,9 +97,9 @@ The beta-binomial GLMs in Rmd 03 and 04 use `aod::betabin` (fixed effects with a
 - Mouse Genomes Project release: GRCm39, 52 strains, sample-name format, `0/0` reference encoding, `PASS`/`LowQual`, `FI` genotype-confidence tag (see the mouse helper above).
 
 **Items 1-3 (STAR WASP behaviour, `.csi` region query, ASEReadCounter columns) were completed on 2026-09-29, with results in `ase-pipeline/tests/fixtures/verification.md`. Still open before Stage 1 implementation of the masking step; the plan does not proceed on assumptions:**
-1. STAR behaviour with WASP, from one small test run in the cached 2.7.10b container: whether homozygous or unphased genotypes in column 10 are ignored, whether only the first sample of a multi-sample VCF is used, which `--outSAMattributes` and `--outSAMtype` settings are required for `vW`, and the interaction with multi-mappers.
-2. Whether the Mouse Genomes Project `.csi` index supports region queries with `bcftools view -r` from the cluster, and how long extracting two strains for one chromosome takes (sizes the helper's sbatch request).
-3. The full ASEReadCounter output-table column names, from a test run on the small synthetic data (used by Rmd 01).
+1. DONE: STAR behaviour with WASP, from one small test run in the cached 2.7.10b container: whether homozygous or unphased genotypes in column 10 are ignored, whether only the first sample of a multi-sample VCF is used, which `--outSAMattributes` and `--outSAMtype` settings are required for `vW`, and the interaction with multi-mappers.
+2. DONE: Whether the Mouse Genomes Project `.csi` index supports region queries with `bcftools view -r` from the cluster, and how long extracting two strains for one chromosome takes (sizes the helper's sbatch request).
+3. DONE: The full ASEReadCounter output-table column names, from a test run on the small synthetic data (used by Rmd 01).
 4. The third-allele masking script: the user is recovering scripts from the earlier published analysis; if found they inform the implementation, otherwise the deterministic rule above is used.
 
 ## Testing and acceptance

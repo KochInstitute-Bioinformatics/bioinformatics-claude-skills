@@ -37,6 +37,13 @@ forbid "module add htslib"
 forbid "module add bcftools"
 need "singularity exec --bind"
 need "|| { echo"
+need "#SBATCH -p bcc"
+need "sbatch -p bcc"
+forbid "module add samtools"
+forbid "module add star"
+forbid "module add gatk"
+forbid "module add picard"
+forbid "module load htslib"
 # --- end Task 3
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1

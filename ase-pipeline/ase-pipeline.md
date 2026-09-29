@@ -66,16 +66,17 @@ Tell the user which containers are already cached and which the helper will down
 ```bash
 #!/bin/bash
 #SBATCH -J ase_rpkgs
+#SBATCH -p bcc
 #SBATCH -n 1 --mem=4G -t 0:10:00
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user={USER_EMAIL}
 #SBATCH -o check_r_packages_%j.out
 module add singularity/3.10.4 || { echo "ERROR: cannot load singularity" >&2; exit 1; }
-singularity exec --bind {CWD} /net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif \
+singularity exec --bind {CWD} {R_SIF} \
   Rscript -e 'for (p in c("aod","lme4","openxlsx","tidyverse","GenomicRanges","rtracklayer")) cat(p, requireNamespace(p, quietly = TRUE), "\n")'
 ```
 
-Mandatory packages: `aod`, `lme4`, `openxlsx`, `tidyverse`, `GenomicRanges`, `rtracklayer`. Read the `.out` file when the job finishes. If any mandatory package prints `FALSE`, **stop** and ask the user to rebuild the `bulkrnaseq` image; do not substitute another model or package. (`VGAM`, `glmmTMB`, `MBASED` and `VariantAnnotation` are absent from the image and must never be required.)
+Mandatory packages: `aod`, `lme4`, `openxlsx`, `tidyverse`, `GenomicRanges`, `rtracklayer`. Submit it with `sbatch -p bcc check_r_packages.sh` (every job is submitted with `-p bcc`), wait for the job to finish, then read the result from the job output file `check_r_packages_<jobid>.out`. If any mandatory package prints `FALSE`, **stop** and ask the user to rebuild the `bulkrnaseq` image; do not substitute another model or package. (`VGAM`, `glmmTMB`, `MBASED` and `VariantAnnotation` are absent from the image and must never be required.)
 
 ---
 
