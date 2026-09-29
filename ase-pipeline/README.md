@@ -58,7 +58,7 @@ Then invoke it in Claude Code:
 
 ## Output files
 
-Everything is written under `{CWD}/results/{YYYY-MM-DD}_{WD_NAME}/` (for example `results/2026-09-29_proj/`) (raw FASTQ, BAM and VCF inputs are never modified):
+Everything is written under `{CWD}/results/{YYYY-MM-DD}_{WD_NAME}/` (for example `results/2026-09-29_proj/`) (raw FASTQ, BAM and VCF inputs are never modified). The STAR index goes to `{GENOME_DIR}/index/` so it can be reused across projects: the F1 masked index is named after the strain pair, the read length and a checksum of the masked sites (`star_ase_masked_{STRAIN_A}_{STRAIN_B}_sjdb{N}_{MASK_KEY}`), so a different strain pair or a corrected parental VCF never reuses a stale mask:
 
 | Output | Description |
 |--------|-------------|
@@ -95,14 +95,22 @@ What has been exercised:
 
 - **Verification gate on synthetic data** (STAR, GATK, samtools, bcftools in the cached containers): read group, indexed VCF, heterozygous genotype column and reference requirements of ASEReadCounter, STAR WASP behaviour, the Mouse Genomes Project access pattern. Results: `tests/fixtures/verification.md`.
 - **Script smoke tests**: one F1 sample and one outbred sample run through the generated scripts.
-- **Unit-tested statistics**: null size of the F1 gene-level test 0.047-0.056 pooled (worst seed 0.064) and power 0.99; outbred path (trimmed rho, per-SNP test, ACAT per gene) on unphased simulated data: null gene size 0.003-0.053 pooled across six scenarios (worst seed 0.083), power 1.00 / 0.88 for planted 0.85 / 0.70-0.30 genes on binomial data where the naive H0 rho gave 0; plus rho recovery, edge cases and ACAT (`tests/r/test_ase_stats.R`; needs a job with at least 8 CPUs).
+- **Unit-tested statistics**: null size of the F1 gene-level test 0.047-0.056 pooled (worst seed 0.064) and power 0.99, simulated with independent SNPs (see the SNP-dependence limitation below); outbred path (trimmed rho, per-SNP test, ACAT per gene) on unphased simulated data: null gene size 0.003-0.053 pooled across six scenarios (worst seed 0.083), power 1.00 / 0.88 for planted 0.85 / 0.70-0.30 genes on binomial data where the naive H0 rho gave 0; plus rho recovery, edge cases and ACAT (`tests/r/test_ase_stats.R`; needs a job with at least 8 CPUs).
 - **Rmd rendering tests** on perturbed copies of one synthetic sample (F1 and outbred, Rmd 01 and Rmd 02), including the `summary_numbers.tsv` output.
-- **End-to-end synthetic acceptance run** (2026-09-29, DONE): a fresh run of the installed skill in both modes, the whole Step 15 chain (prep -> per-sample array -> Rmd 01 -> Rmd 02 with `afterok`); every job exited 0.
+- **End-to-end synthetic acceptance run** (2026-09-29, DONE) in both modes: the scripts and Rmds were generated from the installed skill's templates by extracting its code blocks and substituting the placeholders, then submitted following its steps; the interactive dialogue of Steps 0-9 (FASTQ scan and pairing, name sanitisation, sample-sheet scaffolding, menus) was not exercised as a user would drive it. The whole Step 15 chain ran (prep -> per-sample array -> Rmd 01 -> Rmd 02 with `afterok`); every job exited 0.
   - F1: 24 of 24 planted gene x sample tests significant with the correct direction, 0 of 42 null false positives.
   - Outbred: the WASP-filtered null-gene REF fraction was within `max(0.03, 3 x SE)` of 0.5 in 4 of 4 samples; planted-gene detection 10 of 16 with 0 of 28 null false positives (unphased, so direction is not applicable).
   - The unfiltered (pre-WASP) outbred null REF fraction is reported for information, not as a gate: 2 of 4 samples exceed the tolerance before WASP (0.547, 0.546), and WASP removes the excess.
   - Step 15 summary pages were written for both projects; the href-existence and no-`http` checks passed.
   - History: the first acceptance run detected 0 of 16 planted outbred genes with the naive H0 estimator, which led to the robust estimator (`bb_estimate_rho_trim`).
+
+- **Input guards added after the acceptance run** (2026-09-29), run from scripts generated from the skill's templates on the synthetic data, each through `sbatch`:
+  - F1 parental VCF with two strain columns: only `0/0` + `1/1` sites kept (49 of 55; same-genotype, heterozygous and missing sites dropped and counted).
+  - Stops with a non-zero exit on: sites where strain A is `1/1` and strain B `0/0`; a VCF where both strains carry ALT (0 sites left); unknown strain names; `1` vs `chr1` contigs (F1 and outbred, before any alignment).
+  - The masked STAR index is keyed on the mask: the same sites reused the index (also from a two-sample VCF), and a corrected VCF built a new one.
+  - Mouse helper: one 200 kb region of chromosome 19 ran through the helper and concat jobs while the genome folder did not exist yet; the prep job then compared the contigs and stopped on the mismatch with the synthetic `chr1` genome. A `chr19` chromosome line stops the helper.
+  - Rmd 01 and 02 render on count tables that mix contigs `1`, `X` and `MT` (the previous Rmd 01 stopped there).
+  - The masking step now uses a genotyped mask VCF (`bcftools consensus -s MASK`): with the earlier sites-only VCF and `-H A`, bcftools 1.20 applied the sites in only 4 of 10 identical runs, which the masked-genome check caught as a failed prep job.
 
 Limits of the outbred result: per-sample power is 10 of 16. The `RHO_MIN` floor caps detection at about 12 of 16 on these data, and two samples have only 27-29 sites. With real overdispersion and many imbalanced sites the robust dispersion estimate stays too high, and power for moderate imbalance drops.
 
@@ -115,11 +123,14 @@ What was **not exercised**: real biological data, Stage 2 and Stage 3 analyses, 
 ## Known limitations
 
 - The overdispersion correction is a first-order approximation; on real data the gene-level test size is only approximate.
+- **SNPs that share read pairs are treated as independent (F1 gene test).** ASEReadCounter counts a fragment at every SNP it overlaps, but the F1 gene likelihood-ratio test and the free-mean rho estimate treat a gene's SNP counts as independent. In SNP-dense genes (several SNPs within one fragment, common in divergent F1 haplotype blocks) at moderate depth the gene test can therefore be anti-conservative (p-values too small); the `RHO_MIN` floor offsets this only partly. The quoted null sizes (0.047-0.056) come from simulations with independent SNPs; no simulation with shared reads was run, so the size in SNP-dense genes is not known. The Rmd 02 gene table carries a note saying so. The outbred ACAT gene test is valid under dependence. Future work (Stage 2): thin each gene's SNPs to at most one per fragment window before rho estimation and the gene test.
 - One overdispersion (rho) per sample cannot capture gene-to-gene variation.
 - Outbred rho is a trimmed fit on the central sites: with real overdispersion and many imbalanced sites it stays above the truth (lower power for moderate imbalance, no extra false positives), and with only a few dozen sites it sometimes cannot separate the imbalanced ones and stays near the naive value.
 - The requirement of at least 5 usable genes (2 or more SNPs) to estimate rho at gene level is weak.
 - Unphased outbred data cannot give gene-level direction.
-- F1 mode requires strain A to carry the reference assembly's allele: sites where a substrain differs from the assembly are dropped (for example C57BL_6NJ against the B6J assembly GRCm39).
+- F1 mode requires strain A to carry the reference assembly's allele: sites where a substrain differs from the assembly are dropped (for example C57BL_6NJ against the B6J assembly GRCm39). A cross of two non-reference strains is not supported in Stage 1. With a parental VCF that has the two strains' genotype columns, only sites with strain A `0/0` and strain B `1/1` are used and the prep job stops on sites where strain A is `1/1` and strain B `0/0` (unless the user confirms a substrain and sets `A_ALT_SITES=drop`); a sites-only parental VCF cannot be checked and is taken on trust.
+- Contig names of the parental or genotype VCFs must match the FASTA (`1` vs `chr1`); the prep job stops before any alignment if they do not, and the skill does not rename contigs itself.
+- Paths containing spaces or commas are not supported; the skill stops and asks for another path.
 - Indels and multi-allelic sites are excluded.
 - RNA-derived genotypes (for example the nf-core/rnavar VCF) are circular and biased toward balance; external genotypes are preferred.
 - Stage 1 covers only per-sample imbalance; reciprocal F1, differential ASE and phASER are later stages.

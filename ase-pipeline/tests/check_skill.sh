@@ -21,8 +21,8 @@ tool_flags=$( { grep -oE '^--[A-Za-z][A-Za-z0-9_-]*' "$FIX/gatk_ASEReadCounter_h
                 awk 'prev ~ /^[A-Za-z][A-Za-z0-9_]*( |$)/ && $0 ~ /^ +(string|int|double|uint|bool|-|[A-Za-z0-9]+\(?s?\)?:)/ {split(prev,a," "); print a[1]} {prev=$0}' "$FIX/star_help.txt"
               } | sed 's/^--//' | sort -u )
 # Non-STAR/non-GATK flags: sbatch/singularity (bind mem mail-type mail-user array dependency parsable),
-# bcftools (regions samples genotype types min-alleles max-alleles).
-allow="bind mem mail-type mail-user array dependency parsable regions samples genotype types min-alleles max-alleles"
+# bcftools (regions samples genotype types min-alleles max-alleles rename-chrs).
+allow="bind mem mail-type mail-user array dependency parsable regions samples genotype types min-alleles max-alleles rename-chrs"
 [ -n "${SHOW_TOOL_FLAGS:-}" ] && echo "$tool_flags"
 for flag in $(grep -oE '(^|[ `(=])--[A-Za-z][A-Za-z0-9_-]*' "$SKILL" | sed -E 's/^[^-]*--//' | sort -u); do
   echo "$tool_flags $allow" | tr ' ' '\n' | grep -qx -- "$flag" || { echo "FAIL: flag not in fixtures or allowlist: --$flag"; fail=1; }
@@ -48,7 +48,7 @@ forbid "module load htslib"
 # --- Task 4 (Steps 4-9); strings chosen so only Task 4 text satisfies them
 for n in 4 5 6 7 8 9; do need "## Step $n"; done
 need "star_ase_sjdb{SJDB_OVERHANG}"
-need "star_ase_masked_sjdb{SJDB_OVERHANG}"
+need "star_ase_masked_{STRAIN_A}_{STRAIN_B}_sjdb{SJDB_OVERHANG}"   # final-review I2: F1 index keyed on strain pair + mask
 need "genomeSAindexNbases"
 need "max(4,"
 need "{SAMPLES_CSV}"
@@ -221,6 +221,72 @@ grep -qF "central sites" "$RD" || { echo "FAIL: ase-pipeline/README.md must desc
 ! grep -qF "YYMMDD" "$RD" || { echo "FAIL: ase-pipeline/README.md still uses YYMMDD"; fail=1; }
 grep -qF "unfiltered.table" "$RD" || { echo "FAIL: ase-pipeline/README.md must list the outbred unfiltered.table"; fail=1; }
 # --- end Task 8 fix
+# --- Final-review fix wave (I1-I6 + cheap minors); each string is absent from the reviewed skill/README/spec (e6e3da9)
+# I1: F1 prep checks that the strains differ; strain A must be the reference-consistent one
+need "A_ALT_SITES=stop"
+need "MIN_PARENTAL_SITES=1000"
+need 'if (ga == "0/0" && gb == "1/1") c = "keep"; else if (ga == "1/1" && gb == "0/0") c = "a_alt"'
+need 'dropped $N_SAME (same genotype in both strains), $N_HET (heterozygous or missing), $N_AALT'
+need 'sites have $A = 1/1 and $B = 0/0: strain A carries the non-reference allele there'
+need '[ "$N_SITES" -ge "$MIN_PARENTAL_SITES" ]'
+need "**Sites-only VCF** (no sample columns): every biallelic SNP is taken on trust"
+need "F1 mode in Stage 1 needs one parent to be the reference strain"
+need "the VCF was not called against this assembly"
+forbid "F1 mode needs strain A = the reference strain, REF = strain A, ALT = strain B (and matching contig names)"
+# I2: masked STAR index keyed on the mask; reused only when index_key.txt matches; array jobs read the recorded path
+need "MASK_KEY=\$(grep -v '^#' \"\$REF_DIR/masked_sites.vcf\" | cut -f1,2,4,5 | md5sum | cut -c1-8)"
+need 'STAR_INDEX="{STAR_INDEX}_$MASK_KEY"; INDEX_KEY="$MASK_KEY"'
+need '[ "$(cat "$STAR_INDEX/index_key.txt" 2>/dev/null)" = "$INDEX_KEY" ]'
+need 'echo "$INDEX_KEY" > "$STAR_INDEX/index_key.txt"'
+need 'STAR_INDEX=$(cat "$R/reference/star_index_path.txt" 2>/dev/null)'
+need '--genomeDir "$STAR_INDEX"'
+forbid '--genomeDir "{STAR_INDEX}"'
+# I3: the mouse helper never reads the FASTA or .fai; the FASTA contig guard is in the prep job
+need "**The helper needs neither the FASTA nor its \`.fai\`**"
+need "sets \`{N_CHROM}\` = 20"
+need "the \`add_bind\` line is reduced to \`add_bind \"{CWD}\"\`, because the helper reads no genome file"
+need "right after block C, before any command that reads the FASTA or the GTF"
+# masked genome: genotyped mask VCF + consensus -s MASK (a sites-only VCF with -H A was applied in only 4 of 10 identical runs)
+need 'bcftools consensus -s MASK -f "$FASTA" "$REF_DIR/masked_sites.vcf.gz"'
+need 'third(toupper($4),toupper($5)),".",".",".","GT","1/1"'
+forbid "bcftools consensus -H A"
+need "which downloads/decompresses the FASTA, writes the .fai and compares the parental VCF's contigs with it"
+need 'contig mismatch: $N_OFF of $N_BI parental SNPs lie on contigs that are not in $FASTA'
+forbid "grep -m1 '^>' \"{FASTA_PATH}\""
+forbid "taken from the \`.fai\`"
+# I4: outbred contig guard in prep_genotypes.sh before any alignment
+need 'contig mismatch for individual $IND: $N_OFF of $N_ALL heterozygous sites lie on contigs that are not in $FASTA'
+need "then **block R first** (the contig guard below needs \`\$FASTA.fai\`)"
+need "**Contig names must match the FASTA.**"
+# I5: count tables read with explicit column classes (contig as character)
+need 'colClasses = c(contig = "character", variantID = "character",'
+need "**Every table is read with explicit column classes**"
+forbid 'read.delim(f, stringsAsFactors = FALSE, check.names = FALSE), error'
+# I6: SNP-dependence limitation documented (Step 13, Step 14, Rmd 02 gene table, README)
+need "**Independence assumption (F1 gene LRT and \`bb_estimate_rho_gene\`).**"
+need "come from simulations with **independent SNPs**"
+need 'note = "SNP counts treated as independent: may be anti-conservative in SNP-dense genes at moderate depth"'
+need "**Limitation (F1):** SNP counts that share read pairs are treated as independent"
+grep -qF "SNPs that share read pairs are treated as independent" "$RD" || { echo "FAIL: ase-pipeline/README.md must state the SNP-dependence limitation of the F1 gene test"; fail=1; }
+grep -qF "Future work (Stage 2): thin each gene's SNPs" "$RD" || { echo "FAIL: ase-pipeline/README.md must list SNP thinning as Stage 2 future work"; fail=1; }
+# minors: GTF bind, fetch_sif calls, wrapper sets, paths with spaces, dropping a failed sample, README wording, spec
+need 'add_bind "$(dirname "{FASTA_PATH}")"; add_bind "$(dirname "{GTF_PATH}")"'
+need "must **call** it once per container it uses"
+need 'call** it for each container the script uses, on the line after the definition: `fetch_sif "$STAR_SIF"; fetch_sif "$GATK_SIF"; fetch_sif "$SAMTOOLS_SIF"; fetch_sif "$PICARD_SIF"`'
+need '| `align_count_f1.sh`, `align_wasp_count.sh` | `star`, `gatk`, `samtools`, `picard` |'
+need "choose them by the function name at the start of the line (never by position)"
+need "**Paths with spaces or commas are not supported.**"
+need "no space or comma in any \`fastq_1\` / \`fastq_2\` path"
+need "**Dropping a failed sample.**"
+need "remove that sample's row from \`{SAMPLES_CSV}\`"
+grep -qF "the interactive dialogue of Steps 0-9" "$RD" || { echo "FAIL: ase-pipeline/README.md must say the interactive dialogue was not exercised"; fail=1; }
+! grep -qF "a fresh run of the installed skill" "$RD" || { echo "FAIL: ase-pipeline/README.md still overstates the acceptance run"; fail=1; }
+SPEC="$HERE/../../docs/superpowers/specs/2026-09-29-ase-pipeline-design.md"
+[ -s "$SPEC" ] || { echo "FAIL: spec missing: $SPEC"; fail=1; }
+! grep -qF "YYMMDD" "$SPEC" || { echo "FAIL: spec still uses YYMMDD"; fail=1; }
+! grep -qF "gene counts are exact sums" "$SPEC" || { echo "FAIL: spec still describes the F1 gene test as summed counts"; fail=1; }
+grep -qF "likelihood-ratio test (H0 p = 0.5 vs p free, 1 df)" "$SPEC" || { echo "FAIL: spec must describe the F1 gene LRT"; fail=1; }
+# --- end final-review fix wave
 
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1

@@ -22,6 +22,8 @@ Also derive:
 - `{TODAY}` = today's date formatted as `YYYY-MM-DD` (for example `2026-09-29`; the same format as the `results/YYYY-MM-DD_*` data-safety convention), used for the results directory and as the prefix of the Rmd and report file names
 - `{RESULTS_DIR}` = `{CWD}/results/{TODAY}_{WD_NAME}`, for example `results/2026-09-29_proj` (create it with `mkdir -p` when the first output is written)
 
+**Paths with spaces or commas are not supported.** The generated scripts put paths into `#SBATCH -o` lines, comma-separated `--bind` lists and unquoted shell words, so a space or a comma breaks them. If `{CWD}` contains a space or a comma, stop here and tell the user: "ERROR: the path '{CWD}' contains a space or a comma, which the generated SLURM and Singularity commands cannot handle. Move or link the project to a path without spaces or commas and start again." Apply the same check (and the same stop) to every path the user gives later: `{GENOME_DIR}`, `{FASTA_PATH}`, `{GTF_PATH}`, `{PARENTAL_VCF}`, each genotype VCF and each FASTQ path in `{SAMPLES_CSV}` (Step 5).
+
 ---
 
 ## Step 1 — Email address
@@ -129,7 +131,7 @@ sample,fastq_1,fastq_2,condition,cross_direction,individual
 
 Show the full table, ask "Does this look correct?", and write the file only after confirmation (if it exists, ask: overwrite or choose another filename).
 
-**Validation rules:** no dashes or spaces in `sample`, `condition`, `cross_direction` or `individual`; sample names unique; each condition should have replicates (defined below; warn, do not stop, when it has only one sample); reciprocal analysis needs both cross directions present (checked again in Step 7).
+**Validation rules:** no dashes or spaces in `sample`, `condition`, `cross_direction` or `individual`; no space or comma in any `fastq_1` / `fastq_2` path (stop with the Step 0 message naming the path); sample names unique; each condition should have replicates (defined below; warn, do not stop, when it has only one sample); reciprocal analysis needs both cross directions present (checked again in Step 7).
 
 **Replicates (definition used here and in Step 7):** replicates = at least 2 samples in the condition. A condition with a single sample triggers the warning above.
 
@@ -143,12 +145,12 @@ zcat {FASTQ_FILE} | awk 'NR%4==2 {print length($0)}' | head -n 1000 | sort -n | 
 
 The mode of the lengths is `{READ_LENGTH}`. If lengths differ between samples, report the distribution and warn that the index is tuned to the most common length. Set `{SJDB_OVERHANG}` = `{READ_LENGTH}` − 1 and tell the user: "Detected read length {READ_LENGTH} bp -> sjdbOverhang {SJDB_OVERHANG}."
 
-**STAR index: one index per read length and per mode.** Set `{STAR_INDEX}` to:
+**STAR index: one index per read length and per mode (F1: also per mask).** Set `{STAR_INDEX}` to:
 
-- F1: `{GENOME_DIR}/index/star_ase_masked_sjdb{SJDB_OVERHANG}/` (built from the third-allele masked genome, so it never collides with an unmasked index of the same read length);
+- F1: the prefix `{GENOME_DIR}/index/star_ase_masked_{STRAIN_A}_{STRAIN_B}_sjdb{SJDB_OVERHANG}` (built from the third-allele masked genome, so it never collides with an unmasked index of the same read length). The masked genome depends on the parental SNP set, which exists only once the prep job (or the mouse helper) has run, so the prep job completes the name at run time: it computes `MASK_KEY`, the first 8 characters of the md5 of the masked site records (`CHROM POS REF ALT` of `masked_sites.vcf`, headers excluded so the same sites always give the same key), and uses `{STAR_INDEX}_<MASK_KEY>/`, for example `star_ase_masked_C57BL_6NJ_A_J_sjdb99_3f9a1c2e/`. A second strain pair or a corrected parental VCF therefore gets its own index and never reuses a stale mask. The prep job writes the full index path to `{RESULTS_DIR}/reference/star_index_path.txt`, and both array jobs (Step 11) read the index path from there;
 - outbred: `{GENOME_DIR}/index/star_ase_sjdb{SJDB_OVERHANG}/` (built from the normal reference).
 
-If `SA`, `Genome` and `sjdbList.out.tab` already exist and are non-empty there, reuse it; otherwise the prep job builds it at that path (STAR 2.7.10b from `{STAR_SIF}`, on a compute node). The prep job computes the genome length and `genomeSAindexNbases` = min(14, max(4, floor(log2(L)/2 - 1))) with L = genome length (for example 300,000 bp gives 8; 40,001 gives 6; 3.1e9 gives 14; 2 kb gives 4) itself, in shell at run time, because the FASTA may not exist yet when the wizard writes the script; the wizard never substitutes that value.
+**Built once, reused only when the key matches.** The prep job reuses an existing index only if `SA`, `Genome` and `sjdbList.out.tab` are non-empty there and the file `index_key.txt` inside it, written as the last step of a successful build, holds the same key (F1: `MASK_KEY`; outbred: `unmasked`). Otherwise it builds the index at that path (STAR 2.7.10b from `{STAR_SIF}`, on a compute node), so an interrupted build is never reused either. The prep job computes the genome length and `genomeSAindexNbases` = min(14, max(4, floor(log2(L)/2 - 1))) with L = genome length (for example 300,000 bp gives 8; 40,001 gives 6; 3.1e9 gives 14; 2 kb gives 4) itself, in shell at run time, because the FASTA may not exist yet when the wizard writes the script; the wizard never substitutes that value.
 
 ---
 
@@ -158,9 +160,13 @@ The allelic analysis needs heterozygous SNP positions.
 
 **F1 mode.** Ask (numbered): "1. I have a parental-difference VCF · 2. Build it from the Mouse Genomes Project (mouse helper)".
 
-1. `{PARENTAL_VCF}`: a biallelic SNP VCF where the REF allele is `{STRAIN_A}` (the reference strain) and the ALT allele is `{STRAIN_B}`. Either form works: a plain `.vcf` is accepted (the prep job only reads it with `bcftools view`, which needs no index), and a bgzipped `.vcf.gz` works too; no bgzip or tabix step is needed, and the input is never modified. A sites-only VCF (no sample columns) is fine, because the prep job writes its own genotyped het-sites VCF. Check with `bcftools` (from `{BCFTOOLS_SIF}`, in a compute job, never on the login node) that contig names match the FASTA.
-   **Strain names.** If the VCF header has two sample columns, offer those names for `{STRAIN_A}` and `{STRAIN_B}`. If it has no names (sites-only VCF), ask the user; when no names are given, fall back to the Mouse Genomes Project spellings of the B6 x AJ example, `{STRAIN_A}` = `C57BL_6NJ` and `{STRAIN_B}` = `A_J`, and say so. The names only label tables and figures; REF is always strain A and ALT always strain B.
-2. The mouse helper queries the Mouse Genomes Project (release REL-2112-v8, GRCm39, contigs `1`, `2`, ... without `chr`) for the two strains as a per-chromosome array job and writes `{PARENTAL_VCF}` with the same convention. It is a compute job; do not run it on the login node.
+**Reference strain first.** Ask: "Is one of the two parental strains the strain of the reference assembly (or a substrain of it, for example C57BL/6NJ on GRCm39, which is C57BL/6J)?" If not (for example A/J x CAST/EiJ), say: "F1 mode in Stage 1 needs one parent to be the reference strain: the masked reference and the REF = strain A convention assume the assembly base is strain A's allele. A cross of two non-reference strains is not supported in Stage 1." and stop the F1 setup. Otherwise that parent is `{STRAIN_A}`.
+
+1. `{PARENTAL_VCF}`: a biallelic SNP VCF where the REF allele is `{STRAIN_A}` (the reference strain) and the ALT allele is `{STRAIN_B}`. Either form works: a plain `.vcf` is accepted (the prep job only reads it with `bcftools view`, which needs no index), and a bgzipped `.vcf.gz` works too; no bgzip or tabix step is needed, and the input is never modified. The prep job checks the contig names against the FASTA on a compute node (step 1 of `prep_f1_reference.sh`) and stops before any alignment if they differ; nothing is checked on the login node.
+   - **VCF with sample columns** (for example the two strains' own genotypes, or a Mouse Genomes Project extract made outside the helper): both `{STRAIN_A}` and `{STRAIN_B}` must be sample names in the header (the prep job stops otherwise). The prep job keeps **only** the sites where strain A is homozygous REF and strain B homozygous ALT (`0/0` and `1/1`, phased or not). It drops, and counts in its log, the sites where both strains have the same homozygous genotype (for example both `1/1`: both differ from the assembly but not from each other) and the sites where either strain is heterozygous or missing. Sites where strain A is `1/1` and strain B `0/0` (the strains differ, but strain A carries the non-reference allele) break the REF = strain A convention: by default (`A_ALT_SITES=stop`) the job stops and prints their number. If strain A is a substrain of the assembly strain and the user confirms that a few such sites are expected (for example C57BL_6NJ, which differs from the C57BL/6J assembly at some sites), the wizard sets `A_ALT_SITES=drop`, which drops and counts them like the mouse helper does. The job also stops if fewer than `MIN_PARENTAL_SITES` sites remain (default 1000; 20 for small test data).
+   - **Sites-only VCF** (no sample columns): every biallelic SNP is taken on trust as REF = strain A, ALT = strain B. Tell the user: "A sites-only VCF cannot be checked for which strain carries which allele; you guarantee that REF is the {STRAIN_A} allele and ALT the {STRAIN_B} allele at every site, and that the two strains differ there." The prep job still checks that REF equals the FASTA base and that at least `MIN_PARENTAL_SITES` sites remain. A sites-only VCF is fine for counting, because the prep job writes its own genotyped het-sites VCF.
+   **Strain names.** If the VCF header has two sample columns, offer those names for `{STRAIN_A}` and `{STRAIN_B}` (the reference strain is `{STRAIN_A}`). If it has no names (sites-only VCF), ask the user; when no names are given, fall back to the Mouse Genomes Project spellings of the B6 x AJ example, `{STRAIN_A}` = `C57BL_6NJ` and `{STRAIN_B}` = `A_J`, and say so. For a sites-only VCF the names only label tables and figures; REF is always strain A and ALT always strain B.
+2. The mouse helper queries the Mouse Genomes Project (release REL-2112-v8, GRCm39, contigs `1`, `2`, ... without `chr`) for the two strains as a per-chromosome array job and writes `{PARENTAL_VCF}` with the same convention (it already keeps only strain A `0/0` with strain B `1/1` and writes a sites-only VCF). It is a compute job; do not run it on the login node. It needs neither the FASTA nor its `.fai`: the chromosome list is the fixed GRCm39 list of Step 10, and the contig names are compared with the FASTA in the prep job, which runs after it.
 
 Either way the prep job also writes `f1_het_sites.vcf.gz`, a bgzipped and tabix-indexed het-sites VCF (single sample `F1`, genotype `0/1` at every parental SNP), beside the parental-difference VCF. ASEReadCounter needs this genotype column and an indexed VCF; a sites-only VCF gives zero counts.
 
@@ -168,6 +174,7 @@ Either way the prep job also writes `f1_het_sites.vcf.gz`, a bgzipped and tabix-
 
 - Option 2 requires this caveat, stated verbatim to the user: "RNA-derived genotypes are circular: heterozygous sites with strong imbalance may be called homozygous, so genotypes called from the same RNA-seq bias results toward balance and miss lowly expressed sites. External genotypes are preferred." Continue only after the user confirms.
 - The prep job turns each individual's VCF into a single-sample VCF restricted to biallelic heterozygous SNPs (`bcftools view -s SAMPLE -g het -v snps -m2 -M2`, plus quality filters). The per-individual VCF given to STAR must be heterozygous-only: STAR does not ignore homozygous genotypes and uses only the first sample column.
+- **Contig names must match the FASTA.** Human WGS or array VCFs often use `chr1` while the Ensembl FASTA uses `1`; STAR would then find no variant on any contig (WASP silently does nothing) and every array task would waste a full alignment. The prep job therefore compares, on a compute node and before any alignment, the contigs of every individual's heterozygous sites with the FASTA's `.fai`, and stops with a non-zero exit and a message that names the individual, the number of sites on contigs missing from the FASTA and examples of both naming styles, if **any** site lies on a contig the FASTA does not have. The skill does not rename contigs itself: if the names differ only by the `chr` prefix, tell the user to supply renamed VCFs (for example made with `bcftools annotate --rename-chrs` and a two-column map `chr1 1`, ..., `chrM MT`, in a compute job) or to use a FASTA with the same naming; if the VCF has extra contigs (alt, decoy, unplaced), restrict it to the FASTA's contigs first.
 
 Input VCFs are read-only; the derived files go to `{RESULTS_DIR}`.
 
@@ -235,7 +242,15 @@ Write every script below into `{RESULTS_DIR}/scripts/` (create `{RESULTS_DIR}/sc
 
 ### Shared block C — container wrappers (start of every script, after the `#SBATCH` header and `set -uo pipefail`)
 
-Tools come from cached Singularity biocontainers (`{STAR_SIF}`, `{GATK_SIF}`, `{BCFTOOLS_SIF}`, `{SAMTOOLS_SIF}`, `{PICARD_SIF}` from Step 2); never `module add` anything except singularity. `bcftools`, `bgzip` and `tabix` all come from the bcftools 1.20 container. Keep only the wrappers a script uses. `--bind` is required because `/net/...` paths are not auto-bound; `BIND` lists each directory once (Singularity prints "destination is already in the mount point list" for a repeated one), so add directories with `add_bind`:
+Tools come from cached Singularity biocontainers (`{STAR_SIF}`, `{GATK_SIF}`, `{BCFTOOLS_SIF}`, `{SAMTOOLS_SIF}`, `{PICARD_SIF}` from Step 2); never `module add` anything except singularity. `bcftools`, `bgzip` and `tabix` all come from the bcftools 1.20 container. Keep only the wrappers a script uses; the wrapper lines below are one per tool, so choose them by the function name at the start of the line (never by position), with exactly these sets per script:
+
+| Script | Wrapper functions kept (block C) | `fetch_sif` |
+|---|---|---|
+| `prep_f1_reference.sh`, `prep_genotypes.sh` | `star`, `gatk`, `bcftools`, `bgzip`, `tabix`, `samtools`, `picard` (all) | downloading version, called for all five containers ("Prep container fetch" below) |
+| `align_count_f1.sh`, `align_wasp_count.sh` | `star`, `gatk`, `samtools`, `picard` | check-only version, called for each of the four (Step 11) |
+| `extract_mgp_parental_vcf.sh`, `concat_mgp_parental_vcf.sh` | `bcftools`, `tabix` | downloading version, called for `$BCFTOOLS_SIF` only (the line shown below); the `add_bind` line is reduced to `add_bind "{CWD}"`, because the helper reads no genome file and the genome folder may not exist yet when it runs (Singularity stops on a missing bind source) |
+
+`--bind` is required because `/net/...` paths are not auto-bound; `BIND` lists each directory once (Singularity prints "destination is already in the mount point list" for a repeated one), so add directories with `add_bind`:
 
 ```bash
 module add singularity/3.10.4 || exit 1
@@ -250,7 +265,7 @@ fetch_sif "$BCFTOOLS_SIF" "https://depot.galaxyproject.org/singularity/bcftools:
 # ... one fetch_sif line per container this script uses (URLs from the Step 2 table)
 BIND=""
 add_bind() { case ",$BIND," in *",$1,"*) ;; *) BIND="${BIND:+$BIND,}$1" ;; esac; }
-add_bind "{CWD}"; add_bind "{GENOME_DIR}"; add_bind "$(dirname "{FASTA_PATH}")"
+add_bind "{CWD}"; add_bind "{GENOME_DIR}"; add_bind "$(dirname "{FASTA_PATH}")"; add_bind "$(dirname "{GTF_PATH}")"
 star()     { local SIF="$STAR_SIF";     singularity exec --bind "$BIND" "$SIF" STAR "$@"; }
 gatk()     { local SIF="$GATK_SIF";     singularity exec --bind "$BIND" "$SIF" gatk "$@"; }
 bcftools() { local SIF="$BCFTOOLS_SIF"; singularity exec --bind "$BIND" "$SIF" bcftools "$@"; }
@@ -259,6 +274,8 @@ tabix()    { local SIF="$BCFTOOLS_SIF"; singularity exec --bind "$BIND" "$SIF" t
 samtools() { local SIF="$SAMTOOLS_SIF"; singularity exec --bind "$BIND" "$SIF" samtools "$@"; }
 picard()    { local SIF="$PICARD_SIF";  singularity exec --bind "$BIND" "$SIF" picard "$@"; }
 ```
+
+Defining `fetch_sif` does nothing by itself: every script must **call** it once per container it uses, right after the definition (the calls are the lines that start with `fetch_sif "$`). The GTF directory is bound in every script (STAR `genomeGenerate` reads `{GTF_PATH}`, and with a custom GTF outside `{CWD}` and `{GENOME_DIR}` it would otherwise be invisible inside the container).
 
 **Prep container fetch (both prep scripts).** The prep job (`prep_f1_reference.sh` or `prep_genotypes.sh`) fetches all five containers, not only the ones it runs itself: the per-sample array job of Step 11 only checks that its containers exist (so parallel tasks never download the same file) and needs Picard, which no prep step uses. In both prep scripts the `fetch_sif` lines of block C are therefore exactly:
 
@@ -270,7 +287,7 @@ fetch_sif "$SAMTOOLS_SIF" "https://depot.galaxyproject.org/singularity/samtools:
 fetch_sif "$PICARD_SIF" "https://depot.galaxyproject.org/singularity/picard:3.1.1--hdfd78af_0"
 ```
 
-Add `add_bind "$(dirname <path>)"` for every other input directory the script reads (parental or genotype VCF, FASTQ directories). If `{FASTA_PATH}` or `{GTF_PATH}` do not exist yet (Step 4 option 1), put the Step 4 download-and-decompress commands (URLs shown to the user first) before block R, with the same `wget -c -O FILE.part URL && mv FILE.part FILE || { echo "ERROR: ..." >&2; exit 1; }` pattern.
+Add `add_bind "$(dirname <path>)"` for every other input directory the script reads (parental or genotype VCF, FASTQ directories). If `{FASTA_PATH}` or `{GTF_PATH}` do not exist yet (Step 4 option 1), put the Step 4 download-and-decompress commands (URLs shown to the user first) right after block C, before any command that reads the FASTA or the GTF (in `prep_f1_reference.sh` that is before its step 1, in `prep_genotypes.sh` before block R), with the same `wget -c -O FILE.part URL && mv FILE.part FILE || { echo "ERROR: ..." >&2; exit 1; }` pattern.
 
 ### Shared block R — reference files for ASEReadCounter (both modes; `FASTA="{FASTA_PATH}"` is the ORIGINAL, unmasked FASTA)
 
@@ -283,22 +300,33 @@ DICT="${FASTA%.*}.dict"
 [ -s "$DICT" ] || gatk CreateSequenceDictionary -R "$FASTA" -O "$DICT" || { echo "ERROR: cannot create $DICT" >&2; exit 1; }
 ```
 
-### Shared block I — STAR index (`INDEX_FASTA` = `$REF_DIR/masked.fa` in F1 mode, `$FASTA` in outbred mode; `{STAR_INDEX}` from Step 5, part 2)
+### Shared block I — STAR index (`INDEX_FASTA` = `$REF_DIR/masked.fa` in F1 mode, `$FASTA` in outbred mode; `STAR_INDEX` and `INDEX_KEY` set by the prep script, from `{STAR_INDEX}` of Step 5, part 2)
+
+The prep script sets two shell variables before this block. Outbred: `STAR_INDEX="{STAR_INDEX}"; INDEX_KEY="unmasked"`. F1: `STAR_INDEX="{STAR_INDEX}_$MASK_KEY"; INDEX_KEY="$MASK_KEY"` (`MASK_KEY` from step 3 of `prep_f1_reference.sh`).
 
 ```bash
 [ -s "$INDEX_FASTA.fai" ] || samtools faidx "$INDEX_FASTA" || { echo "ERROR: faidx failed for $INDEX_FASTA" >&2; exit 1; }
 SA_INDEX_NBASES=$(awk '{L+=$2} END{n=int(log(L)/log(2)/2-1); if(n>14)n=14; if(n<4)n=4; print n}' "$INDEX_FASTA.fai")
-if [ -s "{STAR_INDEX}/SA" ] && [ -s "{STAR_INDEX}/Genome" ] && [ -s "{STAR_INDEX}/sjdbList.out.tab" ]; then
-  echo "Reusing STAR index {STAR_INDEX}"
+# reuse only a complete index built for the same key (index_key.txt is written last, after a successful build)
+if [ -s "$STAR_INDEX/SA" ] && [ -s "$STAR_INDEX/Genome" ] && [ -s "$STAR_INDEX/sjdbList.out.tab" ] \
+   && [ "$(cat "$STAR_INDEX/index_key.txt" 2>/dev/null)" = "$INDEX_KEY" ]; then
+  echo "Reusing STAR index $STAR_INDEX (key $INDEX_KEY)"
 else
-  mkdir -p "{STAR_INDEX}" || exit 1
-  star --runMode genomeGenerate --genomeDir "{STAR_INDEX}" --genomeFastaFiles "$INDEX_FASTA" \
+  echo "Building STAR index $STAR_INDEX (key $INDEX_KEY)"
+  mkdir -p "$STAR_INDEX" || exit 1
+  rm -f "$STAR_INDEX/index_key.txt"
+  star --runMode genomeGenerate --genomeDir "$STAR_INDEX" --genomeFastaFiles "$INDEX_FASTA" \
        --sjdbGTFfile "{GTF_PATH}" --sjdbOverhang {SJDB_OVERHANG} --genomeSAindexNbases "$SA_INDEX_NBASES" \
        --runThreadN "${SLURM_NTASKS:-4}" --outFileNamePrefix "{RESULTS_DIR}/logs/star_index_" \
     || { echo "ERROR: STAR genomeGenerate failed" >&2; exit 1; }
-  [ -s "{STAR_INDEX}/SA" ] || { echo "ERROR: STAR index incomplete in {STAR_INDEX}" >&2; exit 1; }
+  [ -s "$STAR_INDEX/SA" ] || { echo "ERROR: STAR index incomplete in $STAR_INDEX" >&2; exit 1; }
+  echo "$INDEX_KEY" > "$STAR_INDEX/index_key.txt" || { echo "ERROR: cannot write $STAR_INDEX/index_key.txt" >&2; exit 1; }
 fi
+mkdir -p "{RESULTS_DIR}/reference" && echo "$STAR_INDEX" > "{RESULTS_DIR}/reference/star_index_path.txt" \
+  || { echo "ERROR: cannot write star_index_path.txt" >&2; exit 1; }
 ```
+
+An index from an older run without `index_key.txt` is rebuilt once. Two projects that share a genome folder share an index only when the key matches (outbred: same read length; F1: same strain pair, read length and masked sites).
 
 STAR prints "Could not move Log.out" for the index build when `--outFileNamePrefix` is set; it is harmless (the log stays in `{RESULTS_DIR}/logs`). The suffix-array parameter is computed in shell from the `.fai` (light; never read the FASTA on the login node), so the wizard never substitutes it.
 
@@ -309,31 +337,86 @@ Header: `#!/bin/bash`, `#SBATCH -N 1 -p bcc`, `#SBATCH {PREP_RESOURCES}`, `#SBAT
 ```bash
 REF_DIR="{RESULTS_DIR}/reference"; mkdir -p "$REF_DIR" || exit 1
 FASTA="{FASTA_PATH}"; PARENTAL="{PARENTAL_VCF}"
+A="{STRAIN_A}"; B="{STRAIN_B}"
+MIN_PARENTAL_SITES=1000   # stop if fewer sites remain (whole genomes have far more); use 20 for small test data
+A_ALT_SITES=stop          # strain A 1/1 with strain B 0/0: stop (default) or drop (strain A is a substrain of the assembly strain; Step 6)
 [ -s "$FASTA.fai" ] || samtools faidx "$FASTA" || { echo "ERROR: cannot create $FASTA.fai" >&2; exit 1; }
 
-# 1. biallelic SNP sites of the parental VCF (REF = strain A, ALT = strain B), sites only
-bcftools view -G -m2 -M2 -v snps -O v -o "$REF_DIR/parental_snps.sites.vcf" "$PARENTAL" \
+# 1. biallelic SNPs of the parental VCF; contig guard; with sample columns keep only strain A 0/0 + strain B 1/1
+bcftools view -m2 -M2 -v snps -O v -o "$REF_DIR/parental_biallelic.vcf" "$PARENTAL" \
   || { echo "ERROR: bcftools view failed on $PARENTAL" >&2; exit 1; }
+N_BI=$(grep -vc '^#' "$REF_DIR/parental_biallelic.vcf")
+[ "$N_BI" -gt 0 ] || { echo "ERROR: no biallelic SNP sites in $PARENTAL" >&2; exit 1; }
+# contig guard (compute node, before any alignment): every site must lie on a contig of the FASTA
+N_OFF=$(grep -v '^#' "$REF_DIR/parental_biallelic.vcf" | cut -f1 | awk 'NR==FNR {c[$1]=1; next} !($1 in c)' "$FASTA.fai" - | wc -l)
+if [ "$N_OFF" -gt 0 ]; then
+  echo "ERROR: contig mismatch: $N_OFF of $N_BI parental SNPs lie on contigs that are not in $FASTA" >&2
+  echo "  VCF contigs (first 5): $(grep -v '^#' "$REF_DIR/parental_biallelic.vcf" | cut -f1 | uniq | head -5 | paste -sd' ')" >&2
+  echo "  FASTA contigs (first 5): $(cut -f1 "$FASTA.fai" | head -5 | paste -sd' ')" >&2
+  echo "  Use a VCF and a FASTA with the same contig names (for example both '1' or both 'chr1'); nothing was aligned." >&2
+  exit 1
+fi
+NS=$(bcftools query -l "$REF_DIR/parental_biallelic.vcf" | wc -l)
+if [ "$NS" -eq 0 ]; then
+  # sites-only VCF: REF = strain A, ALT = strain B is taken on trust (the user guarantees it, Step 6)
+  bcftools view -G -O v -o "$REF_DIR/parental_snps.sites.vcf" "$REF_DIR/parental_biallelic.vcf" \
+    || { echo "ERROR: bcftools view -G failed" >&2; exit 1; }
+  echo "Parental VCF: $N_BI biallelic SNPs, no sample columns: all taken as REF = $A, ALT = $B (not checkable)"
+else
+  for S in "$A" "$B"; do
+    bcftools query -l "$REF_DIR/parental_biallelic.vcf" | grep -qxF -- "$S" || { echo "ERROR: strain '$S' is not a sample of $PARENTAL (samples: $(bcftools query -l "$REF_DIR/parental_biallelic.vcf" | head -10 | paste -sd' '))" >&2; exit 1; }
+  done
+  # one line per site: CHROM POS REF ALT class; keep = A 0/0 and B 1/1; a_alt = A 1/1 and B 0/0;
+  # same = both 0/0 or both 1/1 (the strains do not differ); het_or_missing = any other genotype
+  bcftools query -s "$A,$B" -f '%CHROM\t%POS\t%REF\t%ALT[\t%SAMPLE=%GT]\n' "$REF_DIR/parental_biallelic.vcf" \
+    | awk -F'\t' -v A="$A" -v B="$B" 'BEGIN{OFS="\t"} {
+        for (i = 5; i <= NF; i++) { j = index($i, "="); s = substr($i, 1, j - 1); g = substr($i, j + 1); gsub(/\|/, "/", g); gt[s] = g }
+        ga = gt[A]; gb = gt[B]
+        if (ga == "0/0" && gb == "1/1") c = "keep"; else if (ga == "1/1" && gb == "0/0") c = "a_alt"
+        else if (ga == gb && (ga == "0/0" || ga == "1/1")) c = "same"; else c = "het_or_missing"
+        print $1, $2, $3, $4, c }' > "$REF_DIR/parental_site_classes.tsv" \
+    || { echo "ERROR: genotype classification failed" >&2; exit 1; }
+  N_KEEP=$(awk -F'\t' '$5=="keep"' "$REF_DIR/parental_site_classes.tsv" | wc -l)
+  N_SAME=$(awk -F'\t' '$5=="same"' "$REF_DIR/parental_site_classes.tsv" | wc -l)
+  N_HET=$(awk -F'\t' '$5=="het_or_missing"' "$REF_DIR/parental_site_classes.tsv" | wc -l)
+  N_AALT=$(awk -F'\t' '$5=="a_alt"' "$REF_DIR/parental_site_classes.tsv" | wc -l)
+  echo "Parental VCF: $N_BI biallelic SNPs; kept $N_KEEP ($A 0/0, $B 1/1); dropped $N_SAME (same genotype in both strains), $N_HET (heterozygous or missing), $N_AALT ($A 1/1, $B 0/0; A_ALT_SITES=$A_ALT_SITES)"
+  if [ "$N_AALT" -gt 0 ] && [ "$A_ALT_SITES" != "drop" ]; then
+    echo "ERROR: $N_AALT sites have $A = 1/1 and $B = 0/0: strain A carries the non-reference allele there, so REF = strain A does not hold." >&2
+    echo "  Check that $A is the reference strain and that the strains are not swapped. If $A is a substrain of the assembly strain and these sites are expected, set A_ALT_SITES=drop (Step 6)." >&2
+    exit 1
+  fi
+  bcftools view -G -O v "$REF_DIR/parental_biallelic.vcf" \
+    | awk -F'\t' 'NR==FNR { if ($5 == "keep") k[$1 FS $2 FS $3 FS $4] = 1; next } /^#/ || (($1 FS $2 FS $4 FS $5) in k)' \
+        "$REF_DIR/parental_site_classes.tsv" - > "$REF_DIR/parental_snps.sites.vcf" \
+    || { echo "ERROR: cannot write parental_snps.sites.vcf" >&2; exit 1; }
+fi
 N_SITES=$(grep -vc '^#' "$REF_DIR/parental_snps.sites.vcf")
-[ "$N_SITES" -gt 0 ] || { echo "ERROR: no biallelic SNP sites in $PARENTAL (contig names must match the FASTA)" >&2; exit 1; }
-echo "Parental biallelic SNP sites: $N_SITES"
+echo "Parental SNP sites used: $N_SITES (minimum $MIN_PARENTAL_SITES)"
+[ "$N_SITES" -ge "$MIN_PARENTAL_SITES" ] || { echo "ERROR: only $N_SITES parental SNP sites remain (minimum $MIN_PARENTAL_SITES); check the strain names, the genotypes and the VCF" >&2; exit 1; }
 
-# 2. strain A must be the reference strain: the VCF REF must equal the FASTA base at every site
+# 2. the VCF REF must equal the FASTA base at every site (right assembly). This does NOT show which strain is
+#    the reference strain: that is the genotype check of step 1 (VCF with sample columns) or the user's guarantee.
 bcftools norm -f "$FASTA" -c e -o /dev/null "$REF_DIR/parental_snps.sites.vcf" \
-  || { echo "ERROR: the REF allele of $PARENTAL differs from the FASTA; F1 mode needs strain A = the reference strain, REF = strain A, ALT = strain B (and matching contig names)" >&2; exit 1; }
+  || { echo "ERROR: the REF allele of $PARENTAL differs from the FASTA base at some sites: the VCF was not called against this assembly" >&2; exit 1; }
 
 # 3. third-allele masking: at each site the masked genome carries the first of A, C, G, T that is
-#    neither the REF nor the ALT allele (same rule everywhere), so neither strain is favoured in mapping
+#    neither the REF nor the ALT allele (same rule everywhere), so neither strain is favoured in mapping.
+#    One genotype column (sample MASK, 1/1) is written because bcftools consensus applies a sites-only VCF unreliably.
 awk 'BEGIN{OFS="\t"}
   function third(r,a,  i,c,s){ s="ACGT"; for(i=1;i<=4;i++){ c=substr(s,i,1); if(c!=r && c!=a) return c } }
   /^##/ {print; next}
-  /^#/  {print; next}
-  { print $1,$2,$3,$4,third(toupper($4),toupper($5)),".",".","." }' \
+  /^#/  {print "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">"; print $1,$2,$3,$4,$5,$6,$7,$8,"FORMAT","MASK"; next}
+  { print $1,$2,$3,$4,third(toupper($4),toupper($5)),".",".",".","GT","1/1" }' \
   "$REF_DIR/parental_snps.sites.vcf" > "$REF_DIR/masked_sites.vcf" || { echo "ERROR: masked sites failed" >&2; exit 1; }
+# mask key: md5 of the masked site records (headers excluded), first 8 characters; names the STAR index (Step 5, part 2)
+MASK_KEY=$(grep -v '^#' "$REF_DIR/masked_sites.vcf" | cut -f1,2,4,5 | md5sum | cut -c1-8)
+[ -n "$MASK_KEY" ] || { echo "ERROR: cannot compute the mask key" >&2; exit 1; }
+echo "Mask key: $MASK_KEY"
 awk 'BEGIN{OFS="\t"} !/^#/ {print $1,$2-1,$2,$4 ">" $5}' "$REF_DIR/masked_sites.vcf" > "$REF_DIR/masked_positions.bed"
 bgzip -c "$REF_DIR/masked_sites.vcf" > "$REF_DIR/masked_sites.vcf.gz" && tabix -f -p vcf "$REF_DIR/masked_sites.vcf.gz" \
   || { echo "ERROR: bgzip/tabix failed for masked_sites.vcf" >&2; exit 1; }
-bcftools consensus -H A -f "$FASTA" "$REF_DIR/masked_sites.vcf.gz" > "$REF_DIR/masked.fa" \
+bcftools consensus -s MASK -f "$FASTA" "$REF_DIR/masked_sites.vcf.gz" > "$REF_DIR/masked.fa" \
   || { echo "ERROR: bcftools consensus failed" >&2; exit 1; }
 
 # 4. VERIFY the masked genome: it must differ from the original FASTA at exactly the masked sites, and at
@@ -379,11 +462,11 @@ bgzip -c "$REF_DIR/f1_het_sites.vcf" > "$REF_DIR/f1_het_sites.vcf.gz" && tabix -
   || { echo "ERROR: bgzip/tabix failed for f1_het_sites.vcf" >&2; exit 1; }
 ```
 
-`-H A` makes `bcftools consensus` apply the ALT (third) allele of the sites-only VCF; without it nothing is applied and the check in step 4 stops the job. Then block R (`.fai` and `.dict` of the original FASTA), then block I with `INDEX_FASTA="$REF_DIR/masked.fa"`, then `echo "prep_f1_reference done"`. The array job later counts against the ORIGINAL FASTA with `f1_het_sites.vcf.gz`. Third-allele masking example: REF `A`, ALT `G` gives `C`; REF `A`, ALT `C` gives `G`. Sites are the parental SNPs only (no indels), and `masked.fa` is only used to build the STAR index.
+`masked_sites.vcf` carries one sample, `MASK`, with genotype `1/1` at every site, and `bcftools consensus -s MASK` applies its ALT (third) allele. Do not use a sites-only VCF here: with bcftools 1.20 a sites-only VCF is applied unreliably (verified on the synthetic data: with `-H A` all 49 sites were applied in only 4 of 10 identical runs and none in the other 6; without `-H` none were applied in any run), while the genotyped VCF with `-s MASK` applied all 49 sites in 10 of 10 runs. The check in step 4 stops the job whenever the masking is incomplete. Then block R (`.fai` and `.dict` of the original FASTA), then block I with `INDEX_FASTA="$REF_DIR/masked.fa"; STAR_INDEX="{STAR_INDEX}_$MASK_KEY"; INDEX_KEY="$MASK_KEY"` (the masked index is keyed on the mask, Step 5, part 2), then `echo "prep_f1_reference done"`. The array job later counts against the ORIGINAL FASTA with `f1_het_sites.vcf.gz`. Third-allele masking example: REF `A`, ALT `G` gives `C`; REF `A`, ALT `C` gives `G`. Sites are the parental SNPs only (no indels), and `masked.fa` is only used to build the STAR index.
 
 ### `prep_genotypes.sh` (outbred mode)
 
-Header as above (`prep_genotypes_%j.out`), block C with the prep container fetch below (plus `add_bind` for each genotype VCF directory), then one heterozygous single-sample VCF per individual. The wizard writes the `MAP` lines (individual, path, sample name inside that VCF) from `{GENOTYPE_VCFS}` and shows the two filter settings for editing: rnavar VCFs use `FILTER_EXPR='FMT/DP>=10'`; external genotypes use a genotype-quality filter such as `FILTER_EXPR='FMT/GQ>=20'`; an empty value skips the expression filter (test data). `-f PASS,.` keeps PASS and unfiltered records.
+Header as above (`prep_genotypes_%j.out`), block C with the prep container fetch below (plus `add_bind` for each genotype VCF directory), then **block R first** (the contig guard below needs `$FASTA.fai`), then one heterozygous single-sample VCF per individual. The wizard writes the `MAP` lines (individual, path, sample name inside that VCF) from `{GENOTYPE_VCFS}` and shows the two filter settings for editing: rnavar VCFs use `FILTER_EXPR='FMT/DP>=10'`; external genotypes use a genotype-quality filter such as `FILTER_EXPR='FMT/GQ>=20'`; an empty value skips the expression filter (test data). `-f PASS,.` keeps PASS and unfiltered records.
 
 ```bash
 GENO_DIR="{RESULTS_DIR}/genotypes"; mkdir -p "$GENO_DIR" || exit 1
@@ -404,6 +487,17 @@ while IFS=$'\t' read -r IND VCF VSAMPLE; do
     mv "$OUT.stage1.vcf.gz" "$OUT.vcf.gz" || exit 1
   fi
   rm -f "$OUT.stage1.vcf.gz"
+  # contig guard (compute node, before any alignment): every het site must lie on a contig of the FASTA
+  # (chr1 in the VCF vs 1 in an Ensembl FASTA would make WASP a silent no-op after hours of alignment)
+  N_ALL=$(bcftools view -H "$OUT.vcf.gz" | wc -l)
+  N_OFF=$(bcftools query -f '%CHROM\n' "$OUT.vcf.gz" | awk 'NR==FNR {c[$1]=1; next} !($1 in c)' "$FASTA.fai" - | wc -l)
+  if [ "$N_OFF" -gt 0 ]; then
+    echo "ERROR: contig mismatch for individual $IND: $N_OFF of $N_ALL heterozygous sites lie on contigs that are not in $FASTA" >&2
+    echo "  VCF contigs (first 5): $(bcftools query -f '%CHROM\n' "$OUT.vcf.gz" | uniq | head -5 | paste -sd' ')" >&2
+    echo "  FASTA contigs (first 5): $(cut -f1 "$FASTA.fai" | head -5 | paste -sd' ')" >&2
+    echo "  Supply VCFs with the FASTA's contig names (for example renamed with bcftools annotate --rename-chrs, Step 6); nothing was aligned." >&2
+    exit 1
+  fi
   tabix -f -p vcf "$OUT.vcf.gz" || { echo "ERROR: tabix failed for $OUT.vcf.gz" >&2; exit 1; }
   # plain-text copy for STAR --varVCFfile (heterozygous-only, single sample: STAR uses only the first sample)
   bcftools view -O v -o "$OUT.vcf" "$OUT.vcf.gz" || { echo "ERROR: cannot write $OUT.vcf" >&2; exit 1; }
@@ -414,7 +508,7 @@ while IFS=$'\t' read -r IND VCF VSAMPLE; do
 done < "$GENO_DIR/genotype_map.tsv"
 ```
 
-The array job reads `{RESULTS_DIR}/genotypes/{individual}.het.vcf` (STAR) and `{individual}.het.vcf.gz` (ASEReadCounter; a plain VCF fails there). Then block R and block I with `INDEX_FASTA="$FASTA"` (the unmasked genome), then `echo "prep_genotypes done"`.
+The array job reads `{RESULTS_DIR}/genotypes/{individual}.het.vcf` (STAR) and `{individual}.het.vcf.gz` (ASEReadCounter; a plain VCF fails there). Block R has already run before the loop; then block I with `INDEX_FASTA="$FASTA"; STAR_INDEX="{STAR_INDEX}"; INDEX_KEY="unmasked"` (the unmasked genome), then `echo "prep_genotypes done"`.
 
 ### `extract_mgp_parental_vcf.sh` (F1 mode, mouse helper; optional)
 
@@ -424,7 +518,7 @@ For the two named strains (`{STRAIN_A}` = the reference strain, for example `C57
 curl -sI "https://ftp.ebi.ac.uk/pub/databases/mousegenomes/REL-2112-v8-SNPs_Indels/mgp_REL2021_snps.vcf.gz" | head -1
 ```
 
-The release is GRCm39 and its contigs are `1`, `2`, ... (no `chr` prefix), so the FASTA must be GRCm39 with the same names; the script stops on a first-contig mismatch (the same guard as in `nfcore-rnavar-setup`). The wizard writes `{RESULTS_DIR}/mgp/chromosomes.txt` (one FASTA chromosome per line, taken from the `.fai`: `1` ... `19`, `X`) and sets `{N_CHROM}` to its number of lines. Header: `#SBATCH -N 1 -p bcc`, `#SBATCH --array=1-{N_CHROM}`, `#SBATCH -n 2 --mem=8G -t 4:00:00`, mail lines, `#SBATCH -o {RESULTS_DIR}/logs/extract_mgp_%A_%a.out`, `set -uo pipefail`, block C (BCFTOOLS only, plus `add_bind "{RESULTS_DIR}"`), then:
+The release is GRCm39 and its contigs are `1`, `2`, ... (no `chr` prefix), so the FASTA must be GRCm39 with the same names. **The helper needs neither the FASTA nor its `.fai`**: it runs before the prep job, which is the job that downloads or decompresses the FASTA and writes the `.fai`, so the helper must never read them (and the wizard never reads the FASTA on the login node). The wizard writes `{RESULTS_DIR}/mgp/chromosomes.txt` from the fixed GRCm39 list, one name per line: `1` ... `19`, `X` (20 lines; Y and MT are not queried), and sets `{N_CHROM}` = 20. Each array task checks on its compute node that its chromosome is a contig of the Mouse Genomes Project VCF header; the comparison of the parental VCF's contigs with the FASTA happens in the prep job (contig guard, step 1 of `prep_f1_reference.sh`), on a compute node, once the FASTA and `.fai` exist and before any alignment. Header: `#SBATCH -N 1 -p bcc`, `#SBATCH --array=1-{N_CHROM}`, `#SBATCH -n 2 --mem=8G -t 4:00:00`, mail lines, `#SBATCH -o {RESULTS_DIR}/logs/extract_mgp_%A_%a.out`, `set -uo pipefail`, block C with the helper's bind line (see the table in block C: `add_bind "{CWD}"` only, never the genome folder), plus `add_bind "{RESULTS_DIR}"`, then:
 
 ```bash
 URL="https://ftp.ebi.ac.uk/pub/databases/mousegenomes/REL-2112-v8-SNPs_Indels/mgp_REL2021_snps.vcf.gz"
@@ -432,12 +526,10 @@ A="{STRAIN_A}"; B="{STRAIN_B}"
 MGP_DIR="{RESULTS_DIR}/mgp"; OUT_VCF="{PARENTAL_VCF}"      # {RESULTS_DIR}/mgp/parental_{STRAIN_A}_{STRAIN_B}.vcf.gz (written by the concat job)
 CHR=$(sed -n "${SLURM_ARRAY_TASK_ID}p" "$MGP_DIR/chromosomes.txt")
 [ -n "$CHR" ] || { echo "ERROR: no chromosome for array task $SLURM_ARRAY_TASK_ID" >&2; exit 1; }
-# contig guard: first contig of the MGP header versus first FASTA header
-VCF_CONTIG=$(bcftools view -h "$URL" | awk -F'[=,>]' '/^##contig/ {print $3; exit}')
-FASTA_CONTIG=$(grep -m1 '^>' "{FASTA_PATH}" | cut -d' ' -f1 | sed 's/^>//')
-if [ -z "$VCF_CONTIG" ] || [ -z "$FASTA_CONTIG" ] || [ "$VCF_CONTIG" != "$FASTA_CONTIG" ]; then
-  echo "ERROR: contig mismatch (MGP: '$VCF_CONTIG', FASTA: '$FASTA_CONTIG'); use a GRCm39 FASTA with names 1, 2, ..." >&2; exit 1
-fi
+# this task's chromosome must be a contig of the MGP header (the FASTA is not read here; the prep job compares it)
+bcftools view -h "$URL" > "$MGP_DIR/header_$SLURM_ARRAY_TASK_ID.txt" || { echo "ERROR: cannot read the MGP VCF header from $URL" >&2; exit 1; }
+grep -q "^##contig=<ID=${CHR%%:*}," "$MGP_DIR/header_$SLURM_ARRAY_TASK_ID.txt" \
+  || { echo "ERROR: chromosome '${CHR%%:*}' is not a contig of the MGP VCF (its contigs are 1, 2, ..., X without chr); fix chromosomes.txt" >&2; exit 1; }
 RAW="$MGP_DIR/$CHR.raw.vcf.gz"
 bcftools view -r "$CHR" -s "$A,$B" -f PASS -m2 -M2 -v snps -O z -o "$RAW" "$URL" \
   || { echo "ERROR: remote query failed for chromosome $CHR" >&2; exit 1; }
@@ -453,7 +545,7 @@ echo "Chromosome $CHR: $(bcftools view -H "$RAW" | wc -l) PASS SNPs, $(bcftools 
 
 Submit the array job first, then the concat job as its own script (`concat_mgp_parental_vcf.sh` has no `--array` header, so exactly one task runs and nothing races on `{PARENTAL_VCF}`): `J=$(sbatch -p bcc --parsable extract_mgp_parental_vcf.sh)`, `C=$(sbatch -p bcc --parsable --dependency=afterok:$J concat_mgp_parental_vcf.sh)`, and `prep_f1_reference.sh` only after the concat job (`--dependency=afterok:$C`).
 
-**`concat_mgp_parental_vcf.sh`** header: `#SBATCH -N 1 -p bcc`, `#SBATCH -n 1 --mem=4G -t 1:00:00`, mail lines, `#SBATCH -o {RESULTS_DIR}/logs/concat_mgp_%j.out`, `set -uo pipefail`, block C (BCFTOOLS only, plus `add_bind "{RESULTS_DIR}"`), then:
+**`concat_mgp_parental_vcf.sh`** header: `#SBATCH -N 1 -p bcc`, `#SBATCH -n 1 --mem=4G -t 1:00:00`, mail lines, `#SBATCH -o {RESULTS_DIR}/logs/concat_mgp_%j.out`, `set -uo pipefail`, block C with the helper's bind line (`add_bind "{CWD}"` only), plus `add_bind "{RESULTS_DIR}"`, then:
 
 ```bash
 MGP_DIR="{RESULTS_DIR}/mgp"; OUT_VCF="{PARENTAL_VCF}"
@@ -475,7 +567,7 @@ Sites where strain A carries the alternative allele (the reference genome is C57
 
 ## Step 11 — Per-sample array scripts
 
-Both scripts are SLURM array jobs (`#SBATCH --array=1-{ARRAY_N}`, `#SBATCH {ARRAY_RESOURCES}`), take row `SLURM_ARRAY_TASK_ID` of `{SAMPLES_CSV}` (data row 1 = task 1), and write the outputs below. Header: `#!/bin/bash`, `#SBATCH -N 1 -p bcc`, `#SBATCH --array=1-{ARRAY_N}`, `#SBATCH {ARRAY_RESOURCES}`, `#SBATCH --mail-type=END,FAIL`, `#SBATCH --mail-user={USER_EMAIL}`, and one log per array task, `%A` = array job id and `%a` = task id: `#SBATCH -o {RESULTS_DIR}/logs/align_count_f1_%A_%a.out` (F1) or `#SBATCH -o {RESULTS_DIR}/logs/align_wasp_count_%A_%a.out` (outbred). They use block C, but the containers must already be cached by the prep job (it fetches all five, see "Prep container fetch" in Step 10), so parallel tasks never download the same file: in these scripts define `fetch_sif` as a check only, `fetch_sif() { [ -s "$1" ] || { echo "ERROR: missing container $1 (run the prep job first)" >&2; exit 1; }; }`. `{MIN_MAPQ}` and `{MIN_BASEQ}` are the ASEReadCounter thresholds recorded in Step 8.
+Both scripts are SLURM array jobs (`#SBATCH --array=1-{ARRAY_N}`, `#SBATCH {ARRAY_RESOURCES}`), take row `SLURM_ARRAY_TASK_ID` of `{SAMPLES_CSV}` (data row 1 = task 1), and write the outputs below. Header: `#!/bin/bash`, `#SBATCH -N 1 -p bcc`, `#SBATCH --array=1-{ARRAY_N}`, `#SBATCH {ARRAY_RESOURCES}`, `#SBATCH --mail-type=END,FAIL`, `#SBATCH --mail-user={USER_EMAIL}`, and one log per array task, `%A` = array job id and `%a` = task id: `#SBATCH -o {RESULTS_DIR}/logs/align_count_f1_%A_%a.out` (F1) or `#SBATCH -o {RESULTS_DIR}/logs/align_wasp_count_%A_%a.out` (outbred). They use block C, but the containers must already be cached by the prep job (it fetches all five, see "Prep container fetch" in Step 10), so parallel tasks never download the same file: in these scripts define `fetch_sif` as a check only, `fetch_sif() { [ -s "$1" ] || { echo "ERROR: missing container $1 (run the prep job first)" >&2; exit 1; }; }`, and **call** it for each container the script uses, on the line after the definition: `fetch_sif "$STAR_SIF"; fetch_sif "$GATK_SIF"; fetch_sif "$SAMTOOLS_SIF"; fetch_sif "$PICARD_SIF"`. The wrapper functions are `star`, `gatk`, `samtools` and `picard` (the table in Step 10, block C). `{MIN_MAPQ}` and `{MIN_BASEQ}` are the ASEReadCounter thresholds recorded in Step 8.
 
 | Output | Content |
 |---|---|
@@ -497,6 +589,9 @@ case "$FQ1" in /*) ;; *) FQ1="{CWD}/$FQ1" ;; esac
 add_bind "$(dirname "$FQ1")"; [ -z "$FQ2" ] || add_bind "$(dirname "$FQ2")"
 die() { echo "ERROR: sample $SAMPLE: $*" >&2; exit 1; }
 FASTA="{FASTA_PATH}"; R="{RESULTS_DIR}"
+# the prep job records the index it built or reused (F1: keyed on the mask, Step 5, part 2)
+STAR_INDEX=$(cat "$R/reference/star_index_path.txt" 2>/dev/null)
+[ -n "$STAR_INDEX" ] && [ -s "$STAR_INDEX/SA" ] || die "no STAR index recorded in $R/reference/star_index_path.txt (run the prep job first)"
 STAR_DIR="$R/star/$SAMPLE"; TMPD="$R/tmp/$SAMPLE"; BAM="$R/bam/$SAMPLE.bam"; TABLE="$R/ase_counts/$SAMPLE.table"; STATS="$R/ase_counts/$SAMPLE.wasp_stats.tsv"
 UNF_TABLE="$R/ase_counts/$SAMPLE.unfiltered.table"   # outbred only (pre-WASP counts); never written in F1 mode
 mkdir -p "$STAR_DIR" "$TMPD" "$R/bam" "$R/ase_counts" || die "cannot create output directories"
@@ -511,7 +606,7 @@ rm -f "$UNF_TABLE"
 After the common start (`--readFilesIn` takes one file for single-end data and two for paired-end data; the wizard writes `"$FQ1" "$FQ2"` or only `"$FQ1"` accordingly):
 
 ```bash
-star --runThreadN "${SLURM_NTASKS:-4}" --genomeDir "{STAR_INDEX}" \
+star --runThreadN "${SLURM_NTASKS:-4}" --genomeDir "$STAR_INDEX" \
      --readFilesIn "$FQ1" "$FQ2" --readFilesCommand zcat \
      --outFileNamePrefix "$STAR_DIR/" --outSAMtype BAM SortedByCoordinate \
      --outSAMattrRGline ID:$SAMPLE SM:$SAMPLE PL:ILLUMINA || die "STAR failed"
@@ -534,7 +629,7 @@ After the common start (also `[ -n "$INDIVIDUAL" ] || die "empty individual"`), 
 
 ```bash
 [ -s "$HET_PLAIN" ] && [ -s "$HET_GZ" ] || die "missing genotypes for individual $INDIVIDUAL (run prep_genotypes.sh)"
-star --runThreadN "${SLURM_NTASKS:-4}" --genomeDir "{STAR_INDEX}" \
+star --runThreadN "${SLURM_NTASKS:-4}" --genomeDir "$STAR_INDEX" \
      --readFilesIn "$FQ1" "$FQ2" --readFilesCommand zcat \
      --outFileNamePrefix "$STAR_DIR/" --varVCFfile "$HET_PLAIN" --waspOutputMode SAMtag \
      --outSAMtype BAM SortedByCoordinate --outSAMattributes NH HI AS nM vA vG vW \
@@ -616,6 +711,8 @@ Write `{CWD}/{TODAY}_{WD_NAME}_01_import_qc.Rmd` (ask once for `{AUTHOR}` and `{
 
 **It reads `ase_counts/{sample}.table` for every sample listed in `samples.csv`, never by globbing `*.table`.** A stray or stale table from an earlier run is therefore never accepted, and the Rmd stops with an error that names every sample whose table is missing, header-only or without data rows (the Step 11 scripts delete failed tables; this is the second line of defence). In outbred mode the same rule applies to `ase_counts/{sample}.wasp_stats.tsv` and `ase_counts/{sample}.unfiltered.table` (the pre-WASP counts). Because tables are read by name, a `{sample}.unfiltered.table` is never picked up as a sample table: the stray-table message skips it, and the Rmd checks that the samples read are exactly the rows of `samples.csv`.
 
+**Every table is read with explicit column classes** (`colClasses`: `contig`, `variantID`, `refAllele` and `altAllele` as character in the count tables, all columns as character in `samples.csv`, fixed classes in `wasp_stats.tsv`). With Ensembl names a table whose contigs are all `1`..`22` would otherwise be read as integer and a table with `X` or `MT` as character, and binding the samples would stop with "Can't combine `contig` <integer> and <character>" (for example a male without expressed X heterozygous sites next to females with them).
+
 ````rmd
 ---
 title: "{PROJECT_TITLE} - ASE import and QC"
@@ -667,7 +764,11 @@ EXPECTED <- c("contig", "position", "variantID", "refAllele", "altAllele", "refC
 read_counts <- function(s, suffix = ".table") {   # suffix ".unfiltered.table" = outbred pre-WASP counts
   f <- file.path(COUNTS_DIR, paste0(s, suffix))
   if (!file.exists(f)) return(list(data = NULL, problem = "table missing"))
-  d <- tryCatch(read.delim(f, stringsAsFactors = FALSE, check.names = FALSE), error = function(e) NULL)
+  # text columns are read as character in EVERY table: a table whose contigs are all 1..22 would otherwise be read as
+  # integer and fail to bind with one that has X or MT (and an all-"T" allele column would become logical TRUE)
+  d <- tryCatch(read.delim(f, stringsAsFactors = FALSE, check.names = FALSE,
+                           colClasses = c(contig = "character", variantID = "character",
+                                          refAllele = "character", altAllele = "character")), error = function(e) NULL)
   if (is.null(d)) return(list(data = NULL, problem = "table is empty or has a header but no data rows"))
   if (!all(EXPECTED %in% names(d))) return(list(data = NULL, problem = "table lacks the ASEReadCounter columns"))
   if (nrow(d) == 0) return(list(data = NULL, problem = "table has a header but no data rows"))
@@ -846,7 +947,7 @@ singularity exec --bind {CWD},{GTF_DIR} {R_SIF} \
 
 `{RESULTS_DIR}` is inside `{CWD}`, so one bind covers the Rmd, the count tables and the output. The stage HTML is written to `{RESULTS_DIR}/{TODAY}_{WD_NAME}_01_import_qc.html`. The full submission order (with dependencies) is in Step 15.
 
-If the job stops with "sample(s) have no usable ASE count table", show the listed samples to the user; do not delete anything, and do not work around it by globbing.
+If the job stops with "sample(s) have no usable ASE count table", show the listed samples to the user; do not delete anything, and do not work around it by globbing. Either fix and re-run the failed samples, or drop them as described in Step 15 ("Dropping a failed sample").
 
 ---
 
@@ -856,7 +957,7 @@ Write `{CWD}/{TODAY}_{WD_NAME}_02_imbalance.Rmd` with the same header convention
 
 - Per sample, `rho_h0 <- bb_estimate_rho(alt, total)` is estimated under H0 (p = 0.5) from all filtered sites. Every truly imbalanced site inflates it (on the synthetic acceptance data it was 0.08-0.10 against a binomial truth and detected 0 of 16 planted genes), so no test uses it except the F1 fallback below; it is reported as the diagnostic `rho_h0_naive`. **Outbred** uses `bb_estimate_rho_trim(alt, total)`: the H0 fit restricted to the central sites (counts folded around n/2; each site's central region holds 90 percent of the H0 probability), with the truncation corrected in the likelihood (Step 14); the tests use `rho_used = max(rho_trim, RHO_MIN)`. Unphased data allow no free mean per gene (the SNP orientation is unknown), which is why the outbred estimator trims instead. **F1** uses `bb_estimate_rho_gene(alt, total, gene)`, estimated with a free mean per gene and bias-corrected (`rho_corrected`), because real imbalance inflates `rho_h0`; the SNP-level and gene-level tests use `rho_used = rho_gene = max(rho_corrected, RHO_MIN)`; if it is `NA` (fewer than 5 genes with 2 or more SNPs) the Rmd prints a WARNING, falls back to `rho_h0` and records that in the Summary (`rho_source`). The Summary shows all the estimates, and any estimator boundary warning per sample. With fewer than 20 sites `rho_h0` is `NA` and the sample is not tested.
 - Per SNP, `bb_pvalue`, then Benjamini-Hochberg within each sample. The single column `sig` is `padj < FDR_SIG` and `|ALT fraction - 0.5| >= ABS_DEV_SIG` (F1: ALT is strain B). The Summary table and every plot use this column and nothing else; the Rmd checks that the counts drawn in the figures equal the Summary counts.
-- Gene level, both modes: SNP positions are overlapped with the GTF exons by `GenomicRanges::findOverlaps` (`gene_id` from the GTF). **F1:** counts are not summed before testing (summing and applying the per-SNP `rho` to the total inflates the variance by about `1 + (n - 1) * rho` and destroys power); each gene's SNPs share one strain-B fraction and `bb_gene_lrt` tests it against 0.5 with `rho_gene`; the table reports `phat` (strain-B fraction), p, BH within the sample, and `sig` from `FDR_SIG` and `ABS_DEV_SIG` on `|phat - 0.5|`. **Outbred:** SNPs cannot be pooled without phasing, so the gene p-value is the `acat` combination of the SNP p-values, labelled "unphased, no direction" (no direction column); the gene is `sig` when its BH-adjusted `acat` p-value is below `FDR_SIG` and at least one of its SNPs deviates by `ABS_DEV_SIG` or more.
+- Gene level, both modes: SNP positions are overlapped with the GTF exons by `GenomicRanges::findOverlaps` (`gene_id` from the GTF). **F1:** counts are not summed before testing (summing and applying the per-SNP `rho` to the total inflates the variance by about `1 + (n - 1) * rho` and destroys power); each gene's SNPs share one strain-B fraction and `bb_gene_lrt` tests it against 0.5 with `rho_gene`; the table reports `phat` (strain-B fraction), p, BH within the sample, and `sig` from `FDR_SIG` and `ABS_DEV_SIG` on `|phat - 0.5|`, plus a `note` column: SNP counts that share read pairs are treated as independent, so the F1 gene test can be anti-conservative in SNP-dense genes at moderate depth (Step 14). **Outbred:** SNPs cannot be pooled without phasing, so the gene p-value is the `acat` combination of the SNP p-values, labelled "unphased, no direction" (no direction column); the gene is `sig` when its BH-adjusted `acat` p-value is below `FDR_SIG` and at least one of its SNPs deviates by `ABS_DEV_SIG` or more.
 - The reference-bias flag from Rmd 01 is printed with the tables and written into the Summary sheet; if a sample is flagged, say so next to its ratios.
 
 ````rmd
@@ -982,7 +1083,7 @@ knitr::kable(dplyr::distinct(snp, sample, rho_h0, rho_trim, central_frac, rho_fr
 
 ## Gene level
 
-**F1: counts are not summed before testing.** Summing the two strains' reads over a gene's SNPs and applying the per-SNP overdispersion to the total would inflate the variance by `1 + (n - 1) * rho` on the summed depth `n` (about 45 at n = 450), which destroys power. Instead each gene's SNPs share one strain-B fraction `p`, and `bb_gene_lrt` runs a likelihood-ratio test of `p = 0.5` against `p` free on the SNP-level counts with the sample's `rho`; `phat` is the strain-B fraction estimate (`alt_frac` in the table). The summed reads are shown for information only. **Outbred:** `acat` over the SNP p-values.
+**F1: counts are not summed before testing.** Summing the two strains' reads over a gene's SNPs and applying the per-SNP overdispersion to the total would inflate the variance by `1 + (n - 1) * rho` on the summed depth `n` (about 45 at n = 450), which destroys power. Instead each gene's SNPs share one strain-B fraction `p`, and `bb_gene_lrt` runs a likelihood-ratio test of `p = 0.5` against `p` free on the SNP-level counts with the sample's `rho`; `phat` is the strain-B fraction estimate (`alt_frac` in the table). The summed reads are shown for information only. **Limitation (F1):** SNP counts that share read pairs are treated as independent (Step 14), so the test can be anti-conservative in SNP-dense genes at moderate depth; the F1 gene table carries a `note` column saying so, and the Rmd prints the same note. **Outbred:** `acat` over the SNP p-values (valid under dependence).
 
 ```{r gene}
 snp_by_gene <- dplyr::inner_join(snp, snp_gene, by = c("contig", "position"))
@@ -999,7 +1100,11 @@ if (MODE == "f1") {
     dplyr::group_by(sample) %>% dplyr::mutate(padj = p.adjust(p, method = "BH")) %>% dplyr::ungroup() %>%
     dplyr::mutate(sig = !is.na(padj) & padj < FDR_SIG & dev >= ABS_DEV_SIG,
                   direction = dplyr::case_when(!sig ~ "none", alt_frac > 0.5 ~ paste(alt_label, "higher"),
-                                               TRUE ~ paste(ref_label, "higher")))
+                                               TRUE ~ paste(ref_label, "higher")),
+                  note = "SNP counts treated as independent: may be anti-conservative in SNP-dense genes at moderate depth")
+  cat("NOTE (F1 gene test): a read pair that covers several SNPs of a gene is counted at each of them, but the LRT treats",
+      "the SNP counts as independent, so in genes with several SNPs within one fragment length and moderate depth the",
+      "p-values can be too small (anti-conservative). The quoted null sizes come from simulations with independent SNPs.\n")
 } else {
   gene <- snp_by_gene %>% dplyr::filter(!is.na(p)) %>% dplyr::group_by(sample, gene_id) %>%
     dplyr::summarise(n_snps = dplyr::n(), acat_p = acat(p), max_dev = max(dev), .groups = "drop") %>%
@@ -1011,7 +1116,8 @@ gene <- dplyr::arrange(gene, sample, gene_id)
 snp_annot <- snp_gene %>% dplyr::group_by(contig, position) %>%
   dplyr::summarise(Gene = paste(unique(gene_id), collapse = ";"), .groups = "drop")
 snp <- dplyr::left_join(snp, snp_annot, by = c("contig", "position"))
-knitr::kable(head(dplyr::filter(gene, sig), 30), digits = 4, caption = "Significant genes (first 30)")
+knitr::kable(head(dplyr::filter(gene, sig), 30), digits = 4,
+             caption = paste0("Significant genes (first 30)", if (MODE == "f1") ". F1: SNP counts are treated as independent (see the note above); p-values may be too small in SNP-dense genes at moderate depth" else ""))
 ```
 
 ## Summary
@@ -1227,6 +1333,7 @@ bb_estimate_rho_trim <- function(x, n, keep = 0.9, max_iter = 100) {   # c(rho, 
 - `acat` is the Cauchy combination test with equal weights; it is valid for correlated p-values, which is why it is used for the SNPs of one gene. It carries no direction. P-values are capped at 0.99 before the transform: `bb_pvalue` returns exactly 1 at the modal count, and `tan((0.5 - 1) * pi)` is about -1.6e16, which would swamp any signal and make the combined p-value 1. Values are also clipped at 1e-15 from below.
 - The unit tests check the null size and uniformity of the p-values, power, recovery of `rho` (including `rho` near 0), the edge cases (`n = 0`, `x = 0`, `x = n`), `acat`, and the full outbred path (trimmed `rho`, floor, per-SNP test, ACAT per gene) on simulated unphased data with planted 0.85/0.70/0.30 genes. Run them from the repository root with `singularity exec --bind /net/bmc-lab3 <bulkrnaseq sif> Rscript ase-pipeline/tests/r/test_ase_stats.R ase-pipeline/ase-pipeline.md` inside an `sbatch -p bcc` job.
 - **F1 gene level uses `bb_estimate_rho_gene` and `bb_gene_lrt`, not summed counts.** `bb_estimate_rho` (H0, p = 0.5 everywhere) treats the between-SNP spread caused by true imbalance as overdispersion, so with many imbalanced genes it is inflated (in the unit test about four times the true value), and applying it to counts summed over a gene multiplies the variance by about `1 + (n - 1) * rho`. `bb_estimate_rho_gene` maximises the likelihood with a free mean for every gene (genes with at least 2 SNPs; `NA` below 5 such genes) and returns `c(free, corrected)`. The free estimate is biased low: a free mean per gene shrinks the whole variance factor `1 + (n - 1) * rho` by `(k - 1) / k` (Neyman-Scott), which for 4-SNP genes gives 0.0115 for a true 0.02. The corrected value undoes that shrinkage, `rho_corrected = cf * rho_free + (cf - 1) / m` with `cf = sum(k) / sum(k - 1)` and `m` the mean of `n - 1` (0.021 in the same test). Rmd 02 then uses `rho_gene = max(rho_corrected, RHO_MIN)` for the gene tests (`RHO_MIN`, default 0.01, from Step 8), so a noisy or zero estimate can never make them anti-conservative. `bb_gene_lrt` tests `p = 0.5` against a shared free `p` per gene on the SNP-level counts and returns `phat`. Outbred mode uses `bb_estimate_rho_trim`, `bb_pvalue` and `acat`.
+- **Independence assumption (F1 gene LRT and `bb_estimate_rho_gene`).** ASEReadCounter counts a fragment at every SNP it overlaps, so when several SNPs of a gene lie within one fragment (common in divergent F1 haplotype blocks) their counts share read pairs. `bb_gene_lrt` and `bb_estimate_rho_gene` nevertheless treat the SNP counts of a gene as independent draws with a shared `p`. Consequences: the LRT statistic grows with the number of SNPs per fragment, the free-mean `rho` estimate cannot compensate (SNPs that share reads agree with each other), and the F1 gene test can be **anti-conservative in SNP-dense genes at moderate depth**; the `RHO_MIN` floor offsets this only partly (how much depends on the depth and on the number of SNPs per fragment; this was not measured). The F1 gene-test null sizes quoted in the README (0.047-0.056 pooled, worst seed 0.064) come from simulations with **independent SNPs** and do not describe SNP-dense genes; no simulation with shared reads was run. The per-SNP tests and the outbred ACAT gene test are not affected in the same way (ACAT is valid under dependence). Planned for Stage 2 (not implemented): thin each gene's SNPs so that no two kept SNPs fall within one fragment window (for example keep the highest-depth SNP per window of 2 x read length) before rho estimation and the gene LRT, report the number of SNPs used, and add a simulation in which SNPs share reads.
 - Boundary handling: the `rho` estimators return exactly 0 when the optimum sits at the lower boundary (or below 1e-4), `bb_estimate_rho` and `bb_estimate_rho_gene` emit a warning when it sits at the upper boundary, and `bb_estimate_rho_trim` warns if it does not converge; Rmd 02 prints such warnings per sample and writes them to the Summary (`rho_warning`). `bb_pvalue` returns `NA` for `x` below 0, above `n`, non-integer or missing.
 
 ---
@@ -1241,6 +1348,8 @@ Write all scripts to `{RESULTS_DIR}/scripts/` (Steps 10-13), run `mkdir -p {RESU
 S={RESULTS_DIR}/scripts
 DEP=""   # stays empty unless the mouse helper below is used
 # ONLY IF the mouse helper is used (F1, no parental VCF): array of chromosomes -> concat, then prep depends on the concat job.
+# The helper reads neither the FASTA nor its .fai (fixed GRCm39 chromosome list), so it can run before the prep job,
+# which downloads/decompresses the FASTA, writes the .fai and compares the parental VCF's contigs with it.
 # Without the helper, delete the next three lines; the scripts do not exist and sbatch would fail.
 X=$(sbatch -p bcc --parsable $S/extract_mgp_parental_vcf.sh)
 C=$(sbatch -p bcc --parsable --dependency=afterok:$X $S/concat_mgp_parental_vcf.sh)
@@ -1256,7 +1365,11 @@ R2=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_02_imbalance.sh)
 echo "prep $P, array $A, Rmd01 $R1, Rmd02 $R2"
 ```
 
-Without the mouse helper the three lines after the "ONLY IF" comment are deleted and `DEP` stays empty (it is set to empty on the first line of the block); in outbred mode the prep and array scripts are `prep_genotypes.sh` and `align_wasp_count.sh`. `afterok` on the array job id means every array task must succeed; if one fails, Rmd 01 stays pending with `DependencyNeverSatisfied`: cancel it, fix the failed sample (its log is under `{RESULTS_DIR}/logs`), re-submit the failed task, then submit Rmd 01 and Rmd 02 again with the same dependencies. Wait with a bounded loop (for example `squeue -h -j $R2` every 60 s, at most 4 h), read the logs, and on a failure show the error line and stop.
+Without the mouse helper the three command lines after the "ONLY IF" comment (`X=`, `C=`, `DEP=`) are deleted and `DEP` stays empty (it is set to empty on the first line of the block); in outbred mode the prep and array scripts are `prep_genotypes.sh` and `align_wasp_count.sh`. `afterok` on the array job id means every array task must succeed; if one fails, Rmd 01 stays pending with `DependencyNeverSatisfied`: cancel it, fix the failed sample (its log is under `{RESULTS_DIR}/logs`), re-submit the failed task, then submit Rmd 01 and Rmd 02 again with the same dependencies.
+
+**Dropping a failed sample.** If a sample cannot be fixed (for example it has no counted sites, or no sites left after filtering in Rmd 01), the supported way out is to remove it from the analysis, never to edit the Rmds: with the user's confirmation, remove that sample's row from `{SAMPLES_CSV}` (keep a copy of the original sheet next to it), cancel any pending Rmd job, and re-run from the step that failed: if its array task failed, submit only Rmd 01 and then Rmd 02 (`R1=$(sbatch -p bcc --parsable $S/run_01_import_qc.sh)`, then `sbatch -p bcc --dependency=afterok:$R1 $S/run_02_imbalance.sh`), without a dependency on the old array job; if only an Rmd failed, re-submit that Rmd and the ones after it. The Rmds read the tables by the sample names in `{SAMPLES_CSV}`, so the dropped sample's files are simply ignored (if its table exists, Rmd 01 lists it as a table of a sample not in the sheet). Re-submitting the array job is not needed, because the other samples' tables already exist; if the array job is re-run anyway, `{ARRAY_N}` must be updated to the new number of rows (task numbers follow the rows of the edited sheet). Say in the summary page which sample was dropped and why.
+
+Wait with a bounded loop (for example `squeue -h -j $R2` every 60 s, at most 4 h), read the logs, and on a failure show the error line and stop.
 
 ### Summary report `{WD_NAME}_summary_report.html`
 
