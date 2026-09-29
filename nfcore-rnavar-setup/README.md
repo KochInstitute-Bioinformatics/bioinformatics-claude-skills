@@ -24,6 +24,7 @@ Then invoke it in Claude Code:
 |-------------|-------|
 | SLURM scheduler | Script targets the bcc queue |
 | Singularity ≥ 3.10 | Loaded via `module add singularity/3.10.4` |
+| bcftools biocontainer | `depot.galaxyproject.org-singularity-bcftools-1.20--h8b25389_0.img` in `$NXF_SINGULARITY_CACHEDIR` (or `~/.singularity/cache`); the `prepare_known_sites` helper runs `bcftools`, `tabix` and `bgzip` from it via Singularity (there is no htslib/tabix module), downloading it once if absent |
 | Nextflow ≥ 24.04 | Available in a conda environment; needed for the `resourceLimits` directive in the generated config (validated with 26.04.6) |
 | Internet access | Required from the login node (GitHub API, Ensembl, known-sites downloads); compute nodes may not have it |
 
@@ -84,17 +85,19 @@ After running the skill you will have:
 # 1. Run any helper scripts that were generated (each is an sbatch script)
 sbatch build_star_index_rnavar_GRCh38_ens115.sh
 
-# 2. Submit the pipeline; if a helper script was generated, make it wait for the helper
-#    (or wait for the helper to finish before submitting)
-sbatch --dependency=afterok:<helper_jobid> nf-core_rnavar_1.3.0.sh
+#    If the STAR helper downloads the FASTA, the known-sites helper (which reads it) must wait for it
+sbatch --dependency=afterok:<star_jobid> prepare_known_sites_GRCh38_ens115.sh
+
+# 2. Submit the pipeline, listing every generated helper
+sbatch --dependency=afterok:<star_jobid>:<known_sites_jobid> nf-core_rnavar_1.3.0.sh
 ```
 
 ---
 
 ## Validation status
 
-- The skill text is checked by `nfcore-rnavar-setup/tests/check_skill.sh`, which schema-validates every `--parameter` against nf-core/rnavar 1.3.0 and asserts that required text is present and forbidden text is absent.
-- **One end-to-end run on the nf-core rnavar test data was completed on the cluster** (Nextflow 26.04.6): paired-end reads, custom reference, known sites from local VCFs, no annotation. Annotation (SnpEff / VEP), BAM/CRAM input, gVCF output and the contig-guard rename branch remain untested.
+- The skill text is checked by `nfcore-rnavar-setup/tests/check_skill.sh`, which schema-validates every `--parameter` against nf-core/rnavar 1.3.0, checks that the launch line carries no `--flag` (including continuation lines) and that every key in the params template is a schema parameter, and asserts that required text is present and forbidden text is absent.
+- **One end-to-end run on the nf-core rnavar test data was completed on the cluster** (Nextflow 26.04.6): paired-end reads, custom reference, known sites from local VCFs, no annotation. The contig-guard logic (rename, unresolvable mismatch, empty FASTA) was exercised in a standalone batch test with bcftools 1.20 from a biocontainer. The generated `prepare_known_sites` helper, the Ensembl FASTA/GTF download path, the known-sites download path, annotation, BAM/CRAM input and gVCF output remain untested.
 - The `withName` selectors in the generated `nextflow.config` (`STAR_ALIGN`, `GATK4_SPLITNCIGARREADS`, `GATK4_BASERECALIBRATOR`, `GATK4_HAPLOTYPECALLER`) were verified to match real tasks in that run.
 - The 1.3.0 output layout in the hand-off note (`variant_calling/`, `preprocessing/`, `reports/`, `pipeline_info/`) was confirmed from that run; `annotation/` was not observed.
 

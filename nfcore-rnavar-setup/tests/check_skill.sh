@@ -16,7 +16,7 @@ forbid() { ! grep -qF -- "$1" "$SKILL" || { echo "FAIL: forbidden text present: 
 
 # (a) every --flag in the skill is a schema parameter or an allowlisted non-rnavar flag
 schema_names=$(grep -oE '"[a-z_0-9]+": *\{' "$SCHEMA" | sed -E 's/"([a-z_0-9]+)".*/\1/' | sort -u)
-allow="genomeSAindexNbases rename-chrs dependency runMode genomeDir genomeFastaFiles sjdbGTFfile sjdbOverhang runThreadN mail-type mail-user mem"
+allow="bind genomeSAindexNbases rename-chrs dependency runMode genomeDir genomeFastaFiles sjdbGTFfile sjdbOverhang runThreadN mail-type mail-user mem"
 for flag in $(grep -oE '(^|[ `(=])--[A-Za-z_][A-Za-z_0-9-]*' "$SKILL" | sed -E 's/^[^-]*--//' | sort -u); do
   if ! echo "$schema_names $allow" | tr ' ' '\n' | grep -qx -- "$flag"; then
     echo "FAIL: flag not in rnavar schema or allowlist: --$flag"; fail=1
@@ -131,19 +131,19 @@ forbid "{VERSION_ENS}"
 # --- Final-review fixes
 need "bgzipped \`.vcf.gz\` files with \`.tbi\` indexes"
 need "contig-name check"
-need "zcat FILE.vcf.gz | grep -v '^#' | head -1 | cut -f1"
-need "grep -m1 '^>' {FASTA_PATH} | cut -d' ' -f1 | sed 's/^>//'"
+forbid "zcat FILE.vcf.gz | grep -v '^#' | head -1 | cut -f1"
+need "FASTA_CONTIG=\$(zcat -f {FASTA_PATH} | awk '/^>/{sub(/^>/,\"\"); print \$1; exit}')"
 need "prefer Ensembl-named variation VCFs"
 need "bcftools annotate --rename-chrs MAP.txt"
 need "chr1<->1 ... chrM<->MT"
 need "never proceed with mismatched contigs"
-need "run \`bgzip\` on any plain \`.vcf\` before \`tabix -p vcf\`"
+need "run \`bgzip\` on any plain \`.vcf\` before \`tabix -f -p vcf\`"
 need "1. these are lanes of the same sample"
 need "2. these are different samples"
 need "allow the deliberate duplicates"
 need "Write \`download_cache: true\` only if the user explicitly chooses it after being warned."
 forbid "Use \`snpeff_cache\`, \`vep_cache\` and \`download_cache\` only."
-need "--dependency=afterok:<helper_jobid> nf-core_rnavar_{VERSION}.sh"
+need "--dependency=afterok:<star_jobid>:<known_sites_jobid> nf-core_rnavar_{VERSION}.sh"
 need "with \`skip_baserecalibration: true\` these are the duplicate-marked BAMs"
 need "check whether \`{SAMPLESHEET_CSV}\` already exists"
 need "check whether \`nf-core_rnavar_{VERSION}.sh\` already exists"
@@ -165,7 +165,7 @@ forbid "If the Step 7 contig-name check found a mismatch and option (ii) was cho
 
 # --- Params-file rules
 # (1) The launch command must carry no rnavar --flag (params file only)
-launch=$(awk '/^nextflow run nf-core\/rnavar/{p=1} p{l=l $0; if($0 !~ /\\$/){print l; exit}}' "$SKILL" | sed 's/\\/ /g')
+launch=$(awk '/^nextflow run nf-core\/rnavar/{p=1} p{l=l $0; if($0 !~ /\\[ \t]*$/){print l; exit}}' "$SKILL" | sed 's/\\[ \t]*/ /g')
 if [ -z "$launch" ]; then echo "FAIL: no 'nextflow run nf-core/rnavar' launch line found"; fail=1
 elif echo "$launch" | grep -qE ' --[A-Za-z_]'; then echo "FAIL: launch line carries a --flag (must use -params-file only): $launch"; fail=1
 fi
@@ -206,7 +206,7 @@ forbid "-t 8:00:00"
 
 # --- Task 3 (config, hand-off)
 need "overwrite = true"
-[ "$(grep -c 'overwrite = true' "$SKILL")" -ge 4 ] || { echo "FAIL: overwrite = true must appear for timeline, report, trace and dag"; fail=1; }
+[ "$(grep -cE '^(timeline|report|trace|dag) +\{ enabled = true; overwrite = true;' "$SKILL")" -eq 4 ] || { echo "FAIL: overwrite = true must appear for timeline, report, trace and dag"; fail=1; }
 forbid "params.max_"
 forbid "max_cpus"
 need "reports/multiqc"
@@ -214,5 +214,33 @@ forbid "  multiqc/           MultiQC report"
 need "annotation/"
 # --- end Task 3 (config, hand-off)
 # --- end Params-file rules
+
+
+# --- Final fix wave
+forbid "module add htslib"
+need "singularity exec --bind"
+need "{BCFTOOLS_SIF}"
+need "depot.galaxyproject.org-singularity-bcftools-1.20--h8b25389_0.img"
+need "each \`module add\` in a helper"
+need "tabix -f -p vcf"
+forbid "tabix -p vcf"
+need "safely re-runnable"
+need "Skip \`wget\` when"
+need "a custom FASTA may use either style"
+need "Treat an empty value as a mismatch."
+need "EMPTY contig"
+forbid "The FASTA from Step 6 is Ensembl-named (\`1\`, \`2\`, ... \`MT\`), whereas"
+need "sbatch --dependency=afterok:<star_jobid>"
+need "afterok:<star_jobid>:<known_sites_jobid>"
+forbid "afterok:<helper_jobid>"
+need ".renamed.vcf.gz"
+need "points elsewhere"
+need "gunzip -c file.gz > {GENOME_DIR}/<name>"
+need "originals are never modified"
+need "stat -c %s"
+forbid "measure it with the same"
+need "-n 2 --mem=8G -t 4:00:00"
+forbid "-n 2 --mem=8G -t 2:00:00"
+# --- end Final fix wave
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1
