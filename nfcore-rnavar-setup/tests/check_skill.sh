@@ -44,7 +44,7 @@ need "Supplying FASTQ files and a BAM/CRAM file for the same sample"
 need "Replace every \`-\` with \`_\`"
 need "merged before alignment"
 need "## Step 5"
-need "--read_length"
+need "read_length"
 need "most common read length"
 need "sjdbOverhang"
 forbid "strandedness,"
@@ -56,14 +56,14 @@ need "star_rnavar_sjdb"
 need "GTF source"
 need "no flag is emitted"
 need "## Step 7"
-need "--dbsnp"
-need "--dbsnp_tbi"
-need "--known_indels"
-need "--known_indels_tbi"
-need "--skip_baserecalibration"
+need "dbsnp:"
+need "dbsnp_tbi:"
+need "known_indels:"
+need "known_indels_tbi:"
+need "skip_baserecalibration: true"
 need "does not skip base recalibration automatically"
 need "resolve the resource URLs at run time"
-need "--star_index"
+need "star_index"
 need "Store:"
 need "use the highest N unless the user asks otherwise"
 need "still apply the STAR index rule below"
@@ -72,25 +72,25 @@ need "{STAR_INDEX} is the same path"
 
 # --- Task 4
 need "## Step 8"
-need "--remove_duplicates"
-need "--star_twopass"
-need "--gatk_hc_call_conf"
-need "--gatk_vf_qd_filter"
-need "--gatk_vf_fs_filter"
-need "--gatk_vf_window_size"
-need "--gatk_vf_cluster_size"
-need "--skip_variantfiltration"
-need "--generate_gvcf"
-need "--bam_csi_index"
+need "remove_duplicates"
+need "star_twopass"
+need "gatk_hc_call_conf"
+need "gatk_vf_qd_filter"
+need "gatk_vf_fs_filter"
+need "gatk_vf_window_size"
+need "gatk_vf_cluster_size"
+need "skip_variantfiltration"
+need "generate_gvcf"
+need "bam_csi_index"
 need "## Step 9"
-need "--tools"
-need "--snpeff_cache"
-need "--vep_cache"
-need "--snpeff_db"
-need "--vep_genome"
-need "--vep_species"
-need "--vep_cache_version"
-need "--download_cache"
+need "tools"
+need "snpeff_cache"
+need "vep_cache"
+need "snpeff_db"
+need "vep_genome"
+need "vep_species"
+need "vep_cache_version"
+need "download_cache"
 need "needs internet from compute nodes"
 need "not a parameter in the rnavar schema"
 # --- end Task 4
@@ -105,22 +105,25 @@ need "'.*:GATK4_BASERECALIBRATOR'"
 need "'.*:GATK4_SPLITNCIGARREADS'"
 need "## Step 11"
 need "nextflow run nf-core/rnavar -r {VERSION}"
-need "--seq_platform illumina"
-need "--read_length {READ_LENGTH}"
-need "--star_index '{STAR_INDEX}'"
+need 'seq_platform: "illumina"'
+need "read_length: {READ_LENGTH}"
+need 'star_index: "{STAR_INDEX}"'
 need "## Step 12"
 need "build_star_index_rnavar"
 need "gunzip -c"
 need "## Step 13"
 need "## Notes for the assistant"
 need "read-only"
-need "never leave a bare"
-need "already ends in"
+need "{KNOWN_SITES_PARAMS}"
+need "{VARIANT_PARAMS}"
+need "{ANNOTATION_PARAMS}"
+need "numbers and booleans are unquoted"
+need "so that a numeric-looking title"
 need "{ENS_VERSION}"
 need "where \`{TOOL}\` is"
-forbid '{KNOWN_SITES_LINES}\'
-forbid '{VARIANT_LINES}\'
-forbid '{ANNOTATION_LINES}\'
+forbid "{KNOWN_SITES_LINES}"
+forbid "{VARIANT_LINES}"
+forbid "{ANNOTATION_LINES}"
 forbid "{VERSION_ENS}"
 # --- end Task 5
 
@@ -138,10 +141,10 @@ need "run \`bgzip\` on any plain \`.vcf\` before \`tabix -p vcf\`"
 need "1. these are lanes of the same sample"
 need "2. these are different samples"
 need "allow the deliberate duplicates"
-need "Emit \`--download_cache\` only if the user explicitly chooses it after being warned."
-forbid "Use \`--snpeff_cache\`, \`--vep_cache\` and \`--download_cache\` only."
+need "Write \`download_cache: true\` only if the user explicitly chooses it after being warned."
+forbid "Use \`snpeff_cache\`, \`vep_cache\` and \`download_cache\` only."
 need "--dependency=afterok:<helper_jobid> nf-core_rnavar_{VERSION}.sh"
-need "with \`--skip_baserecalibration\` these are the duplicate-marked BAMs"
+need "with \`skip_baserecalibration: true\` these are the duplicate-marked BAMs"
 need "check whether \`{SAMPLESHEET_CSV}\` already exists"
 need "check whether \`nf-core_rnavar_{VERSION}.sh\` already exists"
 need "1. overwrite · 2. choose another filename"
@@ -159,5 +162,21 @@ need "Mouse Genomes Project VCFs use Ensembl-style contig names"
 forbid "run the check once they are"
 forbid "If the Step 7 contig-name check found a mismatch and option (ii) was chosen"
 # --- end Contig-guard fix
+
+# --- Params-file rules
+# (1) The launch command must carry no rnavar --flag (params file only)
+launch=$(grep 'nextflow run nf-core/rnavar' "$SKILL" | head -1)
+if [ -z "$launch" ]; then echo "FAIL: no 'nextflow run nf-core/rnavar' launch line found"; fail=1
+elif echo "$launch" | grep -qE ' --[A-Za-z_]'; then echo "FAIL: launch line carries a --flag (must use -params-file only): $launch"; fail=1
+fi
+need "-params-file {PARAMS_YAML}"
+
+# (2) Every key in the params-file template (fenced yaml block) must be a schema parameter
+yaml_keys=$(awk '/^```yaml/{f=1;next} /^```/{f=0} f' "$SKILL" | grep -oE '^[a-z_0-9]+:' | tr -d ':' | sort -u)
+[ -n "$yaml_keys" ] || { echo "FAIL: no fenced yaml params template found"; fail=1; }
+for k in $yaml_keys; do
+  echo "$schema_names" | grep -qx -- "$k" || { echo "FAIL: params-file key not in rnavar schema: $k"; fail=1; }
+done
+# --- end Params-file rules
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1

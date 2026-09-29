@@ -78,13 +78,13 @@ find {CWD} -name "*.bam" -o -name "*.cram" | head -10
 
 ## Step 5 — Read length
 
-rnavar uses `--read_length` to set STAR's `sjdbOverhang` (`read_length − 1`), and its default is 150, which is wrong for most other libraries. **Always detect and always pass it.**
+rnavar uses the `read_length` parameter to set STAR's `sjdbOverhang` (`read_length − 1`), and its default is 150, which is wrong for most other libraries. **Always detect it and always write it to the params file.**
 
 ```bash
 zcat {FASTQ_FILE} | awk 'NR%4==2 {print length($0)}' | head -n 1000 | sort -n | uniq -c | sort -rn | head -3
 ```
 
-Run this on the first FASTQ of several different samples (up to 5). If lengths differ between samples, report the distribution, use the most common read length as `{READ_LENGTH}`, and warn that `sjdbOverhang` is tuned to it. For BAM/CRAM input, ask the user for the read length. Tell the user: "Detected read length {READ_LENGTH} bp → sjdbOverhang {READ_LENGTH − 1}." Store `{READ_LENGTH}`.
+Run this on the first FASTQ of several different samples (up to 5). If lengths differ between samples, report the distribution, use the most common read length as `{READ_LENGTH}`, and warn that `sjdbOverhang` is tuned to it. For BAM/CRAM input, ask the user for the read length. Tell the user: "Detected read length {READ_LENGTH} bp → sjdbOverhang {READ_LENGTH − 1}." Store `{READ_LENGTH}` (written as `read_length: {READ_LENGTH}` in Step 11).
 
 ---
 
@@ -118,7 +118,7 @@ Store: `{GENOME_DIR}` = `{genome_base}/{organism}/{assembly}_ens{version}`, `{FA
 - Present and non-empty (`SA`, `Genome`, `sjdbList.out.tab` exist): use it, `{STAR_INDEX}` = that path.
 - Missing: {STAR_INDEX} is the same path; the helper script (Step 12) builds it there and must run before the pipeline.
 
-`--star_index '{STAR_INDEX}'` is always passed so rnavar never rebuilds the index inside the workflow.
+The `star_index` key is always written to the params file (Step 11) so rnavar never rebuilds the index inside the workflow.
 
 ---
 
@@ -126,7 +126,7 @@ Store: `{GENOME_DIR}` = `{genome_base}/{organism}/{assembly}_ens{version}`, `{FA
 
 rnavar passes the known-sites files directly to GATK BaseRecalibrator and **does not skip base recalibration automatically** — if they are missing the run fails late, after alignment. So always resolve this now. Ask (numbered):
 
-1. **Use known-sites VCFs** — add `--dbsnp {DBSNP}`, `--dbsnp_tbi {DBSNP}.tbi`, `--known_indels {INDELS}`, `--known_indels_tbi {INDELS}.tbi`.
+1. **Use known-sites VCFs** — write the keys `dbsnp: "{DBSNP}"`, `dbsnp_tbi: "{DBSNP}.tbi"`, `known_indels: "{INDELS}"`, `known_indels_tbi: "{INDELS}.tbi"` (double-quoted paths).
    - Human: the GATK resource-bundle dbSNP and Mills/1000G known-indels VCFs for the matching assembly.
    - Mouse: Mouse Genomes Project variants (SNPs and indels) for GRCm39.
    - Check whether the files already exist under `{GENOME_DIR}/known_sites/`; if so reuse them and verify the `.tbi` indexes exist.
@@ -138,43 +138,43 @@ rnavar passes the known-sites files directly to GATK BaseRecalibrator and **does
      grep -m1 '^>' {FASTA_PATH} | cut -d' ' -f1 | sed 's/^>//'
      ```
      If the VCFs already exist, this check runs in the wizard now. If they are NOT downloaded yet, tell the user that the helper's contig guard performs the check after download (see `prepare_known_sites_{ASSEMBLY}.sh` in Step 12), renames the contigs when a fix is possible, and stops with a non-zero exit on an unresolvable mismatch, and that the pipeline must therefore be submitted with `sbatch --dependency=afterok:<helper_jobid>` (Step 11) so a failed guard prevents the pipeline from starting. Mouse Genomes Project VCFs use Ensembl-style contig names, so a rename is normally not needed for mouse, but the guard still runs. On a mismatch found in the wizard, either (i) prefer Ensembl-named variation VCFs that match the Ensembl FASTA, or (ii) rely on the helper's rename step (`bcftools annotate --rename-chrs`, see Step 12). The skill must never proceed with mismatched contigs; if neither fix is possible, offer option 2 (skip base recalibration) instead.
-2. **Skip base recalibration** — add `--skip_baserecalibration`. Tell the user the trade-off: base qualities are not recalibrated, which is slightly less accurate but is the right choice for organisms without a curated variant set, or to get a first result quickly.
+2. **Skip base recalibration** — write `skip_baserecalibration: true`. Tell the user the trade-off: base qualities are not recalibrated, which is slightly less accurate but is the right choice for organisms without a curated variant set, or to get a first result quickly.
 
-Store the result as `{KNOWN_SITES_LINES}`: the four `--dbsnp`/`--known_indels` lines for option 1, or the single line `--skip_baserecalibration \` for option 2.
+Store the result as `{KNOWN_SITES_PARAMS}`: the four key lines for option 1, or the single line `skip_baserecalibration: true` for option 2.
 
 ---
 
 ## Step 8 — Variant calling options
 
-Ask each as a numbered choice. **Omit any flag whose value equals the pipeline default** — only emit a flag when the user changes it.
+Ask each as a numbered choice. **Omit any key whose value equals the pipeline default** — only write a key to the params file when the user changes it. Every option below is written as a `key: value` line.
 
-**a) Duplicates.** 1. Keep duplicates marked (default — omit) · 2. Remove duplicates — add `--remove_duplicates`.
+**a) Duplicates.** 1. Keep duplicates marked (default — omit) · 2. Remove duplicates — write `remove_duplicates: true`.
 
-**b) STAR two-pass.** Two-pass mapping (`--star_twopass`) is on by default and recommended for calling; keep it. Emit `--star_twopass false` only if the user explicitly asks to disable it.
+**b) STAR two-pass.** Two-pass mapping (`star_twopass`) is on by default and recommended for calling; keep it. Write `star_twopass: false` only if the user explicitly asks to disable it.
 
-**c) Calling and filtering thresholds.** Ask: 1. Pipeline defaults (recommended; emits nothing) · 2. Customise. If customising, ask for each and emit only values that differ from the default: `--gatk_hc_call_conf` (default 20), `--gatk_vf_qd_filter` (2), `--gatk_vf_fs_filter` (30), `--gatk_vf_window_size` (35), `--gatk_vf_cluster_size` (3). Offer `--skip_variantfiltration` if the user wants unfiltered calls.
+**c) Calling and filtering thresholds.** Ask: 1. Pipeline defaults (recommended; writes nothing) · 2. Customise. If customising, ask for each and write only values that differ from the default: `gatk_hc_call_conf: <int>` (default 20), `gatk_vf_qd_filter: <number>` (2), `gatk_vf_fs_filter: <number>` (30), `gatk_vf_window_size: <int>` (35), `gatk_vf_cluster_size: <int>` (3). Offer `skip_variantfiltration: true` if the user wants unfiltered calls.
 
-**d) gVCFs.** Ask: "Will you jointly call variants across samples later?" 1. No (omit) · 2. Yes — add `--generate_gvcf`.
+**d) gVCFs.** Ask: "Will you jointly call variants across samples later?" 1. No (omit) · 2. Yes — write `generate_gvcf: true`.
 
-**e) Large chromosomes.** Only if the genome has chromosomes longer than 512 Mb (not human or mouse): add `--bam_csi_index` and tell the user it disables variant filtration.
+**e) Large chromosomes.** Only if the genome has chromosomes longer than 512 Mb (not human or mouse): write `bam_csi_index: true` and tell the user it disables variant filtration.
 
-**f) Save intermediates.** 1. No (omit) · 2. Yes — add `--save_align_intermeds` (recommended if the BAMs will feed allele-specific expression analysis).
+**f) Save intermediates.** 1. No (omit) · 2. Yes — write `save_align_intermeds: true` (recommended if the BAMs will feed allele-specific expression analysis).
 
-Collect the emitted lines as `{VARIANT_LINES}`.
+Collect the emitted key lines as `{VARIANT_PARAMS}`.
 
 ---
 
 ## Step 9 — Optional variant annotation
 
-Ask (numbered): 1. No annotation (default — omit `--tools`) · 2. SnpEff · 3. VEP · 4. Both merged. Emit `--tools snpeff`, `--tools vep`, or `--tools merge` respectively. Set `{ANNOTATION_TOOL}`.
+Ask (numbered): 1. No annotation (default — omit `tools`) · 2. SnpEff · 3. VEP · 4. Both merged. Write the key `tools: "snpeff"`, `tools: "vep"`, or `tools: "merge"` respectively. Set `{ANNOTATION_TOOL}`.
 
 If annotation is chosen, the caches must be on disk **before** submission:
-- Ask for existing cache directories → `--snpeff_cache '{DIR}'` and/or `--vep_cache '{DIR}'`, plus the matching identifiers: `--snpeff_db`, `--vep_genome`, `--vep_species`, `--vep_cache_version` (ask; do not guess versions).
-- If a cache is missing, do **not** silently add `--download_cache`: that option needs internet from compute nodes, which may not be available, and the job then stalls without a clear error. Instead tell the user this, and offer to generate a pre-download helper script (Step 12) that they run where internet is available.
+- Ask for existing cache directories → the keys `snpeff_cache: "{DIR}"` and/or `vep_cache: "{DIR}"`, plus the matching identifiers `snpeff_db`, `vep_genome`, `vep_species`, `vep_cache_version` (all quoted strings; ask; do not guess versions).
+- If a cache is missing, do **not** silently add `download_cache`: that option needs internet from compute nodes, which may not be available, and the job then stalls without a clear error. Instead tell the user this, and offer to generate a pre-download helper script (Step 12) that they run where internet is available.
 
-Note for the assistant: `annotation_cache` appears on the rnavar usage page but is not a parameter in the rnavar schema — never emit it. Emit `--download_cache` only if the user explicitly chooses it after being warned.
+Note for the assistant: `annotation_cache` appears on the rnavar usage page but is not a parameter in the rnavar schema — never emit it. Write `download_cache: true` only if the user explicitly chooses it after being warned.
 
-Collect the emitted lines as `{ANNOTATION_LINES}`.
+Collect the emitted key lines as `{ANNOTATION_PARAMS}`.
 
 ---
 
@@ -255,9 +255,30 @@ rnavar's own `base.config` defines label-based resources only (`process_medium` 
 
 ---
 
-## Step 11 — Generate the submission script
+## Step 11 — Generate the params file and the submission script
 
-Write `nf-core_rnavar_{VERSION}.sh` in `{CWD}` (first check whether `nf-core_rnavar_{VERSION}.sh` already exists and, if so, ask (numbered): 1. overwrite · 2. choose another filename — before writing):
+**Params file.** Set `{PARAMS_YAML}` = the samplesheet file name with `_samplesheet.csv` replaced by `_params.yaml`, in the same directory. Write it in `{CWD}` (first check whether `{PARAMS_YAML}` already exists and, if so, ask (numbered): 1. overwrite · 2. choose another filename — before writing) from this template:
+
+```yaml
+# nf-core/rnavar {VERSION} parameters — generated by /nfcore-rnavar-setup
+input: "{SAMPLESHEET_CSV}"
+outdir: "{OUTDIR}"
+multiqc_title: "{MULTIQC_TITLE}"
+fasta: "{FASTA_PATH}"
+gtf: "{GTF_PATH}"
+star_index: "{STAR_INDEX}"
+read_length: {READ_LENGTH}
+seq_platform: "illumina"
+{KNOWN_SITES_PARAMS}
+{VARIANT_PARAMS}
+{ANNOTATION_PARAMS}
+```
+
+Typing rules: paths and strings are double-quoted; numbers and booleans are unquoted. `multiqc_title` is always double-quoted so that a numeric-looking title (for example `260928`) stays a string instead of being parsed as a number. Each `{..._PARAMS}` placeholder is replaced by its complete `key: value` lines; if a placeholder is empty, delete that placeholder line entirely.
+
+**Why a params file:** under Nextflow 26.04, values passed as command-line options (a flag followed by a value) reach the nf-schema validator as strings (observed: `--read_length 151` was rejected as "Value is [string] but should be [number]"). A params file keeps the YAML types, so every pipeline parameter goes into it and the launch line carries only `-params-file`.
+
+**Submission script.** Write `nf-core_rnavar_{VERSION}.sh` in `{CWD}` (first check whether `nf-core_rnavar_{VERSION}.sh` already exists and, if so, ask (numbered): 1. overwrite · 2. choose another filename — before writing):
 
 ```bash
 #!/bin/bash
@@ -272,22 +293,12 @@ source /home/software/conda/miniconda3/bin/condainit
 conda activate {CONDA_ENV}
 module add singularity/3.10.4
 
-nextflow run nf-core/rnavar -r {VERSION} -c nextflow.config -profile slurm,singularity \
---input {SAMPLESHEET_CSV} \
---fasta {FASTA_PATH} \
---gtf {GTF_PATH} \
---star_index '{STAR_INDEX}' \
---read_length {READ_LENGTH} \
---seq_platform illumina \
-{KNOWN_SITES_LINES}
-{VARIANT_LINES}
-{ANNOTATION_LINES}
---multiqc_title {MULTIQC_TITLE} \
---outdir {OUTDIR}
+nextflow run nf-core/rnavar -r {VERSION} -c nextflow.config -profile slurm,singularity -params-file {PARAMS_YAML}
 ```
 
-Each `{..._LINES}` placeholder line is replaced by its complete lines, each of which already ends in ` \` (Steps 7-9 define them that way). If a placeholder is empty, delete that placeholder line entirely — never leave a bare `\` line and never produce a doubled `\\`. The last line, `--outdir {OUTDIR}`, has no trailing backslash. Show the full file and instruct:
+Show both files in full and instruct:
 ```
+Params file written: {PARAMS_YAML}
 Script written: nf-core_rnavar_{VERSION}.sh
 To submit:  sbatch nf-core_rnavar_{VERSION}.sh
 ```
@@ -330,7 +341,7 @@ fi
 ```
 MAP.txt is a two-column, tab-separated old-name/new-name file written by the helper for the direction that is needed (chr1<->1 ... chrM<->MT for the chromosomes present in the FASTA). If the VCF uses a `chr` prefix and the FASTA does not, it maps `chrN` to `N` for N = 1-22, X, Y and `chrM` to `MT`; if the FASTA uses a `chr` prefix and the VCF does not, it maps the reverse. The order is rename, then bgzip (`-O z`), then `tabix -p vcf`. The error message must name the VCF, both contig names and say that the pipeline must not be run; because the pipeline is submitted with `--dependency=afterok`, a failed guard stops it from starting.
 
-**`prepare_annotation_cache_{TOOL}.sh`** — only if the user has no cache: a script the user runs where internet is available, using the tool's own cache installer (`vep_install` or `snpEff download`) into the directory passed to `--vep_cache` / `--snpeff_cache`, where `{TOOL}` is `snpeff` or `vep`, matching `{ANNOTATION_TOOL}` (one script per chosen tool).
+**`prepare_annotation_cache_{TOOL}.sh`** — only if the user has no cache: a script the user runs where internet is available, using the tool's own cache installer (`vep_install` or `snpEff download`) into the directory given as `vep_cache` / `snpeff_cache`, where `{TOOL}` is `snpeff` or `vep`, matching `{ANNOTATION_TOOL}` (one script per chosen tool).
 
 ---
 
@@ -339,8 +350,8 @@ MAP.txt is a two-column, tab-separated old-name/new-name file written by the hel
 Print where the results will be, so later analyses can find them:
 ```
 Outputs under {OUTDIR}/ :
-  variant_calling/   filtered VCFs (per sample) and, with --generate_gvcf, gVCFs
-  preprocessing/     recalibrated BAMs; with `--skip_baserecalibration` these are the duplicate-marked BAMs
+  variant_calling/   filtered VCFs (per sample) and, with `generate_gvcf: true`, gVCFs
+  preprocessing/     recalibrated BAMs; with `skip_baserecalibration: true` these are the duplicate-marked BAMs
   multiqc/           MultiQC report
 These VCFs and BAMs are the inputs expected by the ase-pipeline skill (allele-specific expression).
 ```
@@ -354,9 +365,10 @@ Before printing, confirm the actual directory names against the pipeline's `docs
 - **Always present finite-choice questions as numbered lists.** Use open questions only when no reasonable discrete set exists (email, conda env, custom paths).
 - Never run heavy computation on the login node; all work through `sbatch`.
 - Raw FASTQ/BAM files are read-only; never modify them.
-- Omit flags that equal the pipeline default.
+- Omit params-file keys whose value equals the pipeline default.
+- Never pass rnavar parameters on the `nextflow run` command line — always the params file.
 - Never overwrite an existing `nextflow.config`.
-- `--read_length` is always emitted; a STAR index made for a different read length is never reused.
-- Known sites are never assumed — either supply all four files or `--skip_baserecalibration`.
+- `read_length` is always written to the params file; a STAR index made for a different read length is never reused.
+- Known sites are never assumed — either supply all four files or `skip_baserecalibration: true`.
 - Never embed a download URL that was not verified in this session.
 - Not rnavar parameters, never emit: `annotation_cache`, `gencode`, `strandedness`.
