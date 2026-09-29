@@ -135,7 +135,31 @@ need "rho estimate at the upper boundary"
 need "frac_\", alt_label"
 need "acat <- function(p) {   # Cauchy combination with equal weights; p is capped"
 # --- end Task 6 fix
-
+# --- Task 7 (Step 15, run scripts, submission chain, summary page, README, registration); each string is absent from the pre-Task-7 skill
+# --dependency and --parsable are allowlisted above: they are sbatch options (job chaining), not STAR/GATK options.
+need "## Step 15"
+need "_summary_report.html"
+need "relative links"
+need '$S/run_01_import_qc.sh'
+need '$S/run_02_imbalance.sh'
+need '--dependency=afterok:$R1'
+need "-n 8 --mem=16G -t 1:00:00"
+need "knit_root_dir = '{CWD}'"
+need "summary_numbers.tsv"
+need "summary_numbers <- summary_tbl"
+need "bias_flag = ref_bias_flagged"
+need "Verify before finishing"
+need "shown prominently"
+need "Alignments whose vW tag is 2-7 were removed"
+need "## Notes for the assistant"
+forbid "-n 2 --mem=8G -t 0:30:00"
+forbid "-n 2 --mem=16G"
+# README files are repo files, not the skill text
+HERE=$(dirname "$0")
+grep -qF "Validation status" "$HERE/../README.md" 2>/dev/null || { echo "FAIL: ase-pipeline/README.md missing or lacks: Validation status"; fail=1; }
+grep -qF "PENDING" "$HERE/../README.md" 2>/dev/null || { echo "FAIL: ase-pipeline/README.md must mark the end-to-end acceptance run as PENDING"; fail=1; }
+grep -q "/ase-pipeline" "$HERE/../../README.md" 2>/dev/null || { echo "FAIL: root README.md has no /ase-pipeline row"; fail=1; }
+# --- end Task 7
 
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1

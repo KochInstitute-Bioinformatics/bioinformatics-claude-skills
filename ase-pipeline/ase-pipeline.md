@@ -771,12 +771,24 @@ sessionInfo()
 ```
 ````
 
-Render it as an `sbatch -p bcc` job from the container (`run_01_import_qc.sh`, `-n 2 --mem=8G -t 0:30:00`, output under `{RESULTS_DIR}/logs`):
+Render each Rmd from its own `sbatch -p bcc` script, written to `{RESULTS_DIR}/scripts/` (like every other script of this skill). `run_01_import_qc.sh` is the template; `run_02_imbalance.sh` (Step 13) is identical except for the job name, the log name and the Rmd file. Requests: `-n 8 --mem=16G -t 1:00:00`. The log goes to the shared filesystem under `{RESULTS_DIR}/logs` (never `/tmp`, which is node-local). `{GTF_DIR}` is the directory of `{GTF_PATH}`; bind each directory once, and skip `{GTF_DIR}` when it is inside `{CWD}`:
 
 ```bash
-module add singularity/3.10.4 || { echo "ERROR: cannot load singularity" >&2; exit 1; }
-singularity exec --bind {CWD} {R_SIF} Rscript -e 'rmarkdown::render("{CWD}/{TODAY_YYMMDD}_{WD_NAME}_01_import_qc.Rmd", output_dir = "{RESULTS_DIR}")' || { echo "ERROR: Rmd 01 failed" >&2; exit 1; }
+#!/bin/bash
+#SBATCH -J ase_01_import_qc
+#SBATCH -N 1 -p bcc
+#SBATCH -n 8 --mem=16G -t 1:00:00
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user={USER_EMAIL}
+#SBATCH -o {RESULTS_DIR}/logs/run_01_import_qc_%j.out
+set -uo pipefail
+module add singularity/3.10.4 || exit 1
+singularity exec --bind {CWD},{GTF_DIR} {R_SIF} \
+  Rscript -e "rmarkdown::render('{CWD}/{TODAY_YYMMDD}_{WD_NAME}_01_import_qc.Rmd', output_dir = '{RESULTS_DIR}', knit_root_dir = '{CWD}')" \
+  || { echo "ERROR: Rmd 01 failed" >&2; exit 1; }
 ```
+
+`{RESULTS_DIR}` is inside `{CWD}`, so one bind covers the Rmd, the count tables and the output. The stage HTML is written to `{RESULTS_DIR}/{TODAY_YYMMDD}_{WD_NAME}_01_import_qc.html`. The full submission order (with dependencies) is in Step 15.
 
 If the job stops with "sample(s) have no usable ASE count table", show the listed samples to the user; do not delete anything, and do not work around it by globbing.
 
@@ -1022,11 +1034,21 @@ openxlsx::saveWorkbook(wb, xlsx_file, overwrite = TRUE)
 saveRDS(list(snp = snp, gene = gene, summary = summary_tbl, constants = ck$constants),
         file.path(RESULTS_DIR, "ase_imbalance_checkpoint.rds"))
 cat("wrote", xlsx_file, "\n")
+# headline numbers per sample for the summary page (Step 15); every value comes from summary_tbl and bias above
+summary_numbers <- summary_tbl %>%
+  dplyr::left_join(dplyr::select(bias, sample, filtered_sites = n_sites), by = "sample") %>%
+  dplyr::left_join(unique(ck$samples[, c("sample", "condition")]), by = "sample") %>%
+  dplyr::transmute(sample, condition, filtered_sites, sig_snps = sig_sites, genes_tested, sig_genes,
+                   rho_used, rho_h0, mean_ref_frac, bias_flag = ref_bias_flagged)
+write.table(summary_numbers, file.path(RESULTS_DIR, "summary_numbers.tsv"), sep = "\t", quote = FALSE, row.names = FALSE)
+cat("wrote", file.path(RESULTS_DIR, "summary_numbers.tsv"), "\n")
 sessionInfo()
 ```
 ````
 
-Render it with `run_02_imbalance.sh` (same pattern as `run_01_import_qc.sh`, Rmd 02 file name, `-n 2 --mem=16G -t 1:00:00`, submitted with `sbatch -p bcc --dependency=afterok:<Rmd 01 job>`).
+Render it with `{RESULTS_DIR}/scripts/run_02_imbalance.sh`: the same script as `run_01_import_qc.sh` (Step 12) with job name `ase_02_imbalance`, log `run_02_imbalance_%j.out`, the Rmd 02 file name and the same `-n 8 --mem=16G -t 1:00:00` (the per-sample tests are independent, so extra CPUs are available to the R session). Submission order and dependencies: Step 15.
+
+Besides the xlsx, Rmd 02 writes `{RESULTS_DIR}/summary_numbers.tsv` (one row per sample, tab-separated, taken from the Summary table above), so the summary page of Step 15 can be written without starting R.
 
 ---
 
@@ -1105,3 +1127,59 @@ bb_estimate_rho_gene <- function(x, n, gene) {   # c(free, corrected): rho with 
 - The unit tests check the null size and uniformity of the p-values, power, recovery of `rho` (including `rho` near 0), the edge cases (`n = 0`, `x = 0`, `x = n`) and `acat`. Run them from the repository root with `singularity exec --bind /net/bmc-lab3 <bulkrnaseq sif> Rscript ase-pipeline/tests/r/test_ase_stats.R ase-pipeline/ase-pipeline.md` inside an `sbatch -p bcc` job.
 - **F1 gene level uses `bb_estimate_rho_gene` and `bb_gene_lrt`, not summed counts.** `bb_estimate_rho` (H0, p = 0.5 everywhere) treats the between-SNP spread caused by true imbalance as overdispersion, so with many imbalanced genes it is inflated (in the unit test about four times the true value), and applying it to counts summed over a gene multiplies the variance by about `1 + (n - 1) * rho`. `bb_estimate_rho_gene` maximises the likelihood with a free mean for every gene (genes with at least 2 SNPs; `NA` below 5 such genes) and returns `c(free, corrected)`. The free estimate is biased low: a free mean per gene shrinks the whole variance factor `1 + (n - 1) * rho` by `(k - 1) / k` (Neyman-Scott), which for 4-SNP genes gives 0.0115 for a true 0.02. The corrected value undoes that shrinkage, `rho_corrected = cf * rho_free + (cf - 1) / m` with `cf = sum(k) / sum(k - 1)` and `m` the mean of `n - 1` (0.021 in the same test). Rmd 02 then uses `rho_gene = max(rho_corrected, RHO_MIN)` for the gene tests (`RHO_MIN`, default 0.01, from Step 8), so a noisy or zero estimate can never make them anti-conservative. `bb_gene_lrt` tests `p = 0.5` against a shared free `p` per gene on the SNP-level counts and returns `phat`. Outbred mode keeps `bb_estimate_rho`, `bb_pvalue` and `acat`.
 - Boundary handling: both `rho` estimators return exactly 0 when the optimum sits at the lower boundary (or below 1e-4), and emit a warning when it sits at the upper boundary; Rmd 02 prints such warnings per sample and writes them to the Summary (`rho_warning`). `bb_pvalue` returns `NA` for `x` below 0, above `n`, non-integer or missing.
+
+---
+
+## Step 15 — Submission order and summary report
+
+### Submission order (one block, every job `sbatch -p bcc`)
+
+Write all scripts to `{RESULTS_DIR}/scripts/` (Steps 10-13), run `mkdir -p {RESULTS_DIR}/logs {RESULTS_DIR}/tmp`, then submit the whole chain from `{CWD}` with `--parsable` job ids and `--dependency=afterok` so that no job starts before its inputs exist and none starts after a failure. Show this block to the user, fill in the mode branch and the optional mouse helper, and run it once:
+
+```bash
+S={RESULTS_DIR}/scripts
+# 0. (F1 with the mouse helper only) array of chromosomes -> concat, then prep depends on the concat job
+DEP=""
+X=$(sbatch -p bcc --parsable $S/extract_mgp_parental_vcf.sh)
+C=$(sbatch -p bcc --parsable --dependency=afterok:$X $S/concat_mgp_parental_vcf.sh)
+DEP="--dependency=afterok:$C"
+# 1. prep job: F1 = prep_f1_reference.sh, outbred = prep_genotypes.sh (DEP stays empty without the mouse helper)
+P=$(sbatch -p bcc --parsable $DEP $S/prep_f1_reference.sh)
+# 2. per-sample array job: F1 = align_count_f1.sh, outbred = align_wasp_count.sh
+A=$(sbatch -p bcc --parsable --dependency=afterok:$P $S/align_count_f1.sh)
+# 3. Rmd 01 (import, filters, reference-bias QC) after every array task succeeded
+R1=$(sbatch -p bcc --parsable --dependency=afterok:$A $S/run_01_import_qc.sh)
+# 4. Rmd 02 (per-sample imbalance, xlsx, summary_numbers.tsv) after Rmd 01
+R2=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_02_imbalance.sh)
+echo "prep $P, array $A, Rmd01 $R1, Rmd02 $R2"
+```
+
+Without the mouse helper the `X` and `C` lines and the second `DEP=` line are omitted (`DEP` stays empty); in outbred mode the prep and array scripts are `prep_genotypes.sh` and `align_wasp_count.sh`. `afterok` on the array job id means every array task must succeed; if one fails, Rmd 01 stays pending with `DependencyNeverSatisfied`: cancel it, fix the failed sample (its log is under `{RESULTS_DIR}/logs`), re-submit the failed task, then submit Rmd 01 and Rmd 02 again with the same dependencies. Wait with a bounded loop (for example `squeue -h -j $R2` every 60 s, at most 4 h), read the logs, and on a failure show the error line and stop.
+
+### Summary report `{WD_NAME}_summary_report.html`
+
+After Rmd 02 has finished, write the standalone page `{RESULTS_DIR}/{WD_NAME}_summary_report.html`. It needs **no R** and no external dependency: inline CSS only, no scripts, no fonts, no images from a URL. Read `{RESULTS_DIR}/summary_numbers.tsv` with `cat` (columns: `sample`, `condition`, `filtered_sites`, `sig_snps`, `genes_tested`, `sig_genes`, `rho_used`, `rho_h0`, `mean_ref_frac`, `bias_flag`), and write the HTML yourself; never open R on the login node to produce it. The page contains:
+
+- a header with the project title, `{MODE}`, the strain names (F1: REF = `{STRAIN_A}`, ALT = `{STRAIN_B}`) or REF/ALT, the constants of Step 8 and the date;
+- the **reference-bias flags, shown prominently** at the top: one box that lists every sample with `bias_flag` = `TRUE` (with its `mean_ref_frac`) in a warning colour and the sentence "read the allelic ratios of these samples with caution", or "no sample is flagged" when none is; the per-sample table repeats the flag in its own column, with the same colour;
+- a per-sample table from `summary_numbers.tsv`: sample, condition, filtered sites, significant SNPs, genes tested, significant genes, `rho_used` (outbred: also `rho_h0`), mean REF fraction, bias flag;
+- outbred only: the WASP note, "Alignments whose vW tag is 2-7 were removed before counting; Rmd 01 shows how many were removed and from which allele. WASP does not promise less bias." Outbred gene calls are also labelled "unphased, no direction";
+- **relative links** (bare file names, no URL prefix and no absolute path, so the page works from the local filesystem and over a web mount as long as it sits in `{RESULTS_DIR}` beside the files) as cards to: `{TODAY_YYMMDD}_{WD_NAME}_01_import_qc.html`, `{TODAY_YYMMDD}_{WD_NAME}_02_imbalance.html`, `{TODAY_YYMMDD}_{WD_NAME}_ASE_imbalance.xlsx`, and the two figure PDFs `{TODAY_YYMMDD}_{WD_NAME}_ASE_sites_vs_depth.pdf` and `{TODAY_YYMMDD}_{WD_NAME}_ASE_genes.pdf`.
+
+**Verify before finishing.** Extract every `href` of the page and check with a shell loop that each target exists next to the page (`grep -o 'href="[^"]*"' ... | sed ... | while read f; do [ -s "{RESULTS_DIR}/$f" ] || echo "MISSING $f"; done`); also check that no `href` or `src` starts with `http` or `/`. Fix the page (or report the missing file) until nothing is printed. Then tell the user the paths of the summary page, the two stage HTML files, the xlsx and `summary_numbers.tsv`.
+
+---
+
+## Notes for the assistant
+
+- **Containers, not modules.** Tools come from the cached Singularity images of Step 2; the only module ever loaded is `singularity/3.10.4`, always with a checked `|| exit 1`. R exists only in the `bulkrnaseq` image (`{R_SIF}`).
+- **No R and no heavy work on the login node.** STAR, GATK, Picard, samtools, bcftools, R, the unit tests and the Rmd renders all run as `sbatch -p bcc` jobs; the login node only writes text, reads small files, submits and waits. The summary page is written from `summary_numbers.tsv`, not from R.
+- **`/tmp` is node-local.** Logs, temporary files (`--tmp-dir`, Picard `TMP_DIR`, `_STARtmp`) and every output live under `{RESULTS_DIR}` on the shared filesystem; create `{RESULTS_DIR}/logs` before submitting because `sbatch` silently drops output when the `-o` directory is missing.
+- **Every job is submitted with `sbatch -p bcc`**, and chained jobs use `--parsable` and `--dependency=afterok`.
+- **Unverified URLs are never embedded.** The five container URLs of Step 2 were verified; Ensembl and Mouse Genomes Project locations are resolved at run time and shown to the user first, never typed from memory.
+- **Duplicates are marked, not removed** (`REMOVE_DUPLICATES=false`); ASEReadCounter skips flagged duplicates itself. The read group is written by STAR (`--outSAMattrRGline`) and the het VCF must be bgzipped, tabix-indexed and carry a genotype column, otherwise ASEReadCounter silently counts nothing (the empty-table guard catches it).
+- **Orientation.** F1: REF = strain A (the reference assembly's allele) and ALT = strain B; every table and figure says which strain is "higher". Outbred: REF and ALT, gene calls "unphased, no direction".
+- **Honesty.** The reference-bias flag is printed next to every ratio table and figure and shown at the top of the summary page. The flag is a screen, not a test. No claim of reduced bias is made for masking or WASP.
+- **Statistics block.** The code between `# --- ase-stats-begin` and `# --- ase-stats-end` (Step 14) is pasted verbatim into Rmd 02; never edit it inside a generated Rmd, because the unit tests check exactly that text.
+- **Stage 1 only.** Reciprocal F1, differential ASE and phASER are later stages; say "available in a later stage" and continue with the per-sample analysis.
+- **Never leave a `{...}` placeholder** in a generated script or Rmd, never push to a remote, and never modify raw FASTQ, BAM or VCF inputs.
