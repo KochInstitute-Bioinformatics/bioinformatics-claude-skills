@@ -97,11 +97,16 @@ What has been exercised:
 - **Script smoke tests**: one F1 sample and one outbred sample run through the generated scripts.
 - **Unit-tested statistics**: null size of the F1 gene-level test 0.047-0.056 pooled (worst seed 0.064) and power 0.99; outbred path (trimmed rho, per-SNP test, ACAT per gene) on unphased simulated data: null gene size 0.003-0.053 pooled across six scenarios (worst seed 0.083), power 1.00 / 0.88 for planted 0.85 / 0.70-0.30 genes on binomial data where the naive H0 rho gave 0; plus rho recovery, edge cases and ACAT (`tests/r/test_ase_stats.R`; needs a job with at least 8 CPUs).
 - **Rmd rendering tests** on perturbed copies of one synthetic sample (F1 and outbred, Rmd 01 and Rmd 02), including the `summary_numbers.tsv` output.
-- **End-to-end synthetic acceptance run** (2026-09-29, both modes, whole Step 15 chain): F1 passed (24 of 24 planted gene x sample tests with the correct direction, 0 of 42 null false positives). Outbred ran end to end but detected 0 of 16 planted genes because the naive H0 rho was inflated by the imbalance itself; the trimmed outbred rho fixes that: re-rendering Rmd 02 on the same count tables detects 10 of 16 (0 of 28 null false positives). The same fix round added the pre-WASP `unfiltered.table`, the YYYY-MM-DD results directory and the Picard fetch in the prep job.
+- **End-to-end synthetic acceptance run** (2026-09-29, DONE): a fresh run of the installed skill in both modes, the whole Step 15 chain (prep -> per-sample array -> Rmd 01 -> Rmd 02 with `afterok`); every job exited 0.
+  - F1: 24 of 24 planted gene x sample tests significant with the correct direction, 0 of 42 null false positives.
+  - Outbred: the WASP-filtered null-gene REF fraction was within `max(0.03, 3 x SE)` of 0.5 in 4 of 4 samples; planted-gene detection 10 of 16 with 0 of 28 null false positives (unphased, so direction is not applicable).
+  - The unfiltered (pre-WASP) outbred null REF fraction is reported for information, not as a gate: 2 of 4 samples exceed the tolerance before WASP (0.547, 0.546), and WASP removes the excess.
+  - Step 15 summary pages were written for both projects; the href-existence and no-`http` checks passed.
+  - History: the first acceptance run detected 0 of 16 planted outbred genes with the naive H0 estimator, which led to the robust estimator (`bb_estimate_rho_trim`).
 
-What is **PENDING**: a full end-to-end re-run of the Step 15 chain with the fixed skill (new prep and array scripts included); the fixes were verified on copies of the acceptance outputs (Rmd renders, and the new unfiltered ASEReadCounter block run on the acceptance STAR BAMs), not by a fresh chain.
+Limits of the outbred result: per-sample power is 10 of 16. The `RHO_MIN` floor caps detection at about 12 of 16 on these data, and two samples have only 27-29 sites. With real overdispersion and many imbalanced sites the robust dispersion estimate stays too high, and power for moderate imbalance drops.
 
-What was **never run**: the mouse helper scripts `extract_mgp_parental_vcf.sh` and `concat_mgp_parental_vcf.sh` were never submitted (the acceptance run used a user parental VCF), and the summary page has not been regenerated with the new `summary_numbers.tsv` columns.
+What was **not exercised**: real biological data, Stage 2 and Stage 3 analyses, the Mouse Genomes Project helper scripts end to end (`extract_mgp_parental_vcf.sh` and `concat_mgp_parental_vcf.sh`; the acceptance run used a user parental VCF), the standard Ensembl-style reference folder (the run used a custom FASTA and GTF), and SLURM mail notification options.
 
 **Nothing on real biological data has been run.**
 

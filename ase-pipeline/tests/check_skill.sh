@@ -161,10 +161,10 @@ forbid "-n 2 --mem=16G"
 # README files are repo files, not the skill text
 HERE=$(dirname "$0")
 grep -qF "Validation status" "$HERE/../README.md" 2>/dev/null || { echo "FAIL: ase-pipeline/README.md missing or lacks: Validation status"; fail=1; }
-grep -qF "PENDING" "$HERE/../README.md" 2>/dev/null || { echo "FAIL: ase-pipeline/README.md must mark the end-to-end acceptance run as PENDING"; fail=1; }
+grep -qF "acceptance run" "$HERE/../README.md" 2>/dev/null && grep -qF "(2026-09-29, DONE)" "$HERE/../README.md" || { echo "FAIL: ase-pipeline/README.md must record the end-to-end acceptance run as done"; fail=1; }
 grep -q "/ase-pipeline" "$HERE/../../README.md" 2>/dev/null || { echo "FAIL: root README.md has no /ase-pipeline row"; fail=1; }
 grep -qF "Nothing on real biological data" "$HERE/../README.md" 2>/dev/null || { echo "FAIL: ase-pipeline/README.md must state: Nothing on real biological data"; fail=1; }
-grep -qF "never submitted" "$HERE/../README.md" 2>/dev/null || { echo "FAIL: ase-pipeline/README.md must state which scripts were never submitted"; fail=1; }
+grep -qF "not exercised" "$HERE/../README.md" 2>/dev/null && grep -qF "extract_mgp_parental_vcf.sh" "$HERE/../README.md" || { echo "FAIL: ase-pipeline/README.md must state what was not exercised (incl. the mouse helper)"; fail=1; }
 # --- end Task 7
 # --- Task 8 fix (acceptance-run defects D1-D7); each string is absent from the pre-fix skill (f20ba79)
 # D1: outbred rho from the central sites with a truncation-corrected likelihood; the naive H0 fit is a diagnostic only
