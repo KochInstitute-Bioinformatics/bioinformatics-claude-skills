@@ -98,6 +98,10 @@ need "extract_mgp_parental_vcf.sh"
 need "bcftools concat"
 forbid "--outSAMattributes All"
 forbid "module add bcftools"
+need "concat_mgp_parental_vcf.sh"
+need "rm -f \"\$TABLE\" \"\$STATS\""
+need "faidx -n 60"
+need "soft-masked"
 # --- end Task 5
 
 

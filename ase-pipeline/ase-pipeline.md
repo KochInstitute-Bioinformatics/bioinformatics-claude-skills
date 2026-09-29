@@ -227,7 +227,8 @@ Write every script below into `{RESULTS_DIR}/scripts/` (create `{RESULTS_DIR}/sc
 |---|---|---|
 | `prep_f1_reference.sh` | F1 | third-allele masked genome, het-sites VCF, counting reference files, STAR index |
 | `prep_genotypes.sh` | outbred | per-individual heterozygous VCFs, counting reference files, STAR index |
-| `extract_mgp_parental_vcf.sh` | F1, optional | mouse helper: builds `{PARENTAL_VCF}` (array job plus a dependent concat job) |
+| `extract_mgp_parental_vcf.sh` | F1, optional | mouse helper: builds `{PARENTAL_VCF}` (array job plus a separate dependent concat job, `concat_mgp_parental_vcf.sh`) |
+| `concat_mgp_parental_vcf.sh` | F1, optional | dependent single job that concatenates the per-chromosome results (no array header) |
 | `align_count_f1.sh`, `align_wasp_count.sh` | F1 / outbred | per-sample array job (Step 11) |
 
 ### Shared block C — container wrappers (start of every script, after the `#SBATCH` header and `set -uo pipefail`)
@@ -323,13 +324,21 @@ bgzip -c "$REF_DIR/masked_sites.vcf" > "$REF_DIR/masked_sites.vcf.gz" && tabix -
 bcftools consensus -H A -f "$FASTA" "$REF_DIR/masked_sites.vcf.gz" > "$REF_DIR/masked.fa" \
   || { echo "ERROR: bcftools consensus failed" >&2; exit 1; }
 
-# 4. VERIFY the masked genome: it must differ from the FASTA at exactly the masked sites, and at every
-#    site the masked base must be the chosen third allele (cmp -l lists differing bytes; the .fai
-#    layouts must be identical so that a byte offset maps to one contig position)
+# 4. VERIFY the masked genome: it must differ from the original FASTA at exactly the masked sites, and at
+#    every site the masked base must be the chosen third allele. Both FASTAs are first normalised (bare-name
+#    headers, 60 bases per line) so that any line width or descriptive header (Ensembl, NCBI, UCSC) works,
+#    then cmp -l lists the differing bytes and the normalised .fai maps a byte offset to contig:position.
+#    FASTAs that are soft-masked (lowercase blocks) work too: the octal map below accepts both cases.
 samtools faidx "$REF_DIR/masked.fa" || { echo "ERROR: faidx failed for masked.fa" >&2; exit 1; }
-cmp -s <(cut -f1-5 "$FASTA.fai") <(cut -f1-5 "$REF_DIR/masked.fa.fai") \
-  || { echo "ERROR: masked.fa has a different contig layout from $FASTA" >&2; exit 1; }
-VERIFY=$(cmp -l "$FASTA" "$REF_DIR/masked.fa" 2> "$REF_DIR/cmp.err" | awk -v FAI="$FASTA.fai" -v SITES="$REF_DIR/masked_sites.vcf" '
+NORM_A="$REF_DIR/verify_original.fa"; NORM_B="$REF_DIR/verify_masked.fa"
+samtools faidx -n 60 -o "$NORM_A" "$FASTA" $(cut -f1 "$FASTA.fai") \
+  || { echo "ERROR: cannot normalise $FASTA" >&2; exit 1; }
+samtools faidx -n 60 -o "$NORM_B" "$REF_DIR/masked.fa" $(cut -f1 "$REF_DIR/masked.fa.fai") \
+  || { echo "ERROR: cannot normalise masked.fa" >&2; exit 1; }
+samtools faidx "$NORM_A" && samtools faidx "$NORM_B" || { echo "ERROR: faidx failed on the normalised FASTAs" >&2; exit 1; }
+cmp -s <(cut -f1-5 "$NORM_A.fai") <(cut -f1-5 "$NORM_B.fai") \
+  || { echo "ERROR: masked.fa has different contigs or lengths from $FASTA" >&2; exit 1; }
+VERIFY=$(cmp -l "$NORM_A" "$NORM_B" 2> "$REF_DIR/cmp.err" | awk -v FAI="$NORM_A.fai" -v SITES="$REF_DIR/masked_sites.vcf" '
   BEGIN { nc=0
     while ((getline line < FAI) > 0) { split(line, f, "\t"); nc++; name[nc]=f[1]; off[nc]=f[3]+0; lb[nc]=f[4]+0; lw[nc]=f[5]+0 }
     while ((getline line < SITES) > 0) { if (line ~ /^#/) continue; split(line, f, "\t"); k=f[1] ":" f[2]; if (!(k in want)) nwant++; want[k]=f[5]; nrec++ }
@@ -344,6 +353,7 @@ echo "Masked genome check: differing positions=$N_DIFF, matching the third allel
 if grep -q EOF "$REF_DIR/cmp.err" || [ "$N_DIFF" -ne "$N_REC" ] || [ "$N_WANT" -ne "$N_REC" ] || [ "$N_OK" -ne "$N_DIFF" ] || [ "$N_BAD" -ne 0 ]; then
   echo "ERROR: masked.fa does not match the third allele masking of the $N_REC sites; stopping" >&2; exit 1
 fi
+rm -f "$NORM_A" "$NORM_A.fai" "$NORM_B" "$NORM_B.fai"
 
 # 5. het-sites VCF for ASEReadCounter: single sample F1, genotype 0/1 at every parental SNP
 #    (bgzipped + tabix; a sites-only VCF gives 0 rows and homozygous sites are skipped)
@@ -407,17 +417,7 @@ The release is GRCm39 and its contigs are `1`, `2`, ... (no `chr` prefix), so th
 ```bash
 URL="https://ftp.ebi.ac.uk/pub/databases/mousegenomes/REL-2112-v8-SNPs_Indels/mgp_REL2021_snps.vcf.gz"
 A="{STRAIN_A}"; B="{STRAIN_B}"
-MGP_DIR="{RESULTS_DIR}/mgp"; OUT_VCF="{PARENTAL_VCF}"      # {RESULTS_DIR}/mgp/parental_{STRAIN_A}_{STRAIN_B}.vcf.gz
-if [ "${1:-}" = "concat" ]; then                            # final dependent job: sbatch --dependency=afterok:<array_jobid> extract_mgp_parental_vcf.sh concat
-  : > "$MGP_DIR/concat_list.txt"
-  while read -r CHR; do
-    [ -s "$MGP_DIR/$CHR.parental.vcf.gz.tbi" ] || { echo "ERROR: missing per-chromosome result for $CHR" >&2; exit 1; }
-    echo "$MGP_DIR/$CHR.parental.vcf.gz" >> "$MGP_DIR/concat_list.txt"
-  done < "$MGP_DIR/chromosomes.txt"
-  bcftools concat -f "$MGP_DIR/concat_list.txt" -O z -o "$OUT_VCF" && tabix -f -p vcf "$OUT_VCF" \
-    || { echo "ERROR: bcftools concat failed" >&2; exit 1; }
-  echo "Parental VCF: $(bcftools view -H "$OUT_VCF" | wc -l) sites"; exit 0
-fi
+MGP_DIR="{RESULTS_DIR}/mgp"; OUT_VCF="{PARENTAL_VCF}"      # {RESULTS_DIR}/mgp/parental_{STRAIN_A}_{STRAIN_B}.vcf.gz (written by the concat job)
 CHR=$(sed -n "${SLURM_ARRAY_TASK_ID}p" "$MGP_DIR/chromosomes.txt")
 [ -n "$CHR" ] || { echo "ERROR: no chromosome for array task $SLURM_ARRAY_TASK_ID" >&2; exit 1; }
 # contig guard: first contig of the MGP header versus first FASTA header
@@ -439,7 +439,25 @@ bcftools view -G -i "FMT/FI[$IA]=1 && FMT/FI[$IB]=1 && GT[$IA]=\"0/0\" && GT[$IB
 echo "Chromosome $CHR: $(bcftools view -H "$RAW" | wc -l) PASS SNPs, $(bcftools view -H "$MGP_DIR/$CHR.parental.vcf.gz" | wc -l) kept"
 ```
 
-Submit: `J=$(sbatch -p bcc --parsable extract_mgp_parental_vcf.sh)`, then `sbatch -p bcc --dependency=afterok:$J extract_mgp_parental_vcf.sh concat`, and `prep_f1_reference.sh` only after the concat job (`--dependency=afterok:<concat_jobid>`). Sites where strain A carries the alternative allele (the reference genome is C57BL/6J, so a substrain can differ from it) are dropped: the masked reference and the REF = strain A convention require the FASTA base to be the strain A allele.
+Submit the array job first, then the concat job as its own script (`concat_mgp_parental_vcf.sh` has no `--array` header, so exactly one task runs and nothing races on `{PARENTAL_VCF}`): `J=$(sbatch -p bcc --parsable extract_mgp_parental_vcf.sh)`, `C=$(sbatch -p bcc --parsable --dependency=afterok:$J concat_mgp_parental_vcf.sh)`, and `prep_f1_reference.sh` only after the concat job (`--dependency=afterok:$C`).
+
+**`concat_mgp_parental_vcf.sh`** header: `#SBATCH -N 1 -p bcc`, `#SBATCH -n 1 --mem=4G -t 1:00:00`, mail lines, `#SBATCH -o {RESULTS_DIR}/logs/concat_mgp_%j.out`, `set -uo pipefail`, block C (BCFTOOLS only, plus `add_bind "{RESULTS_DIR}"`), then:
+
+```bash
+MGP_DIR="{RESULTS_DIR}/mgp"; OUT_VCF="{PARENTAL_VCF}"
+: > "$MGP_DIR/concat_list.txt"
+while read -r CHR; do
+  [ -s "$MGP_DIR/$CHR.parental.vcf.gz.tbi" ] || { echo "ERROR: missing per-chromosome result for $CHR" >&2; exit 1; }
+  echo "$MGP_DIR/$CHR.parental.vcf.gz" >> "$MGP_DIR/concat_list.txt"
+done < "$MGP_DIR/chromosomes.txt"
+bcftools concat -f "$MGP_DIR/concat_list.txt" -O z -o "$OUT_VCF" && tabix -f -p vcf "$OUT_VCF" \
+  || { echo "ERROR: bcftools concat failed" >&2; exit 1; }
+echo "Parental VCF $OUT_VCF: $(bcftools view -H "$OUT_VCF" | wc -l) sites kept"
+```
+
+**Wizard instructions.** Before submission, tell a C57BL_6NJ x A_J user: "Sites where C57BL_6NJ differs from the GRCm39 (C57BL/6J) assembly are dropped, because the masked reference needs REF = strain A = the assembly base." After the helper finishes, report the number of kept sites (the last line of the concat log) to the user.
+
+Sites where strain A carries the alternative allele (the reference genome is C57BL/6J, so a substrain can differ from it) are dropped: the masked reference and the REF = strain A convention require the FASTA base to be the strain A allele.
 
 ---
 
@@ -465,11 +483,12 @@ case "$FQ1" in /*) ;; *) FQ1="{CWD}/$FQ1" ;; esac
 [ -z "$FQ2" ] || case "$FQ2" in /*) ;; *) FQ2="{CWD}/$FQ2" ;; esac
 add_bind "$(dirname "$FQ1")"; [ -z "$FQ2" ] || add_bind "$(dirname "$FQ2")"
 die() { echo "ERROR: sample $SAMPLE: $*" >&2; exit 1; }
-[ -s "$FQ1" ] || die "missing $FQ1"
 FASTA="{FASTA_PATH}"; R="{RESULTS_DIR}"
-STAR_DIR="$R/star/$SAMPLE"; TMPD="$R/tmp/$SAMPLE"; BAM="$R/bam/$SAMPLE.bam"; TABLE="$R/ase_counts/$SAMPLE.table"
+STAR_DIR="$R/star/$SAMPLE"; TMPD="$R/tmp/$SAMPLE"; BAM="$R/bam/$SAMPLE.bam"; TABLE="$R/ase_counts/$SAMPLE.table"; STATS="$R/ase_counts/$SAMPLE.wasp_stats.tsv"
 mkdir -p "$STAR_DIR" "$TMPD" "$R/bam" "$R/ase_counts" || die "cannot create output directories"
 rm -rf "$STAR_DIR/_STARtmp"
+rm -f "$TABLE" "$STATS"      # never keep a table or stats file from an earlier run: a failed sample must have none
+[ -s "$FQ1" ] || die "missing $FQ1"
 ```
 
 ### `align_count_f1.sh` (F1 mode)
@@ -511,7 +530,6 @@ RAW="$STAR_DIR/Aligned.sortedByCoord.out.bam"
 # WASP statistics from the STAR BAM BEFORE filtering: alignments by vW value (none = no tag; 1 pass;
 # 2 multi-mapping; 3 variant base N; 4 remap failed; 5 remap multi-maps; 6 remap to a different locus;
 # 7 too many variants) and by the first vA value (1 ref, 2 alt, 3 no match; - = no tag)
-STATS="$R/ase_counts/$SAMPLE.wasp_stats.tsv"
 printf 'vW\tvA\tn\n' > "$STATS" || die "cannot write $STATS"
 samtools view "$RAW" | awk 'BEGIN{OFS="\t"} { w="none"; a="-"
     for (i=12; i<=NF; i++) { if ($i ~ /^vW:i:/) w=substr($i,6); else if ($i ~ /^vA:B:c,/) { split($i,p,","); a=p[2] } }
@@ -543,6 +561,7 @@ N_ROWS=0
 [ -s "$TABLE" ] && N_ROWS=$(awk 'NR>1' "$TABLE" | wc -l)
 if [ "$N_ROWS" -lt 1 ]; then
   echo "ERROR: sample $SAMPLE: ase_counts/$SAMPLE.table is missing or has no data rows (check the read group, the het-sites VCF and the contig names)" >&2
+  rm -f "$TABLE"          # a header-only table must not stay on disk for Rmd 01 to glob
   exit 1
 fi
 echo "Sample $SAMPLE: $N_ROWS sites counted"
