@@ -188,7 +188,11 @@ need "prepare_known_sites_{REF_TAG}.sh"
 need "prepare_annotation_cache_{TOOL}.sh"
 need "{GENOME_LENGTH}"
 need "genomeSAindexNbases"
-need "{SA_INDEX_NBASES}"
+need 'SA_INDEX_NBASES=$(awk'
+need '--genomeSAindexNbases "$SA_INDEX_NBASES"'
+need 'SLURM_NTASKS'
+forbid "{SA_INDEX_NBASES}"
+forbid "{N_THREADS}"
 need "resources scaled as below"
 need "tabix -l"
 need "if either contig is empty"

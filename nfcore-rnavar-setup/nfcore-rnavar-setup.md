@@ -317,13 +317,17 @@ If any helper script (Step 12) was generated, list the order: helpers first, the
 
 Generate only what is missing. Each is an `sbatch` script (`#SBATCH -N 1 -p bcc --mail-type=END,FAIL` plus resources scaled as below), run on a compute node — never on the login node. Always use `gunzip -c file.gz > file` (never `gunzip -k`; not available on CentOS 7).
 
-**`build_star_index_rnavar_{REF_TAG}.sh`** — downloads (`wget -c`) and decompresses the FASTA and GTF if absent (never for a custom reference, whose files already exist), computes the genome size, then builds the index. Compute `{GENOME_LENGTH}` and `{SA_INDEX_NBASES}` inside the script:
+**`build_star_index_rnavar_{REF_TAG}.sh`** — downloads (`wget -c`) and decompresses the FASTA and GTF if absent (never for a custom reference, whose files already exist), then computes the genome length and the STAR suffix-array parameter itself, in shell, at run time (the FASTA may not exist yet when the wizard writes the script, so the wizard never substitutes these two values):
 
 ```bash
-GENOME_LENGTH=$(grep -v '^>' {FASTA_PATH} | tr -d '\n' | wc -c)
+FASTA="{FASTA_PATH}"
+GENOME_LENGTH=$(grep -v '^>' "$FASTA" | tr -d '\n' | wc -c)
+SA_INDEX_NBASES=$(awk -v L="$GENOME_LENGTH" 'BEGIN{n=int(log(L)/log(2)/2-1); if(n>14)n=14; if(n<4)n=4; print n}')
 ```
 
-`{SA_INDEX_NBASES}` = `min(14, floor(log2({GENOME_LENGTH})/2 - 1))`, clamped to a minimum of 4 (for a 40 kb genome this is 6; for GRCh38 it is 14). STAR's default `--genomeSAindexNbases 14` is far too large for small genomes and makes indexing fail or blow up memory, so it is always passed explicitly. Scale the SBATCH resources of this helper by genome size (these respect the HPC defaults of at most 64 G and 4 h): genome over 1 Gb `-n 8 --mem=64G -t 4:00:00`; genome under 100 Mb `-n 4 --mem=8G -t 00:30:00`; in between `-n 8 --mem=32G -t 2:00:00`. `{N_THREADS}` is the `-n` value chosen for this tier. The other helpers need little: `-n 2 --mem=8G -t 2:00:00`.
+`SA_INDEX_NBASES` = `min(14, floor(log2(GENOME_LENGTH)/2 - 1))`, clamped to a minimum of 4 (40001 bp gives 6; 3.1e9 bp, as for GRCh38, gives 14). STAR's default `--genomeSAindexNbases 14` is far too large for small genomes and makes indexing fail or blow up memory, so it is always passed explicitly. The thread count is taken from SLURM (`${SLURM_NTASKS:-4}`), so it always matches the `-n` of the chosen tier.
+
+**Resource tier — chosen by the wizard when it writes the script** (these respect the HPC defaults of at most 64 G and 4 h). If the FASTA already exists, measure it with the same `grep -v '^>' | tr -d '\n' | wc -c` pipeline (this is `{GENOME_LENGTH}` for the wizard) and pick the tier; if it is an Ensembl human or mouse download (FASTA not yet on disk), use the over-1-Gb tier. Genome over 1 Gb: `-n 8 --mem=64G -t 4:00:00`; genome under 100 Mb: `-n 4 --mem=8G -t 00:30:00`; in between: `-n 8 --mem=32G -t 2:00:00`. The other helpers need little: `-n 2 --mem=8G -t 2:00:00`.
 
 ```bash
 module add star/2.7.9a
@@ -331,11 +335,11 @@ mkdir -p "{GENOME_DIR}/index/star_rnavar_sjdb{SJDB_OVERHANG}"
 STAR \
     --runMode genomeGenerate \
     --genomeDir "{GENOME_DIR}/index/star_rnavar_sjdb{SJDB_OVERHANG}" \
-    --genomeFastaFiles "{FASTA_PATH}" \
+    --genomeFastaFiles "$FASTA" \
     --sjdbGTFfile "{GTF_PATH}" \
     --sjdbOverhang {SJDB_OVERHANG} \
-    --genomeSAindexNbases {SA_INDEX_NBASES} \
-    --runThreadN {N_THREADS}
+    --genomeSAindexNbases "$SA_INDEX_NBASES" \
+    --runThreadN "${SLURM_NTASKS:-4}"
 ```
 
 **`prepare_known_sites_{REF_TAG}.sh`** — for the URLs the user confirmed in Step 7: `wget -c` each file into `{GENOME_DIR}/known_sites/`, then `module add htslib` (or the site's tabix module), run `bgzip` on any plain `.vcf` before `tabix -p vcf` (the schema requires `.vcf.gz`), and `tabix -p vcf` each `.vcf.gz` that lacks a `.tbi`. Then run an always-run contig guard on every known-sites VCF (this is the enforcement point; it runs whether or not the wizard could check earlier). Load `bcftools` and, for each `FILE`, compare contig names and either continue, rename, or fail fast:
