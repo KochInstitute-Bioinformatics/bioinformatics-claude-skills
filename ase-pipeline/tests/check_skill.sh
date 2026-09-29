@@ -143,7 +143,11 @@ need "relative links"
 need '$S/run_01_import_qc.sh'
 need '$S/run_02_imbalance.sh'
 need '--dependency=afterok:$R1'
-need "-n 8 --mem=16G -t 1:00:00"
+need "-n 1 --mem=16G -t 1:00:00"
+forbid "-n 8 --mem=16G"
+need "# ONLY IF the mouse helper is used"
+need "awk -F'\t'"
+need "while read -r f; do [ -s"
 need "knit_root_dir = '{CWD}'"
 need "summary_numbers.tsv"
 need "summary_numbers <- summary_tbl"
@@ -159,6 +163,8 @@ HERE=$(dirname "$0")
 grep -qF "Validation status" "$HERE/../README.md" 2>/dev/null || { echo "FAIL: ase-pipeline/README.md missing or lacks: Validation status"; fail=1; }
 grep -qF "PENDING" "$HERE/../README.md" 2>/dev/null || { echo "FAIL: ase-pipeline/README.md must mark the end-to-end acceptance run as PENDING"; fail=1; }
 grep -q "/ase-pipeline" "$HERE/../../README.md" 2>/dev/null || { echo "FAIL: root README.md has no /ase-pipeline row"; fail=1; }
+grep -qF "Nothing on real biological data" "$HERE/../README.md" 2>/dev/null || { echo "FAIL: ase-pipeline/README.md must state: Nothing on real biological data"; fail=1; }
+grep -qF "never submitted" "$HERE/../README.md" 2>/dev/null || { echo "FAIL: ase-pipeline/README.md must state which scripts were never submitted"; fail=1; }
 # --- end Task 7
 
 

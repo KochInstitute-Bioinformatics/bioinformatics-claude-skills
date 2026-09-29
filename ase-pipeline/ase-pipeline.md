@@ -771,13 +771,13 @@ sessionInfo()
 ```
 ````
 
-Render each Rmd from its own `sbatch -p bcc` script, written to `{RESULTS_DIR}/scripts/` (like every other script of this skill). `run_01_import_qc.sh` is the template; `run_02_imbalance.sh` (Step 13) is identical except for the job name, the log name and the Rmd file. Requests: `-n 8 --mem=16G -t 1:00:00`. The log goes to the shared filesystem under `{RESULTS_DIR}/logs` (never `/tmp`, which is node-local). `{GTF_DIR}` is the directory of `{GTF_PATH}`; bind each directory once, and skip `{GTF_DIR}` when it is inside `{CWD}`:
+Render each Rmd from its own `sbatch -p bcc` script, written to `{RESULTS_DIR}/scripts/` (like every other script of this skill). `run_01_import_qc.sh` is the template; `run_02_imbalance.sh` (Step 13) is identical except for the job name, the log name and the Rmd file. Requests: `-n 1 --mem=16G -t 1:00:00` (both Rmds run single-threaded). The log goes to the shared filesystem under `{RESULTS_DIR}/logs` (never `/tmp`, which is node-local). `{GTF_DIR}` is the directory of `{GTF_PATH}`; bind each directory once, and skip `{GTF_DIR}` when it is inside `{CWD}`:
 
 ```bash
 #!/bin/bash
 #SBATCH -J ase_01_import_qc
 #SBATCH -N 1 -p bcc
-#SBATCH -n 8 --mem=16G -t 1:00:00
+#SBATCH -n 1 --mem=16G -t 1:00:00
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user={USER_EMAIL}
 #SBATCH -o {RESULTS_DIR}/logs/run_01_import_qc_%j.out
@@ -1046,7 +1046,7 @@ sessionInfo()
 ```
 ````
 
-Render it with `{RESULTS_DIR}/scripts/run_02_imbalance.sh`: the same script as `run_01_import_qc.sh` (Step 12) with job name `ase_02_imbalance`, log `run_02_imbalance_%j.out`, the Rmd 02 file name and the same `-n 8 --mem=16G -t 1:00:00` (the per-sample tests are independent, so extra CPUs are available to the R session). Submission order and dependencies: Step 15.
+Render it with `{RESULTS_DIR}/scripts/run_02_imbalance.sh`: the same script as `run_01_import_qc.sh` (Step 12) with job name `ase_02_imbalance`, log `run_02_imbalance_%j.out`, the Rmd 02 file name and the same `-n 1 --mem=16G -t 1:00:00`. If Rmd 02 later moves to `mclapply`, raise the CPU request together with that change. Submission order and dependencies: Step 15.
 
 Besides the xlsx, Rmd 02 writes `{RESULTS_DIR}/summary_numbers.tsv` (one row per sample, tab-separated, taken from the Summary table above), so the summary page of Step 15 can be written without starting R.
 
@@ -1138,12 +1138,13 @@ Write all scripts to `{RESULTS_DIR}/scripts/` (Steps 10-13), run `mkdir -p {RESU
 
 ```bash
 S={RESULTS_DIR}/scripts
-# 0. (F1 with the mouse helper only) array of chromosomes -> concat, then prep depends on the concat job
-DEP=""
+DEP=""   # stays empty unless the mouse helper below is used
+# ONLY IF the mouse helper is used (F1, no parental VCF): array of chromosomes -> concat, then prep depends on the concat job.
+# Without the helper, delete the next three lines; the scripts do not exist and sbatch would fail.
 X=$(sbatch -p bcc --parsable $S/extract_mgp_parental_vcf.sh)
 C=$(sbatch -p bcc --parsable --dependency=afterok:$X $S/concat_mgp_parental_vcf.sh)
 DEP="--dependency=afterok:$C"
-# 1. prep job: F1 = prep_f1_reference.sh, outbred = prep_genotypes.sh (DEP stays empty without the mouse helper)
+# 1. prep job: F1 = prep_f1_reference.sh, outbred = prep_genotypes.sh
 P=$(sbatch -p bcc --parsable $DEP $S/prep_f1_reference.sh)
 # 2. per-sample array job: F1 = align_count_f1.sh, outbred = align_wasp_count.sh
 A=$(sbatch -p bcc --parsable --dependency=afterok:$P $S/align_count_f1.sh)
@@ -1154,11 +1155,11 @@ R2=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_02_imbalance.sh)
 echo "prep $P, array $A, Rmd01 $R1, Rmd02 $R2"
 ```
 
-Without the mouse helper the `X` and `C` lines and the second `DEP=` line are omitted (`DEP` stays empty); in outbred mode the prep and array scripts are `prep_genotypes.sh` and `align_wasp_count.sh`. `afterok` on the array job id means every array task must succeed; if one fails, Rmd 01 stays pending with `DependencyNeverSatisfied`: cancel it, fix the failed sample (its log is under `{RESULTS_DIR}/logs`), re-submit the failed task, then submit Rmd 01 and Rmd 02 again with the same dependencies. Wait with a bounded loop (for example `squeue -h -j $R2` every 60 s, at most 4 h), read the logs, and on a failure show the error line and stop.
+Without the mouse helper the three lines after the "ONLY IF" comment are deleted and `DEP` stays empty (it is set to empty on the first line of the block); in outbred mode the prep and array scripts are `prep_genotypes.sh` and `align_wasp_count.sh`. `afterok` on the array job id means every array task must succeed; if one fails, Rmd 01 stays pending with `DependencyNeverSatisfied`: cancel it, fix the failed sample (its log is under `{RESULTS_DIR}/logs`), re-submit the failed task, then submit Rmd 01 and Rmd 02 again with the same dependencies. Wait with a bounded loop (for example `squeue -h -j $R2` every 60 s, at most 4 h), read the logs, and on a failure show the error line and stop.
 
 ### Summary report `{WD_NAME}_summary_report.html`
 
-After Rmd 02 has finished, write the standalone page `{RESULTS_DIR}/{WD_NAME}_summary_report.html`. It needs **no R** and no external dependency: inline CSS only, no scripts, no fonts, no images from a URL. Read `{RESULTS_DIR}/summary_numbers.tsv` with `cat` (columns: `sample`, `condition`, `filtered_sites`, `sig_snps`, `genes_tested`, `sig_genes`, `rho_used`, `rho_h0`, `mean_ref_frac`, `bias_flag`), and write the HTML yourself; never open R on the login node to produce it. The page contains:
+After Rmd 02 has finished, write the standalone page `{RESULTS_DIR}/{WD_NAME}_summary_report.html`. It needs **no R** and no external dependency: inline CSS only, no scripts, no fonts, no images from a URL. Read `{RESULTS_DIR}/summary_numbers.tsv` with `awk -F'\t'` (for example `awk -F'\t' 'NR>1 {print $1, $3, $4}'`, so no number is transcribed by hand; columns: `sample`, `condition`, `filtered_sites`, `sig_snps`, `genes_tested`, `sig_genes`, `rho_used`, `rho_h0`, `mean_ref_frac`, `bias_flag`), and write the HTML yourself; never open R on the login node to produce it. The page contains:
 
 - a header with the project title, `{MODE}`, the strain names (F1: REF = `{STRAIN_A}`, ALT = `{STRAIN_B}`) or REF/ALT, the constants of Step 8 and the date;
 - the **reference-bias flags, shown prominently** at the top: one box that lists every sample with `bias_flag` = `TRUE` (with its `mean_ref_frac`) in a warning colour and the sentence "read the allelic ratios of these samples with caution", or "no sample is flagged" when none is; the per-sample table repeats the flag in its own column, with the same colour;
@@ -1166,7 +1167,7 @@ After Rmd 02 has finished, write the standalone page `{RESULTS_DIR}/{WD_NAME}_su
 - outbred only: the WASP note, "Alignments whose vW tag is 2-7 were removed before counting; Rmd 01 shows how many were removed and from which allele. WASP does not promise less bias." Outbred gene calls are also labelled "unphased, no direction";
 - **relative links** (bare file names, no URL prefix and no absolute path, so the page works from the local filesystem and over a web mount as long as it sits in `{RESULTS_DIR}` beside the files) as cards to: `{TODAY_YYMMDD}_{WD_NAME}_01_import_qc.html`, `{TODAY_YYMMDD}_{WD_NAME}_02_imbalance.html`, `{TODAY_YYMMDD}_{WD_NAME}_ASE_imbalance.xlsx`, and the two figure PDFs `{TODAY_YYMMDD}_{WD_NAME}_ASE_sites_vs_depth.pdf` and `{TODAY_YYMMDD}_{WD_NAME}_ASE_genes.pdf`.
 
-**Verify before finishing.** Extract every `href` of the page and check with a shell loop that each target exists next to the page (`grep -o 'href="[^"]*"' ... | sed ... | while read f; do [ -s "{RESULTS_DIR}/$f" ] || echo "MISSING $f"; done`); also check that no `href` or `src` starts with `http` or `/`. Fix the page (or report the missing file) until nothing is printed. Then tell the user the paths of the summary page, the two stage HTML files, the xlsx and `summary_numbers.tsv`.
+**Verify before finishing.** Extract every `href` of the page and check with a shell loop that each target exists next to the page (`grep -o 'href="[^"]*"' {RESULTS_DIR}/{WD_NAME}_summary_report.html | sed 's/href="//;s/"$//' | while read -r f; do [ -s "{RESULTS_DIR}/$f" ] || echo "MISSING $f"; done`); also check that no `href` or `src` starts with `http` or `/`. Fix the page (or report the missing file) until nothing is printed. Then tell the user the paths of the summary page, the two stage HTML files, the xlsx and `summary_numbers.tsv`.
 
 ---
 

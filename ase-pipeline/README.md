@@ -93,12 +93,14 @@ The jobs run in one dependency chain: prep -> per-sample array (`afterok`) -> Rm
 
 What has been exercised:
 
-- **Task 2 verification gate on synthetic data** (STAR, GATK, samtools, bcftools in the cached containers): read group, indexed VCF, heterozygous genotype column and reference requirements of ASEReadCounter, STAR WASP behaviour, the Mouse Genomes Project access pattern. Results: `tests/fixtures/verification.md`.
-- **Task 5 smoke tests**: one F1 sample and one outbred sample run through the generated scripts.
+- **Verification gate on synthetic data** (STAR, GATK, samtools, bcftools in the cached containers): read group, indexed VCF, heterozygous genotype column and reference requirements of ASEReadCounter, STAR WASP behaviour, the Mouse Genomes Project access pattern. Results: `tests/fixtures/verification.md`.
+- **Script smoke tests**: one F1 sample and one outbred sample run through the generated scripts.
 - **Unit-tested statistics**: null size of the F1 gene-level test 0.047-0.056 pooled (worst seed 0.064) and power 0.99, plus rho recovery, edge cases and ACAT (`tests/r/test_ase_stats.R`; needs a job with at least 8 CPUs).
-- **Rmd rendering tests** on perturbed copies of one real synthetic sample (F1 and outbred, Rmd 01 and Rmd 02), including the `summary_numbers.tsv` output.
+- **Rmd rendering tests** on perturbed copies of one synthetic sample (F1 and outbred, Rmd 01 and Rmd 02), including the `summary_numbers.tsv` output.
 
-What is **PENDING**: the full end-to-end synthetic acceptance run (all samples, all scripts chained with the dependencies of Step 15, recovery of the planted genes with the correct direction) has not been completed yet; the controller will record its result here.
+What is **PENDING**: the full end-to-end synthetic acceptance run (all samples, all scripts chained with the dependencies of Step 15, recovery of the planted genes with the correct direction) has not been completed yet; its result will be recorded here when it is completed.
+
+What was **never run**: the Step 15 summary HTML page (it has never been generated; only its input `summary_numbers.tsv` was checked against the Summary sheet of the xlsx); the run scripts `run_01_import_qc.sh` and `run_02_imbalance.sh` (never submitted; the Rmd renders above used direct `rmarkdown::render` calls); the full sbatch dependency chain of Step 15 (never submitted end to end); and the href-existence check of the summary page.
 
 **Nothing on real biological data has been run.**
 
