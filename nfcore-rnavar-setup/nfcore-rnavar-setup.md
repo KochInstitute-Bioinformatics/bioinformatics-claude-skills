@@ -94,7 +94,14 @@ Ask:
 1. "What organism is this data from? (e.g. mouse, human)"
 2. "What is the base directory where genome files and indexes are stored?"
 
-Use this folder convention (shared with other nf-core skills so FASTA/GTF are reused, never re-downloaded):
+Then ask (numbered): "1. Ensembl release in the standard folder (default) · 2. Custom reference — I already have a FASTA and GTF".
+
+- **Option 1 (Ensembl):** follow the folder convention and version logic below; set `{REF_TAG}` = `{ASSEMBLY}_ens{ENS_VERSION}`.
+- **Option 2 (Custom reference):** ask for the FASTA path, the GTF path and the directory that will hold indexes (`{GENOME_DIR}`); skip the Ensembl download and version logic entirely; set `{FASTA_PATH}`, `{GTF_PATH}`, `{GENOME_DIR}` from the answers and `{REF_TAG}` = `custom_{WD_NAME}`. Keep the per-read-length rule: still apply the STAR index rule below, and report the GTF source as usual.
+
+`{REF_TAG}` is the tag used in helper script names (Step 12).
+
+For option 1, use this folder convention (shared with other nf-core skills so FASTA/GTF are reused, never re-downloaded):
 
 ```
 {genome_base}/{organism}/{assembly}_ens{version}/
@@ -108,7 +115,7 @@ Store: `{GENOME_DIR}` = `{genome_base}/{organism}/{assembly}_ens{version}`, `{FA
 
 - Mouse: assembly GRCm39, FASTA `Mus_musculus.GRCm39.dna.primary_assembly.fa`, GTF `Mus_musculus.GRCm39.{version}.gtf`, directory `{genome_base}/mouse/mm39_ens{version}/`.
 - Human: assembly GRCh38, FASTA `Homo_sapiens.GRCh38.dna.primary_assembly.fa`, GTF `Homo_sapiens.GRCh38.{version}.gtf`, directory `{genome_base}/human/hg38_ens{version}/`.
-- Other organisms: ask for the FASTA and GTF paths and the directory that will hold indexes (`{GENOME_DIR}`); skip only the download/version checks in this step and still apply the STAR index rule below.
+- Other organisms: use option 2 (Custom reference).
 
 **Existing FASTA/GTF:** if present, report the paths and reuse them. If missing, fetch the latest Ensembl release from `https://ftp.ensembl.org/pub/current_README`, and generate the download commands in the helper script (Step 12).
 
@@ -137,7 +144,7 @@ rnavar passes the known-sites files directly to GATK BaseRecalibrator and **does
      zcat FILE.vcf.gz | grep -v '^#' | head -1 | cut -f1
      grep -m1 '^>' {FASTA_PATH} | cut -d' ' -f1 | sed 's/^>//'
      ```
-     If the VCFs already exist, this check runs in the wizard now. If they are NOT downloaded yet, tell the user that the helper's contig guard performs the check after download (see `prepare_known_sites_{ASSEMBLY}.sh` in Step 12), renames the contigs when a fix is possible, and stops with a non-zero exit on an unresolvable mismatch, and that the pipeline must therefore be submitted with `sbatch --dependency=afterok:<helper_jobid>` (Step 11) so a failed guard prevents the pipeline from starting. Mouse Genomes Project VCFs use Ensembl-style contig names, so a rename is normally not needed for mouse, but the guard still runs. On a mismatch found in the wizard, either (i) prefer Ensembl-named variation VCFs that match the Ensembl FASTA, or (ii) rely on the helper's rename step (`bcftools annotate --rename-chrs`, see Step 12). The skill must never proceed with mismatched contigs; if neither fix is possible, offer option 2 (skip base recalibration) instead.
+     If the VCFs already exist, this check runs in the wizard now. If they are NOT downloaded yet, tell the user that the helper's contig guard performs the check after download (see `prepare_known_sites_{REF_TAG}.sh` in Step 12), renames the contigs when a fix is possible, and stops with a non-zero exit on an unresolvable mismatch, and that the pipeline must therefore be submitted with `sbatch --dependency=afterok:<helper_jobid>` (Step 11) so a failed guard prevents the pipeline from starting. Mouse Genomes Project VCFs use Ensembl-style contig names, so a rename is normally not needed for mouse, but the guard still runs. On a mismatch found in the wizard, either (i) prefer Ensembl-named variation VCFs that match the Ensembl FASTA, or (ii) fix them with the helper's rename step (`bcftools annotate --rename-chrs`, see Step 12) — the wizard also generates `prepare_known_sites_{REF_TAG}.sh` in this case, even though the VCFs already exist, so the rename and guard run before the pipeline. The skill must never proceed with mismatched contigs; if neither fix is possible, offer option 2 (skip base recalibration) instead.
 2. **Skip base recalibration** — write `skip_baserecalibration: true`. Tell the user the trade-off: base qualities are not recalibrated, which is slightly less accurate but is the right choice for organisms without a curated variant set, or to get a first result quickly.
 
 Store the result as `{KNOWN_SITES_PARAMS}`: the four key lines for option 1, or the single line `skip_baserecalibration: true` for option 2.
@@ -308,9 +315,15 @@ If any helper script (Step 12) was generated, list the order: helpers first, the
 
 ## Step 12 — Helper scripts (only for missing resources)
 
-Generate only what is missing. Each is an `sbatch` script (`#SBATCH -N 1 -n 8 --mem=64G -t 8:00:00 -p bcc --mail-type=END,FAIL`), run on a compute node — never on the login node. Always use `gunzip -c file.gz > file` (never `gunzip -k`; not available on CentOS 7).
+Generate only what is missing. Each is an `sbatch` script (`#SBATCH -N 1 -p bcc --mail-type=END,FAIL` plus resources scaled as below), run on a compute node — never on the login node. Always use `gunzip -c file.gz > file` (never `gunzip -k`; not available on CentOS 7).
 
-**`build_star_index_rnavar_{ASSEMBLY}_ens{ENS_VERSION}.sh`** — downloads (`wget -c`) and decompresses the FASTA and GTF if absent, then:
+**`build_star_index_rnavar_{REF_TAG}.sh`** — downloads (`wget -c`) and decompresses the FASTA and GTF if absent (never for a custom reference, whose files already exist), computes the genome size, then builds the index. Compute `{GENOME_LENGTH}` and `{SA_INDEX_NBASES}` inside the script:
+
+```bash
+GENOME_LENGTH=$(grep -v '^>' {FASTA_PATH} | tr -d '\n' | wc -c)
+```
+
+`{SA_INDEX_NBASES}` = `min(14, floor(log2({GENOME_LENGTH})/2 - 1))`, clamped to a minimum of 4 (for a 40 kb genome this is 6; for GRCh38 it is 14). STAR's default `--genomeSAindexNbases 14` is far too large for small genomes and makes indexing fail or blow up memory, so it is always passed explicitly. Scale the SBATCH resources of this helper by genome size (these respect the HPC defaults of at most 64 G and 4 h): genome over 1 Gb `-n 8 --mem=64G -t 4:00:00`; genome under 100 Mb `-n 4 --mem=8G -t 00:30:00`; in between `-n 8 --mem=32G -t 2:00:00`. `{N_THREADS}` is the `-n` value chosen for this tier. The other helpers need little: `-n 2 --mem=8G -t 2:00:00`.
 
 ```bash
 module add star/2.7.9a
@@ -321,25 +334,32 @@ STAR \
     --genomeFastaFiles "{FASTA_PATH}" \
     --sjdbGTFfile "{GTF_PATH}" \
     --sjdbOverhang {SJDB_OVERHANG} \
-    --runThreadN 8
+    --genomeSAindexNbases {SA_INDEX_NBASES} \
+    --runThreadN {N_THREADS}
 ```
 
-**`prepare_known_sites_{ASSEMBLY}.sh`** — for the URLs the user confirmed in Step 7: `wget -c` each file into `{GENOME_DIR}/known_sites/`, then `module add htslib` (or the site's tabix module), run `bgzip` on any plain `.vcf` before `tabix -p vcf` (the schema requires `.vcf.gz`), and `tabix -p vcf` each `.vcf.gz` that lacks a `.tbi`. Then run an always-run contig guard on every known-sites VCF (this is the enforcement point; it runs whether or not the wizard could check earlier). Load `bcftools` and, for each `FILE`, compare contig names and either continue, rename, or fail fast:
+**`prepare_known_sites_{REF_TAG}.sh`** — for the URLs the user confirmed in Step 7: `wget -c` each file into `{GENOME_DIR}/known_sites/`, then `module add htslib` (or the site's tabix module), run `bgzip` on any plain `.vcf` before `tabix -p vcf` (the schema requires `.vcf.gz`), and `tabix -p vcf` each `.vcf.gz` that lacks a `.tbi`. Then run an always-run contig guard on every known-sites VCF (this is the enforcement point; it runs whether or not the wizard could check earlier). Load `bcftools` and, for each `FILE`, compare contig names and either continue, rename, or fail fast:
 ```bash
-VCF_CONTIG=$(zcat FILE | grep -v '^#' | head -1 | cut -f1)
+VCF_CONTIG=$(tabix -l FILE | head -n1)
 FASTA_CONTIG=$(grep -m1 '^>' {FASTA_PATH} | cut -d' ' -f1 | sed 's/^>//')
+if [ -z "$VCF_CONTIG" ] || [ -z "$FASTA_CONTIG" ]; then
+  echo "ERROR: empty contig (VCF: '$VCF_CONTIG', FASTA: '$FASTA_CONTIG') for FILE; the pipeline must not be run" >&2
+  exit 1
+fi
 if [ "$VCF_CONTIG" != "$FASTA_CONTIG" ]; then
   # MAP.txt (in {GENOME_DIR}/known_sites/) is generated for the needed direction, see below
   bcftools annotate --rename-chrs MAP.txt -O z -o NEW.vcf.gz FILE
   tabix -p vcf NEW.vcf.gz          # then use NEW.vcf.gz in place of FILE
-  VCF_CONTIG=$(zcat NEW.vcf.gz | grep -v '^#' | head -1 | cut -f1)
-  if [ "$VCF_CONTIG" != "$FASTA_CONTIG" ]; then
+  VCF_CONTIG=$(tabix -l NEW.vcf.gz | head -n1)
+  if [ -z "$VCF_CONTIG" ] || [ "$VCF_CONTIG" != "$FASTA_CONTIG" ]; then
     echo "ERROR: contig mismatch after rename: FILE has '$VCF_CONTIG', FASTA has '$FASTA_CONTIG'; the pipeline must not be run" >&2
     exit 1
   fi
 fi
 ```
-MAP.txt is a two-column, tab-separated old-name/new-name file written by the helper for the direction that is needed (chr1<->1 ... chrM<->MT for the chromosomes present in the FASTA). If the VCF uses a `chr` prefix and the FASTA does not, it maps `chrN` to `N` for N = 1-22, X, Y and `chrM` to `MT`; if the FASTA uses a `chr` prefix and the VCF does not, it maps the reverse. The order is rename, then bgzip (`-O z`), then `tabix -p vcf`. The error message must name the VCF, both contig names and say that the pipeline must not be run; because the pipeline is submitted with `--dependency=afterok`, a failed guard stops it from starting.
+MAP.txt is a two-column, tab-separated old-name/new-name file written by the helper for the direction that is needed (chr1<->1 ... chrM<->MT for the chromosomes present in the FASTA). If the VCF uses a `chr` prefix and the FASTA does not, it maps `chrN` to `N` for N = 1-22, X, Y and `chrM` to `MT`; if the FASTA uses a `chr` prefix and the VCF does not, it maps the reverse. The order is rename, then bgzip (`-O z`), then `tabix -p vcf`. The error message must name the VCF, both contig names and say that the pipeline must not be run; because the pipeline is submitted with `--dependency=afterok`, a failed guard stops it from starting. The guard fails with exit 1 if either contig is empty (an empty VCF, or a FASTA without a header), because an empty string would otherwise compare equal to itself or slip through. Read the VCF contig with `tabix -l FILE | head -n1`, not `zcat | grep | head -1`, which can die of SIGPIPE under `set -o pipefail`.
+
+**Post-guard filenames.** These are the post-guard filenames: the `dbsnp`/`known_indels` keys (and their `.tbi` companions) in `{PARAMS_YAML}` must point at the files that pass the guard: the renamed `NEW.vcf.gz` (and `NEW.vcf.gz.tbi`) whenever a rename happened, otherwise the original `FILE`. The wizard therefore decides the final filenames before writing the params file (Step 11), writing the `NEW` names up front when a rename is expected (for example hg38 resource-bundle `chr`-prefixed VCFs against an Ensembl FASTA).
 
 **`prepare_annotation_cache_{TOOL}.sh`** — only if the user has no cache: a script the user runs where internet is available, using the tool's own cache installer (`vep_install` or `snpEff download`) into the directory given as `vep_cache` / `snpeff_cache`, where `{TOOL}` is `snpeff` or `vep`, matching `{ANNOTATION_TOOL}` (one script per chosen tool).
 

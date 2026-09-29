@@ -16,7 +16,7 @@ forbid() { ! grep -qF -- "$1" "$SKILL" || { echo "FAIL: forbidden text present: 
 
 # (a) every --flag in the skill is a schema parameter or an allowlisted non-rnavar flag
 schema_names=$(grep -oE '"[a-z_0-9]+": *\{' "$SCHEMA" | sed -E 's/"([a-z_0-9]+)".*/\1/' | sort -u)
-allow="rename-chrs dependency runMode genomeDir genomeFastaFiles sjdbGTFfile sjdbOverhang runThreadN mail-type mail-user mem"
+allow="genomeSAindexNbases rename-chrs dependency runMode genomeDir genomeFastaFiles sjdbGTFfile sjdbOverhang runThreadN mail-type mail-user mem"
 for flag in $(grep -oE '(^|[ `(=])--[A-Za-z_][A-Za-z_0-9-]*' "$SKILL" | sed -E 's/^[^-]*--//' | sort -u); do
   if ! echo "$schema_names $allow" | tr ' ' '\n' | grep -qx -- "$flag"; then
     echo "FAIL: flag not in rnavar schema or allowlist: --$flag"; fail=1
@@ -152,7 +152,7 @@ need "1. overwrite · 2. choose another filename"
 
 # --- Contig-guard fix
 need "always-run contig guard"
-need 'VCF_CONTIG=$(zcat'
+need 'VCF_CONTIG=$(tabix -l'
 need 'FASTA_CONTIG=$(grep -m1'
 need 'exit 1'
 need "the pipeline must not be run"
@@ -177,6 +177,28 @@ yaml_keys=$(awk '/^```yaml/{f=1;next} /^```/{f=0} f' "$SKILL" | grep -oE '^[a-z_
 for k in $yaml_keys; do
   echo "$schema_names" | grep -qx -- "$k" || { echo "FAIL: params-file key not in rnavar schema: $k"; fail=1; }
 done
+
+# --- Task 2 (custom reference + helpers)
+need "Custom reference"
+need "{REF_TAG}"
+need "custom_{WD_NAME}"
+need "Other organisms: use option 2"
+need "build_star_index_rnavar_{REF_TAG}.sh"
+need "prepare_known_sites_{REF_TAG}.sh"
+need "prepare_annotation_cache_{TOOL}.sh"
+need "{GENOME_LENGTH}"
+need "genomeSAindexNbases"
+need "{SA_INDEX_NBASES}"
+need "resources scaled as below"
+need "tabix -l"
+need "if either contig is empty"
+need "post-guard"
+need "the wizard also generates \`prepare_known_sites_{REF_TAG}.sh\`"
+forbid "build_star_index_rnavar_{ASSEMBLY}_ens{ENS_VERSION}.sh"
+forbid "prepare_known_sites_{ASSEMBLY}"
+forbid "-t 8:00:00"
+# --- end Task 2 (custom reference + helpers)
+
 # --- end Params-file rules
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1
