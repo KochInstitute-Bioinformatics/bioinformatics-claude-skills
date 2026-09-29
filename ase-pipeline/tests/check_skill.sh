@@ -107,18 +107,18 @@ need "soft-masked"
 for n in 12 13 14; do need "## Step $n"; done
 need "# --- ase-stats-begin"
 need "# --- ase-stats-end"
-need "bb_pvalue"
-need "acat"
+need "bb_pvalue <- function"
+need "acat <- function"
 need "ase_checkpoint.rds"
 need "_ASE_imbalance.xlsx"
-need "MIN_DEPTH"
+need "<- {MIN_DEPTH}"
 need "never by globbing"
 need "GenomicRanges::findOverlaps"
 need "unphased, no direction"
 need "_01_import_qc.Rmd"
 need "_02_imbalance.Rmd"
-need "cache = FALSE"
-need "options(scipen = 9)"
+need 'knitr::opts_chunk$set(cache = FALSE, echo = TRUE'
+grep -qx "options(scipen = 9)" "$SKILL" || { echo "FAIL: missing Rmd line options(scipen = 9)"; fail=1; }
 forbid "source("
 [ "$(grep -c '^# --- ase-stats-begin' "$SKILL")" -eq 1 ] || { echo "FAIL: need exactly one ase-stats-begin marker"; fail=1; }
 [ "$(grep -c '^# --- ase-stats-end' "$SKILL")" -eq 1 ] || { echo "FAIL: need exactly one ase-stats-end marker"; fail=1; }
@@ -127,6 +127,11 @@ forbid "source("
 need "bb_gene_lrt"
 need "bb_estimate_rho_gene"
 need "counts are not summed before testing"
+need "RHO_MIN     <- {RHO_MIN}"
+need "rho_corrected"
+need "rho estimate at the upper boundary"
+need "frac_\", alt_label"
+need "acat <- function(p) {   # Cauchy combination with equal weights; p is capped"
 # --- end Task 6 fix
 
 
