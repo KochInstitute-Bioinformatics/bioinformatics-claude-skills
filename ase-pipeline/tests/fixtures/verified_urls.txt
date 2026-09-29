@@ -1,0 +1,5 @@
+https://depot.galaxyproject.org/singularity/star:2.7.10b--h9ee0642_0 200 10403840 2026-09-29
+https://depot.galaxyproject.org/singularity/gatk4:4.4.0.0--py36hdfd78af_0 200 680468480 2026-09-29
+https://depot.galaxyproject.org/singularity/bcftools:1.20--h8b25389_0 200 63160320 2026-09-29
+https://depot.galaxyproject.org/singularity/samtools:1.21--h50ea8bc_0 200 25726976 2026-09-29
+https://depot.galaxyproject.org/singularity/picard:3.1.1--hdfd78af_0 200 572932096 2026-09-29

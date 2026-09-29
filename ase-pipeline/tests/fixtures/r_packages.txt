@@ -1,0 +1,11 @@
+VGAM               FALSE 
+glmmTMB            FALSE 
+aod                TRUE 1.3.3
+MBASED             FALSE 
+lme4               TRUE 2.0.6
+openxlsx           TRUE 4.2.8.1
+tidyverse          TRUE 2.0.0
+apeglm             TRUE 1.32.0
+GenomicRanges      TRUE 1.62.1
+rtracklayer        TRUE 1.70.1
+VariantAnnotation  FALSE 
