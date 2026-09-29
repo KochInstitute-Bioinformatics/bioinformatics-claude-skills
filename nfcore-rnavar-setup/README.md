@@ -74,7 +74,7 @@ After running the skill you will have:
 | `{date}_{project}_params.yaml` | All rnavar parameters for the run, passed with `-params-file` |
 | `nf-core_rnavar_{version}.sh` | Pipeline SLURM submission script |
 | `build_star_index_rnavar_{ref_tag}.sh` | STAR index build for this read length (if missing) |
-| `prepare_known_sites_{ref_tag}.sh` | Known-sites download, `bgzip`, `tabix` indexing (if needed) and an always-run contig guard (rename with `bcftools annotate --rename-chrs`, or fail fast with non-zero exit) |
+| `prepare_known_sites_{ref_tag}.sh` | Known-sites download, `bgzip`, `tabix` indexing (if needed) and an always-run contig guard (rename with `bcftools annotate --rename-chrs`, or fail fast with non-zero exit), and a final check that every file named in the params file exists |
 | `prepare_annotation_cache_{tool}.sh` | Annotation-cache pre-download, to run where internet is available (if no cache) |
 
 ---
@@ -97,7 +97,7 @@ sbatch --dependency=afterok:<star_jobid>:<known_sites_jobid> nf-core_rnavar_1.3.
 ## Validation status
 
 - The skill text is checked by `nfcore-rnavar-setup/tests/check_skill.sh`, which schema-validates every `--parameter` against nf-core/rnavar 1.3.0, checks that the launch line carries no `--flag` (including continuation lines) and that every key in the params template is a schema parameter, and asserts that required text is present and forbidden text is absent.
-- **One end-to-end run on the nf-core rnavar test data was completed on the cluster** (Nextflow 26.04.6): paired-end reads, custom reference, known sites from local VCFs, no annotation. The contig-guard logic (rename, unresolvable mismatch, empty FASTA) was exercised in a standalone batch test with bcftools 1.20 from a biocontainer. The generated `prepare_known_sites` helper, the Ensembl FASTA/GTF download path, the known-sites download path, annotation, BAM/CRAM input and gVCF output remain untested.
+- **One end-to-end run on the nf-core rnavar test data was completed on the cluster** (Nextflow 26.04.6): paired-end reads, custom reference, known sites from local VCFs, no annotation. The known-sites helper logic (container wrappers for `bcftools`/`tabix`/`bgzip`, `tabix -f` re-run, contig-guard rename, params-file check) was exercised in standalone batch tests on the previous helper text. The additions of the latest change (bcftools container download, `gzip -t` truncated-download handling, final params-file existence check, de-duplicated `--bind`) are not yet exercised. The Ensembl FASTA/GTF download path, the known-sites download path, annotation, BAM/CRAM input and gVCF output remain untested.
 - The `withName` selectors in the generated `nextflow.config` (`STAR_ALIGN`, `GATK4_SPLITNCIGARREADS`, `GATK4_BASERECALIBRATOR`, `GATK4_HAPLOTYPECALLER`) were verified to match real tasks in that run.
 - The 1.3.0 output layout in the hand-off note (`variant_calling/`, `preprocessing/`, `reports/`, `pipeline_info/`) was confirmed from that run; `annotation/` was not observed.
 

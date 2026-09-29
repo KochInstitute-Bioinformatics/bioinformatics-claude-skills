@@ -44,9 +44,8 @@ need "Supplying FASTQ files and a BAM/CRAM file for the same sample"
 need "Replace every \`-\` with \`_\`"
 need "merged before alignment"
 need "## Step 5"
-need "read_length"
 need "most common read length"
-need "sjdbOverhang"
+need "→ sjdbOverhang {READ_LENGTH − 1}"
 forbid "strandedness,"
 # --- end Task 2
 
@@ -63,8 +62,7 @@ need "known_indels_tbi:"
 need "skip_baserecalibration: true"
 need "does not skip base recalibration automatically"
 need "resolve the resource URLs at run time"
-need "star_index"
-need "Store:"
+need 'Store: `{GENOME_DIR}` ='
 need "use the highest N unless the user asks otherwise"
 need "still apply the STAR index rule below"
 need "{STAR_INDEX} is the same path"
@@ -72,25 +70,7 @@ need "{STAR_INDEX} is the same path"
 
 # --- Task 4
 need "## Step 8"
-need "remove_duplicates"
-need "star_twopass"
-need "gatk_hc_call_conf"
-need "gatk_vf_qd_filter"
-need "gatk_vf_fs_filter"
-need "gatk_vf_window_size"
-need "gatk_vf_cluster_size"
-need "skip_variantfiltration"
-need "generate_gvcf"
-need "bam_csi_index"
 need "## Step 9"
-need "tools"
-need "snpeff_cache"
-need "vep_cache"
-need "snpeff_db"
-need "vep_genome"
-need "vep_species"
-need "vep_cache_version"
-need "download_cache"
 need "needs internet from compute nodes"
 need "not a parameter in the rnavar schema"
 # --- end Task 4
@@ -98,7 +78,7 @@ need "not a parameter in the rnavar schema"
 # --- Task 5
 need "## Step 10"
 need "do not overwrite it"
-need "resourceLimits"
+need "resourceLimits = [ cpus: 16"
 need "'.*:STAR_ALIGN'"
 need "'.*:GATK4_HAPLOTYPECALLER'"
 need "'.*:GATK4_BASERECALIBRATOR'"
@@ -110,16 +90,16 @@ need "read_length: {READ_LENGTH}"
 need 'star_index: "{STAR_INDEX}"'
 need "## Step 12"
 need "build_star_index_rnavar"
-need "gunzip -c"
+need "gunzip -c file.gz > file"
 need "## Step 13"
 need "## Notes for the assistant"
-need "read-only"
-need "{KNOWN_SITES_PARAMS}"
-need "{VARIANT_PARAMS}"
-need "{ANNOTATION_PARAMS}"
-need "numbers and booleans are unquoted"
-need "so that a numeric-looking title"
-need "{ENS_VERSION}"
+need "Raw FASTQ/BAM files are read-only"
+need 'as `{KNOWN_SITES_PARAMS}`'
+need 'as `{VARIANT_PARAMS}`'
+need 'as `{ANNOTATION_PARAMS}`'
+need 'numbers and booleans are unquoted'
+need 'so that a numeric-looking title'
+need 'and `{ENS_VERSION}`'
 need "where \`{TOOL}\` is"
 forbid "{KNOWN_SITES_LINES}"
 forbid "{VARIANT_LINES}"
@@ -132,7 +112,6 @@ forbid "{VERSION_ENS}"
 need "bgzipped \`.vcf.gz\` files with \`.tbi\` indexes"
 need "contig-name check"
 forbid "zcat FILE.vcf.gz | grep -v '^#' | head -1 | cut -f1"
-need "FASTA_CONTIG=\$(zcat -f {FASTA_PATH} | awk '/^>/{sub(/^>/,\"\"); print \$1; exit}')"
 need "prefer Ensembl-named variation VCFs"
 need "bcftools annotate --rename-chrs MAP.txt"
 need "chr1<->1 ... chrM<->MT"
@@ -187,16 +166,16 @@ need "build_star_index_rnavar_{REF_TAG}.sh"
 need "prepare_known_sites_{REF_TAG}.sh"
 need "prepare_annotation_cache_{TOOL}.sh"
 need "{GENOME_LENGTH}"
-need "genomeSAindexNbases"
+need "--genomeSAindexNbases 14"
 need 'SA_INDEX_NBASES=$(awk'
 need '--genomeSAindexNbases "$SA_INDEX_NBASES"'
-need 'SLURM_NTASKS'
+need '${SLURM_NTASKS:-4}'
 forbid "{SA_INDEX_NBASES}"
 forbid "{N_THREADS}"
 need "resources scaled as below"
-need "tabix -l"
+need "tabix -l FILE | head -n1"
 need "if either contig is empty"
-need "post-guard"
+need "**Post-guard filenames.**"
 need "the wizard also generates \`prepare_known_sites_{REF_TAG}.sh\`"
 forbid "build_star_index_rnavar_{ASSEMBLY}_ens{ENS_VERSION}.sh"
 forbid "prepare_known_sites_{ASSEMBLY}"
@@ -205,13 +184,13 @@ forbid "-t 8:00:00"
 
 
 # --- Task 3 (config, hand-off)
-need "overwrite = true"
+need "timeline { enabled = true; overwrite = true;"
 [ "$(grep -cE '^(timeline|report|trace|dag) +\{ enabled = true; overwrite = true;' "$SKILL")" -eq 4 ] || { echo "FAIL: overwrite = true must appear for timeline, report, trace and dag"; fail=1; }
 forbid "params.max_"
 forbid "max_cpus"
 need "reports/multiqc"
 forbid "  multiqc/           MultiQC report"
-need "annotation/"
+need "  annotation/        SnpEff"
 # --- end Task 3 (config, hand-off)
 # --- end Params-file rules
 
@@ -219,13 +198,13 @@ need "annotation/"
 # --- Final fix wave
 forbid "module add htslib"
 need "singularity exec --bind"
-need "{BCFTOOLS_SIF}"
+need 'SIF="{BCFTOOLS_SIF}"'
 need "depot.galaxyproject.org-singularity-bcftools-1.20--h8b25389_0.img"
 need "each \`module add\` in a helper"
 need "tabix -f -p vcf"
 forbid "tabix -p vcf"
 need "safely re-runnable"
-need "Skip \`wget\` when"
+need "skip the download only when \`FILE.vcf.gz\` exists AND passes \`gzip -t\`"
 need "a custom FASTA may use either style"
 need "Treat an empty value as a mismatch."
 need "EMPTY contig"
@@ -242,5 +221,69 @@ forbid "measure it with the same"
 need "-n 2 --mem=8G -t 4:00:00"
 forbid "-n 2 --mem=8G -t 2:00:00"
 # --- end Final fix wave
+
+# --- Parked-items fixes
+# A: bcftools container download branch before the existence check
+need 'if [ ! -s "$SIF" ]; then'
+need 'wget -c -O "$SIF.part" "https://depot.galaxyproject.org/singularity/bcftools:1.20--h8b25389_0" && mv "$SIF.part" "$SIF"'
+need 'ERROR: could not download the bcftools container to $SIF'
+need "re-verify the URL with a HEAD request (\`curl -sI\`) or \`WebFetch\`"
+need "the helper exits 1 (the pipeline then never starts)"
+dl_ln=$(grep -nF 'wget -c -O "$SIF.part"' "$SKILL" | head -1 | cut -d: -f1)
+ck_ln=$(grep -nF 'ERROR: bcftools container not found' "$SKILL" | head -1 | cut -d: -f1)
+{ [ -n "$dl_ln" ] && [ -n "$ck_ln" ] && [ "$dl_ln" -lt "$ck_ln" ]; } || { echo "FAIL: container download branch must precede the SIF existence check"; fail=1; }
+# B: FASTA_SOURCE for the login-node contig check
+need 'set `{FASTA_SOURCE}`'
+need 'FASTA_CONTIG=$(zcat -f {FASTA_SOURCE} | awk'
+forbid 'zcat -f {FASTA_PATH}'
+need "the original FASTA path the user gave, gzipped or not"
+# C: params-file existence check at the end of the helper
+need 'for K in dbsnp dbsnp_tbi known_indels known_indels_tbi; do'
+need 'points to a missing or empty file'
+need "the pipeline must not be run\" >&2; exit 1; }"
+# D: BIND without a repeated directory
+need 'BIND="{GENOME_DIR}"'
+need '[ "$(dirname "{FASTA_PATH}")" = "{GENOME_DIR}" ] || BIND="$BIND,$(dirname "{FASTA_PATH}")"'
+forbid 'BIND="{GENOME_DIR},$(dirname "{FASTA_PATH}")"'
+# E: truncated-download safety
+need 'gzip -t "$FILE.vcf.gz"'
+need 'wget -c -O "$FILE.vcf.gz.part" "URL"'
+need 'gzip -t "$FILE.vcf.gz.part" && mv "$FILE.vcf.gz.part" "$FILE.vcf.gz"'
+forbid "Skip \`wget\` when \`FILE.vcf.gz\` already exists"
+# F1-F4
+need "(always written, although it equals the default)"
+need "\`{DBSNP}\` and \`{INDELS}\` are the FINAL post-guard paths"
+forbid '2. "What is the base directory where genome files and indexes are stored?"'
+need "Ask the base directory only for option 1"
+need "because the contig list is tiny and the helper does not set \`pipefail\`"
+forbid "which can die of SIGPIPE under"
+# F5a: every backticked key: token in Steps 7-9 is a schema parameter
+for k in $(awk '/^## Step 7/{f=1} /^## Step 10/{f=0} f' "$SKILL" | grep -oE '`[a-z_0-9]+:' | tr -d '`:' | sort -u); do
+  echo "$schema_names" | grep -qx -- "$k" || { echo "FAIL: Step 7-9 backticked key not in rnavar schema: $k"; fail=1; }
+done
+[ -n "$(awk '/^## Step 7/{f=1} /^## Step 10/{f=0} f' "$SKILL" | grep -oE '`[a-z_0-9]+:')" ] || { echo "FAIL: no backticked keys found in Steps 7-9"; fail=1; }
+# F5b: tightened key-form needs (replace the former bare-word needs)
+need 'read_length: {READ_LENGTH}`'
+need 'remove_duplicates: true'
+need 'star_twopass: false'
+need 'gatk_hc_call_conf: <int>'
+need 'gatk_vf_qd_filter: <number>'
+need 'gatk_vf_fs_filter: <number>'
+need 'gatk_vf_window_size: <int>'
+need 'gatk_vf_cluster_size: <int>'
+need 'skip_variantfiltration: true'
+need 'generate_gvcf: true'
+need 'bam_csi_index: true'
+need 'tools: "snpeff"'
+need 'tools: "merge"'
+need 'snpeff_cache: "{DIR}"'
+need 'vep_cache: "{DIR}"'
+need 'snpeff_db: "{SNPEFF_DB}"'
+need 'vep_genome: "{VEP_GENOME}"'
+need 'vep_species: "{VEP_SPECIES}"'
+need 'vep_cache_version: "{VEP_CACHE_VERSION}"'
+need 'download_cache: true'
+need 'The `star_index` key is always written'
+# --- end Parked-items fixes
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1
