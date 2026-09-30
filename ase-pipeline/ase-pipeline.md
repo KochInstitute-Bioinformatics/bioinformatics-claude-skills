@@ -1589,7 +1589,7 @@ After Rmd 02 has finished, write the standalone page `{RESULTS_DIR}/{WD_NAME}_su
 
 Only when "Reciprocal F1 analysis" was selected in Step 7 (`{MODE}` = `f1`). Write `{CWD}/{TODAY}_{WD_NAME}_03_reciprocal.Rmd` with the same conventions as Step 12, and the same `{AUTHOR}` and `{PROJECT_TITLE}`. It loads `ase_checkpoint.rds` (Rmd 01), checks the constants against it, pastes the statistics functions of Step 14 into the chunk marked below, and writes these files to `{RESULTS_DIR}`: `{TODAY}_{WD_NAME}_ASE_reciprocal.xlsx` (sheets `Gene`, `SNPs_used`, `Design`, `Excluded`, `Summary`), `{TODAY}_{WD_NAME}_ASE_reciprocal.pdf`, `ase_reciprocal_checkpoint.rds` and `summary_numbers_reciprocal.tsv`.
 
-- **Model.** Per gene, `logit(p) = b0 + b1 * d`, where p is the **strain-A (`{STRAIN_A}`, REF) fraction** and d = +1 for `AxB` (strain A is the mother) and −1 for `BxA`. When several conditions exist, sum-to-zero condition terms are added, so that b0 and b1 are averages over the conditions. **b0 is the strain effect** (cis-regulatory divergence): b0 > 0 means "`{STRAIN_A}` higher". **b1 is the parent-of-origin effect** (imprinting): b1 > 0 means "maternal higher", and `maternal_frac = plogis(b1)`.
+- **Model.** Per gene, `logit(p) = b0 + b1 * d`, where p is the **strain-A (`{STRAIN_A}`, REF) fraction** and d = +1 for `AxB` (strain A is the mother) and −1 for `BxA`. When several conditions exist, sum-to-zero condition terms are added: b0 is then the unweighted average over the conditions, and b1 is one parent-of-origin effect common to all conditions (the model has no direction x condition term). At least one condition must contain samples of both directions; if every condition holds a single direction, condition and direction cannot be told apart and the Rmd stops. **b0 is the strain effect** (cis-regulatory divergence): b0 > 0 means "`{STRAIN_A}` higher". **b1 is the parent-of-origin effect** (imprinting): b1 > 0 means "maternal higher", and `maternal_frac = plogis(b1)`.
 - **Rows.** One row per sample and gene: the strain-A and total counts summed over the gene's SNPs after `thin_snps` (one SNP per `THIN_BP` window in exon coordinates, deepest SNP first, the same SNPs in every sample). ASEReadCounter counts a read pair at every SNP it covers, so the gene test uses no SNP pair that one read pair can span. A gene with a single SNP is tested normally, because the replication comes from the samples. SNPs that lie in two genes are left out.
 - **Dispersion and tests.** `ase_glm_test` (Step 14): the pooled dispersion between replicate animals (`phi_common`), each gene's own estimate when it is larger and the gene has at least 2 residual df, floored at `RHO_MIN`. b0 and b1 are tested by likelihood-ratio tests (1 df each), with BH within each test. `sig_strain` requires `padj_strain < FDR_SIG` and `|frac_A - 0.5| >= ABS_DEV_SIG`; `sig_parent_of_origin` requires `padj_parent_of_origin < FDR_SIG` and `|maternal_frac - 0.5| >= ABS_DEV_SIG`. Monoallelic genes (complete imprinting) have their coefficients at the ±15 bound (`status` `ok_at_bound`) with a valid p-value.
 - **Requirements.** Every sample's `cross_direction` must be exactly `AxB` or `BxA`, and each direction needs at least 2 samples; otherwise the Rmd stops. Per gene, at least 2 samples with coverage in each direction; genes below that are listed in `not_tested`.
@@ -1631,7 +1631,8 @@ BIAS_TOL    <- {BIAS_TOL}
 THIN_BP     <- {THIN_BP}             # SNPs closer than this (exon coordinates) can share a read pair: one kept per window
 if (MODE != "f1") stop("Rmd 03 (reciprocal F1) needs MODE = f1", call. = FALSE)
 ck <- readRDS(file.path(RESULTS_DIR, "ase_checkpoint.rds"))
-same <- c(MODE = identical(ck$constants$MODE, MODE),
+same <- c(MODE = identical(ck$constants$MODE, MODE),   # swapped strain names would invert every strain label
+          STRAIN_A = identical(ck$constants$STRAIN_A, STRAIN_A), STRAIN_B = identical(ck$constants$STRAIN_B, STRAIN_B),
           vapply(c("MIN_DEPTH", "FDR_SIG", "ABS_DEV_SIG", "BIAS_TOL"),
                  function(k) isTRUE(all.equal(ck$constants[[k]], get(k))), logical(1)))
 if (!all(same)) stop("constants differ from the Rmd 01 checkpoint (", paste(names(same)[!same], collapse = ", "),
@@ -1659,6 +1660,14 @@ n_dir <- table(factor(dirs$cross_direction, levels = c("AxB", "BxA")))
 if (any(n_dir < 2)) stop("the reciprocal analysis needs at least 2 samples in each cross direction (AxB: ", n_dir[["AxB"]],
                          ", BxA: ", n_dir[["BxA"]], ")", call. = FALSE)
 dirs$d <- ifelse(dirs$cross_direction == "AxB", 1, -1)   # d = +1: strain A is the mother (maternal allele = STRAIN_A)
+cl_all <- sort(unique(dirs$condition))   # the model's design over all samples: intercept, d, sum-to-zero condition terms
+Xd <- cbind(1, dirs$d)
+if (length(cl_all) > 1) Xd <- cbind(Xd, contr.sum(length(cl_all))[match(dirs$condition, cl_all), , drop = FALSE])
+if (qr(Xd)$rank < ncol(Xd))
+  stop("condition is confounded with cross direction (every condition holds a single direction), so the parent-of-origin ",
+       "effect cannot be told apart from the condition effect. Samples per condition and direction:\n",
+       paste(capture.output(print(table(condition = dirs$condition, direction = dirs$cross_direction))), collapse = "\n"),
+       "\nAt least one condition needs samples of both directions", call. = FALSE)
 knitr::kable(dirs, caption = "Samples, condition and cross direction (d = +1: AxB, strain A maternal)")
 ```
 
@@ -1692,6 +1701,11 @@ kept <- use %>% dplyr::group_by(gene_id, contig, position, exon_pos) %>% dplyr::
 gene_rows <- use %>% dplyr::semi_join(kept, by = c("gene_id", "contig", "position")) %>%
   dplyr::group_by(gene_id, sample, condition, cross_direction) %>%
   dplyr::summarise(y = sum(ref_n), n = sum(total), .groups = "drop") %>% dplyr::filter(n > 0)
+if (nrow(kept) == 0)
+  stop("no autosomal SNP in a single GTF gene is left after the gene map: ", nrow(unique(snp_gene[, c("contig", "position")])),
+       " SNP positions lie in GTF exons, ", sum(snp_gene$multi_gene), " SNP-gene pairs are in overlapping genes, ",
+       sum(excluded_chrom$sample_site_rows), " sample-site rows are on X, Y or MT. Check the contigs and genes of the GTF (",
+       GTF_PATH, ") against the count tables", call. = FALSE)
 cat(sum(snp_gene$multi_gene), "SNP-gene pairs in overlapping genes left out;", nrow(kept), "SNPs kept after thinning in",
     length(unique(kept$gene_id)), "genes\n")
 if (nrow(excluded_chrom) > 0) knitr::kable(excluded_chrom, caption = "Rows on X, Y or MT: not tested (hemizygous X and maternal MT mimic imprinting)")
@@ -1705,17 +1719,23 @@ build <- lapply(split(gene_rows, gene_rows$gene_id), function(r) {
   if (nA < 2 || nB < 2) return(list(unit = NULL, why = sprintf("fewer than 2 samples with coverage in a direction (AxB %d, BxA %d)", nA, nB)))
   X <- cbind("(Intercept)" = 1, d = ifelse(r$cross_direction == "AxB", 1, -1))
   cl <- sort(unique(r$condition))
-  if (length(cl) > 1) {   # condition adjustment, sum-to-zero coding: b0 and b1 are averages over the conditions
+  if (length(cl) > 1) {   # condition adjustment, sum-to-zero coding: b0 = unweighted average over the conditions, b1 common to all
     C <- contr.sum(length(cl)); colnames(C) <- paste0("cond_", cl[-length(cl)])
     X <- cbind(X, C[match(r$condition, cl), , drop = FALSE])
   }
+  if (qr(X)$rank < ncol(X)) return(list(unit = NULL, why = "design not estimable (condition confounded with direction in the covered samples)"))
   list(unit = list(y = r$y, n = r$n, X = X), why = NA_character_)
 })
 units <- lapply(Filter(function(b) !is.null(b$unit), build), `[[`, "unit")
 not_tested <- data.frame(gene_id = names(build), reason = vapply(build, `[[`, character(1), "why"), stringsAsFactors = FALSE)
 not_tested <- not_tested[!is.na(not_tested$reason), , drop = FALSE]
-if (length(units) == 0) stop("no gene has at least 2 samples with coverage in each cross direction", call. = FALSE)
+if (length(units) == 0) stop("no gene can be tested; genes per reason: ",
+                             paste(sprintf("%s: %d", names(table(not_tested$reason)), table(not_tested$reason)), collapse = "; "), call. = FALSE)
 res <- ase_glm_test(units, list(strain = "(Intercept)", parent_of_origin = "d"), RHO_MIN)
+st <- table(res$status)
+if (!any(res$status %in% c("ok", "ok_at_bound")))
+  stop("no gene could be tested (fit status: ", paste(sprintf("%s %d", names(st), st), collapse = ", "), "; phi_common ", res$phi_common[1], ")",
+       call. = FALSE)
 obs <- gene_rows %>% dplyr::group_by(gene_id) %>%
   dplyr::summarise(n_samples_AxB = sum(cross_direction == "AxB"), n_samples_BxA = sum(cross_direction == "BxA"),
                    frac_A_AxB = sum(y[cross_direction == "AxB"]) / sum(n[cross_direction == "AxB"]),

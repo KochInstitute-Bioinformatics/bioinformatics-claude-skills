@@ -340,4 +340,26 @@ need "Only the contigs present in the GTF gene map are tested"
 need "alt, random and unplaced contigs are treated as autosomes"
 # --- end Stage 2 Task 3
 
+# --- Stage 2 Task 3 review fixes; each check fails on the 70ba7ef skill and tools
+# I1: condition confounded with cross direction stops; per-gene non-estimable designs are listed; no testable gene stops
+need 'if (qr(Xd)$rank < ncol(Xd))'
+need "condition is confounded with cross direction"
+need "design not estimable (condition confounded with direction in the covered samples)"
+need "no gene could be tested (fit status: "
+# M1: strain names checked against the Rmd 01 checkpoint
+need 'STRAIN_A = identical(ck$constants$STRAIN_A, STRAIN_A), STRAIN_B = identical(ck$constants$STRAIN_B, STRAIN_B)'
+# M8: b1 is one effect common to all conditions
+need "b1 is one parent-of-origin effect common to all conditions"
+forbid "b0 and b1 are averages over the conditions"
+# M9: nothing left after the gene map names the gene map, not the coverage
+need "no autosomal SNP in a single GTF gene is left after the gene map"
+# M2/M3 (evaluator) and M4 (render tool) are repository files
+SYN="${SYN_DIR:-$HERE/synthetic}"   # SYN_DIR: only to run these checks on other copies of the tools
+grep -qF 'summary_numbers_reciprocal.tsv' "$SYN/evaluate_stage2.R" || { echo "FAIL: evaluate_stage2.R must check summary_numbers_reciprocal.tsv"; fail=1; }
+grep -qF 'direction strings match the signs' "$SYN/evaluate_stage2.R" || { echo "FAIL: evaluate_stage2.R must check the direction strings"; fail=1; }
+! grep -qF '>= 500)' "$SYN/evaluate_stage2.R" || { echo "FAIL: evaluate_stage2.R must read THIN_BP from the values file"; fail=1; }
+grep -qF "trap 'rm -f" "$SYN/render_from_skill.sh" || { echo "FAIL: render_from_skill.sh must remove its temporary files on failure"; fail=1; }
+grep -qF 'no statistics block between the ase-stats markers' "$SYN/render_from_skill.sh" || { echo "FAIL: render_from_skill.sh must stop without the stats markers"; fail=1; }
+# --- end Stage 2 Task 3 review fixes
+
 [ $fail -eq 0 ] && echo "PASS" || exit 1
