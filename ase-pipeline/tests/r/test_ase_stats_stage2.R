@@ -34,6 +34,8 @@ ok(identical(thin_snps(c(100, 150, 700, 720, 1500), c(10, 50, 30, 30, 5), 500), 
    "thin_snps keeps the deepest SNP per window (ties broken by position)")
 ok(identical(thin_snps(42, 7, 500), TRUE), "thin_snps keeps a single SNP")
 ok(identical(thin_snps(numeric(0), numeric(0), 500), logical(0)), "thin_snps with no SNP returns logical(0)")
+em <- tryCatch({ thin_snps(c(100, NA, 900), c(10, 20, 30), 500); "" }, error = function(e) conditionMessage(e))
+ok(grepl("thin_snps: 1 SNP(s) with a missing position or depth", em, fixed = TRUE), "thin_snps stops with a clear message on a missing position")
 ok(all(thin_snps(c(1, 2000, 4000), c(1, 1, 1), 500)), "SNPs further apart than the window are all kept")
 set.seed(11); ps <- sort(sample(1:5000, 60)); kp <- ps[thin_snps(ps, rpois(60, 50), THIN_BP)]
 ok(all(diff(kp) >= THIN_BP), "kept SNPs are at least THIN_BP apart")
@@ -53,6 +55,10 @@ ok(max(abs(f2$beta - a1@fixed.param)) < 1e-3, "bb_glm_fit at rho 0.02 matches ao
 ok(abs((f2$loglik - f20$loglik) - (a1@logL - a0@logL)) < 1e-3, "bb_glm_fit log-likelihood difference matches aod (same LRT)")
 l2 <- bb_glm_lrt(y, n, X, "d", 0.02)
 ok(abs(l2$stat - 2 * (f2$loglik - f20$loglik)) < 1e-6 && l2$df == 1, "bb_glm_lrt statistic = 2 x log-likelihood difference, df 1")
+el <- tryCatch({ bb_glm_lrt(y, n, X, "cond", 0.02); "" }, error = function(e) conditionMessage(e))
+ok(grepl("bb_glm_lrt: tested column(s) not in the design: cond", el, fixed = TRUE), "bb_glm_lrt stops (no silent p = 1) when the tested column is not in the design")
+ra <- ase_glm_test(list(u = list(y = y, n = n, X = X)), list(condition = "cond"), 0.01)
+ok(ra$status == "fit_error" && is.na(ra$p_condition), "ase_glm_test: a test of a column absent from the unit's design is fit_error with p NA")
 
 # ---- 3. separation and driver edge cases
 set.seed(13)
@@ -194,18 +200,22 @@ pair_run <- function(seed, I, phi, frac_diff = 0, consistent = FALSE) {
   r <- ase_paired_test(s, RHO_MIN); x <- r$snp; idx <- as.integer(sub("^s", "", x$snp))
   truth <- tapply(s$diff, s$snp, any)[x$snp]; gene <- gmap[idx]
   gp <- tapply(x$p, gene, acat); gnull <- tapply(!truth, gene, all)[names(gp)]
-  sg <- !is.na(x$p) & x$p < 0.05
-  po <- NA_real_
-  if (frac_diff > 0) {   # oracle: the same test with the pair dispersion fixed at its true value (bb_pair_phi_trim masked)
+  # sizes and power are over TESTED SNPs only (status ok); untested SNPs (too_few_individuals, p NA) are the separate `tested` fraction
+  tst <- x$status == "ok"; sg <- tst & x$p < 0.05
+  alt_power <- function(fixed) {   # the same test with bb_pair_phi_trim masked: "true" = the true phi (oracle), "all" = its untrimmed phi_all
     real <- bb_pair_phi_trim; on.exit(assign("bb_pair_phi_trim", real, envir = globalenv()))
-    assign("bb_pair_phi_trim", function(y, n, cell, ...) c(phi = phi, phi_all = phi, central_frac = 1), envir = globalenv())
-    xo <- ase_paired_test(s, RHO_MIN)$snp; assign("bb_pair_phi_trim", real, envir = globalenv())
-    po <- mean((!is.na(xo$p) & xo$p < 0.05)[tapply(s$diff, s$snp, any)[xo$snp]])
+    mask <- if (fixed == "true") function(y, n, cell, ...) c(phi = phi, phi_all = phi, central_frac = 1) else
+      function(y, n, cell, ...) { e <- real(y, n, cell, ...); c(phi = e[["phi_all"]], phi_all = e[["phi_all"]], central_frac = 1) }
+    assign("bb_pair_phi_trim", mask, envir = globalenv())
+    ro <- ase_paired_test(s, RHO_MIN); xo <- ro$snp; to <- xo$status == "ok"; tr <- tapply(s$diff, s$snp, any)[xo$snp]
+    c(mean((xo$p < 0.05)[to & tr]), mean(ro$phi$phi_pair))
   }
-  c(snp_size = mean(sg[!truth]), gene_size = mean(gp[gnull] < 0.05, na.rm = TRUE),
-    power = if (frac_diff > 0) mean(sg[truth]) else NA_real_, power_oracle = po,
+  po <- pm <- c(NA_real_, NA_real_)
+  if (frac_diff > 0) { po <- alt_power("true"); pm <- alt_power("all") }
+  c(snp_size = mean(sg[tst & !truth]), gene_size = mean(gp[gnull] < 0.05, na.rm = TRUE),
+    power = if (frac_diff > 0) mean(sg[tst & truth]) else NA_real_, power_oracle = po[1], power_untrimmed = pm[1], phi_untrimmed = pm[2],
     sign_up = if (consistent) mean(x$mean_delta[sg & truth] > 0) else NA_real_,
-    tested = mean(x$status == "ok"), phi = mean(r$phi$phi_pair))
+    tested = mean(tst), phi = mean(r$phi$phi_pair))
 }
 pow_gate <- function(m, label)   # ruled gate: power >= 0.70 absolute AND >= 0.9 x the oracle power (true dispersion)
   ok(mean(m[, "power"]) >= 0.70 && mean(m[, "power"]) >= 0.9 * mean(m[, "power_oracle"]),
@@ -217,14 +227,19 @@ for (ph in c(0.01, 0.02, 0.05)) {   # raw pair dispersion (no floor), no SNP cha
 }
 for (I in c(2, 3, 4, 6)) for (ph in c(0.005, 0.02)) {
   m <- seeds_rbind(1:10, function(s) pair_run(6000 + 10 * I + s, I, ph)); report(m, sprintf("paired outbred I = %d, phi %.3f", I, ph))
+  cat(sprintf("     TESTED FRACTION I = %d, phi %.3f: %.4f of the reported SNPs have >= 2 informative individuals (sizes below are over these)\n", I, ph, mean(m[, "tested"])))
   gate(m, "snp_size", sprintf("paired outbred I = %d, phi %.3f, SNP", I, ph)); gate(m, "gene_size", sprintf("paired outbred I = %d, phi %.3f, gene (ACAT)", I, ph))
 }
 m <- seeds_rbind(1:10, function(s) pair_run(7000 + s, 4, 0.02, 0.1)); report(m, "paired outbred I = 4, 10% SNPs changed, phase-heterogeneous")
 gate(m, "snp_size", "paired outbred with 10% changed SNPs: size on the unchanged SNPs")
 pow_gate(m, "paired outbred power, phase-heterogeneous change 0.5 -> 0.8, I = 4")
+untrimmed <- function(m, label) cat(sprintf("     EVIDENCE %s, untrimmed moment pair phi (phi_all): phi %.4f for a true 0.02, power %.4f (trimmed: phi %.4f, power %.4f; oracle %.4f)\n",
+                                            label, mean(m[, "phi_untrimmed"]), mean(m[, "power_untrimmed"]), mean(m[, "phi"]), mean(m[, "power"]), mean(m[, "power_oracle"])))
+untrimmed(m, "10% changed, phase-heterogeneous")
 m <- seeds_rbind(1:10, function(s) pair_run(7100 + s, 4, 0.02, 0.1, TRUE)); report(m, "paired outbred I = 4, consistent change")
 gate(m, "snp_size", "paired outbred with 10% consistently changed SNPs: size on the unchanged SNPs")
 pow_gate(m, "paired outbred power, consistent change 0.5 -> 0.8, I = 4")
+untrimmed(m, "10% changed, consistent")
 ok(min(m[, "sign_up"]) >= 0.95, sprintf("paired outbred consistent change: mean_delta > 0 in %.3f of calls (>= 0.95)", min(m[, "sign_up"])))
 m <- seeds_rbind(1:10, function(s) pair_run(7300 + s, 4, 0.02, 0.3)); report(m, "paired outbred I = 4, 30% SNPs changed, phase-heterogeneous")
 cat(sprintf("     EVIDENCE 30%% of SNPs changed: power %.4f against oracle %.4f, pair phi %.4f for a true 0.02 (limit of the trimmed estimate)\n",
@@ -289,7 +304,7 @@ frag_run <- function(seed, G = 1500, nA = 3, nB = 3, phi_bio = 0.005, span = 150
 m <- seeds_rbind(1:10, function(s) frag_run(8000 + s)); report(m, "fragment-level null (shared read pairs)")
 gate(m, "thin_strain", "fragment level, thinned sums, strain test"); gate(m, "thin_poo", "fragment level, thinned sums, parent-of-origin test")
 gate(m, "thin_dense_poo", "fragment level, thinned sums, SNP-dense genes, parent-of-origin test", 0.07, 0.10)
-cat(sprintf("TASK5_INPUT rmd02_unthinned=%.4f rmd02_thinned=%.4f rmd02_dense_unthinned=%.4f rmd02_dense_thinned=%.4f unthinned_sum_poo=%.4f\n",
+cat(sprintf("UNTHINNED_F1_GENE_SIZE rmd02_unthinned=%.4f rmd02_thinned=%.4f rmd02_dense_unthinned=%.4f rmd02_dense_thinned=%.4f unthinned_sum_poo=%.4f\n",
             mean(m[, "rmd02_unthinned"]), mean(m[, "rmd02_thinned"]), mean(m[, "rmd02_dense_unthinned"]), mean(m[, "rmd02_dense_thinned"]), mean(m[, "unthin_poo"])))
 
 # ---- 9. runtime (one core): projected time for 60,000 units x 12 rows must fit the 4 h run-script limit with margin

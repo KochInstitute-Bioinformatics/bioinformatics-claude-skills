@@ -289,7 +289,7 @@ grep -qF "likelihood-ratio test (H0 p = 0.5 vs p free, 1 df)" "$SPEC" || { echo 
 # --- end final-review fix wave
 
 
-# --- Stage 2 Task 1 (statistics); each string is absent from the Stage 1 skill (152dc20)
+# --- Stage 2 statistics block; each string is absent from the Stage 1 skill (c073dfb)
 need "chrom_class <- function(contig)"
 need "thin_snps <- function(pos, depth, window)"
 need "bb_glm_fit <- function(y, n, X, rho, bound = 15)"
@@ -304,6 +304,21 @@ need "**Stage 2 models (Rmd 03 and 04): \`ase_glm_test\`.**"
 need "**Outbred differential: \`ase_paired_test\`.**"
 need "**SNPs sharing read pairs.**"
 [ -s "$HERE/r/test_ase_stats_stage2.R" ] || { echo "FAIL: missing tests/r/test_ase_stats_stage2.R"; fail=1; }
-# --- end Stage 2 Task 1
+# --- end Stage 2 statistics block
+
+# --- Stage 2 statistics review fixes; each check fails on the 5fdcae4 skill and tests
+need 'thin_snps: ", sum(bad), " SNP(s) with a missing position or depth'
+need 'bb_glm_lrt: tested column(s) not in the design: '
+need 'for (p in c("openxlsx","tidyverse","GenomicRanges","rtracklayer"))'
+forbid 'c("aod","lme4","openxlsx"'
+need "The paired SNP sizes and power are over the tested SNPs only"
+need "excludes the SNP-dense genes"
+RT="$HERE/r/test_ase_stats_stage2.R"
+grep -qF 'tst <- x$status == "ok"; sg <- tst & x$p < 0.05' "$RT" || { echo "FAIL: paired sizes/power must be computed over tested SNPs only"; fail=1; }
+grep -qF 'UNTHINNED_F1_GENE_SIZE' "$RT" && ! grep -qF 'TASK5_INPUT' "$RT" || { echo "FAIL: the unit test must print UNTHINNED_F1_GENE_SIZE (no process token)"; fail=1; }
+grep -qF '#SBATCH -N 1 -n 1 -c 8 --mem=16G' "$HERE/r/run_stats_tests.sh" || { echo "FAIL: run_stats_tests.sh must request -N 1 -n 1 -c 8"; fail=1; }
+! grep -qF '`aod`, `lme4`, `openxlsx`' "$RD" || { echo "FAIL: ase-pipeline/README.md still lists aod and lme4 as required"; fail=1; }
+! grep -qF 'require `aod` and `lme4`' "$SPEC" || { echo "FAIL: spec still requires aod and lme4"; fail=1; }
+# --- end Stage 2 statistics review fixes
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1

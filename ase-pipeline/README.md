@@ -27,7 +27,7 @@ Then invoke it in Claude Code:
 | SLURM scheduler | Every job is submitted with `sbatch -p bcc`; nothing heavy runs on the login node |
 | Singularity >= 3.10 | Loaded via `module add singularity/3.10.4`; the only module the skill ever loads |
 | Cached biocontainers | In `$NXF_SINGULARITY_CACHEDIR` (or `~/.singularity/cache`): STAR 2.7.10b, GATK 4.4.0.0, bcftools 1.20, samtools 1.21, Picard 3.1.1 (`depot.galaxyproject.org-singularity-*.img`); a missing image is downloaded by the prep job (it fetches all five, Picard included, so the per-sample array job only checks for them), never in the foreground on the login node |
-| `bulkrnaseq` image | `/net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif`, the only place R is available; needs `aod`, `lme4`, `openxlsx`, `tidyverse`, `GenomicRanges`, `rtracklayer` (checked by a tiny `sbatch` job in Step 2) |
+| `bulkrnaseq` image | `/net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif`, the only place R is available; needs `openxlsx`, `tidyverse`, `GenomicRanges`, `rtracklayer` (checked by a tiny `sbatch` job in Step 2) |
 | Genotypes | F1: a parental-difference VCF (plain `.vcf` or bgzipped; sites-only is fine, strain names default to `C57BL_6NJ` / `A_J` when the header has none), or the built-in Mouse Genomes Project helper (needs internet on a compute node). Outbred: one VCF per individual |
 | Internet access | Only for downloading missing containers, references and the Mouse Genomes Project data |
 

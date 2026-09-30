@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -J ase_stats_tests
 #SBATCH -p bcc
-#SBATCH -n 8 --mem=16G -t 3:00:00
+#SBATCH -N 1 -n 1 -c 8 --mem=16G -t 3:00:00
 # Usage, from the repository root (the log goes where -o says, never into the repository):
 #   sbatch -p bcc -o <scratch>/logs/ase_stats_tests_%j.out ase-pipeline/tests/r/run_stats_tests.sh [stage1|stage2|all]
 set -uo pipefail
