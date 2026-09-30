@@ -508,5 +508,52 @@ need "control, ctrl, untreated, wt or vehicle"
 need "choose another reference condition first"
 need "grep -o '## Contrasts not tested:[^<]*'"
 # --- end Stage 2 Task 6 review fixes
+# --- Stage 2 README and registration; each check fails on the 212361b README and root README
+RD="$HERE/../README.md"
+rneed() { grep -qF -- "$1" "$RD" || { echo "FAIL: README must contain: $1"; fail=1; }; }
+rforbid() { ! grep -qF -- "$1" "$RD" || { echo "FAIL: README must not contain: $1"; fail=1; }; }
+grep -qF "(Stages 1 and 2)" "$RD" || { echo "FAIL: README title must say Stages 1 and 2"; fail=1; }
+grep -qF "Reciprocal F1 (Rmd 03)" "$RD" && grep -qF "Differential ASE (Rmd 04)" "$RD" || { echo "FAIL: README must describe Rmd 03 and Rmd 04"; fail=1; }
+grep -qF "summary_numbers_reciprocal.tsv" "$RD" && grep -qF "summary_numbers_differential.tsv" "$RD" || { echo "FAIL: README outputs must list the Stage 2 TSVs"; fail=1; }
+grep -qF "direction-free" "$RD" || { echo "FAIL: README must explain the direction-free outbred test"; fail=1; }
+grep -qF "X, Y and MT" "$RD" || { echo "FAIL: README must state the X/Y/MT exclusion"; fail=1; }
+grep -qE "^Stage 2 synthetic acceptance run: (PENDING|DONE)" "$RD" || { echo "FAIL: README must state the Stage 2 acceptance status"; fail=1; }
+! grep -qF "Stage 1 covers **per-sample allelic imbalance only**" "$RD" || { echo "FAIL: README still says Stage 1 only"; fail=1; }
+grep -q "/ase-pipeline.*reciprocal F1" "$HERE/../../README.md" || { echo "FAIL: root README row must mention reciprocal F1"; fail=1; }
+! grep -q "/ase-pipeline.*Stage 1: per-sample imbalance only" "$HERE/../../README.md" || { echo "FAIL: root README row still says Stage 1 only"; fail=1; }
+rforbid "Stage 1 covers only per-sample imbalance"
+rforbid "(only the per-sample analysis is implemented in Stage 1)"
+rforbid "not supported in Stage 1"
+# what Stage 2 adds and its requirements
+rneed "**What Stage 2 adds**"
+rneed "must be exactly \`AxB\` or \`BxA\`"
+rneed "reference condition"
+rneed "| 16 | Rmd 03: reciprocal F1 |"
+rneed "| 17 | Rmd 04: differential ASE |"
+rneed "ASE_reciprocal.xlsx"
+rneed "ASE_differential.xlsx"
+rneed "No mixed model (lme4) is used"
+# measured validation numbers (source: the final unit-test log and the evaluator runs)
+rneed "173 checks ok, 0 failed"
+rneed "0.0370 (strain) / 0.0367 (parent of origin)"
+rneed "tested fraction 0.4244 / 0.6961 / 0.8434 / 0.9646"
+rneed "at least 0.70 and at least 90 percent of the oracle power"
+rneed "0.1450 (0.2084 in SNP-dense genes), the thinned test that Rmd 02 now uses 0.0497"
+rneed "5 of 5 planted strain genes and 5 of 5 planted parent-of-origin genes found with the correct sign, 0 of 47 null genes"
+rneed "4 of 4 planted genes found with the correct sign"
+rneed "5 of 5 planted genes found, 0 of 3 imbalanced-but-unchanged genes and 0 of 52 null genes"
+rneed "21 of 24 planted, 0 of 42 null, 65 significant SNPs unchanged"
+# limitations stated plainly
+rneed "with 30 percent changed (phase-heterogeneous) it is 0.6698 against an oracle of 0.9163"
+rneed "null sizes are about 0.036 at a true dispersion of 0.02"
+rneed "phASER (Stage 3) is not implemented"
+rneed "unplaced contigs are treated as autosomes"
+rneed "adding samples or conditions can change which SNP is kept"
+rneed "\`sacct\` is unavailable on the test cluster"
+rneed "The mouse helper was only partly exercised"
+# no internal process labels in shipped text
+! grep -qE "Task [0-9]" "$RD" "$HERE/../ase-pipeline.md" || { echo "FAIL: README or skill contains an internal 'Task N' label"; fail=1; }
+# --- end Stage 2 README and registration
+
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1
