@@ -283,29 +283,68 @@ frag_run <- function(seed, G = 1500, nA = 3, nB = 3, phi_bio = 0.005, span = 150
   ru <- ase_glm_test(setNames(lapply(seq_len(G), unit, thin = FALSE), paste0("g", 1:G)), tests, RHO_MIN)
   sz <- function(p, sel) mean(p[sel] < 0.05, na.rm = TRUE)
   multi <- k >= 2
-  rmd02 <- function(thin) {   # the Stage 1 Rmd 02 F1 gene path, per sample: free-mean rho (corrected, floored) + gene LRT
-    unlist(lapply(seq_len(S), function(s) {
-      x <- integer(0); n <- integer(0); gid <- integer(0)
-      for (gi in seq_len(G)) {
-        a <- mat(genes[[gi]]$a); nn <- mat(genes[[gi]]$n)
-        keep <- if (thin) thin_snps(genes[[gi]]$pos, rowSums(nn), THIN_BP) else rep(TRUE, nrow(nn))
-        x <- c(x, a[keep, s]); n <- c(n, nn[keep, s]); gid <- c(gid, rep(gi, sum(keep)))
-      }
-      e <- bb_estimate_rho_gene(x, n, gid); rho <- max(if (is.na(e[["corrected"]])) 0 else e[["corrected"]], RHO_MIN)
-      vapply(which(multi), function(gi) { i <- gid == gi; if (sum(i) < 2) NA_real_ else bb_gene_lrt(x[i], n[i], rho)$p }, numeric(1))
+  rmd02 <- function(thin, rho_thin = thin) {   # the Rmd 02 F1 gene path, per sample: free-mean rho (corrected, floored) + gene LRT
+    unlist(lapply(seq_len(S), function(s) {   # thin: SNPs of the gene LRT; rho_thin: SNPs of the rho estimate
+      ab <- rmd02_counts(genes, s, thin); r <- if (rho_thin == thin) ab else rmd02_counts(genes, s, rho_thin)
+      e <- bb_estimate_rho_gene(r$x, r$n, r$gid); rho <- max(if (is.na(e[["corrected"]])) 0 else e[["corrected"]], RHO_MIN)
+      vapply(which(multi), function(gi) { i <- ab$gid == gi; if (sum(i) < 2) NA_real_ else bb_gene_lrt(ab$x[i], ab$n[i], rho)$p }, numeric(1))
     }))
   }
-  p02u <- rmd02(FALSE); p02t <- rmd02(TRUE); dm <- rep(dense[multi], S)
+  p02u <- rmd02(FALSE); p02t <- rmd02(TRUE); p02tu <- rmd02(TRUE, FALSE); dm <- rep(dense[multi], S)
   c(thin_strain = sz(rt$p_strain, TRUE), thin_poo = sz(rt$p_parent_of_origin, TRUE), thin_dense_poo = sz(rt$p_parent_of_origin, dense & multi),
     unthin_strain = sz(ru$p_strain, TRUE), unthin_poo = sz(ru$p_parent_of_origin, TRUE), unthin_dense_poo = sz(ru$p_parent_of_origin, dense & multi),
     rmd02_unthinned = mean(p02u < 0.05, na.rm = TRUE), rmd02_thinned = mean(p02t < 0.05, na.rm = TRUE),
-    rmd02_dense_unthinned = mean(p02u[dm] < 0.05, na.rm = TRUE), rmd02_dense_thinned = mean(p02t[dm] < 0.05, na.rm = TRUE))
+    rmd02_dense_unthinned = mean(p02u[dm] < 0.05, na.rm = TRUE), rmd02_dense_thinned = mean(p02t[dm] < 0.05, na.rm = TRUE),
+    rmd02_thinned_unthinned_rho = mean(p02tu < 0.05, na.rm = TRUE))
+}
+rmd02_counts <- function(genes, s, thin) {   # one sample's SNP counts (x, n, gene index), all SNPs or thinned (deepest per THIN_BP window)
+  mat <- function(v) if (is.matrix(v)) v else matrix(v, nrow = 1)
+  x <- integer(0); n <- integer(0); gid <- integer(0)
+  for (gi in seq_along(genes)) {
+    a <- mat(genes[[gi]]$a); nn <- mat(genes[[gi]]$n)
+    keep <- if (thin) thin_snps(genes[[gi]]$pos, rowSums(nn), THIN_BP) else rep(TRUE, nrow(nn))
+    x <- c(x, a[keep, s]); n <- c(n, nn[keep, s]); gid <- c(gid, rep(gi, sum(keep)))
+  }
+  list(x = x, n = n, gid = gid)
 }
 m <- seeds_rbind(1:10, function(s) frag_run(8000 + s)); report(m, "fragment-level null (shared read pairs)")
 gate(m, "thin_strain", "fragment level, thinned sums, strain test"); gate(m, "thin_poo", "fragment level, thinned sums, parent-of-origin test")
 gate(m, "thin_dense_poo", "fragment level, thinned sums, SNP-dense genes, parent-of-origin test", 0.07, 0.10)
 cat(sprintf("UNTHINNED_F1_GENE_SIZE rmd02_unthinned=%.4f rmd02_thinned=%.4f rmd02_dense_unthinned=%.4f rmd02_dense_thinned=%.4f unthinned_sum_poo=%.4f\n",
             mean(m[, "rmd02_unthinned"]), mean(m[, "rmd02_thinned"]), mean(m[, "rmd02_dense_unthinned"]), mean(m[, "rmd02_dense_thinned"]), mean(m[, "unthin_poo"])))
+cat(sprintf("     EVIDENCE same thinned Rmd 02 gene LRT with the UNTHINNED free-mean rho: size %.4f, worst seed %.4f (thinned rho: %.4f, worst seed %.4f)\n",
+            mean(m[, "rmd02_thinned_unthinned_rho"]), max(m[, "rmd02_thinned_unthinned_rho"]), mean(m[, "rmd02_thinned"]), max(m[, "rmd02_thinned"])))
+
+# ---- 8b. Rmd 02 rho_gene fallback: fewer than 5 genes keep 2 or more thinned SNPs, so the gene LRT on the thinned SNPs uses
+#          the UNTHINNED free-mean rho (as on the Stage 1 synthetic acceptance data, where 2 of 12 genes keep 2 SNPs)
+frag_fallback_run <- function(seed, G = 300, S = 6, phi_bio = 0.005, span = 1500) {
+  set.seed(seed); k <- sample(c(2, 4, 8), G, TRUE); sparse <- seq_len(G) <= 3   # only 3 genes can keep 2 or more SNPs
+  genes <- lapply(seq_len(G), function(g) {
+    pos <- if (sparse[g]) sort(sample(1:span, 4)) else sort(sample(600:900, k[g]))   # dense: every SNP within 300 bp
+    pr <- rbeta(S, 0.5 * (1 - phi_bio) / phi_bio, 0.5 * (1 - phi_bio) / phi_bio)
+    cnt <- lapply(seq_len(S), function(s) frag_counts(pos, pr[s], rpois(1, 150), span))
+    list(pos = pos, a = sapply(cnt, `[[`, "a"), n = sapply(cnt, `[[`, "n"))
+  })
+  per <- lapply(seq_len(S), function(s) {
+    th <- rmd02_counts(genes, s, TRUE); un <- rmd02_counts(genes, s, FALSE)
+    et <- bb_estimate_rho_gene(th$x, th$n, th$gid)[["corrected"]]; eu <- bb_estimate_rho_gene(un$x, un$n, un$gid)[["corrected"]]
+    fb <- is.na(et) && !is.na(eu)                                   # step (2) of the Rmd 02 rho_gene chain is taken
+    rho <- if (!is.na(et)) max(et, RHO_MIN) else if (!is.na(eu)) max(eu, RHO_MIN) else max(bb_estimate_rho(un$x, un$n), RHO_MIN)
+    p <- vapply(seq_len(G), function(gi) { i <- th$gid == gi; if (sum(i) < 1) NA_real_ else bb_gene_lrt(th$x[i], th$n[i], rho)$p }, numeric(1))
+    list(p = p, fb = fb, rho = rho, eu = eu)
+  })
+  p <- unlist(lapply(per, `[[`, "p"))
+  c(fallback_size = mean(p < 0.05, na.rm = TRUE), fallback_dense_size = mean(p[rep(!sparse, S)] < 0.05, na.rm = TRUE),
+    fallback_taken = mean(vapply(per, `[[`, logical(1), "fb")), rho_used = mean(vapply(per, `[[`, numeric(1), "rho")),
+    rho_unthinned_corrected = mean(vapply(per, `[[`, numeric(1), "eu")))
+}
+m <- seeds_rbind(1:10, function(s) frag_fallback_run(8100 + s)); report(m, "Rmd 02 rho_gene fallback (unthinned rho, thinned gene LRT)")
+ok(all(m[, "fallback_taken"] == 1), sprintf("fallback scenario: the unthinned rho_gene is used in every sample (fraction %.2f)", mean(m[, "fallback_taken"])))
+gate(m, "fallback_size", "Rmd 02 F1 gene LRT with the rho_gene fallback to the unthinned free-mean rho: null size")
+gate(m, "fallback_dense_size", "Rmd 02 F1 gene LRT with the rho_gene fallback, SNP-dense genes (one SNP left): null size")
+cat(sprintf("RHO_GENE_FALLBACK fallback_size=%.4f worst=%.4f dense=%.4f dense_worst=%.4f rho_used=%.4f rho_unthinned_corrected=%.4f\n",
+            mean(m[, "fallback_size"]), max(m[, "fallback_size"]), mean(m[, "fallback_dense_size"]), max(m[, "fallback_dense_size"]),
+            mean(m[, "rho_used"]), mean(m[, "rho_unthinned_corrected"])))
 
 # ---- 9. runtime (one core): projected time for 60,000 units x 12 rows must fit the 4 h run-script limit with margin
 set.seed(900); ub <- sim_units(5000, rep(c(1, -1), 6), 0.02)

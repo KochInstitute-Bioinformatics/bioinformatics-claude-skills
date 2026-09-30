@@ -262,13 +262,7 @@ need "**Contig names must match the FASTA.**"
 need 'colClasses = c(contig = "character", variantID = "character",'
 need "**Every table is read with explicit column classes**"
 forbid 'read.delim(f, stringsAsFactors = FALSE, check.names = FALSE), error'
-# I6: SNP-dependence limitation documented (Step 13, Step 14, Rmd 02 gene table, README)
-need "**Independence assumption (F1 gene LRT and \`bb_estimate_rho_gene\`).**"
-need "come from simulations with **independent SNPs**"
-need 'note = "SNP counts treated as independent: may be anti-conservative in SNP-dense genes at moderate depth"'
-need "**Limitation (F1):** SNP counts that share read pairs are treated as independent"
-grep -qF "SNPs that share read pairs are treated as independent" "$RD" || { echo "FAIL: ase-pipeline/README.md must state the SNP-dependence limitation of the F1 gene test"; fail=1; }
-grep -qF "Future work (Stage 2): thin each gene's SNPs" "$RD" || { echo "FAIL: ase-pipeline/README.md must list SNP thinning as Stage 2 future work"; fail=1; }
+# I6: SNP-dependence limitation (Step 13, Step 14, Rmd 02 gene table, README): superseded by the thinned F1 gene test, see Stage 2 Task 5 below
 # minors: GTF bind, fetch_sif calls, wrapper sets, paths with spaces, dropping a failed sample, README wording, spec
 need 'add_bind "$(dirname "{FASTA_PATH}")"; add_bind "$(dirname "{GTF_PATH}")"'
 need "must **call** it once per container it uses"
@@ -408,5 +402,33 @@ need "Rmd 04 counts every sample-site row on X, Y or MT"
 # m5: a wrong REF_CONDITION needs Rmd 04 written again, not Rmd 01
 need "Rmd 01 need not be re-rendered"
 # --- end Stage 2 Task 4 review fixes
+
+# --- Stage 2 Task 5 (Rmd 02 F1 gene test on thinned SNPs); each check fails on the da225c8 skill, README and spec
+need 'note = "thinned: at most one SNP per THIN_BP window (exon coordinates), so no read pair is counted twice; approximate (ignores alternative splicing)"'
+need 'snp_gene$thin_keep'
+need "**Thinned SNPs (F1 gene LRT and \`bb_estimate_rho_gene\`).**"
+forbid "Planned for Stage 2 (not implemented): thin each gene's SNPs"
+need 'n_snps_used = nrow(g)'
+need "F1 gene test: at most one SNP per THIN_BP window (exon coordinates) is used, so no read pair is counted twice (approximate: alternative splicing can bring distant exons into one fragment)."
+need 'g_thin <- sg_keep$gene_id[match(paste(d$contig, d$position), paste(sg_keep$contig, sg_keep$position))]'
+forbid 'g <- sg_keep$gene_id'   # the per-SNP rho stays on all SNPs (controller ruling 1)
+# controller ruling 2: the gene LRT has its own rho_gene: thinned -> unthinned free-mean -> H0-based
+need 'rt <- collect_warnings(bb_estimate_rho_gene(d$alt_n, d$total, g_thin))'
+need 'gsrc <- "unthinned SNPs, free-mean per gene, bias-corrected (fallback: fewer than 5 genes with 2 or more thinned SNPs)"'
+need 'rho_gene_source = dplyr::first(rho_gene_source)'
+need "The F1 gene LRT has its own \`rho_gene\`, with this fallback chain"
+need "**Fallback chain of \`rho_gene\`.**"
+need "the Stage 1 figure of 24 of 24 planted gene x sample tests no longer applies"
+grep -qF "frag_fallback_run <- function(seed" "$RT" && grep -qF "RHO_GENE_FALLBACK" "$RT" || { echo "FAIL: test_ase_stats_stage2.R must simulate the rho_gene fallback"; fail=1; }
+grep -qF "costs power in genes whose SNPs are close together" "$RD" || { echo "FAIL: README must state the power cost of the thinned F1 gene test"; fail=1; }
+need 'snp_by_gene_f1 <- dplyr::inner_join(snp, dplyr::filter(snp_gene, thin_keep), by = c("contig", "position"))'
+need "the depth is pooled over all samples of the project"
+need '| `THIN_BP` | 500 | F1 gene-level test of Rmd 02 and the gene-level tests of Rmd 03 and 04'
+forbid "SNP counts treated as independent"
+forbid "**Limitation (F1):** SNP counts that share read pairs are treated as independent"
+grep -qF "thinned to one SNP per" "$RD" || { echo "FAIL: README must describe the thinned F1 gene test"; fail=1; }
+! grep -qF "SNPs that share read pairs are treated as independent" "$RD" || { echo "FAIL: README still says the F1 gene test treats SNP counts as independent"; fail=1; }
+! grep -qF "treated as independent, a documented limitation" "$SPEC" || { echo "FAIL: spec still says the F1 gene test treats SNP counts as independent"; fail=1; }
+# --- end Stage 2 Task 5
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1
