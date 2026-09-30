@@ -257,7 +257,7 @@ Tools come from cached Singularity biocontainers (`{STAR_SIF}`, `{GATK_SIF}`, `{
 |---|---|---|
 | `prep_f1_reference.sh`, `prep_genotypes.sh` | `star`, `gatk`, `bcftools`, `bgzip`, `tabix`, `samtools`, `picard` (all) | downloading version, called for all five containers ("Prep container fetch" below) |
 | `align_count_f1.sh`, `align_wasp_count.sh` | `star`, `gatk`, `samtools`, `picard` | check-only version, called for each of the four (Step 11) |
-| `extract_mgp_parental_vcf.sh`, `concat_mgp_parental_vcf.sh` | `bcftools`, `tabix` | downloading version, called for `$BCFTOOLS_SIF` only (the line shown below); the `add_bind` line is reduced to `add_bind "{CWD}"`, because the helper reads no genome file and the genome folder may not exist yet when it runs (Singularity stops on a missing bind source) |
+| `extract_mgp_parental_vcf.sh`, `concat_mgp_parental_vcf.sh` | `bcftools`, `tabix` | downloading version, called for `$BCFTOOLS_SIF` only (the helper line in "Per-script fetch lines" below); the `add_bind` line is reduced to `add_bind "{CWD}"`, because the helper reads no genome file and the genome folder may not exist yet when it runs (Singularity stops on a missing bind source) |
 
 `--bind` is required because `/net/...` paths are not auto-bound; `BIND` lists each directory once (Singularity prints "destination is already in the mount point list" for a repeated one), so add directories with `add_bind`:
 
@@ -270,8 +270,6 @@ fetch_sif() {   # $1 = local path, $2 = verified URL (Step 2); downloads only wh
   mkdir -p "$(dirname "$1")"
   { wget -c -O "$1.part" "$2" && mv "$1.part" "$1"; } || { echo "ERROR: could not download $1" >&2; exit 1; }
 }
-fetch_sif "$BCFTOOLS_SIF" "https://depot.galaxyproject.org/singularity/bcftools:1.20--h8b25389_0"
-# ... one fetch_sif line per container this script uses (URLs from the Step 2 table)
 BIND=""
 add_bind() { case ",$BIND," in *",$1,"*) ;; *) BIND="${BIND:+$BIND,}$1" ;; esac; }
 add_bind "{CWD}"; add_bind "{GENOME_DIR}"; add_bind "$(dirname "{FASTA_PATH}")"; add_bind "$(dirname "{GTF_PATH}")"
@@ -284,9 +282,15 @@ samtools() { local SIF="$SAMTOOLS_SIF"; singularity exec --bind "$BIND" "$SIF" s
 picard()    { local SIF="$PICARD_SIF";  singularity exec --bind "$BIND" "$SIF" picard "$@"; }
 ```
 
-Defining `fetch_sif` does nothing by itself: every script must **call** it once per container it uses, right after the definition (the calls are the lines that start with `fetch_sif "$`). The GTF directory is bound in every script (STAR `genomeGenerate` reads `{GTF_PATH}`, and with a custom GTF outside `{CWD}` and `{GENOME_DIR}` it would otherwise be invisible inside the container).
+Defining `fetch_sif` does nothing by itself: every script must **call** it once per container it uses. The calls are not part of the code block above (a literal copy of the block must stay valid for every script): append the script's `fetch_sif` lines, from "Per-script fetch lines" below, right after the block (the calls are the lines that start with `fetch_sif "$`). The GTF directory is bound in every script (STAR `genomeGenerate` reads `{GTF_PATH}`, and with a custom GTF outside `{CWD}` and `{GENOME_DIR}` it would otherwise be invisible inside the container).
 
-**Prep container fetch (both prep scripts).** The prep job (`prep_f1_reference.sh` or `prep_genotypes.sh`) fetches all five containers, not only the ones it runs itself: the per-sample array job of Step 11 only checks that its containers exist (so parallel tasks never download the same file) and needs Picard, which no prep step uses. In both prep scripts the `fetch_sif` lines of block C are therefore exactly:
+**Per-script fetch lines** (appended after block C, outside its code block; URLs from the Step 2 table):
+
+- `prep_f1_reference.sh`, `prep_genotypes.sh`: five lines, "Prep container fetch" below.
+- `align_count_f1.sh`, `align_wasp_count.sh`: four check-only calls (STAR, GATK, SAMTOOLS, PICARD), Step 11.
+- `extract_mgp_parental_vcf.sh`, `concat_mgp_parental_vcf.sh`: the one line `fetch_sif "$BCFTOOLS_SIF" "https://depot.galaxyproject.org/singularity/bcftools:1.20--h8b25389_0"`.
+
+**Prep container fetch (both prep scripts).** The prep job (`prep_f1_reference.sh` or `prep_genotypes.sh`) fetches all five containers, not only the ones it runs itself: the per-sample array job of Step 11 only checks that its containers exist (so parallel tasks never download the same file) and needs Picard, which no prep step uses. In both prep scripts the `fetch_sif` lines appended after block C are therefore exactly:
 
 ```bash
 fetch_sif "$STAR_SIF" "https://depot.galaxyproject.org/singularity/star:2.7.10b--h9ee0642_0"
@@ -576,7 +580,7 @@ Sites where strain A carries the alternative allele (the reference genome is C57
 
 ## Step 11 — Per-sample array scripts
 
-Both scripts are SLURM array jobs (`#SBATCH --array=1-{ARRAY_N}`, `#SBATCH {ARRAY_RESOURCES}`), take row `SLURM_ARRAY_TASK_ID` of `{SAMPLES_CSV}` (data row 1 = task 1), and write the outputs below. Header: `#!/bin/bash`, `#SBATCH -N 1 -p bcc`, `#SBATCH --array=1-{ARRAY_N}`, `#SBATCH {ARRAY_RESOURCES}`, `#SBATCH --mail-type=END,FAIL`, `#SBATCH --mail-user={USER_EMAIL}`, and one log per array task, `%A` = array job id and `%a` = task id: `#SBATCH -o {RESULTS_DIR}/logs/align_count_f1_%A_%a.out` (F1) or `#SBATCH -o {RESULTS_DIR}/logs/align_wasp_count_%A_%a.out` (outbred). They use block C, but the containers must already be cached by the prep job (it fetches all five, see "Prep container fetch" in Step 10), so parallel tasks never download the same file: in these scripts define `fetch_sif` as a check only, `fetch_sif() { [ -s "$1" ] || { echo "ERROR: missing container $1 (run the prep job first)" >&2; exit 1; }; }`, and **call** it for each container the script uses, on the line after the definition: `fetch_sif "$STAR_SIF"; fetch_sif "$GATK_SIF"; fetch_sif "$SAMTOOLS_SIF"; fetch_sif "$PICARD_SIF"`. The wrapper functions are `star`, `gatk`, `samtools` and `picard` (the table in Step 10, block C). `{MIN_MAPQ}` and `{MIN_BASEQ}` are the ASEReadCounter thresholds recorded in Step 8.
+Both scripts are SLURM array jobs (`#SBATCH --array=1-{ARRAY_N}`, `#SBATCH {ARRAY_RESOURCES}`), take row `SLURM_ARRAY_TASK_ID` of `{SAMPLES_CSV}` (data row 1 = task 1), and write the outputs below. Header: `#!/bin/bash`, `#SBATCH -N 1 -p bcc`, `#SBATCH --array=1-{ARRAY_N}`, `#SBATCH {ARRAY_RESOURCES}`, `#SBATCH --mail-type=END,FAIL`, `#SBATCH --mail-user={USER_EMAIL}`, and one log per array task, `%A` = array job id and `%a` = task id: `#SBATCH -o {RESULTS_DIR}/logs/align_count_f1_%A_%a.out` (F1) or `#SBATCH -o {RESULTS_DIR}/logs/align_wasp_count_%A_%a.out` (outbred). They use block C, but the containers must already be cached by the prep job (it fetches all five, see "Prep container fetch" in Step 10), so parallel tasks never download the same file: in these scripts define `fetch_sif` as a check only, `fetch_sif() { [ -s "$1" ] || { echo "ERROR: missing container $1 (run the prep job first)" >&2; exit 1; }; }`, and **call** it for each container the script uses, on the lines right after block C (see "Per-script fetch lines" in Step 10): `fetch_sif "$STAR_SIF"; fetch_sif "$GATK_SIF"; fetch_sif "$SAMTOOLS_SIF"; fetch_sif "$PICARD_SIF"`. The wrapper functions are `star`, `gatk`, `samtools` and `picard` (the table in Step 10, block C). `{MIN_MAPQ}` and `{MIN_BASEQ}` are the ASEReadCounter thresholds recorded in Step 8.
 
 | Output | Content |
 |---|---|
@@ -703,14 +707,7 @@ check_table "$UNF_TABLE"     # outbred (align_wasp_count.sh) only; omit this lin
 
 ### Submission order
 
-Write scripts to `{RESULTS_DIR}/scripts/`, run `mkdir -p {RESULTS_DIR}/logs {RESULTS_DIR}/tmp`, then submit with `--parsable` and `--dependency=afterok` so the array never starts before its inputs exist (when the mouse helper is used, the prep job depends on its concat job):
-
-```bash
-P=$(sbatch -p bcc --parsable {RESULTS_DIR}/scripts/prep_f1_reference.sh)      # outbred: prep_genotypes.sh
-sbatch -p bcc --dependency=afterok:$P {RESULTS_DIR}/scripts/align_count_f1.sh  # outbred: align_wasp_count.sh
-```
-
-Wait for the jobs with a bounded loop and read the job logs; on a failure show the error line and stop. Rmd 01 (Step 12) reads `{RESULTS_DIR}/ase_counts/{sample}.table` (and `{sample}.wasp_stats.tsv` and `{sample}.unfiltered.table` in outbred mode) for every sample in `{SAMPLES_CSV}`, by name.
+Submission and waiting are done by `submit_chain.sh` and `wait_chain.sh` of Step 15 (job ids checked, `afterok` dependencies, bounded wait); see Step 15 and do not submit these scripts by hand. Rmd 01 (Step 12) reads `{RESULTS_DIR}/ase_counts/{sample}.table` (and `{sample}.wasp_stats.tsv` and `{sample}.unfiltered.table` in outbred mode) for every sample in `{SAMPLES_CSV}`, by name.
 
 ---
 
@@ -1591,7 +1588,7 @@ ase_paired_test <- function(d, rho_min, min_individuals = 2, bound = 15) {
 
 ### Submission order (one block, every job `sbatch -p bcc`)
 
-Write all scripts to `{RESULTS_DIR}/scripts/` (Steps 10-13, and Steps 16 and 17 for the selected analyses), run `mkdir -p {RESULTS_DIR}/logs {RESULTS_DIR}/tmp`, then submit the whole chain with `--parsable` job ids and `--dependency=afterok` so that no job starts before its inputs exist and none starts after a failure. Write the block below to `{RESULTS_DIR}/scripts/submit_chain.sh`, fill in the mode branch, the optional mouse helper and the selected analyses, show it to the user, and run it once from `{CWD}` with `bash {RESULTS_DIR}/scripts/submit_chain.sh` (it only calls `sbatch`, so it may run on the login node). It stops with an error, and submits nothing more, when a script it needs is missing or empty (`NEED`) or when `sbatch` returns no job id (`got`); it records every job id in `{RESULTS_DIR}/logs/chain_job_ids.tsv` (script name, job id), which `wait_chain.sh` below reads.
+Write all scripts to `{RESULTS_DIR}/scripts/` (Steps 10-13, and Steps 16 and 17 for the selected analyses), run `mkdir -p {RESULTS_DIR}/logs {RESULTS_DIR}/tmp`, then submit the whole chain with `--parsable` job ids and `--dependency=afterok` so that no job starts before its inputs exist and none starts after a failure. Write the block below to `{RESULTS_DIR}/scripts/submit_chain.sh`, substitute the placeholders, keep or delete the optional mouse helper lines, show it to the user, and run it once from `{CWD}` with `bash {RESULTS_DIR}/scripts/submit_chain.sh` (it only calls `sbatch`, so it may run on the login node). It stops with an error, and submits nothing more, when a script it needs is missing or empty (`NEED`) or when `sbatch` returns no job id (`got`); it records every job id in `{RESULTS_DIR}/logs/chain_job_ids.tsv` (script name, job id), which `wait_chain.sh` below reads.
 
 ```bash
 #!/bin/bash
@@ -1601,7 +1598,15 @@ S={RESULTS_DIR}/scripts
 IDS={RESULTS_DIR}/logs/chain_job_ids.tsv
 die() { echo "ERROR: $*" >&2; exit 1; }
 got() { [ -n "$2" ] || die "sbatch returned no job id for $1; nothing after it was submitted (cancel the jobs already listed in $IDS)"; printf '%s\t%s\n' "$1" "$2" >> "$IDS"; }
-NEED="prep_f1_reference.sh align_count_f1.sh run_01_import_qc.sh run_02_imbalance.sh run_03_reciprocal.sh run_04_differential.sh"
+MODE="{MODE}"; ANALYSES="{ANALYSES}"   # MODE: f1 or outbred; ANALYSES: the words selected in Step 7, e.g. "per-sample reciprocal differential"
+case "$MODE" in
+  f1)      PREP_SCRIPT=prep_f1_reference.sh; ARRAY_SCRIPT=align_count_f1.sh ;;
+  outbred) PREP_SCRIPT=prep_genotypes.sh;    ARRAY_SCRIPT=align_wasp_count.sh ;;
+  *)       die "MODE must be f1 or outbred, got '$MODE'" ;;
+esac
+NEED="$PREP_SCRIPT $ARRAY_SCRIPT run_01_import_qc.sh run_02_imbalance.sh"
+case " $ANALYSES " in *reciprocal*) [ "$MODE" = f1 ] || die "reciprocal analysis is F1 only"; NEED="$NEED run_03_reciprocal.sh" ;; esac
+case " $ANALYSES " in *differential*) NEED="$NEED run_04_differential.sh" ;; esac
 MISSING=$(for f in $NEED; do [ -s "$S/$f" ] || echo "$f"; done)
 [ -z "$MISSING" ] || die "MISSING in $S: $(echo $MISSING) - nothing submitted"
 : > "$IDS"
@@ -1609,27 +1614,32 @@ DEP=""; R3="not selected"; R4="not selected"   # DEP stays empty unless the mous
 # ONLY IF the mouse helper is used (F1, no parental VCF): array of chromosomes -> concat, then prep depends on the concat job.
 # The helper reads neither the FASTA nor its .fai (fixed GRCm39 chromosome list), so it can run before the prep job,
 # which downloads/decompresses the FASTA, writes the .fai and compares the parental VCF's contigs with it.
-# Without the helper, delete the next three lines; the scripts do not exist and sbatch would fail.
+# Without the helper, delete the next four lines; the scripts do not exist and sbatch would fail.
+NEED="$NEED extract_mgp_parental_vcf.sh concat_mgp_parental_vcf.sh"; MISSING=$(for f in $NEED; do [ -s "$S/$f" ] || echo "$f"; done); [ -z "$MISSING" ] || die "MISSING in $S: $(echo $MISSING) - nothing submitted"
 X=$(sbatch -p bcc --parsable $S/extract_mgp_parental_vcf.sh); got extract_mgp_parental_vcf.sh "$X"
 C=$(sbatch -p bcc --parsable --dependency=afterok:$X $S/concat_mgp_parental_vcf.sh); got concat_mgp_parental_vcf.sh "$C"
 DEP="--dependency=afterok:$C"
-# 1. prep job: F1 = prep_f1_reference.sh, outbred = prep_genotypes.sh
-P=$(sbatch -p bcc --parsable $DEP $S/prep_f1_reference.sh); got prep_f1_reference.sh "$P"
-# 2. per-sample array job: F1 = align_count_f1.sh, outbred = align_wasp_count.sh
-A=$(sbatch -p bcc --parsable --dependency=afterok:$P $S/align_count_f1.sh); got align_count_f1.sh "$A"
+# 1. prep job (PREP_SCRIPT was set from MODE above)
+P=$(sbatch -p bcc --parsable $DEP $S/$PREP_SCRIPT); got $PREP_SCRIPT "$P"
+# 2. per-sample array job (ARRAY_SCRIPT was set from MODE above)
+A=$(sbatch -p bcc --parsable --dependency=afterok:$P $S/$ARRAY_SCRIPT); got $ARRAY_SCRIPT "$A"
 # 3. Rmd 01 (import, filters, reference-bias QC) after every array task succeeded
 R1=$(sbatch -p bcc --parsable --dependency=afterok:$A $S/run_01_import_qc.sh); got run_01_import_qc.sh "$R1"
 # 4. Rmd 02 (per-sample imbalance, xlsx, summary_numbers.tsv) after Rmd 01
 R2=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_02_imbalance.sh); got run_02_imbalance.sh "$R2"
-# 5. ONLY IF reciprocal F1 was selected (Step 7): Rmd 03 after Rmd 01 (it reads only the Rmd 01 checkpoint; runs beside Rmd 02)
-R3=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_03_reciprocal.sh); got run_03_reciprocal.sh "$R3"
-# 6. ONLY IF differential ASE was selected (Step 7): Rmd 04 after Rmd 01 (runs beside Rmd 02 and Rmd 03)
-R4=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_04_differential.sh); got run_04_differential.sh "$R4"
+# 5. Rmd 03 only when reciprocal F1 was selected (Step 7): after Rmd 01 (it reads only the Rmd 01 checkpoint; runs beside Rmd 02)
+case " $ANALYSES " in *reciprocal*)
+  R3=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_03_reciprocal.sh); got run_03_reciprocal.sh "$R3" ;;
+esac
+# 6. Rmd 04 only when differential ASE was selected (Step 7): after Rmd 01 (runs beside Rmd 02 and Rmd 03)
+case " $ANALYSES " in *differential*)
+  R4=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_04_differential.sh); got run_04_differential.sh "$R4" ;;
+esac
 echo "submitted (script, job id):"; cat "$IDS"
 echo "Rmd 03: $R3; Rmd 04: $R4"
 ```
 
-Delete line 5 unless `{ANALYSES}` contains `reciprocal`, and line 6 unless it contains `differential`, each with its comment line and its script name in `NEED`; a deleted line leaves `R3` or `R4` as "not selected", which the last line prints. Add `extract_mgp_parental_vcf.sh concat_mgp_parental_vcf.sh` to `NEED` when the mouse helper is used; without it, the three command lines after the "ONLY IF" comment (`X=`, `C=`, `DEP=`) are deleted and `DEP` stays empty. In outbred mode the prep and array scripts are `prep_genotypes.sh` and `align_wasp_count.sh` (in `NEED` and in the `got` names too). Rmd 03 and Rmd 04 read only the Rmd 01 checkpoint (`ase_checkpoint.rds`) and check its constants themselves, so they depend on Rmd 01 and run beside Rmd 02; a failure of Rmd 02 does not stop them.
+Do not edit the block except for the mouse helper: substitute `{RESULTS_DIR}`, `{CWD}`, `{MODE}` (`f1` or `outbred`) and `{ANALYSES}` (the analyses selected in Step 7 written as the words `per-sample`, `reciprocal`, `differential`, for example `per-sample reciprocal differential`). `PREP_SCRIPT` and `ARRAY_SCRIPT` are set from `MODE` (F1: `prep_f1_reference.sh`, `align_count_f1.sh`; outbred: `prep_genotypes.sh`, `align_wasp_count.sh`), and the Rmd 03 and Rmd 04 submissions and their names in `NEED` are conditional on `ANALYSES`; a job that is not selected leaves `R3` or `R4` as "not selected", which the last line prints (distinct from a failed submission, which stops with an error). When the mouse helper is used, keep its four lines; without it, delete the four lines after the "ONLY IF" comment (`NEED=`, `X=`, `C=`, `DEP=`) and `DEP` stays empty. Rmd 03 and Rmd 04 read only the Rmd 01 checkpoint (`ase_checkpoint.rds`) and check its constants themselves, so they depend on Rmd 01 and run beside Rmd 02; a failure of Rmd 02 does not stop them.
 
 **Waiting.** Write `{RESULTS_DIR}/scripts/wait_chain.sh` and run it with `bash` (in the background; it only calls `squeue` and `scancel`). It waits until no job of `chain_job_ids.tsv` is left in the queue, checking every 60 s for at most 4 h. When every job still queued is pending with the reason `DependencyNeverSatisfied` (an upstream job failed, so they can never start), it cancels them and stops waiting. It then prints one line per job: `ok` for an Rmd whose result file is newer than `chain_job_ids.tsv`, `FAILED` with the first error line of its log, `CANCELLED` with the upstream job that failed (the job just before the first cancelled one in chain order), and `finished` for the prep, helper and array jobs (with the first error line of their log, if there is one). If `submit_chain.sh` itself stopped with an error, do not wait: cancel the jobs it lists in `chain_job_ids.tsv` (`cut -f2 {RESULTS_DIR}/logs/chain_job_ids.tsv | xargs -r scancel`), fix the cause and run it again.
 

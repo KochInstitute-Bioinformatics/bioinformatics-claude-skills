@@ -148,7 +148,17 @@ Limits of the outbred result: per-sample power is 10 of 16. The `RHO_MIN` floor 
 - **Rmd 02 with the thinned gene test**: see the Stage 1 acceptance data above (21 of 24 planted, 0 of 42 null, 65 significant SNPs unchanged).
 - **Submission chain**: the run scripts, `submit_chain.sh` and `wait_chain.sh` were run against a stub scheduler in 10 scenarios, and the rendered Rmds on the synthetic data completed with exit 0.
 
-Stage 2 synthetic acceptance run: PENDING
+Stage 2 synthetic acceptance run: DONE (2026-09-30)
+
+Measured on the synthetic Stage 2 data, with the scripts and Rmds generated from the skill text and no hand edits to any Rmd:
+
+- **F1 reciprocal**: 5 of 5 planted strain genes and 5 of 5 planted parent-of-origin genes found with the correct sign; 0 of 4 parent-of-origin calls among strain-only genes and 0 of 4 strain calls among parent-of-origin-only genes; 0 of 47 null genes called in each test (0/47 false positives per test).
+- **F1 differential**: 4 of 4 planted genes found with the correct sign, 0 of 9 calls among strain / parent-of-origin genes, 0 of 47 null genes.
+- **Outbred differential**: 5 of 5 planted genes found, 0 of 3 imbalanced-but-unchanged genes, 0 of 52 null genes; the direction labels were right ("REF lower in treat (all tested individuals)", "mixed (phase differs)" on the phase-heterogeneous SNPs).
+- **Build and outputs**: all Rmds built without hand edits; 28 of 28 count tables non-empty; both summary pages passed the href and no-`http` checks.
+- **Chain**: the skill's own `submit_chain.sh` and `wait_chain.sh` ran prep, array, Rmd 01, Rmd 02 and Rmd 03 / 04 to COMPLETED (66 s in F1 mode, 77 s in outbred mode from submission to the last Rmd). The times are short only because the synthetic genome is tiny; they say nothing about real data. `sacct` was unavailable, so `wait_chain.sh` inferred success from the result files.
+- **Rmd 02 per sample on the aligned F1 data**: planted strain genes detected in 50 of 60 gene x sample tests, all in the expected direction; other planted imbalances 70 of 72; null false positives 1 of 564.
+- **Aligned versus direct counts**: the aligned counts were about 95 percent (F1) and 94 percent (outbred, after WASP) of the direct reads, and the differential gene calls were the same. The F1 strain calls differ by one gene (SYN000047, a planted differential gene that is also allowed a strain call), significant only in the aligned data; the cause was not isolated.
 
 What was **not exercised**: real biological data, phASER (Stage 3), designs with more than two conditions beyond the relabelled three-condition render test above, unbalanced real designs, multi-transcript genes (thinning uses the exon union), genome-scale runtime (projected from the unit-test benchmark only), the Mouse Genomes Project helper scripts end to end (`extract_mgp_parental_vcf.sh` and `concat_mgp_parental_vcf.sh`; the acceptance run used a user parental VCF), the standard Ensembl-style reference folder (the run used a custom FASTA and GTF), and SLURM mail notification options.
 

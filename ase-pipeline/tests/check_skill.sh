@@ -266,7 +266,7 @@ forbid 'read.delim(f, stringsAsFactors = FALSE, check.names = FALSE), error'
 # minors: GTF bind, fetch_sif calls, wrapper sets, paths with spaces, dropping a failed sample, README wording, spec
 need 'add_bind "$(dirname "{FASTA_PATH}")"; add_bind "$(dirname "{GTF_PATH}")"'
 need "must **call** it once per container it uses"
-need 'call** it for each container the script uses, on the line after the definition: `fetch_sif "$STAR_SIF"; fetch_sif "$GATK_SIF"; fetch_sif "$SAMTOOLS_SIF"; fetch_sif "$PICARD_SIF"`'
+need 'call** it for each container the script uses, on the lines right after block C (see "Per-script fetch lines" in Step 10): `fetch_sif "$STAR_SIF"; fetch_sif "$GATK_SIF"; fetch_sif "$SAMTOOLS_SIF"; fetch_sif "$PICARD_SIF"`'
 need '| `align_count_f1.sh`, `align_wasp_count.sh` | `star`, `gatk`, `samtools`, `picard` |'
 need "choose them by the function name at the start of the line (never by position)"
 need "**Paths with spaces or commas are not supported.**"
@@ -486,7 +486,7 @@ forbid "The summary page is written from \`summary_numbers.tsv\`, not from R."
 # ruling: Rmd 03/04 depend on Rmd 01 (they read only ase_checkpoint.rds), not on Rmd 02
 forbid '--dependency=afterok:$R2 $S/run_03_reciprocal.sh'
 forbid '--dependency=afterok:$R2 $S/run_04_differential.sh'
-need "# 5. ONLY IF reciprocal F1 was selected (Step 7): Rmd 03 after Rmd 01"
+need "# 5. Rmd 03 only when reciprocal F1 was selected (Step 7): after Rmd 01"
 grep -qF 'Rmd 03 / Rmd 04 (`afterok` on Rmd 01' "$RD" || { echo "FAIL: README chain must put Rmd 03 / Rmd 04 after Rmd 01"; fail=1; }
 # I1: wait on every submitted id, stop on never-satisfiable dependencies, bounded
 forbid 'squeue -h -j $LAST'
@@ -508,6 +508,30 @@ need "control, ctrl, untreated, wt or vehicle"
 need "choose another reference condition first"
 need "grep -o '## Contrasts not tested:[^<]*'"
 # --- end Stage 2 Task 6 review fixes
+# --- Stage 2 acceptance fix wave (T1-T3); each check fails on the 32033d4 skill
+# T1: block C code fence holds no fetch_sif call (a literal copy must work for every script); calls live in a labelled list
+need "**Per-script fetch lines**"
+forbid "# ... one fetch_sif line per container this script uses"
+blockC_calls=$(awk '/^### Shared block C/ {b=1} b && /^```bash$/ {f=1; next} f && /^```$/ {exit} f && /^fetch_sif "\$/ {n++} END {print n+0}' "$SKILL")
+[ "$blockC_calls" = 0 ] || { echo "FAIL: block C code fence contains $blockC_calls fetch_sif call line(s)"; fail=1; }
+blockC_def=$(awk '/^### Shared block C/ {b=1} b && /^```bash$/ {f=1; next} f && /^```$/ {exit} f && /^fetch_sif\(\) \{/ {n++} END {print n+0}' "$SKILL")
+[ "$blockC_def" = 1 ] || { echo "FAIL: block C code fence must hold the fetch_sif definition"; fail=1; }
+# T2: Step 11 points to Step 15, no duplicate submission block
+forbid 'P=$(sbatch -p bcc --parsable {RESULTS_DIR}/scripts/prep_f1_reference.sh)'
+need "do not submit these scripts by hand"
+# T3: mode-neutral submit_chain.sh
+need 'f1)      PREP_SCRIPT=prep_f1_reference.sh; ARRAY_SCRIPT=align_count_f1.sh ;;'
+need 'outbred) PREP_SCRIPT=prep_genotypes.sh;    ARRAY_SCRIPT=align_wasp_count.sh ;;'
+need 'P=$(sbatch -p bcc --parsable $DEP $S/$PREP_SCRIPT); got $PREP_SCRIPT "$P"'
+need 'A=$(sbatch -p bcc --parsable --dependency=afterok:$P $S/$ARRAY_SCRIPT); got $ARRAY_SCRIPT "$A"'
+need 'case " $ANALYSES " in *reciprocal*)'
+need 'case " $ANALYSES " in *differential*)'
+need 'NEED="$PREP_SCRIPT $ARRAY_SCRIPT run_01_import_qc.sh run_02_imbalance.sh"'
+need "Do not edit the block except for the mouse helper"
+forbid 'got prep_f1_reference.sh'
+forbid "Delete line 5 unless"
+forbid "F1 = prep_f1_reference.sh, outbred = prep_genotypes.sh"
+# --- end Stage 2 acceptance fix wave
 # --- Stage 2 README and registration; each check fails on the 212361b README and root README
 RD="$HERE/../README.md"
 rneed() { grep -qF -- "$1" "$RD" || { echo "FAIL: README must contain: $1"; fail=1; }; }
@@ -517,7 +541,7 @@ grep -qF "Reciprocal F1 (Rmd 03)" "$RD" && grep -qF "Differential ASE (Rmd 04)" 
 grep -qF "summary_numbers_reciprocal.tsv" "$RD" && grep -qF "summary_numbers_differential.tsv" "$RD" || { echo "FAIL: README outputs must list the Stage 2 TSVs"; fail=1; }
 grep -qF "direction-free" "$RD" || { echo "FAIL: README must explain the direction-free outbred test"; fail=1; }
 grep -qF "X, Y and MT" "$RD" || { echo "FAIL: README must state the X/Y/MT exclusion"; fail=1; }
-grep -qE "^Stage 2 synthetic acceptance run: (PENDING|DONE)" "$RD" || { echo "FAIL: README must state the Stage 2 acceptance status"; fail=1; }
+grep -qF "Stage 2 synthetic acceptance run: DONE (2026-09-30)" "$RD" && ! grep -qF "synthetic acceptance run: PENDING" "$RD" || { echo "FAIL: README must state Stage 2 acceptance DONE (2026-09-30)"; fail=1; }
 ! grep -qF "Stage 1 covers **per-sample allelic imbalance only**" "$RD" || { echo "FAIL: README still says Stage 1 only"; fail=1; }
 grep -q "/ase-pipeline.*reciprocal F1" "$HERE/../../README.md" || { echo "FAIL: root README row must mention reciprocal F1"; fail=1; }
 ! grep -q "/ase-pipeline.*Stage 1: per-sample imbalance only" "$HERE/../../README.md" || { echo "FAIL: root README row still says Stage 1 only"; fail=1; }
@@ -553,6 +577,16 @@ rneed "\`sacct\` is unavailable on the test cluster"
 rneed "The mouse helper was only partly exercised"
 # no internal process labels in shipped text
 ! grep -qE "Task [0-9]" "$RD" "$HERE/../ase-pipeline.md" || { echo "FAIL: README or skill contains an internal 'Task N' label"; fail=1; }
+# Stage 2 acceptance results recorded in the README (fail on the 32033d4 README)
+rneed "0 of 47 null genes called in each test"
+rneed "0 of 9 calls among strain / parent-of-origin genes"
+rneed "28 of 28 count tables non-empty"
+rneed "66 s in F1 mode, 77 s in outbred mode"
+rneed "planted strain genes detected in 50 of 60 gene x sample tests"
+rneed "null false positives 1 of 564"
+rneed "SYN000047"
+rneed "the cause was not isolated"
+rneed "say nothing about real data"
 # --- end Stage 2 README and registration
 
 
