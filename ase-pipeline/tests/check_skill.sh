@@ -429,6 +429,34 @@ forbid "**Limitation (F1):** SNP counts that share read pairs are treated as ind
 grep -qF "thinned to one SNP per" "$RD" || { echo "FAIL: README must describe the thinned F1 gene test"; fail=1; }
 ! grep -qF "SNPs that share read pairs are treated as independent" "$RD" || { echo "FAIL: README still says the F1 gene test treats SNP counts as independent"; fail=1; }
 ! grep -qF "treated as independent, a documented limitation" "$SPEC" || { echo "FAIL: spec still says the F1 gene test treats SNP counts as independent"; fail=1; }
+# --- Stage 2 Task 5 review fixes
+# I1: the per-SNP rho labels and snp_annot keep the Stage 1 findOverlaps-on-exons table (GTF exon order, distinct); the
+#     exon-coordinate table for thinning is separate (sg_exon) and only adds the thin_keep column
+need 'hits <- GenomicRanges::findOverlaps(gr, ex)'
+need 'gene_id = ex$gene_id[S4Vectors::subjectHits(hits)], stringsAsFactors = FALSE) %>% dplyr::distinct()'
+need 'thin_depth <- dplyr::inner_join(sites, sg_exon, by = c("contig", "position"))'
+# I2: the fallback caveat, in Step 13 (rho_gene_source), Step 14, the run-time NOTE, and the README
+need_n 3 "the fallback with the unthinned dispersion has not been verified when the true overdispersion is above RHO_MIN; because SNPs that share reads push that estimate low, the gene test may be anti-conservative in that case"
+grep -qF "the fallback with the unthinned dispersion has not been verified when the true overdispersion is above RHO_MIN" "$RD" || { echo "FAIL: README must state that the rho_gene fallback is not verified above RHO_MIN"; fail=1; }
+# I3: the USE sites of the behaviour (these pass on 58805da; each one is proved by a mutation that removes the behaviour)
+need 'gene <- dplyr::bind_rows(lapply(split(snp_by_gene_f1, snp_by_gene_f1$sample), function(d) {'
+need 'r <- if (is.na(g$rho_gene[1])) list(p = NA_real_, phat = NA_real_) else bb_gene_lrt(g$alt_n, g$total, g$rho_gene[1])'
+need 'd$rho_gene <- rho_gene   # F1 gene LRT only'
+need '} else if (!is.na(rho_corrected)) {'
+need 'dplyr::group_by(gene_id) %>% dplyr::mutate(thin_keep = thin_snps(exon_pos, depth, THIN_BP)) %>% dplyr::ungroup()'
+need 'g <- snp_gene$gene_id[match(paste(d$contig, d$position), paste(snp_gene$contig, snp_gene$position))]'
+need 'r1 <- collect_warnings(bb_estimate_rho_gene(d$alt_n, d$total, g))'
+need 'd$p <- mapply(bb_p_safe, d$alt_n, d$total, MoreArgs = list(rho = rho))'
+forbid 'dplyr::mutate(thin_keep = TRUE'
+# minors: Step 15 rho_used, gene_level label, clear stop, outbred Summary, Step 13 wording, README validation line
+need '`rho_used` is the overdispersion the SNP tests used (the F1 gene tests use `rho_gene`, see Step 13)'
+need '"per-gene LRT on thinned SNP-level counts (at most one SNP per THIN_BP window; shared strain fraction)"'
+need "have SNPs in GTF genes but none of the SNPs kept by the thinning"
+need 'if (MODE != "f1") summary_tbl$rho_gene_source <- NULL'
+forbid "saying that the test is thinned. F1 gene test:"
+! grep -qF "F1: 24 of 24 planted gene x sample tests significant with the correct direction, 0 of 42 null false positives." "$RD" || { echo "FAIL: README validation line still gives the Stage 1 24 of 24 as current"; fail=1; }
+grep -qF "the three lost tests are genes thinned to one SNP" "$RD" || { echo "FAIL: README validation line must give the thinned F1 result"; fail=1; }
+# --- end Stage 2 Task 5 review fixes
 # --- end Stage 2 Task 5
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1
