@@ -1,6 +1,11 @@
 # bioinformatics-claude-skills
 
-Claude Code custom skills (slash commands) for RNA-seq pipelines at the Koch Institute — covering both **pipeline setup** (nf-core/rnaseq, nf-core/scrnaseq) and **downstream analysis** (bulk RNA-seq with DESeq2/edgeR, single-cell with Seurat), all wired for SLURM + Singularity on HPC.
+Claude Code custom skills (slash commands) for RNA-seq analysis at the Koch Institute, all wired for SLURM + Singularity on HPC. They cover:
+
+- **Pipeline setup** — interactive wizards that configure and submit nf-core pipelines: nf-core/rnaseq (bulk), nf-core/scrnaseq (single-cell) and nf-core/rnavar (RNA-seq variant calling).
+- **Downstream analysis** — skills that generate R Markdown reports and SLURM scripts: bulk RNA-seq (DESeq2/edgeR, GSEA, optional differential transcript usage) and single-cell (Seurat).
+- **Allele-specific expression** — a wizard that runs its own alignment and counting jobs (no Nextflow) for F1 crosses and outbred/human samples: per-sample imbalance, reciprocal F1 (strain versus parent-of-origin effects) and differential ASE between conditions.
+- **Session handoff** — a structured end-of-session report so the next session can resume.
 
 ## What are skills?
 
@@ -40,8 +45,9 @@ cp -r bioinformatics-claude-skills/handoff ~/.claude/skills/
 - [Claude Code](https://claude.ai/code) CLI installed and authenticated
 - HPC cluster with SLURM scheduler
 - Singularity/Apptainer available as a module
-- Nextflow available via a conda environment
-- Internet access from login node (for fetching Ensembl files and container images)
+- Nextflow available via a conda environment (for the `nfcore-*` setup skills; `/ase-pipeline` does not use Nextflow)
+- Internet access from login node (for fetching Ensembl files and container images); `/ase-pipeline` downloads any missing biocontainer image in its prep job, which runs on a compute node
+- R is not needed on the host: the analysis skills run R inside a Singularity container, and never on a login node
 
 ## Contributing
 
