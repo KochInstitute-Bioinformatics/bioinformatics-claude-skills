@@ -125,14 +125,14 @@ if (what == "differential_outbred") {
   s <- merge(sn[sn$sig, ], ck$snp_gene, by = "SNP")
   s <- merge(s, tg[, c("gene_id", "class", "expect_diff")], by = "gene_id")
   cs <- s$class == "diff_consistent"
-  crit(any(cs) && all(s$direction[cs] == "REF lower in treat (all individuals)") && all(s$expect_diff[cs] == "down"),
-       sprintf("consistent genes: significant SNPs say 'REF lower in treat (all individuals)' (%d of %d)",
-               sum(s$direction[cs] == "REF lower in treat (all individuals)"), sum(cs)))
+  crit(any(cs) && all(s$direction[cs] == "REF lower in treat (all tested individuals)") && all(s$expect_diff[cs] == "down"),
+       sprintf("consistent genes: significant SNPs say 'REF lower in treat (all tested individuals)' (%d of %d)",
+               sum(s$direction[cs] == "REF lower in treat (all tested individuals)"), sum(cs)))
   crit(any(s$direction[s$class == "diff_phase"] == "mixed (phase differs)"),
        sprintf("phase-heterogeneous genes: at least one SNP labelled 'mixed (phase differs)' (%d of %d)",
                sum(s$direction[s$class == "diff_phase"] == "mixed (phase differs)"), sum(s$class == "diff_phase")))
-  lab <- ifelse(!sn$sig, "none", ifelse(sn$n_down == 0, "REF higher in treat (all individuals)",
-                                        ifelse(sn$n_up == 0, "REF lower in treat (all individuals)", "mixed (phase differs)")))
+  lab <- ifelse(!sn$sig, "none", ifelse(sn$n_down == 0, "REF higher in treat (all tested individuals)",
+                                        ifelse(sn$n_up == 0, "REF lower in treat (all tested individuals)", "mixed (phase differs)")))
   crit(any(sn$sig) && identical(sn$direction, lab), sprintf("SNP direction strings match n_up / n_down (%d mismatches)", sum(sn$direction != lab)))
   ph <- ck$dispersion$phi_pair[ck$dispersion$contrast == CT]
   dsp <- sprintf("phi_pair %.4f-%.4f", min(ph, na.rm = TRUE), max(ph, na.rm = TRUE))

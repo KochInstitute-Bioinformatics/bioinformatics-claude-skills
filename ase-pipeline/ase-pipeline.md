@@ -1826,9 +1826,10 @@ Render it with `{RESULTS_DIR}/scripts/run_03_reciprocal.sh`. This is the same sc
 
 Only when "Differential ASE between conditions" was selected in Step 7. Write `{CWD}/{TODAY}_{WD_NAME}_04_differential.Rmd` with the conventions of Step 12, and the same `{AUTHOR}` and `{PROJECT_TITLE}`. It loads `ase_checkpoint.rds` (Rmd 01), checks the constants (including the strain names) against it, pastes the statistics functions of Step 14 into the chunk marked below, and writes these files to `{RESULTS_DIR}`: `{TODAY}_{WD_NAME}_ASE_differential.xlsx` (sheets `SNP`, `Gene`, `Design`, `Excluded`, `Summary`), `{TODAY}_{WD_NAME}_ASE_differential.pdf`, `ase_differential_checkpoint.rds` and `summary_numbers_differential.tsv`. Every condition other than `{REF_CONDITION}` (Step 7) is compared with it, one contrast at a time (1-df likelihood-ratio test), with BH within each contrast and level (SNP or gene). The contrast is labelled `<condition> vs {REF_CONDITION}`, for example `treat vs ctrl`.
 
-- **F1.** Per gene (rows = samples, strain-A and total counts summed over the thinned SNPs exactly as in Rmd 03) and per SNP (rows = samples), `logit(p) = b0 + b_condition * cond`. Here p is the strain-A (`{STRAIN_A}`, REF) fraction and cond = 1 for the tested condition. When both cross directions are among the contrast's samples, the cross-direction term `d` (+1 `AxB`, −1 `BxA`) is added, so that parent-of-origin genes are not mistaken for condition effects. If condition and direction are confounded (every sample of one condition has one direction and every sample of the other the other direction), the Rmd stops, because the two effects cannot be separated. The dispersion and the tests are those of Rmd 03 (`ase_glm_test`). `delta_frac = plogis(b0 + b_condition) - plogis(b0)`: **delta_frac > 0 means the `{STRAIN_A}` fraction is higher in the tested condition**. `sig` requires `padj < FDR_SIG` and `|delta_frac| >= ABS_DEV_SIG`. Per gene or SNP, at least 2 samples with coverage in each condition are needed; a unit whose covered samples make the design not estimable (condition confounded with direction in those samples) is listed in `not_tested` with that reason. If no gene has a valid fit (status `ok` or `ok_at_bound`), the Rmd stops and prints the fit status.
-- **Outbred.** Only individuals sampled in both conditions of a contrast are used (the others are listed as unpaired in the `Design` sheet and do not change the results of the paired ones). `ase_paired_test` works per individual. First, a pair dispersion is estimated from all its SNPs (each SNP keeps its own REF fraction, floored at `RHO_MIN`; below 20 paired SNPs the individual is not tested). Then each SNP gets a likelihood-ratio test of one REF fraction against one per condition. The per-SNP statistic is the sum over the informative individuals (df = their number), and at least 2 individuals are needed. The test has no direction, because the allele that carries a regulatory variant differs between individuals: in one person the REF allele of a SNP can rise while in another it falls. `mean_delta` (REF fraction change, tested minus reference), `n_up` and `n_down` describe the individual changes. A significant SNP is labelled "REF higher (or lower) in the tested condition (all individuals)" only when all individuals agree, and "mixed (phase differs)" otherwise. Genes use `acat` over their SNP p-values and are labelled "unphased, no direction". `sig` requires `padj < FDR_SIG` and `max_abs_delta >= ABS_DEV_SIG`. If no SNP can be tested, the Rmd stops.
-- **Excluded chromosomes.** X, Y and MT are excluded in both modes, as in Rmd 03. Only the contigs present in the GTF gene map are tested at the gene level (a SNP must lie in an exon of a GTF gene); alt, random and unplaced contigs are treated as autosomes (`chrom_class` recognises only the X, Y and MT names). The Rmd 01 bias flags are printed first.
+- **F1.** Per gene (rows = samples, strain-A and total counts summed over the thinned SNPs exactly as in Rmd 03) and per SNP (rows = samples), `logit(p) = b0 + b_condition * cond`. Here p is the strain-A (`{STRAIN_A}`, REF) fraction and cond = 1 for the tested condition. When both cross directions are among the contrast's samples, the cross-direction term `d` (+1 `AxB`, −1 `BxA`) is added, so that parent-of-origin genes are not mistaken for condition effects. If condition and direction are confounded (every sample of one condition has one direction and every sample of the other the other direction), the Rmd stops, because the two effects cannot be separated. The dispersion and the tests are those of Rmd 03 (`ase_glm_test`). `delta_frac = plogis(b0 + b_condition) - plogis(b0)`: **delta_frac > 0 means the `{STRAIN_A}` fraction is higher in the tested condition**. With the `d` term, b0 is the logit at d = 0 (halfway between the two directions), so frac_A_ref and frac_A_test are direction-averaged fractions of the reference and the tested condition; with unbalanced directions they differ from the observed pooled fractions. `sig` requires `padj < FDR_SIG` and `|delta_frac| >= ABS_DEV_SIG`. Per gene or SNP, at least 2 samples with coverage in each condition are needed; a unit whose covered samples make the design not estimable (condition confounded with direction in those samples) is listed in `not_tested` with that reason. If no gene has a valid fit (status `ok` or `ok_at_bound`) in any contrast, the Rmd stops and prints the fit status.
+- **Several conditions.** A contrast in which nothing can be tested (for example no gene with 2 covered samples per condition) does not stop the Rmd when another contrast can be tested: it prints "nothing tested in contrast <contrast> (<level> level): <reasons>" and still gets its `Summary` rows (one per contrast and level) with `tested` = 0.
+- **Outbred.** Only individuals sampled in both conditions of a contrast are used (the others are listed as unpaired in the `Design` sheet and do not change the results of the paired ones). `ase_paired_test` works per individual. First, a pair dispersion is estimated from all its SNPs (each SNP keeps its own REF fraction, floored at `RHO_MIN`; below 20 paired SNPs the individual is not tested). Then each SNP gets a likelihood-ratio test of one REF fraction against one per condition. The per-SNP statistic is the sum over the informative individuals (df = their number), and at least 2 individuals are needed. The test has no direction, because the allele that carries a regulatory variant differs between individuals: in one person the REF allele of a SNP can rise while in another it falls. `mean_delta` (REF fraction change, tested minus reference), `n_up` and `n_down` describe the individual changes. A significant SNP is labelled "REF higher (or lower) in the tested condition (all tested individuals)" only when all tested individuals agree (the individuals with a finite statistic for that SNP; those counted in `n_failed` do not enter the label), and "mixed (phase differs)" otherwise. Genes use `acat` over their SNP p-values and are labelled "unphased, no direction". `sig` requires `padj < FDR_SIG` and `max_abs_delta >= ABS_DEV_SIG`. If no SNP can be tested in any contrast, the Rmd stops; a single contrast with nothing tested (all its SNPs `too_few_individuals`, for example when one of its 2 paired individuals has fewer than 20 paired SNPs) prints "nothing tested in contrast ..." with the SNP status and the individuals without a pair dispersion, and its dispersion is reported as `phi_pair NA`.
+- **Excluded chromosomes.** X, Y and MT are excluded in both modes, as in Rmd 03. Only the contigs present in the GTF gene map are tested at the gene level (a SNP must lie in an exon of a GTF gene); alt, random and unplaced contigs are treated as autosomes (`chrom_class` recognises only the X, Y and MT names). The `Excluded` sheets of the two Rmds count different rows: Rmd 03 counts the sample-site rows of SNPs in exons of a single GTF gene on X, Y or MT (the only SNPs it could test), and Rmd 04 counts every sample-site row on X, Y or MT (it also tests SNPs outside genes). The Rmd 01 bias flags are printed first.
 
 ````rmd
 ---
@@ -2007,6 +2008,14 @@ for (L in names(design)) {
   if (length(gu$units) > 0) gene_l[[L]] <- f1_table(ase_glm_test(gu$units, list(condition = "cond"), RHO_MIN), L, "gene_id")
   if (length(su$units) > 0) snp_l[[L]] <- f1_table(ase_glm_test(su$units, list(condition = "cond"), RHO_MIN), L, "SNP")
   nt_l <- c(nt_l, list(dplyr::mutate(gu$not_tested, contrast = ct, level = "gene"), dplyr::mutate(su$not_tested, contrast = ct, level = "SNP")))
+  for (lv in c("gene", "SNP")) {   # several conditions: one contrast can have nothing tested while another is fine
+    rs <- if (lv == "gene") gene_l[[L]] else snp_l[[L]]; nt <- if (lv == "gene") gu$not_tested else su$not_tested
+    if (is.null(rs) || !any(rs$status %in% c("ok", "ok_at_bound")))
+      cat("nothing tested in contrast", ct, paste0("(", lv, " level): "),
+          if (!is.null(rs)) paste("fit status", paste(sprintf("%s %d", names(table(rs$status)), table(rs$status)), collapse = ", "))
+          else if (nrow(nt) > 0) paste(sprintf("%s: %d", names(table(nt$reason)), table(nt$reason)), collapse = "; ")
+          else "no covered unit", "\n")
+  }
 }
 gene <- dplyr::bind_rows(gene_l); snp <- dplyr::bind_rows(snp_l)
 not_tested <- dplyr::bind_rows(nt_l) %>% dplyr::select(contrast, level, id, reason)
@@ -2026,7 +2035,7 @@ knitr::kable(head(dplyr::filter(gene, sig), 40), digits = 4, caption = paste0("S
 
 ## Outbred: paired per-SNP test and gene combination
 
-Unphased: a SNP's direction is reported only when all individuals agree; genes carry no direction.
+Unphased: a SNP's direction is reported only when all tested individuals agree; genes carry no direction.
 
 ```{r outbred, eval = (MODE == "outbred")}
 snp_l <- list(); gene_l <- list(); phi_l <- list()
@@ -2038,8 +2047,8 @@ for (L in names(design)) {
   r <- ase_paired_test(as.data.frame(dp), RHO_MIN)
   st <- r$snp %>% dplyr::rename(SNP = snp) %>%
     dplyr::mutate(contrast = ct, padj = p.adjust(p, "BH"), sig = !is.na(padj) & padj < FDR_SIG & max_abs_delta >= ABS_DEV_SIG,
-                  direction = dplyr::case_when(!sig ~ "none", n_down == 0 ~ paste0("REF higher in ", L, " (all individuals)"),
-                                               n_up == 0 ~ paste0("REF lower in ", L, " (all individuals)"), TRUE ~ "mixed (phase differs)")) %>%
+                  direction = dplyr::case_when(!sig ~ "none", n_down == 0 ~ paste0("REF higher in ", L, " (all tested individuals)"),
+                                               n_up == 0 ~ paste0("REF lower in ", L, " (all tested individuals)"), TRUE ~ "mixed (phase differs)")) %>%
     dplyr::select(contrast, SNP, n_individuals, n_failed, stat, df, p, padj, mean_delta, max_abs_delta, n_up, n_down, sig, direction, status)
   gt <- st %>% dplyr::inner_join(snp_to_gene, by = "SNP") %>% dplyr::filter(!is.na(p)) %>% dplyr::group_by(gene_id) %>%
     dplyr::summarise(n_snps = dplyr::n(), acat_p = acat(p), max_abs_delta = max(max_abs_delta), .groups = "drop") %>%
@@ -2047,6 +2056,10 @@ for (L in names(design)) {
                   note = "unphased, no direction") %>%
     dplyr::select(contrast, gene_id, n_snps, acat_p, padj, max_abs_delta, sig, note)
   snp_l[[L]] <- st; gene_l[[L]] <- gt; phi_l[[L]] <- dplyr::mutate(r$phi, contrast = ct)
+  if (!any(st$status == "ok"))   # several conditions: one contrast can have nothing tested while another is fine
+    cat("nothing tested in contrast", ct, "(SNP and gene level): SNP status",
+        paste(sprintf("%s %d", names(table(st$status)), table(st$status)), collapse = ", "),
+        "; individuals without a pair dispersion (fewer than 20 paired SNPs):", paste(r$phi$individual[is.na(r$phi$phi_pair)], collapse = ", "), "\n")
   bad <- st$status != "ok"
   ng <- setdiff(unique(snp_to_gene$gene_id[snp_to_gene$SNP %in% st$SNP]), gt$gene_id)   # genes without any tested SNP
   nt_l <- c(nt_l, list(data.frame(contrast = rep(ct, sum(bad)), level = rep("SNP", sum(bad)), id = st$SNP[bad], reason = st$status[bad]),
@@ -2059,31 +2072,39 @@ if (!any(snp$status == "ok"))
        "; individuals without a pair dispersion (fewer than 20 paired SNPs): ",
        paste(dispersion$individual[is.na(dispersion$phi_pair)], collapse = ", "), ")", call. = FALSE)
 knitr::kable(dispersion, digits = 4, caption = "Pair dispersion per individual (floored at RHO_MIN; NA = fewer than 20 paired SNPs, not tested)")
-knitr::kable(head(dplyr::filter(snp, sig), 40), digits = 4, caption = paste0("Significant SNPs (first 40); unphased: direction only when all individuals agree",
+knitr::kable(head(dplyr::filter(snp, sig), 40), digits = 4, caption = paste0("Significant SNPs (first 40); unphased: direction only when all tested individuals agree",
                                                                             if (any(bias$flagged)) "; some samples flagged for reference bias" else ""))
 ```
 
 ## Summary
 
 ```{r summary}
+contrasts <- paste(names(design), "vs", REF_CONDITION)   # one Summary row per contrast and level, also when nothing was tested
 cnt <- function(tab, lev) {
-  if (nrow(tab) == 0) return(NULL)
-  dplyr::bind_rows(lapply(split(tab, tab$contrast), function(t) {
+  rows <- list()
+  for (ct in contrasts) {
+    t <- if (nrow(tab) > 0) tab[tab$contrast == ct, , drop = FALSE] else tab   # 0 rows: nothing tested in this contrast
     pcol <- if ("p_condition" %in% names(t)) t$p_condition else if ("acat_p" %in% names(t)) t$acat_p else t$p
     ids <- if (lev == "gene") t$gene_id else t$SNP
-    nt_ids <- not_tested$id[not_tested$contrast == t$contrast[1] & not_tested$level == lev]
+    nt_ids <- not_tested$id[not_tested$contrast == ct & not_tested$level == lev]
     up <- if (MODE == "f1") sum(t$sig & t$delta_frac > 0) else if (lev == "SNP") sum(t$sig & t$n_down == 0) else NA_integer_
     dn <- if (MODE == "f1") sum(t$sig & t$delta_frac < 0) else if (lev == "SNP") sum(t$sig & t$n_up == 0) else NA_integer_
-    disp <- if (MODE == "f1") sprintf("phi_common %.4f", t$phi_common[1]) else {
-      ph <- dispersion$phi_pair[dispersion$contrast == t$contrast[1]]; sprintf("phi_pair %.4f-%.4f", min(ph, na.rm = TRUE), max(ph, na.rm = TRUE)) }
-    data.frame(contrast = t$contrast[1], mode = MODE, level = lev, tested = sum(!is.na(pcol)),
-               not_tested = length(unique(c(nt_ids, ids[is.na(pcol)]))),   # a unit listed in not_tested and with p NA counts once
-               sig = sum(t$sig), n_up = up, n_down = dn, dispersion = disp, stringsAsFactors = FALSE)
-  }))
+    disp <- if (MODE == "f1") {
+      phc <- if (nrow(t) > 0) t$phi_common[1] else NA_real_
+      if (is.na(phc)) "phi_common NA" else sprintf("phi_common %.4f", phc)
+    } else {
+      ph <- dispersion$phi_pair[dispersion$contrast == ct]
+      if (all(is.na(ph))) "phi_pair NA" else sprintf("phi_pair %.4f-%.4f", min(ph, na.rm = TRUE), max(ph, na.rm = TRUE))
+    }
+    rows[[ct]] <- data.frame(contrast = ct, mode = MODE, level = lev, tested = sum(!is.na(pcol)),
+                             not_tested = length(unique(c(nt_ids, ids[is.na(pcol)]))),   # a unit listed in not_tested and with p NA counts once
+                             sig = sum(t$sig), n_up = up, n_down = dn, dispersion = disp, stringsAsFactors = FALSE)
+  }
+  dplyr::bind_rows(rows)
 }
 summary_diff <- dplyr::bind_rows(cnt(gene, "gene"), cnt(snp, "SNP"))
 knitr::kable(summary_diff, caption = paste0("Summary (n_up / n_down: F1 = ", STRAIN_A, " fraction higher / lower in the tested condition; ",
-                                            "outbred SNPs = REF higher / lower in all individuals; outbred genes: no direction)"))
+                                            "outbred SNPs = REF higher / lower in all tested individuals; outbred genes: no direction)"))
 ```
 
 ## Figure
@@ -2092,8 +2113,9 @@ knitr::kable(summary_diff, caption = paste0("Summary (n_up / n_down: F1 = ", STR
 fig <- if (MODE == "f1") dplyr::filter(gene, !is.na(p_condition)) %>% dplyr::transmute(contrast, x = delta_frac, p = p_condition, sig) else
   dplyr::filter(snp, !is.na(p)) %>% dplyr::transmute(contrast, x = mean_delta, p = p, sig)
 lev <- if (MODE == "f1") "gene" else "SNP"
-fig_n <- tapply(fig$sig, fig$contrast, sum); sum_n <- setNames(summary_diff$sig[summary_diff$level == lev], summary_diff$contrast[summary_diff$level == lev])
-stopifnot(identical(as.integer(fig_n[names(sum_n)]), as.integer(sum_n)))
+sum_n <- setNames(summary_diff$sig[summary_diff$level == lev], summary_diff$contrast[summary_diff$level == lev])
+fig_n <- vapply(names(sum_n), function(ct) sum(fig$sig[fig$contrast == ct]), integer(1))   # 0 for a contrast with nothing tested
+stopifnot(identical(unname(fig_n), unname(as.integer(sum_n))))
 cat("Figure sig counts equal Summary counts: TRUE\n")
 p1 <- ggplot(fig, aes(x, -log10(p), colour = sig)) + geom_vline(xintercept = 0, linetype = 2) + geom_point(alpha = 0.7) +
   scale_colour_manual(values = c(`FALSE` = "grey60", `TRUE` = "firebrick")) + facet_wrap(~contrast) +
@@ -2126,7 +2148,7 @@ sessionInfo()
 ```
 ````
 
-Render it with `{RESULTS_DIR}/scripts/run_04_differential.sh`. This is the same script as `run_01_import_qc.sh` (Step 12), with job name `ase_04_differential`, log `run_04_differential_%j.out`, the Rmd 04 file name, the same `--bind` rule and `-n 1 --mem=16G -t 4:00:00` (single-threaded; F1 tests every gene and every SNP). If the job stops with "is confounded with the cross direction", show the message to the user. The design cannot answer the question; never edit the Rmd. If it stops with "cross_direction must be AxB" or "reference condition ... is not a condition", correct `{SAMPLES_CSV}` (Step 5) or `{REF_CONDITION}` (Step 7), re-render Rmd 01, then Rmd 04. Submission order: Step 15.
+Render it with `{RESULTS_DIR}/scripts/run_04_differential.sh`. This is the same script as `run_01_import_qc.sh` (Step 12), with job name `ase_04_differential`, log `run_04_differential_%j.out`, the Rmd 04 file name, the same `--bind` rule and `-n 1 --mem=16G -t 4:00:00` (single-threaded; F1 tests every gene and every SNP). If the job stops with "is confounded with the cross direction", show the message to the user. The design cannot answer the question; never edit the Rmd. If it stops with "cross_direction must be AxB", correct `{SAMPLES_CSV}` (Step 5), re-render Rmd 01, then Rmd 04. If it stops with "reference condition '...' is not a condition in samples.csv (conditions: ...)", nothing was written: the message lists the conditions of `samples.csv`. Ask the user which of them is the reference, set `{REF_CONDITION}` (Step 7) to it, write Rmd 04 again from this step with the new value (a new generated file, not a hand edit of the old one) and submit `run_04_differential.sh` again; Rmd 01 need not be re-rendered, because its checkpoint does not depend on `{REF_CONDITION}`. Only if the condition names in `samples.csv` themselves are wrong, correct `{SAMPLES_CSV}` and re-render Rmd 01 before Rmd 04. Submission order: Step 15.
 
 ---
 

@@ -390,4 +390,23 @@ grep -qF 'what == "differential_outbred"' "$SYN/evaluate_stage2.R" || { echo "FA
 grep -qF 'summary_numbers_differential.tsv' "$SYN/evaluate_stage2.R" || { echo "FAIL: evaluate_stage2.R must check summary_numbers_differential.tsv"; fail=1; }
 # --- end Stage 2 Task 4
 
+# --- Stage 2 Task 4 review fixes; each check fails on the 14d43ef skill and tools
+# I1: a contrast with nothing tested gets its own message, one Summary row per contrast x level, figure counts with a zero default
+need "nothing tested in contrast"
+need "for (ct in contrasts)"
+need 'fig_n <- vapply(names(sum_n), function(ct) sum(fig$sig[fig$contrast == ct]), integer(1))'
+need '"phi_pair NA"'
+# m1: the outbred label means all TESTED individuals (skill, evaluator)
+need "(all tested individuals)"
+forbid "(all individuals)"
+! grep -qF '(all individuals)' "$SYN/evaluate_stage2.R" || { echo "FAIL: evaluate_stage2.R still uses the label '(all individuals)'"; fail=1; }
+# m2: with the d term the fractions are direction-averaged
+need "frac_A_ref and frac_A_test are direction-averaged"
+# m4: the two Rmds count excluded chromosome rows differently, and say so
+need "Rmd 03 counts the sample-site rows of SNPs in exons of a single GTF gene"
+need "Rmd 04 counts every sample-site row on X, Y or MT"
+# m5: a wrong REF_CONDITION needs Rmd 04 written again, not Rmd 01
+need "Rmd 01 need not be re-rendered"
+# --- end Stage 2 Task 4 review fixes
+
 [ $fail -eq 0 ] && echo "PASS" || exit 1
