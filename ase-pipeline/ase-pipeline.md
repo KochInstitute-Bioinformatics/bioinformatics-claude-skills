@@ -160,7 +160,7 @@ The allelic analysis needs heterozygous SNP positions.
 
 **F1 mode.** Ask (numbered): "1. I have a parental-difference VCF · 2. Build it from the Mouse Genomes Project (mouse helper)".
 
-**Reference strain first.** Ask: "Is one of the two parental strains the strain of the reference assembly (or a substrain of it, for example C57BL/6NJ on GRCm39, which is C57BL/6J)?" If not (for example A/J x CAST/EiJ), say: "F1 mode in Stage 1 needs one parent to be the reference strain: the masked reference and the REF = strain A convention assume the assembly base is strain A's allele. A cross of two non-reference strains is not supported in Stage 1." and stop the F1 setup. Otherwise that parent is `{STRAIN_A}`.
+**Reference strain first.** Ask: "Is one of the two parental strains the strain of the reference assembly (or a substrain of it, for example C57BL/6NJ on GRCm39, which is C57BL/6J)?" If not (for example A/J x CAST/EiJ), say: "F1 mode needs one parent to be the reference strain: the masked reference and the REF = strain A convention assume the assembly base is strain A's allele. A cross of two non-reference strains is not supported by this skill." and stop the F1 setup. Otherwise that parent is `{STRAIN_A}`.
 
 1. `{PARENTAL_VCF}`: a biallelic SNP VCF where the REF allele is `{STRAIN_A}` (the reference strain) and the ALT allele is `{STRAIN_B}`. Either form works: a plain `.vcf` is accepted (the prep job only reads it with `bcftools view`, which needs no index), and a bgzipped `.vcf.gz` works too; no bgzip or tabix step is needed, and the input is never modified. The prep job checks the contig names against the FASTA on a compute node (step 1 of `prep_f1_reference.sh`) and stops before any alignment if they differ; nothing is checked on the login node.
    - **VCF with sample columns** (for example the two strains' own genotypes, or a Mouse Genomes Project extract made outside the helper): both `{STRAIN_A}` and `{STRAIN_B}` must be sample names in the header (the prep job stops otherwise). The prep job keeps **only** the sites where strain A is homozygous REF and strain B homozygous ALT (`0/0` and `1/1`, phased or not). It drops, and counts in its log, the sites where both strains have the same homozygous genotype (for example both `1/1`: both differ from the assembly but not from each other) and the sites where either strain is heterozygous or missing. Sites where strain A is `1/1` and strain B `0/0` (the strains differ, but strain A carries the non-reference allele) break the REF = strain A convention: by default (`A_ALT_SITES=stop`) the job stops and prints their number. If strain A is a substrain of the assembly strain and the user confirms that a few such sites are expected (for example C57BL_6NJ, which differs from the C57BL/6J assembly at some sites), the wizard sets `A_ALT_SITES=drop`, which drops and counts them like the mouse helper does. The job also stops if fewer than `MIN_PARENTAL_SITES` sites remain (default 1000; 20 for small test data).
@@ -186,17 +186,17 @@ Ask (numbered, multi-select, for example "1,3"):
 
 1. **Per-sample allelic imbalance** (always on, cannot be deselected): reference-bias diagnostic plus per-gene and per-site allelic ratios for every sample (Rmd 01 and Rmd 02).
 2. **Reciprocal F1 analysis** (strain effect versus parent-of-origin effect, Rmd 03, Step 16): offered only when `{MODE}` = `f1` and at least 2 samples have `cross_direction` `AxB` and at least 2 have `BxA`. When there are several conditions, at least one condition must hold samples of both directions; otherwise condition and cross direction are confounded and Rmd 03 stops, so the option is hidden.
-3. **Differential ASE between conditions** (Rmd 04, Step 17): offered only when at least two conditions each have replicates and the design allows a paired or adjusted comparison. In F1 mode, condition and cross direction must not be confounded: when both directions are present, it must not be true that every sample of one condition has one direction and every sample of the other condition has the other. In outbred mode, at least 2 individuals sampled in both the reference condition and each other condition are needed (the test pairs each individual's samples).
+3. **Differential ASE between conditions** (Rmd 04, Step 17): offered only when at least two conditions each have replicates and the design allows a paired or adjusted comparison. In F1 mode, condition and cross direction must not be confounded: when both directions are present, it must not be true that every sample of one condition has one direction and every sample of the other condition has the other. In outbred mode, at least one pair of conditions with at least 2 individuals sampled in both is needed (the test pairs each individual's samples); which contrasts can be tested is checked after the reference condition is chosen (below).
 4. **phASER haplotype phasing**: offered only when `{MODE}` = `outbred`; available in a later stage.
 
 Show only the options whose preconditions hold, and say why any other is hidden, for example "Differential ASE is hidden: condition and cross direction are confounded (all ctrl samples are AxB and all treat samples BxA), so a condition effect cannot be told apart from a parent-of-origin effect." Store the selection as `{ANALYSES}` (values `per_sample`, always, plus `reciprocal`, `differential`, and `phaser`, which runs nothing yet). If the user chooses phASER, say "available in a later stage" and continue.
 
-If differential ASE is selected, ask: "Which condition is the reference (baseline)?" (numbered list of the conditions in `{SAMPLES_CSV}`, in the order they first appear). Store it as `{REF_CONDITION}`. Every other condition is compared with it, one contrast at a time. For each contrast in outbred mode, list the individuals that are sampled in only one of the two conditions: they are left out of that contrast.
+If differential ASE is selected, ask: "Which condition is the reference (baseline)?" (numbered list of the conditions in `{SAMPLES_CSV}`, in the order they first appear; the default, marked in the list, is the condition named control, ctrl, untreated, wt or vehicle (any case) if there is one, else the first condition alphabetically). Store it as `{REF_CONDITION}`. Guard: before Rmd 04 is written, check that the value is a condition of `{SAMPLES_CSV}` (`awk -F, -v r="{REF_CONDITION}" 'NR > 1 && $4 == r {f = 1} END {exit !f}' {SAMPLES_CSV}`) and ask again if it is not. Every other condition is compared with it, one contrast at a time. For each contrast in outbred mode, list the individuals that are sampled in only one of the two conditions: they are left out of that contrast.
 
 The design rules of option 3 are then checked for every contrast against `{REF_CONDITION}`, the way Rmd 04 checks them (Step 17), and the outcome is told to the user before anything is submitted:
 
-- F1: a contrast in which condition and cross direction are confounded stops the whole of Rmd 04, not only that contrast. Name the contrast and ask for another reference condition, or deselect differential ASE.
-- A contrast with fewer than 2 samples in one of its two conditions (F1), or fewer than 2 individuals sampled in both of its conditions (outbred), is not tested: Rmd 04 lists it under "Contrasts not tested" and writes no row for it. If no contrast can be tested, Rmd 04 stops; deselect differential ASE.
+- F1: a contrast in which condition and cross direction are confounded stops the whole of Rmd 04, not only that contrast. Name the contrast; choose another reference condition first, and deselect differential ASE only if no reference gives a design without confounding.
+- A contrast with fewer than 2 samples in one of its two conditions (F1), or fewer than 2 individuals sampled in both of its conditions (outbred), is not tested: Rmd 04 lists it under "Contrasts not tested" and writes no row for it. If no contrast can be tested, Rmd 04 stops: choose another reference condition first (for example one with replicates, or with individuals shared with another condition), and deselect differential ASE only if none works.
 - A contrast that passes these checks can still end with nothing tested (for example no gene with 2 covered samples per condition); Rmd 04 then prints "nothing tested in contrast ..." and writes its rows with `tested` = 0.
 
 ---
@@ -1591,47 +1591,91 @@ ase_paired_test <- function(d, rho_min, min_individuals = 2, bound = 15) {
 
 ### Submission order (one block, every job `sbatch -p bcc`)
 
-Write all scripts to `{RESULTS_DIR}/scripts/` (Steps 10-13, and Steps 16 and 17 for the selected analyses), run `mkdir -p {RESULTS_DIR}/logs {RESULTS_DIR}/tmp`, then submit the whole chain from `{CWD}` with `--parsable` job ids and `--dependency=afterok` so that no job starts before its inputs exist and none starts after a failure. Show this block to the user, fill in the mode branch, the optional mouse helper and the selected analyses, and run it once. `NEED` lists exactly the scripts of the lines that are kept; if one of them is missing or empty, the block prints its name and submits nothing:
+Write all scripts to `{RESULTS_DIR}/scripts/` (Steps 10-13, and Steps 16 and 17 for the selected analyses), run `mkdir -p {RESULTS_DIR}/logs {RESULTS_DIR}/tmp`, then submit the whole chain with `--parsable` job ids and `--dependency=afterok` so that no job starts before its inputs exist and none starts after a failure. Write the block below to `{RESULTS_DIR}/scripts/submit_chain.sh`, fill in the mode branch, the optional mouse helper and the selected analyses, show it to the user, and run it once from `{CWD}` with `bash {RESULTS_DIR}/scripts/submit_chain.sh` (it only calls `sbatch`, so it may run on the login node). It stops with an error, and submits nothing more, when a script it needs is missing or empty (`NEED`) or when `sbatch` returns no job id (`got`); it records every job id in `{RESULTS_DIR}/logs/chain_job_ids.tsv` (script name, job id), which `wait_chain.sh` below reads.
 
 ```bash
+#!/bin/bash
+# submit_chain.sh: run once from {CWD} with `bash {RESULTS_DIR}/scripts/submit_chain.sh`; it only calls sbatch.
+set -u
 S={RESULTS_DIR}/scripts
+IDS={RESULTS_DIR}/logs/chain_job_ids.tsv
+die() { echo "ERROR: $*" >&2; exit 1; }
+got() { [ -n "$2" ] || die "sbatch returned no job id for $1; nothing after it was submitted (cancel the jobs already listed in $IDS)"; printf '%s\t%s\n' "$1" "$2" >> "$IDS"; }
 NEED="prep_f1_reference.sh align_count_f1.sh run_01_import_qc.sh run_02_imbalance.sh run_03_reciprocal.sh run_04_differential.sh"
 MISSING=$(for f in $NEED; do [ -s "$S/$f" ] || echo "$f"; done)
-if [ -n "$MISSING" ]; then echo "MISSING in $S:" $MISSING "- nothing submitted"; else
-DEP=""; R3=""; R4=""   # DEP stays empty unless the mouse helper below is used; R3/R4 stay empty unless steps 5/6 are kept
+[ -z "$MISSING" ] || die "MISSING in $S: $(echo $MISSING) - nothing submitted"
+: > "$IDS"
+DEP=""; R3="not selected"; R4="not selected"   # DEP stays empty unless the mouse helper below is used
 # ONLY IF the mouse helper is used (F1, no parental VCF): array of chromosomes -> concat, then prep depends on the concat job.
 # The helper reads neither the FASTA nor its .fai (fixed GRCm39 chromosome list), so it can run before the prep job,
 # which downloads/decompresses the FASTA, writes the .fai and compares the parental VCF's contigs with it.
 # Without the helper, delete the next three lines; the scripts do not exist and sbatch would fail.
-X=$(sbatch -p bcc --parsable $S/extract_mgp_parental_vcf.sh)
-C=$(sbatch -p bcc --parsable --dependency=afterok:$X $S/concat_mgp_parental_vcf.sh)
+X=$(sbatch -p bcc --parsable $S/extract_mgp_parental_vcf.sh); got extract_mgp_parental_vcf.sh "$X"
+C=$(sbatch -p bcc --parsable --dependency=afterok:$X $S/concat_mgp_parental_vcf.sh); got concat_mgp_parental_vcf.sh "$C"
 DEP="--dependency=afterok:$C"
 # 1. prep job: F1 = prep_f1_reference.sh, outbred = prep_genotypes.sh
-P=$(sbatch -p bcc --parsable $DEP $S/prep_f1_reference.sh)
+P=$(sbatch -p bcc --parsable $DEP $S/prep_f1_reference.sh); got prep_f1_reference.sh "$P"
 # 2. per-sample array job: F1 = align_count_f1.sh, outbred = align_wasp_count.sh
-A=$(sbatch -p bcc --parsable --dependency=afterok:$P $S/align_count_f1.sh)
+A=$(sbatch -p bcc --parsable --dependency=afterok:$P $S/align_count_f1.sh); got align_count_f1.sh "$A"
 # 3. Rmd 01 (import, filters, reference-bias QC) after every array task succeeded
-R1=$(sbatch -p bcc --parsable --dependency=afterok:$A $S/run_01_import_qc.sh)
+R1=$(sbatch -p bcc --parsable --dependency=afterok:$A $S/run_01_import_qc.sh); got run_01_import_qc.sh "$R1"
 # 4. Rmd 02 (per-sample imbalance, xlsx, summary_numbers.tsv) after Rmd 01
-R2=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_02_imbalance.sh)
-# 5. ONLY IF reciprocal F1 was selected (Step 7): Rmd 03 after Rmd 02
-R3=$(sbatch -p bcc --parsable --dependency=afterok:$R2 $S/run_03_reciprocal.sh)
-# 6. ONLY IF differential ASE was selected (Step 7): Rmd 04 after Rmd 02 (runs in parallel with Rmd 03)
-R4=$(sbatch -p bcc --parsable --dependency=afterok:$R2 $S/run_04_differential.sh)
-echo "prep $P, array $A, Rmd01 $R1, Rmd02 $R2, Rmd03 ${R3:-none}, Rmd04 ${R4:-none}"
-LAST=${R4:-${R3:-$R2}}
-fi
+R2=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_02_imbalance.sh); got run_02_imbalance.sh "$R2"
+# 5. ONLY IF reciprocal F1 was selected (Step 7): Rmd 03 after Rmd 01 (it reads only the Rmd 01 checkpoint; runs beside Rmd 02)
+R3=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_03_reciprocal.sh); got run_03_reciprocal.sh "$R3"
+# 6. ONLY IF differential ASE was selected (Step 7): Rmd 04 after Rmd 01 (runs beside Rmd 02 and Rmd 03)
+R4=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_04_differential.sh); got run_04_differential.sh "$R4"
+echo "submitted (script, job id):"; cat "$IDS"
+echo "Rmd 03: $R3; Rmd 04: $R4"
 ```
 
-Delete the lines of an analysis that was not selected. Wait for the last job submitted (`R4`, else `R3`, else `R2`) before writing the summary page; if Rmd 03 or Rmd 04 fails, the per-sample results stay valid and the page says which analysis failed and why. When deleting lines, also delete the script's name from `NEED` (and add `extract_mgp_parental_vcf.sh concat_mgp_parental_vcf.sh` to it when the mouse helper is used). Without the mouse helper the three command lines after the "ONLY IF" comment (`X=`, `C=`, `DEP=`) are deleted and `DEP` stays empty (it is set to empty on the first line after the check); in outbred mode the prep and array scripts are `prep_genotypes.sh` and `align_wasp_count.sh` (in `NEED` too). `afterok` on the array job id means every array task must succeed; if one fails, Rmd 01 stays pending with `DependencyNeverSatisfied`: cancel it, fix the failed sample (its log is under `{RESULTS_DIR}/logs`), re-submit the failed task, then submit Rmd 01, Rmd 02 and the selected Rmd 03 / Rmd 04 again with the same dependencies.
+Delete line 5 unless `{ANALYSES}` contains `reciprocal`, and line 6 unless it contains `differential`, each with its comment line and its script name in `NEED`; a deleted line leaves `R3` or `R4` as "not selected", which the last line prints. Add `extract_mgp_parental_vcf.sh concat_mgp_parental_vcf.sh` to `NEED` when the mouse helper is used; without it, the three command lines after the "ONLY IF" comment (`X=`, `C=`, `DEP=`) are deleted and `DEP` stays empty. In outbred mode the prep and array scripts are `prep_genotypes.sh` and `align_wasp_count.sh` (in `NEED` and in the `got` names too). Rmd 03 and Rmd 04 read only the Rmd 01 checkpoint (`ase_checkpoint.rds`) and check its constants themselves, so they depend on Rmd 01 and run beside Rmd 02; a failure of Rmd 02 does not stop them.
 
-**Dropping a failed sample.** If a sample cannot be fixed (for example it has no counted sites, or no sites left after filtering in Rmd 01), the supported way out is to remove it from the analysis, never to edit the Rmds: with the user's confirmation, remove that sample's row from `{SAMPLES_CSV}` (keep a copy of the original sheet next to it), cancel any pending Rmd job, and re-run from the step that failed: if its array task failed, submit only Rmd 01 and then Rmd 02 (`R1=$(sbatch -p bcc --parsable $S/run_01_import_qc.sh)`, then `R2=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_02_imbalance.sh)`), without a dependency on the old array job; if only an Rmd failed, re-submit Rmd 01 and every Rmd after it the same way (only Rmd 01 reads `{SAMPLES_CSV}`; Rmd 02, 03 and 04 read its checkpoint, so they see the dropped sample until Rmd 01 has run again). The Rmds read the tables by the sample names in `{SAMPLES_CSV}`, so the dropped sample's files are simply ignored (if its table exists, Rmd 01 lists it as a table of a sample not in the sheet). Re-submitting the array job is not needed, because the other samples' tables already exist; if the array job is re-run anyway, `{ARRAY_N}` must be updated to the new number of rows (task numbers follow the rows of the edited sheet). Re-run Rmd 03 and Rmd 04 after Rmd 02 in the same way (a dropped sample can change whether a design is still valid, so re-check Step 7's preconditions first). Rmd 02 is always re-run too, even when it had succeeded: the thinning pools the depth over all samples of the project, so removing a sample can change which SNP a dense gene keeps, and with it the gene p-values of the remaining samples. Say in the summary page which sample was dropped and why.
+**Waiting.** Write `{RESULTS_DIR}/scripts/wait_chain.sh` and run it with `bash` (in the background; it only calls `squeue` and `scancel`). It waits until no job of `chain_job_ids.tsv` is left in the queue, checking every 60 s for at most 4 h. When every job still queued is pending with the reason `DependencyNeverSatisfied` (an upstream job failed, so they can never start), it cancels them and stops waiting. It then prints one line per job: `ok` for an Rmd whose result file is newer than `chain_job_ids.tsv`, `FAILED` with the first error line of its log, `CANCELLED` with the upstream job that failed (the job just before the first cancelled one in chain order), and `finished` for the prep, helper and array jobs (with the first error line of their log, if there is one). If `submit_chain.sh` itself stopped with an error, do not wait: cancel the jobs it lists in `chain_job_ids.tsv` (`cut -f2 {RESULTS_DIR}/logs/chain_job_ids.tsv | xargs -r scancel`), fix the cause and run it again.
 
-Wait with a bounded loop (for example `squeue -h -j $LAST` every 60 s, at most 4 h; `LAST` is the last job the block submitted), read the logs, and on a failure show the error line. A failure of the prep job, the array or Rmd 01/02 stops the run; a failure of Rmd 03 or Rmd 04 does not invalidate the per-sample results: write the summary page anyway and say there which analysis failed, with its error line.
+```bash
+#!/bin/bash
+# wait_chain.sh: waits for every job of chain_job_ids.tsv (at most 4 h), cancels jobs that can never start, reports each job.
+set -u
+RD={RESULTS_DIR}
+IDS=$RD/logs/chain_job_ids.tsv
+JOBS=$(cut -f2 "$IDS" | paste -sd, -)
+STUCK=""; n=0
+while :; do
+  Q=$(squeue -h -j "$JOBS" -o '%i %r' 2>/dev/null)
+  [ -z "$Q" ] && break
+  if ! printf '%s\n' "$Q" | grep -qv ' DependencyNeverSatisfied$'; then   # only never-satisfiable jobs are left
+    STUCK=$(printf '%s\n' "$Q" | awk '{sub(/_.*/, "", $1); print $1}' | sort -u | paste -sd' ' -)
+    scancel $STUCK; break
+  fi
+  n=$((n + 1)); if [ $n -ge 240 ]; then echo "TIMEOUT after 4 h; still in the queue:"; printf '%s\n' "$Q"; exit 2; fi
+  sleep 60
+done
+result_of() { case $1 in run_01_*) echo ase_checkpoint.rds ;; run_02_*) echo summary_numbers.tsv ;;
+                         run_03_*) echo summary_numbers_reciprocal.tsv ;; run_04_*) echo summary_numbers_differential.tsv ;; esac; }
+prev=""; up=""; bad=0
+while IFS=$'\t' read -r name id; do
+  if [[ " $STUCK " == *" $id "* ]]; then
+    [ -n "$up" ] || up=${prev:-unknown}
+    echo "$name $id CANCELLED: never satisfiable, upstream failure: $up"; bad=1
+  elif [ -n "$(result_of "$name")" ]; then
+    if [ "$RD/$(result_of "$name")" -nt "$IDS" ]; then echo "$name $id ok"
+    else echo "$name $id FAILED: $(grep -h -m1 -iE 'error|halted' $RD/logs/*_${id}*.out 2>/dev/null | head -1)"; bad=1; fi
+  else e=$(grep -h -m1 -iE 'error|halted' $RD/logs/*_${id}*.out 2>/dev/null | head -1); echo "$name $id finished${e:+; first error line of its log: $e}"; fi
+  prev="$name $id"
+done < "$IDS"
+exit $bad
+```
+
+Write the summary page only after `wait_chain.sh` has returned. A failure of the prep job, the array, Rmd 01 or Rmd 02 stops the run: show the error line, fix the cause and re-submit (below). A failure of Rmd 03 or Rmd 04 does not invalidate the per-sample results: write the summary page anyway and say there which analysis failed, with its error line. If only Rmd 02 failed, Rmd 03 and 04 are still valid: fix it and re-submit Rmd 02 alone.
+
+**Re-submitting part of the chain.** Copy `submit_chain.sh` to `submit_rmds.sh`, delete the lines of the jobs that need not run again (and their names in `NEED`), and remove `--dependency=afterok:$A` from the Rmd 01 line (or, when Rmd 01 is not re-run, `--dependency=afterok:$R1` from the lines of the Rmds that are); run it and then `wait_chain.sh` (it rewrites `chain_job_ids.tsv`, so the wait covers the new jobs only). `afterok` on the array job id means every array task must succeed; if one fails, Rmd 01 and every Rmd after it stay pending with `DependencyNeverSatisfied` (`wait_chain.sh` cancels them; if you do it by hand, cancel them all: `awk -F'\t' '$1 ~ /^run_0/ {print $2}' {RESULTS_DIR}/logs/chain_job_ids.tsv | xargs -r scancel`). Fix the failed sample (its log is under `{RESULTS_DIR}/logs`), re-submit the failed task, wait until it has succeeded, then submit Rmd 01, Rmd 02 and the selected Rmd 03 / Rmd 04 again with `submit_rmds.sh`.
+
+**Dropping a failed sample.** If a sample cannot be fixed (for example it has no counted sites, or no sites left after filtering in Rmd 01), the supported way out is to remove it from the analysis, never to edit the Rmds: with the user's confirmation, remove that sample's row from `{SAMPLES_CSV}` (keep a copy of the original sheet next to it), cancel every pending Rmd job (see "Re-submitting part of the chain"), and re-run from Rmd 01 with `submit_rmds.sh` (Rmd 01 without a dependency on the old array job, then Rmd 02, and the selected Rmd 03 / Rmd 04 after Rmd 01), whether an array task or only an Rmd failed (only Rmd 01 reads `{SAMPLES_CSV}`; Rmd 02, 03 and 04 read its checkpoint, so they see the dropped sample until Rmd 01 has run again). The Rmds read the tables by the sample names in `{SAMPLES_CSV}`, so the dropped sample's files are simply ignored (if its table exists, Rmd 01 lists it as a table of a sample not in the sheet). Re-submitting the array job is not needed, because the other samples' tables already exist; if the array job is re-run anyway, `{ARRAY_N}` must be updated to the new number of rows (task numbers follow the rows of the edited sheet). Rmd 03 and Rmd 04 are re-run after Rmd 01 in the same way (a dropped sample can change whether a design is still valid, so re-check Step 7's preconditions first). Rmd 02 is always re-run too, even when it had succeeded: the thinning pools the depth over all samples of the project, so removing a sample can change which SNP a dense gene keeps, and with it the gene p-values of the remaining samples. Say in the summary page which sample was dropped and why.
 
 ### Summary report `{WD_NAME}_summary_report.html`
 
-After the last submitted job has finished (Rmd 02, or Rmd 03 / Rmd 04 when selected), write the standalone page `{RESULTS_DIR}/{WD_NAME}_summary_report.html`. It needs **no R** and no external dependency: inline CSS only, no scripts, no fonts, no images from a URL. Read `{RESULTS_DIR}/summary_numbers.tsv` with `awk -F'\t'` (for example `awk -F'\t' 'NR>1 {print $1, $3, $4}'`, so no number is transcribed by hand; columns: `sample`, `condition`, `filtered_sites`, `sig_snps`, `genes_tested`, `sig_genes`, `rho_used`, `rho_robust`, `rho_h0_naive`, `mean_ref_frac`, `ref_frac_before_wasp`, `ref_frac_after_wasp`, `bias_flag`; `rho_used` is the overdispersion the SNP tests used (the F1 gene tests use `rho_gene`, see Step 13), `rho_robust` the estimate before the `RHO_MIN` floor (F1: bias-corrected free-mean fit; outbred: trimmed central-sites fit), `rho_h0_naive` the all-sites H0 fit shown for comparison only, and the two `ref_frac_*_wasp` columns are `NA` in F1 mode), and write the HTML yourself; never open R on the login node to produce it. The page contains:
+After `wait_chain.sh` has returned (every submitted job has left the queue: Rmd 02 and, when selected, Rmd 03 and Rmd 04), write the standalone page `{RESULTS_DIR}/{WD_NAME}_summary_report.html`. It needs **no R** and no external dependency: inline CSS only, no scripts, no fonts, no images from a URL. Read `{RESULTS_DIR}/summary_numbers.tsv` with `awk -F'\t'` (for example `awk -F'\t' 'NR>1 {print $1, $3, $4}'`, so no number is transcribed by hand; columns: `sample`, `condition`, `filtered_sites`, `sig_snps`, `genes_tested`, `sig_genes`, `rho_used`, `rho_robust`, `rho_h0_naive`, `mean_ref_frac`, `ref_frac_before_wasp`, `ref_frac_after_wasp`, `bias_flag`; `rho_used` is the overdispersion the SNP tests used (the F1 gene tests use `rho_gene`, see Step 13), `rho_robust` the estimate before the `RHO_MIN` floor (F1: bias-corrected free-mean fit; outbred: trimmed central-sites fit), `rho_h0_naive` the all-sites H0 fit shown for comparison only, and the two `ref_frac_*_wasp` columns are `NA` in F1 mode), and write the HTML yourself; never open R on the login node to produce it. The page contains:
 
 - a header with the project title, `{MODE}`, the strain names (F1: REF = `{STRAIN_A}`, ALT = `{STRAIN_B}`) or REF/ALT, the constants of Step 8 and the date;
 - the **reference-bias flags, shown prominently** at the top: one box that lists every sample with `bias_flag` = `TRUE` (with its `mean_ref_frac`) in a warning colour and the sentence "read the allelic ratios of these samples with caution", or "no sample is flagged" when none is; the per-sample table repeats the flag in its own column, with the same colour;
@@ -1647,7 +1691,7 @@ Read `{RESULTS_DIR}/summary_numbers_reciprocal.tsv` with `awk -F'\t'` (columns `
 
 ### Differential ASE section (only when Rmd 04 ran)
 
-Read `{RESULTS_DIR}/summary_numbers_differential.tsv` with `awk -F'\t'` (columns `contrast, mode, level, tested, not_tested, sig, n_up, n_down, dispersion`) and show one row per contrast and level. Add, in F1 mode: "n_up / n_down: `{STRAIN_A}` fraction higher / lower in the tested condition than in `{REF_CONDITION}`". In outbred mode: "unphased: SNP directions are counted only when all individuals agree; gene calls have no direction" (the gene rows have `NA` in `n_up` and `n_down`). Mark a contrast with `tested` = 0 as "nothing tested" (the reasons are in the Rmd 04 HTML). A condition other than `{REF_CONDITION}` that has no row at all was not tested at the design check (fewer than 2 samples in a condition, or, outbred, fewer than 2 individuals sampled in both conditions); list it with the reason printed after "Contrasts not tested:" in the Rmd 04 HTML. Add: "X, Y and MT are not tested in either mode." Add link cards to `{TODAY}_{WD_NAME}_04_differential.html`, `{TODAY}_{WD_NAME}_ASE_differential.xlsx` and `{TODAY}_{WD_NAME}_ASE_differential.pdf`.
+Read `{RESULTS_DIR}/summary_numbers_differential.tsv` with `awk -F'\t'` (columns `contrast, mode, level, tested, not_tested, sig, n_up, n_down, dispersion`) and show one row per contrast and level. Add, in F1 mode: "n_up / n_down: `{STRAIN_A}` fraction higher / lower in the tested condition than in `{REF_CONDITION}`". In outbred mode: "unphased: SNP directions are counted only when all individuals agree; gene calls have no direction" (the gene rows have `NA` in `n_up` and `n_down`). Mark a contrast with `tested` = 0 as "nothing tested" (the reasons are in the Rmd 04 HTML). A condition other than `{REF_CONDITION}` that has no row at all was not tested at the design check (fewer than 2 samples in a condition, or, outbred, fewer than 2 individuals sampled in both conditions); list it with the reason Rmd 04 printed for it. Take the reason from the rendered output line, not from the echoed code (which also contains the words): `grep -o '## Contrasts not tested:[^<]*' {RESULTS_DIR}/{TODAY}_{WD_NAME}_04_differential.html` (knitr prefixes printed output with `## `). Add: "X, Y and MT are not tested in either mode." Add link cards to `{TODAY}_{WD_NAME}_04_differential.html`, `{TODAY}_{WD_NAME}_ASE_differential.xlsx` and `{TODAY}_{WD_NAME}_ASE_differential.pdf`.
 
 **Verify before finishing.** Extract every `href` of the page and check with a shell loop that each target exists next to the page (`grep -o 'href="[^"]*"' {RESULTS_DIR}/{WD_NAME}_summary_report.html | sed 's/href="//;s/"$//' | while read -r f; do [ -s "{RESULTS_DIR}/$f" ] || echo "MISSING $f"; done`); also check that no `href` or `src` starts with `http` or `/`. Fix the page (or report the missing file) until nothing is printed. Then tell the user the paths of the summary page, the two stage HTML files, the xlsx and `summary_numbers.tsv`, and, when they ran, the Rmd 03/04 HTML files, xlsx files and summary TSVs.
 

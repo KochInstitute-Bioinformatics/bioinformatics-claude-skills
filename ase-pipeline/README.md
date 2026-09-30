@@ -72,7 +72,7 @@ Everything is written under `{CWD}/results/{YYYY-MM-DD}_{WD_NAME}/` (for example
 | `summary_numbers.tsv` | One row per sample with the headline numbers (written by Rmd 02) |
 | `{WD_NAME}_summary_report.html` | Standalone page (inline CSS, no R, relative links to the reports and the xlsx, reference-bias flags shown prominently) |
 
-The jobs run in one dependency chain: prep -> per-sample array (`afterok`) -> Rmd 01 (`afterok`) -> Rmd 02 (`afterok`), preceded by the mouse helper chain when used.
+The jobs run in one dependency chain: prep -> per-sample array (`afterok`) -> Rmd 01 (`afterok`) -> Rmd 02 (`afterok`), and, when selected, Rmd 03 / Rmd 04 (`afterok` on Rmd 01, beside Rmd 02), preceded by the mouse helper chain when used.
 
 ---
 

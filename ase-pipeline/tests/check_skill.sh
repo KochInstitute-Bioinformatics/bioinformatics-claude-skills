@@ -230,7 +230,7 @@ need 'dropped $N_SAME (same genotype in both strains), $N_HET (heterozygous or m
 need 'sites have $A = 1/1 and $B = 0/0: strain A carries the non-reference allele there'
 need '[ "$N_SITES" -ge "$MIN_PARENTAL_SITES" ]'
 need "**Sites-only VCF** (no sample columns): every biallelic SNP is taken on trust"
-need "F1 mode in Stage 1 needs one parent to be the reference strain"
+need "F1 mode needs one parent to be the reference strain"   # Task 6 fix M1: was "F1 mode in Stage 1 needs ..."
 need "the VCF was not called against this assembly"
 forbid "F1 mode needs strain A = the reference strain, REF = strain A, ALT = strain B (and matching contig names)"
 # I2: masked STAR index keyed on the mask; reused only when index_key.txt matches; array jobs read the recorded path
@@ -464,8 +464,8 @@ need "Which condition is the reference (baseline)?"
 need "Store it as \`{REF_CONDITION}\`"
 need "condition and cross direction are confounded"
 need "at least 2 individuals sampled in both"
-need 'R3=$(sbatch -p bcc --parsable --dependency=afterok:$R2 $S/run_03_reciprocal.sh)'
-need 'R4=$(sbatch -p bcc --parsable --dependency=afterok:$R2 $S/run_04_differential.sh)'
+need 'R3=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_03_reciprocal.sh)'
+need 'R4=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_04_differential.sh)'
 need "### Reciprocal F1 section"
 need "### Differential ASE section"
 need "offered only when \`{MODE}\` = \`outbred\`; available in a later stage"
@@ -477,12 +477,36 @@ forbid "**Stage 1 only.**"
 need "at least one condition must hold samples of both directions"
 need "checked for every contrast against \`{REF_CONDITION}\`"
 need 'MISSING=$(for f in $NEED; do [ -s "$S/$f" ] || echo "$f"; done)'
-need 'echo "prep $P, array $A, Rmd01 $R1, Rmd02 $R2, Rmd03 ${R3:-none}, Rmd04 ${R4:-none}"'
-need 'squeue -h -j $LAST'
 need "a contrast with \`tested\` = 0"
 need "removing a sample can change which SNP a dense gene keeps"
 need "X, Y and MT are not tested in either mode"
 forbid "The summary page is written from \`summary_numbers.tsv\`, not from R."
 # --- end Stage 2 Task 6
+# --- Stage 2 Task 6 review fixes; each check fails on the ec81a61 skill/README
+# ruling: Rmd 03/04 depend on Rmd 01 (they read only ase_checkpoint.rds), not on Rmd 02
+forbid '--dependency=afterok:$R2 $S/run_03_reciprocal.sh'
+forbid '--dependency=afterok:$R2 $S/run_04_differential.sh'
+need "# 5. ONLY IF reciprocal F1 was selected (Step 7): Rmd 03 after Rmd 01"
+grep -qF 'Rmd 03 / Rmd 04 (`afterok` on Rmd 01' "$RD" || { echo "FAIL: README chain must put Rmd 03 / Rmd 04 after Rmd 01"; fail=1; }
+# I1: wait on every submitted id, stop on never-satisfiable dependencies, bounded
+forbid 'squeue -h -j $LAST'
+need 'JOBS=$(cut -f2 "$IDS" | paste -sd, -)'
+need "Q=\$(squeue -h -j \"\$JOBS\" -o '%i %r' 2>/dev/null)"
+need "grep -qv ' DependencyNeverSatisfied\$'"
+need 'scancel $STUCK'
+need '[ $n -ge 240 ]'
+# M3: every sbatch id checked; "not selected" distinct from a failed submission
+need 'got() { [ -n "$2" ] || die'
+need 'R3="not selected"; R4="not selected"'
+forbid 'Rmd03 ${R3:-none}'
+# I2: outbred menu precondition over any pair of conditions; per-contrast check after the reference is chosen
+need "at least one pair of conditions with at least 2 individuals sampled in both"
+# M1, M2, M4, M5
+forbid "not supported in Stage 1"
+need "xargs -r scancel"
+need "control, ctrl, untreated, wt or vehicle"
+need "choose another reference condition first"
+need "grep -o '## Contrasts not tested:[^<]*'"
+# --- end Stage 2 Task 6 review fixes
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1
