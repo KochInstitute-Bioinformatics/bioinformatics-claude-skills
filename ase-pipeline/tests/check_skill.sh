@@ -590,4 +590,59 @@ rneed "say nothing about real data"
 # --- end Stage 2 README and registration
 
 
+# --- Stage 2 final-review fix wave (fail on 6416df4)
+# I1: one spelling of the analysis words, menu mapping in Step 7, guard in submit_chain.sh
+forbid "per_sample"
+need 'menu number 1 is the word `per-sample`, 2 is `reciprocal`, 3 is `differential`'
+need 'holds the words, separated by spaces, never the menu numbers'
+need 'case "$ANALYSES" in "") die "ANALYSES is empty: write the Step 7 words'
+need 'for w in $ANALYSES; do case "$w" in per-sample|reciprocal|differential) ;; *) die "ANALYSES contains '"'"'$w'"'"'; the accepted words are per-sample, reciprocal and differential'
+# M1: the Rmd 03 / Rmd 04 submission must sit directly under its case line (the NEED line cannot satisfy this)
+pair_need() { awk -v a="$1" -v b="$2" 'index($0,b) && p {f=1} {p = index($0,a) > 0} END {exit !f}' "$SKILL" || { echo "FAIL: line not directly under its case line: $2"; fail=1; }; }
+pair_need 'case " $ANALYSES " in *reciprocal*)' '  R3=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_03_reciprocal.sh); got run_03_reciprocal.sh "$R3" ;;'
+pair_need 'case " $ANALYSES " in *differential*)' '  R4=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_04_differential.sh); got run_04_differential.sh "$R4" ;;'
+# M3: one sample per animal in F1 mode, duplicated individual stops
+need "one sample per animal"
+need "merge the FASTQ files of the technical replicates of an animal before the wizard"
+need "in F1 mode every \`individual\` value must be unique"
+need "F1 mode needs one sample per animal; these individual values occur more than once:"
+need "awk -F, 'NR > 1 {c[\$6]++} END {for (i in c) if (c[i] > 1) print i}' {SAMPLES_CSV}"
+# M5: no overwrite of an existing chain_job_ids.tsv; re-run behaviour stated
+need '[ ! -e "$IDS" ] || die "a chain has been submitted from this results directory'
+need "check squeue, then remove or rename"
+need "mv {RESULTS_DIR}/logs/chain_job_ids.tsv {RESULTS_DIR}/logs/chain_job_ids_previous.tsv"
+need "never delete an existing results directory"
+# M4: what to do after the wait timeout
+need "On TIMEOUT (exit 2)"
+need "do not cancel them"
+# M6: X is not set aside in Rmd 01 / Rmd 02
+need "Rmd 01 and Rmd 02 do not set X aside"
+need "male F1 animals carry one X"
+# M7: runtime wording from the measurement
+forbid "projects under 3 h"
+need "6.4 ms per unit (32 s for 5000 units"
+need "projects 0.11 h for 60,000 genes"
+# M9
+forbid "only when all individuals agree"
+need "only when all tested individuals agree"
+# M10
+forbid "(it rewrites \`chain_job_ids.tsv\`"
+need "the new \`submit_rmds.sh\` writes a new \`chain_job_ids.tsv\`"
+# M11: process traces
+forbid "debug job"
+forbid "Stage 1 synthetic acceptance"
+forbid "the Stage 2 beta-binomial"
+! grep -qE 'job [0-9]{6,}' "$SKILL" || { echo "FAIL: skill mentions a job id"; fail=1; }
+! grep -qE 'Singularity\. [a-z]' "$HERE/../../README.md" || { echo "FAIL: root README row: lower-case sentence start"; fail=1; }
+# M13
+need "PAT='error|halted|due to time limit|cancelled|out of memory|oom-kill'"
+need 'grep -h -m1 -iE "$PAT"'
+forbid "-iE 'error|halted'"
+# README: M6, M8
+rneed "do not set X aside"
+rneed "verified with a stub scheduler, not live"
+rneed "manually adapted chain"
+rforbid "the skill's own \`submit_chain.sh\` and \`wait_chain.sh\` ran"
+# --- end Stage 2 final-review fix wave
+
 [ $fail -eq 0 ] && echo "PASS" || exit 1
