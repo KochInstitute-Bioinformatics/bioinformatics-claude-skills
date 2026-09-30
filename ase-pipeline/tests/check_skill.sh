@@ -289,4 +289,21 @@ grep -qF "likelihood-ratio test (H0 p = 0.5 vs p free, 1 df)" "$SPEC" || { echo 
 # --- end final-review fix wave
 
 
+# --- Stage 2 Task 1 (statistics); each string is absent from the Stage 1 skill (152dc20)
+need "chrom_class <- function(contig)"
+need "thin_snps <- function(pos, depth, window)"
+need "bb_glm_fit <- function(y, n, X, rho, bound = 15)"
+need "bb_glm_lrt <- function(y, n, X, drop_cols, rho, bound = 15)"
+need "bb_moment_phi <- function(units, max_iter = 25, tol = 1e-6, bound = 15)"
+need "ase_glm_test <- function(units, tests, rho_min, min_df_unit = 2, bound = 15)"
+need "ase_paired_test <- function(d, rho_min, min_individuals = 2, bound = 15)"
+need "bb_pair_phi_trim <- function(y, n, cell, keep = 0.9, max_iter = 50)"
+need '| `THIN_BP` | 500 |'
+need "pasted verbatim into Rmd 02, Rmd 03 and Rmd 04"
+need "**Stage 2 models (Rmd 03 and 04): \`ase_glm_test\`.**"
+need "**Outbred differential: \`ase_paired_test\`.**"
+need "**SNPs sharing read pairs.**"
+[ -s "$HERE/r/test_ase_stats_stage2.R" ] || { echo "FAIL: missing tests/r/test_ase_stats_stage2.R"; fail=1; }
+# --- end Stage 2 Task 1
+
 [ $fail -eq 0 ] && echo "PASS" || exit 1

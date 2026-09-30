@@ -204,6 +204,7 @@ Show these defaults and let the user edit any of them:
 | `ABS_DEV_SIG` | 0.1 | minimum absolute deviation of the reference fraction from 0.5 to call a gene imbalanced |
 | `BIAS_TOL` | 0.03 | reference-bias tolerance: a sample is flagged when its reference-fraction deviation from 0.5 exceeds `max(BIAS_TOL, 3 x SE)`, SE = sqrt(0.25 / total reads) |
 | `RHO_MIN` | 0.01 | both modes: floor for the per-sample overdispersion used by the tests (F1: `rho = max(rho_corrected, RHO_MIN)` at SNP and gene level; outbred: `rho = max(rho_trim, RHO_MIN)`), so a noisy or zero estimate can never make the tests anti-conservative |
+| `THIN_BP` | 500 | gene-level tests of Rmd 03 and 04: SNPs closer than this many exonic bases can be counted in the same read pair (ASEReadCounter counts a fragment at every SNP it covers), so only the deepest SNP per window is used; set it to about the longest fragment (insert) length of the library |
 
 ASEReadCounter defaults: `--min-mapping-quality` 10 and `--min-base-quality` 10 (the tool's own defaults are 0). Record all values; they are written into the scripts and the Rmd parameters.
 
@@ -1227,7 +1228,7 @@ Besides the xlsx, Rmd 02 writes `{RESULTS_DIR}/summary_numbers.tsv` (one row per
 
 ## Step 14 — Statistics functions
 
-These base-R functions are pasted verbatim into Rmd 02 (`{TODAY}_{WD_NAME}_02_imbalance.Rmd`); the marker lines delimit the code that `ase-pipeline/tests/r/test_ase_stats.R` extracts from this file and unit-tests, so the tested code is the shipped code. They need no packages beyond base R.
+These base-R functions are pasted verbatim into Rmd 02, Rmd 03 and Rmd 04 (`{TODAY}_{WD_NAME}_02_imbalance.Rmd`, `..._03_reciprocal.Rmd`, `..._04_differential.Rmd`); the marker lines delimit the code that `ase-pipeline/tests/r/test_ase_stats.R` extracts from this file and unit-tests, so the tested code is the shipped code. They need no packages beyond base R.
 
 ```r
 # --- ase-stats-begin
@@ -1324,6 +1325,198 @@ bb_estimate_rho_trim <- function(x, n, keep = 0.9, max_iter = 100) {   # c(rho, 
   }
   c(rho = rho, central_frac = mean(inside))
 }
+chrom_class <- function(contig) {   # "autosome", "X", "Y" or "MT" (Ensembl and chr-prefixed names); Rmd 03/04 test autosomes only
+  s <- toupper(sub("^chr", "", as.character(contig), ignore.case = TRUE))
+  ifelse(s == "X", "X", ifelse(s == "Y", "Y", ifelse(s %in% c("MT", "M"), "MT", "autosome")))
+}
+thin_snps <- function(pos, depth, window) {   # logical keep: deepest SNP first (ties: lower position); no two kept SNPs closer than window
+  keep <- rep(FALSE, length(pos))
+  for (i in order(-depth, pos)) if (!any(keep & abs(pos - pos[i]) < window)) keep[i] <- TRUE
+  keep
+}
+bb_ll_rows <- function(x, n, p, rho) {   # per-row beta-binomial log-likelihood, p may differ by row; rho < 1e-8 -> binomial
+  p <- pmin(pmax(p, 1e-10), 1 - 1e-10)
+  if (rho < 1e-8) return(dbinom(x, n, p, log = TRUE))
+  a <- p * (1 - rho) / rho; b <- (1 - p) * (1 - rho) / rho
+  lchoose(n, x) + lbeta(x + a, n - x + b) - lbeta(a, b)
+}
+bb_glm_fit <- function(y, n, X, rho, bound = 15) {   # beta-binomial GLM, logit link, dispersion rho FIXED; coefficients boxed to [-bound, bound]
+  X <- as.matrix(X)
+  if (ncol(X) == 0) return(list(beta = numeric(0), loglik = sum(bb_ll_rows(y, n, rep(0.5, length(y)), rho)), conv = 0L, at_bound = FALSE))
+  nll <- function(b) -sum(bb_ll_rows(y, n, plogis(drop(X %*% b)), rho))
+  gr <- function(b) {   # analytic gradient (finite differences stall near the bounds of monoallelic genes)
+    p <- pmin(pmax(plogis(drop(X %*% b)), 1e-10), 1 - 1e-10)
+    s <- if (rho < 1e-8) y - n * p else {
+      k <- (1 - rho) / rho
+      k * p * (1 - p) * (digamma(y + p * k) - digamma(n - y + (1 - p) * k) - digamma(p * k) + digamma((1 - p) * k))
+    }
+    -drop(crossprod(X, s))
+  }
+  st <- tryCatch(as.numeric(qr.solve(X, qlogis((y + 0.5) / (n + 1)))), error = function(e) rep(0, ncol(X)))
+  st[!is.finite(st)] <- 0; st <- pmin(pmax(st, -bound + 1), bound - 1)
+  o <- optim(st, nll, gr, method = "L-BFGS-B", lower = -bound, upper = bound)
+  conv <- o$convergence
+  if (conv != 0) {   # L-BFGS-B often stops with code 52 (line search) AT the optimum, where the log-likelihood is flat to rounding:
+    g <- gr(o$par)   # accept the fit when the projected gradient vanishes (KKT: at a bound only an outward gradient remains)
+    g[(o$par <= -bound + 1e-8 & g >= 0) | (o$par >= bound - 1e-8 & g <= 0)] <- 0
+    if (all(is.finite(g)) && max(abs(g)) < 1e-3) conv <- 0L
+  }
+  list(beta = setNames(o$par, colnames(X)), loglik = -o$value, conv = conv, at_bound = any(abs(o$par) > bound - 1e-3))
+}
+bb_glm_lrt <- function(y, n, X, drop_cols, rho, bound = 15) {   # LRT of H0: coefficients of drop_cols = 0, rho fixed; df = length(drop_cols)
+  X <- as.matrix(X)
+  f1 <- bb_glm_fit(y, n, X, rho, bound)
+  f0 <- bb_glm_fit(y, n, X[, setdiff(colnames(X), drop_cols), drop = FALSE], rho, bound)
+  stat <- max(0, 2 * (f1$loglik - f0$loglik))
+  list(beta = f1$beta, stat = stat, df = length(drop_cols), p = pchisq(stat, length(drop_cols), lower.tail = FALSE),
+       conv = max(f1$conv, f0$conv), at_bound = f1$at_bound)
+}
+bb_moment_phi <- function(units, max_iter = 25, tol = 1e-6, bound = 15) {
+  # pooled moment (Williams-type) estimate of the beta-binomial dispersion over units (each list(y, n, X), rows with n > 0):
+  # solves sum(Pearson residual^2 / (1 + (n - 1) phi)) = residual df, the means refitted at each phi. Dividing by the residual
+  # df (rows minus coefficients) is what avoids the Neyman-Scott shrinkage of a maximum-likelihood fit with free means.
+  phi <- 0
+  for (it in seq_len(max_iter)) {
+    parts <- lapply(units, function(u) tryCatch({
+      f <- bb_glm_fit(u$y, u$n, u$X, phi, bound)
+      p <- pmin(pmax(plogis(drop(as.matrix(u$X) %*% f$beta)), 1e-6), 1 - 1e-6)
+      r2 <- (u$y - u$n * p)^2 / (u$n * p * (1 - p)); dfu <- as.numeric(length(u$y) - qr(as.matrix(u$X))$rank)
+      if (dfu > 0 && all(is.finite(r2))) list(r2 = r2, n = u$n, df = dfu) else NULL
+    }, error = function(e) NULL))
+    parts <- parts[!vapply(parts, is.null, logical(1))]
+    if (length(parts) == 0) return(NA_real_)
+    r2 <- unlist(lapply(parts, `[[`, "r2")); nn <- unlist(lapply(parts, `[[`, "n")); df <- sum(vapply(parts, `[[`, numeric(1), "df"))
+    g <- function(ph) sum(r2 / (1 + (nn - 1) * ph)) - df
+    new <- if (g(0) <= 0) 0 else if (g(0.99) > 0) 0.99 else uniroot(g, c(0, 0.99), tol = 1e-12)$root
+    if (abs(new - phi) < tol) return(new)
+    phi <- new
+  }
+  warning("dispersion estimate did not converge in ", max_iter, " iterations; the last value is used")
+  phi
+}
+ase_glm_test <- function(units, tests, rho_min, min_df_unit = 2, bound = 15) {
+  # units: named list of list(y, n, X), one row per sample (rows with n > 0 only), X with named columns
+  # tests: named list, test name -> the X columns set to 0 under H0 (likelihood-ratio test, df = number of columns)
+  # dispersion: phi_common = pooled moment estimate over every estimable unit; per unit phi_used = max(phi_common, rho_min,
+  # phi_unit when the unit has at least min_df_unit residual df): the larger of the shared and the unit's own estimate
+  nr <- vapply(units, function(u) length(u$y), integer(1))
+  rk <- vapply(units, function(u) if (length(u$y) == 0) 0L else qr(as.matrix(u$X))$rank, integer(1))
+  est <- nr > 0 & rk == vapply(units, function(u) ncol(as.matrix(u$X)), integer(1)) & nr > rk
+  common <- if (any(est)) bb_moment_phi(units[est], bound = bound) else NA_real_
+  cn <- unique(unlist(lapply(units, function(u) colnames(u$X))))
+  one <- function(i) {
+    u <- units[[i]]
+    row <- c(list(unit = names(units)[i], n_rows = nr[i], df_resid = nr[i] - rk[i], depth = sum(u$n),
+                  phi_common = common, phi_unit = NA_real_, phi_used = NA_real_, status = "not_estimable"),
+             setNames(as.list(rep(NA_real_, length(cn))), paste0("beta_", cn)),
+             setNames(as.list(rep(NA_real_, length(tests))), paste0("stat_", names(tests))),
+             setNames(as.list(rep(NA_real_, length(tests))), paste0("p_", names(tests))))
+    if (est[i] && !is.na(common)) {
+      res <- tryCatch({
+        pu <- if (nr[i] - rk[i] >= min_df_unit) bb_moment_phi(list(u), bound = bound) else NA_real_
+        ph <- max(c(common, rho_min, pu), na.rm = TRUE)
+        list(pu = pu, ph = ph, tt = lapply(tests, function(cols) bb_glm_lrt(u$y, u$n, u$X, cols, ph, bound)))
+      }, error = function(e) NULL)
+      if (is.null(res)) row$status <- "fit_error" else {
+        row$phi_unit <- res$pu; row$phi_used <- res$ph
+        b <- res$tt[[1]]$beta; row[paste0("beta_", names(b))] <- as.list(unname(b))
+        conv <- max(vapply(res$tt, function(t) t$conv, numeric(1)))
+        for (nm in names(tests)) {
+          row[[paste0("stat_", nm)]] <- res$tt[[nm]]$stat
+          row[[paste0("p_", nm)]] <- if (conv == 0) res$tt[[nm]]$p else NA_real_
+        }
+        row$status <- if (conv != 0) "not_converged" else if (any(vapply(res$tt, function(t) t$at_bound, logical(1)))) "ok_at_bound" else "ok"
+      }
+    }
+    as.data.frame(row, check.names = FALSE, stringsAsFactors = FALSE)
+  }
+  out <- do.call(rbind, lapply(seq_along(units), one)); rownames(out) <- NULL; out
+}
+bb_pair_phi_trim <- function(y, n, cell, keep = 0.9, max_iter = 50) {
+  # c(phi, phi_all, central_frac): pair dispersion of ONE individual, robust to real condition changes.
+  # cell = SNP id; the rows of a cell are that SNP's samples (both conditions). Per cell, under H0 (one REF fraction
+  # for all its rows), the Williams statistic X2 = sum((y - n p)^2 / (n p (1 - p) (1 + (n - 1) phi))), p the
+  # weighted pooled fraction, is about chi-square with df = rows - 1. phi_all solves sum(X2) = sum(df) over all
+  # cells (the plain moment estimate, inflated by every SNP that really changes). The trimmed estimate keeps the
+  # central cells (pchisq(X2, df) <= keep, so the most-changed cells are set aside) and solves
+  # sum(X2) = sum(E[chi2_df | chi2_df <= qchisq(keep, df)]) over them: the truncation-corrected moment equation.
+  # Kept set and phi are iterated DOWN from phi_all to a fixed point (if the iteration cycles, the largest value of the
+  # cycle is kept); the result is capped at phi_all (trimming never makes the data more overdispersed).
+  ok <- is.finite(y) & is.finite(n) & n > 0; y <- y[ok]; n <- n[ok]; cell <- as.character(cell[ok])
+  rows <- table(cell); cell <- factor(cell, levels = names(rows)[rows >= 2]); use <- !is.na(cell)
+  y <- y[use]; n <- n[use]; cell <- droplevels(cell)
+  if (nlevels(cell) < 20) return(c(phi = NA_real_, phi_all = NA_real_, central_frac = NA_real_))
+  df <- as.numeric(table(cell)) - 1
+  x2 <- function(ph) {
+    w <- n / (1 + (n - 1) * ph)
+    p <- (rowsum(w * y / n, cell) / rowsum(w, cell))[as.integer(cell)]
+    p <- pmin(pmax(p, 1e-6), 1 - 1e-6)
+    as.numeric(rowsum((y - n * p)^2 / (n * p * (1 - p) * (1 + (n - 1) * ph)), cell))
+  }
+  solve_phi <- function(k, target, hi) {   # phi in [0, hi] with sum(x2[k]) = target
+    g <- function(ph) sum(x2(ph)[k]) - target
+    if (g(0) <= 0) 0 else if (g(hi) >= 0) hi else uniroot(g, c(0, hi), tol = 1e-10)$root
+  }
+  phi_all <- solve_phi(rep(TRUE, length(df)), sum(df), 0.99)
+  if (phi_all == 0) return(c(phi = 0, phi_all = 0, central_frac = 1))
+  m <- df * pchisq(qchisq(keep, df), df + 2) / keep   # E[chi2_df | chi2_df <= its keep quantile]
+  phi <- phi_all; hist <- phi; k <- rep(TRUE, length(df))
+  for (it in seq_len(max_iter)) {
+    k <- pchisq(x2(phi), df) <= keep
+    pn <- solve_phi(k, sum(m[k]), phi_all)
+    tol <- 1e-4 * max(pn, phi) + 1e-8
+    if (abs(pn - phi) <= tol) { phi <- pn; break }
+    cyc <- which(abs(hist - pn) <= tol)
+    if (length(cyc) > 0) { phi <- max(hist[min(cyc):length(hist)], pn); break }
+    phi <- pn; hist <- c(hist, pn)
+    if (it == max_iter) warning("trimmed pair dispersion did not converge in ", max_iter, " iterations; the last value is used")
+  }
+  c(phi = phi, phi_all = phi_all, central_frac = mean(k))
+}
+ase_paired_test <- function(d, rho_min, min_individuals = 2, bound = 15) {
+  # d: data.frame(snp, individual, cond, y, n); cond 0 = reference condition, 1 = tested condition; y = REF count, n = REF + ALT
+  # 1. per individual: pair dispersion phi_i = bb_pair_phi_trim (trimmed moment estimate, one REF fraction per SNP; the
+  #    SNPs that change most between conditions are set aside, so real changes do not inflate it), floored at rho_min
+  # 2. per SNP and individual: LRT of one shared REF fraction against one per condition (1 df) with phi_i
+  # 3. per SNP: the statistics summed over the informative individuals (df = their number). Direction-free, because
+  #    which allele carries a regulatory variant differs between individuals (a shared slope would cancel real changes)
+  empty <- data.frame(snp = character(0), n_individuals = integer(0), n_failed = integer(0), stat = numeric(0), df = integer(0),
+                      p = numeric(0), mean_delta = numeric(0), max_abs_delta = numeric(0), n_up = integer(0), n_down = integer(0),
+                      status = character(0), stringsAsFactors = FALSE)
+  d <- d[is.finite(d$y) & is.finite(d$n) & d$n > 0, c("snp", "individual", "cond", "y", "n"), drop = FALSE]
+  key <- paste(d$individual, d$snp, sep = "\t")
+  paired <- tapply(d$cond, key, function(v) any(v == 0) & any(v == 1))
+  d <- d[as.logical(paired[key]), , drop = FALSE]
+  if (nrow(d) == 0) return(list(snp = empty, phi = data.frame(individual = character(0), phi_pair = numeric(0))))
+  key <- paste(d$individual, d$snp, sep = "\t")
+  cells <- split(seq_len(nrow(d)), key); first <- vapply(cells, `[`, integer(1), 1)
+  cell_ind <- d$individual[first]; cell_snp <- d$snp[first]
+  inds <- sort(unique(cell_ind))
+  phi <- vapply(inds, function(ind) {   # NA (individual not tested) below 20 paired SNPs
+    i <- d$individual == ind
+    ph <- bb_pair_phi_trim(d$y[i], d$n[i], d$snp[i])[["phi"]]
+    if (is.na(ph)) NA_real_ else max(ph, rho_min)
+  }, numeric(1))
+  names(phi) <- inds
+  cr <- do.call(rbind, lapply(seq_along(cells), function(j) {
+    i <- cells[[j]]; ph <- phi[[cell_ind[j]]]
+    r <- if (is.na(ph)) NULL else tryCatch(bb_glm_lrt(d$y[i], d$n[i], cbind("(Intercept)" = 1, cond = d$cond[i]), "cond", ph, bound),
+                                           error = function(e) NULL)
+    if (is.null(r) || r$conv != 0) return(data.frame(snp = cell_snp[j], stat = NA_real_, delta = NA_real_, stringsAsFactors = FALSE))
+    data.frame(snp = cell_snp[j], stat = r$stat, delta = plogis(sum(r$beta)) - plogis(r$beta[[1]]), stringsAsFactors = FALSE)
+  }))
+  snp <- do.call(rbind, lapply(split(cr, cr$snp), function(s) {
+    k <- sum(is.finite(s$stat)); so <- s[is.finite(s$stat), , drop = FALSE]; enough <- k >= min_individuals
+    data.frame(snp = s$snp[1], n_individuals = k, n_failed = nrow(s) - k,
+               stat = if (enough) sum(so$stat) else NA_real_, df = k,
+               p = if (enough) pchisq(sum(so$stat), k, lower.tail = FALSE) else NA_real_,
+               mean_delta = if (k > 0) mean(so$delta) else NA_real_, max_abs_delta = if (k > 0) max(abs(so$delta)) else NA_real_,
+               n_up = sum(so$delta > 0), n_down = sum(so$delta < 0),
+               status = if (enough) "ok" else "too_few_individuals", stringsAsFactors = FALSE)
+  }))
+  rownames(snp) <- NULL
+  list(snp = snp, phi = data.frame(individual = inds, phi_pair = unname(phi), stringsAsFactors = FALSE))
+}
 # --- ase-stats-end
 ```
 
@@ -1335,6 +1528,9 @@ bb_estimate_rho_trim <- function(x, n, keep = 0.9, max_iter = 100) {   # c(rho, 
 - **F1 gene level uses `bb_estimate_rho_gene` and `bb_gene_lrt`, not summed counts.** `bb_estimate_rho` (H0, p = 0.5 everywhere) treats the between-SNP spread caused by true imbalance as overdispersion, so with many imbalanced genes it is inflated (in the unit test about four times the true value), and applying it to counts summed over a gene multiplies the variance by about `1 + (n - 1) * rho`. `bb_estimate_rho_gene` maximises the likelihood with a free mean for every gene (genes with at least 2 SNPs; `NA` below 5 such genes) and returns `c(free, corrected)`. The free estimate is biased low: a free mean per gene shrinks the whole variance factor `1 + (n - 1) * rho` by `(k - 1) / k` (Neyman-Scott), which for 4-SNP genes gives 0.0115 for a true 0.02. The corrected value undoes that shrinkage, `rho_corrected = cf * rho_free + (cf - 1) / m` with `cf = sum(k) / sum(k - 1)` and `m` the mean of `n - 1` (0.021 in the same test). Rmd 02 then uses `rho_gene = max(rho_corrected, RHO_MIN)` for the gene tests (`RHO_MIN`, default 0.01, from Step 8), so a noisy or zero estimate can never make them anti-conservative. `bb_gene_lrt` tests `p = 0.5` against a shared free `p` per gene on the SNP-level counts and returns `phat`. Outbred mode uses `bb_estimate_rho_trim`, `bb_pvalue` and `acat`.
 - **Independence assumption (F1 gene LRT and `bb_estimate_rho_gene`).** ASEReadCounter counts a fragment at every SNP it overlaps, so when several SNPs of a gene lie within one fragment (common in divergent F1 haplotype blocks) their counts share read pairs. `bb_gene_lrt` and `bb_estimate_rho_gene` nevertheless treat the SNP counts of a gene as independent draws with a shared `p`. Consequences: the LRT statistic grows with the number of SNPs per fragment, the free-mean `rho` estimate cannot compensate (SNPs that share reads agree with each other), and the F1 gene test can be **anti-conservative in SNP-dense genes at moderate depth**; the `RHO_MIN` floor offsets this only partly (how much depends on the depth and on the number of SNPs per fragment; this was not measured). The F1 gene-test null sizes quoted in the README (0.047-0.056 pooled, worst seed 0.064) come from simulations with **independent SNPs** and do not describe SNP-dense genes; no simulation with shared reads was run. The per-SNP tests and the outbred ACAT gene test are not affected in the same way (ACAT is valid under dependence). Planned for Stage 2 (not implemented): thin each gene's SNPs so that no two kept SNPs fall within one fragment window (for example keep the highest-depth SNP per window of 2 x read length) before rho estimation and the gene LRT, report the number of SNPs used, and add a simulation in which SNPs share reads.
 - Boundary handling: the `rho` estimators return exactly 0 when the optimum sits at the lower boundary (or below 1e-4), `bb_estimate_rho` and `bb_estimate_rho_gene` emit a warning when it sits at the upper boundary, and `bb_estimate_rho_trim` warns if it does not converge; Rmd 02 prints such warnings per sample and writes them to the Summary (`rho_warning`). `bb_pvalue` returns `NA` for `x` below 0, above `n`, non-integer or missing.
+- **Stage 2 models (Rmd 03 and 04): `ase_glm_test`.** Each gene (or SNP) is one unit, with one row per sample. For F1 genes, a row is the sum of strain-A and total counts over the gene's SNPs after `thin_snps` (one SNP per `THIN_BP` window in exon coordinates, deepest first), so a read pair is not counted twice. The beta-binomial GLM (`bb_glm_fit`: logit link, dispersion fixed, coefficients boxed to ±15 so that monoallelic genes give a finite likelihood-ratio statistic) is tested by `bb_glm_lrt`. L-BFGS-B often stops with code 52 (line search) exactly at the optimum; such a fit is accepted when the projected gradient of the log-likelihood is below 1e-3 (on the unit-test data every code-52 stop had at most 9.3e-6), and a fit that truly stopped early stays `not_converged` with p `NA`. The dispersion is `phi_common` from `bb_moment_phi`: the spread between replicate samples, divided by the residual df, so there is no Neyman-Scott shrinkage (it recovers 0.0051 / 0.0207 / 0.0514 for 0.005 / 0.02 / 0.05). Each unit uses `phi_used = max(phi_common, RHO_MIN, phi_unit)`, and `phi_unit` counts only with at least 2 residual df. Measured, 10 seeds x 2000 null genes per design, true dispersion 0.02: the reciprocal null sizes (strain / parent of origin) are 0.0370 / 0.0367 (3+3), 0.0362 / 0.0346 (2+2), 0.0356 / 0.0341 (3+2) and 0.0380 / 0.0365 (4+2); leakage (strain genes in the parent-of-origin test and the reverse) is at most 0.0387; with heterogeneous dispersion (lognormal sd 0.7) 0.0309 / 0.0291; at a true dispersion of 0.005 (below `RHO_MIN`) 0.0132 / 0.0129. The tests are therefore conservative (about 0.036 at a nominal 0.05, because of the maximum rule and the floor). Power for 3+3 is 1.000 (strain 0.7) / 1.000 (maternal 0.8), and signs are correct in every call. The F1 differential null size is 0.0369 (3 vs 3), 0.0363 (2 vs 2), 0.0365 (3 vs 2) and 0.0372 (unbalanced directions with the cross-direction term); imprinted genes with no condition effect give 0.0420 / 0.0420 / 0.0430 / 0.0383. Power for a 0.5 -> 0.7 change is 0.7813 (3 vs 3), 0.6853 (3 vs 2) and 0.5983 (2 vs 2). Without the cross-direction term, the imprinted-gene size in the unbalanced design is 0.0000 (conservative, not inflated, in this design); the term is kept so that the condition effect is not mixed with parent of origin.
+- **Outbred differential: `ase_paired_test`.** Each individual gets its own pair dispersion from `bb_pair_phi_trim`, floored at `RHO_MIN`. Under H0 each SNP has one REF fraction for all its samples, so the Williams statistic of a SNP is about chi-square with df = rows - 1. The plain moment estimate (`phi_all`, sum of the statistics = sum of the df) counts every SNP that really changes between conditions as noise: with 10 percent of the SNPs changed 0.5 -> 0.8 it gave 0.038-0.041 for a true 0.02, and a power of 0.626 / 0.665. The trimmed estimate keeps the central SNPs (`pchisq(X2, df) <= keep`, `keep` = 0.9, so the most-changed SNPs are set aside), solves the truncation-corrected moment equation on them (each kept statistic matched to `E[chi2_df | chi2_df <= qchisq(keep, df)]`), iterates down from `phi_all` to a fixed point and is capped at `phi_all`; fewer than 20 paired SNPs give `NA` and the individual is not tested. It recovers 0.0097 / 0.0201 / 0.0507 for 0.01 / 0.02 / 0.05 without changes, and 0.0248 for 0.02 with 10 percent of the SNPs changed. A 1-df LRT per SNP and individual uses that dispersion; the statistics are summed over individuals (df = number of individuals), which is direction-free because the allele carrying a regulatory variant differs between individuals. Genes use `acat`. Measured, 10 seeds x 3000 SNPs, true dispersion 0.02: the SNP / gene null sizes are 0.0206 / 0.0490 (I = 2), 0.0356 / 0.0505 (I = 3), 0.0434 / 0.0526 (I = 4) and 0.0472 / 0.0514 (I = 6), and at most 0.0191 at a true dispersion of 0.005. Power for a 0.5 -> 0.8 change in 10 percent of the SNPs with 4 individuals is 0.7252 (phase-heterogeneous) / 0.7769 (consistent), against an oracle power of 0.7562 / 0.7981 with the dispersion fixed at its true value: that oracle is the ceiling of the design (4 individuals, 60 percent heterozygous, depth 30-200), not a loss of the estimator. When 30 percent of the SNPs change, the trimmed dispersion is still inflated (0.0454 for 0.02) and power drops to 0.5631 against an oracle 0.7706, which is conservative (no false positives added).
+- **SNPs sharing read pairs.** In a fragment-level simulation (ASEReadCounter-style counting, 30 percent SNP-dense genes), the thinned gene tests have null sizes of 0.0314 (strain) / 0.0288 (parent of origin) (dense genes 0.0331), against 0.0354 without thinning (dense genes 0.0578). The Stage 1 Rmd 02 F1 gene LRT has a size of 0.1450 unthinned (0.2084 in SNP-dense genes) and 0.0497 thinned: counting shared read pairs at every SNP makes it anti-conservative.
 
 ---
 
