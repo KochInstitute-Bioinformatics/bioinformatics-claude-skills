@@ -57,8 +57,8 @@ need "MIN_DEPTH"
 need "FDR_SIG"
 need "ABS_DEV_SIG"
 need "BIAS_TOL"
-need "offered only when \`{MODE}\` = \`f1\` and both \`cross_direction\` values"
-need "offered only when at least two conditions each have replicates"
+need "offered only when \`{MODE}\` = \`f1\` and at least 2 samples have \`cross_direction\` \`AxB\` and at least 2 have \`BxA\`"
+need "offered only when at least two conditions each have replicates and"
 need "offered only when \`{MODE}\` = \`outbred\`"
 need "replicates = at least 2 samples in the condition"
 need "#SBATCH --array=1-{ARRAY_N}"
@@ -458,5 +458,31 @@ forbid "saying that the test is thinned. F1 gene test:"
 grep -qF "the three lost tests are genes thinned to one SNP" "$RD" || { echo "FAIL: README validation line must give the thinned F1 result"; fail=1; }
 # --- end Stage 2 Task 5 review fixes
 # --- end Stage 2 Task 5
+# --- Stage 2 Task 6 (wizard, chain, summary)
+need "\`cross_direction\` is exactly \`AxB\` or \`BxA\`"
+need "Which condition is the reference (baseline)?"
+need "Store it as \`{REF_CONDITION}\`"
+need "condition and cross direction are confounded"
+need "at least 2 individuals sampled in both"
+need 'R3=$(sbatch -p bcc --parsable --dependency=afterok:$R2 $S/run_03_reciprocal.sh)'
+need 'R4=$(sbatch -p bcc --parsable --dependency=afterok:$R2 $S/run_04_differential.sh)'
+need "### Reciprocal F1 section"
+need "### Differential ASE section"
+need "offered only when \`{MODE}\` = \`outbred\`; available in a later stage"
+need "pasted verbatim into Rmd 02, 03 and 04"
+forbid "Stage 1 implements only the always-on analysis"
+forbid "**Stage 1 only.**"
+# additions beyond the brief (review context of Tasks 3-5): Rmd 03 confounded stop, per-contrast checks,
+# missing-script guard, chain echo, nothing-tested contrast rows, thinning depends on the sample set, X/Y/MT in Rmd 04
+need "at least one condition must hold samples of both directions"
+need "checked for every contrast against \`{REF_CONDITION}\`"
+need 'MISSING=$(for f in $NEED; do [ -s "$S/$f" ] || echo "$f"; done)'
+need 'echo "prep $P, array $A, Rmd01 $R1, Rmd02 $R2, Rmd03 ${R3:-none}, Rmd04 ${R4:-none}"'
+need 'squeue -h -j $LAST'
+need "a contrast with \`tested\` = 0"
+need "removing a sample can change which SNP a dense gene keeps"
+need "X, Y and MT are not tested in either mode"
+forbid "The summary page is written from \`summary_numbers.tsv\`, not from R."
+# --- end Stage 2 Task 6
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1
