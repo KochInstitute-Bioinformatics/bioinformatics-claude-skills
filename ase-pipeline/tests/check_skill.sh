@@ -321,4 +321,23 @@ grep -qF '#SBATCH -N 1 -n 1 -c 8 --mem=16G' "$HERE/r/run_stats_tests.sh" || { ec
 ! grep -qF 'require `aod` and `lme4`' "$SPEC" || { echo "FAIL: spec still requires aod and lme4"; fail=1; }
 # --- end Stage 2 statistics review fixes
 
+# --- Stage 2 Task 3 (Rmd 03, Step 16); each string is absent from the 3aa9286 skill
+need "## Step 16 — Rmd 03: reciprocal F1"
+need "{CWD}/{TODAY}_{WD_NAME}_03_reciprocal.Rmd"   # "_03_reciprocal.Rmd" alone already occurs in Step 14
+need "_ASE_reciprocal.xlsx"
+need "ase_reciprocal_checkpoint.rds"
+need "summary_numbers_reciprocal.tsv"
+need "run_03_reciprocal.sh"
+need 'THIN_BP     <- {THIN_BP}'
+need 'dirs$d <- ifelse(dirs$cross_direction == "AxB", 1, -1)'
+need 'ase_glm_test(units, list(strain = "(Intercept)", parent_of_origin = "d"), RHO_MIN)'
+need "cross_direction must be AxB"
+need 'dplyr::mutate(keep = thin_snps(exon_pos, depth, THIN_BP))'
+need 'chrom == "autosome"'
+need "b1 is not affected by a constant mapping bias"
+# chrom_class: only contigs of the GTF gene map are tested; alt, random and unplaced contigs count as autosomes (said in the Rmd text)
+need "Only the contigs present in the GTF gene map are tested"
+need "alt, random and unplaced contigs are treated as autosomes"
+# --- end Stage 2 Task 3
+
 [ $fail -eq 0 ] && echo "PASS" || exit 1

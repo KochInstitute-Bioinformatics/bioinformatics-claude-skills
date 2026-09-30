@@ -1585,6 +1585,223 @@ After Rmd 02 has finished, write the standalone page `{RESULTS_DIR}/{WD_NAME}_su
 
 ---
 
+## Step 16 — Rmd 03: reciprocal F1 (strain and parent-of-origin effects)
+
+Only when "Reciprocal F1 analysis" was selected in Step 7 (`{MODE}` = `f1`). Write `{CWD}/{TODAY}_{WD_NAME}_03_reciprocal.Rmd` with the same conventions as Step 12, and the same `{AUTHOR}` and `{PROJECT_TITLE}`. It loads `ase_checkpoint.rds` (Rmd 01), checks the constants against it, pastes the statistics functions of Step 14 into the chunk marked below, and writes these files to `{RESULTS_DIR}`: `{TODAY}_{WD_NAME}_ASE_reciprocal.xlsx` (sheets `Gene`, `SNPs_used`, `Design`, `Excluded`, `Summary`), `{TODAY}_{WD_NAME}_ASE_reciprocal.pdf`, `ase_reciprocal_checkpoint.rds` and `summary_numbers_reciprocal.tsv`.
+
+- **Model.** Per gene, `logit(p) = b0 + b1 * d`, where p is the **strain-A (`{STRAIN_A}`, REF) fraction** and d = +1 for `AxB` (strain A is the mother) and −1 for `BxA`. When several conditions exist, sum-to-zero condition terms are added, so that b0 and b1 are averages over the conditions. **b0 is the strain effect** (cis-regulatory divergence): b0 > 0 means "`{STRAIN_A}` higher". **b1 is the parent-of-origin effect** (imprinting): b1 > 0 means "maternal higher", and `maternal_frac = plogis(b1)`.
+- **Rows.** One row per sample and gene: the strain-A and total counts summed over the gene's SNPs after `thin_snps` (one SNP per `THIN_BP` window in exon coordinates, deepest SNP first, the same SNPs in every sample). ASEReadCounter counts a read pair at every SNP it covers, so the gene test uses no SNP pair that one read pair can span. A gene with a single SNP is tested normally, because the replication comes from the samples. SNPs that lie in two genes are left out.
+- **Dispersion and tests.** `ase_glm_test` (Step 14): the pooled dispersion between replicate animals (`phi_common`), each gene's own estimate when it is larger and the gene has at least 2 residual df, floored at `RHO_MIN`. b0 and b1 are tested by likelihood-ratio tests (1 df each), with BH within each test. `sig_strain` requires `padj_strain < FDR_SIG` and `|frac_A - 0.5| >= ABS_DEV_SIG`; `sig_parent_of_origin` requires `padj_parent_of_origin < FDR_SIG` and `|maternal_frac - 0.5| >= ABS_DEV_SIG`. Monoallelic genes (complete imprinting) have their coefficients at the ±15 bound (`status` `ok_at_bound`) with a valid p-value.
+- **Requirements.** Every sample's `cross_direction` must be exactly `AxB` or `BxA`, and each direction needs at least 2 samples; otherwise the Rmd stops. Per gene, at least 2 samples with coverage in each direction; genes below that are listed in `not_tested`.
+- **Excluded chromosomes.** X, Y and MT (and `chrX`, `chrY`, `chrM`) are not tested. A hemizygous X in males and the maternally inherited MT would look like maternal imprinting. They are counted in the `Excluded` sheet. Only the contigs present in the GTF gene map are tested (a SNP must lie in an exon of a GTF gene); alt, random and unplaced contigs are treated as autosomes (`chrom_class` recognises only the X, Y and MT names), so a gene placed on such a contig is tested like an autosomal gene.
+- **Reference bias.** b0 is exactly what a mapping bias toward strain A would imitate, so the Rmd 01 bias flags are printed first and repeated next to the strain results. b1 is not affected by a constant mapping bias toward one strain (it cancels between the two directions).
+
+````rmd
+---
+title: "{PROJECT_TITLE} - ASE reciprocal F1"
+author: "{AUTHOR}"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(cache = FALSE, echo = TRUE, message = FALSE, warning = FALSE, fig.width = 10, fig.height = 7)
+options(scipen = 9)
+library(GenomicRanges); library(rtracklayer); library(openxlsx)   # Bioconductor first
+library(tidyverse)
+```
+
+## Constants and checkpoint
+
+```{r constants}
+MODE        <- "{MODE}"
+STRAIN_A    <- "{STRAIN_A}"
+STRAIN_B    <- "{STRAIN_B}"
+RESULTS_DIR <- "{RESULTS_DIR}"
+GTF_PATH    <- "{GTF_PATH}"
+DATE_TAG    <- "{TODAY}_{WD_NAME}"
+MIN_DEPTH   <- {MIN_DEPTH}
+FDR_SIG     <- {FDR_SIG}
+ABS_DEV_SIG <- {ABS_DEV_SIG}
+RHO_MIN     <- {RHO_MIN}             # floor for the dispersion used by the tests
+BIAS_TOL    <- {BIAS_TOL}
+THIN_BP     <- {THIN_BP}             # SNPs closer than this (exon coordinates) can share a read pair: one kept per window
+if (MODE != "f1") stop("Rmd 03 (reciprocal F1) needs MODE = f1", call. = FALSE)
+ck <- readRDS(file.path(RESULTS_DIR, "ase_checkpoint.rds"))
+same <- c(MODE = identical(ck$constants$MODE, MODE),
+          vapply(c("MIN_DEPTH", "FDR_SIG", "ABS_DEV_SIG", "BIAS_TOL"),
+                 function(k) isTRUE(all.equal(ck$constants[[k]], get(k))), logical(1)))
+if (!all(same)) stop("constants differ from the Rmd 01 checkpoint (", paste(names(same)[!same], collapse = ", "),
+                     "); re-render Rmd 01 with the same values", call. = FALSE)
+sites <- ck$sites; bias <- ck$bias
+knitr::kable(bias, digits = 4, caption = paste0("Reference-bias diagnostic from Rmd 01 (REF = ", STRAIN_A, "); a screen, not a test. ",
+                                                 "The strain effect b0 is sensitive to it; the parent-of-origin effect b1 is not"))
+if (any(bias$flagged)) cat("FLAGGED samples:", paste(bias$sample[bias$flagged], collapse = ", "), "- read the strain effects with caution\n")
+```
+
+## Statistics functions
+
+```{r stats}
+# <<< paste here the code of Step 14 between the two marker lines (the marker lines themselves are not pasted) >>>
+```
+
+## Design
+
+```{r design}
+dirs <- unique(ck$samples[, c("sample", "condition", "cross_direction")])
+bad <- dirs$sample[!dirs$cross_direction %in% c("AxB", "BxA")]
+if (length(bad) > 0) stop("cross_direction must be AxB (", STRAIN_A, " mother) or BxA (", STRAIN_B, " mother); other values for: ",
+                          paste(bad, collapse = ", "), call. = FALSE)
+n_dir <- table(factor(dirs$cross_direction, levels = c("AxB", "BxA")))
+if (any(n_dir < 2)) stop("the reciprocal analysis needs at least 2 samples in each cross direction (AxB: ", n_dir[["AxB"]],
+                         ", BxA: ", n_dir[["BxA"]], ")", call. = FALSE)
+dirs$d <- ifelse(dirs$cross_direction == "AxB", 1, -1)   # d = +1: strain A is the mother (maternal allele = STRAIN_A)
+knitr::kable(dirs, caption = "Samples, condition and cross direction (d = +1: AxB, strain A maternal)")
+```
+
+## Gene map in exon coordinates and SNP thinning
+
+Only SNPs in exons of GTF genes are used: only the contigs present in the GTF gene map are tested. X, Y and MT (`chrX`, `chrY`, `chrM`) are set aside and counted below; alt, random and unplaced contigs are treated as autosomes.
+
+```{r genemap}
+gtf <- rtracklayer::import(GTF_PATH)
+if (is.null(gtf$gene_id)) stop("the GTF has no gene_id attribute", call. = FALSE)
+ex <- gtf[gtf$type == "exon" & !is.na(gtf$gene_id)]
+exd <- as.data.frame(GenomicRanges::reduce(split(ex, ex$gene_id)))              # exon union per gene: group_name = gene_id
+exd <- exd[order(exd$group_name, exd$start), ]
+exd$offset <- ave(exd$width, exd$group_name, FUN = function(w) cumsum(w) - w)    # exonic bases of the gene before this exon
+pos <- unique(sites[, c("contig", "position")])
+gr <- GenomicRanges::GRanges(pos$contig, IRanges::IRanges(pos$position, width = 1))
+exr <- GenomicRanges::GRanges(as.character(exd$seqnames), IRanges::IRanges(exd$start, exd$end))
+hits <- GenomicRanges::findOverlaps(gr, exr); qh <- S4Vectors::queryHits(hits); sh <- S4Vectors::subjectHits(hits)
+if (length(qh) == 0) stop("no SNP lies in an exon of the GTF (contig names: counts ", paste(head(unique(pos$contig), 3), collapse = ", "),
+                          "; GTF ", paste(head(unique(as.character(exd$seqnames)), 3), collapse = ", "), ")", call. = FALSE)
+snp_gene <- data.frame(contig = pos$contig[qh], position = pos$position[qh], gene_id = exd$group_name[sh],
+                       exon_pos = exd$offset[sh] + pos$position[qh] - exd$start[sh] + 1, stringsAsFactors = FALSE)
+ng <- table(paste(snp_gene$contig, snp_gene$position))
+snp_gene$multi_gene <- as.vector(ng[paste(snp_gene$contig, snp_gene$position)]) > 1
+use <- sites %>% dplyr::inner_join(dplyr::filter(snp_gene, !multi_gene), by = c("contig", "position")) %>%
+  dplyr::mutate(chrom = chrom_class(contig))
+excluded_chrom <- dplyr::count(dplyr::filter(use, chrom != "autosome"), chrom, name = "sample_site_rows")
+use <- dplyr::filter(use, chrom == "autosome")
+kept <- use %>% dplyr::group_by(gene_id, contig, position, exon_pos) %>% dplyr::summarise(depth = sum(total), .groups = "drop") %>%
+  dplyr::group_by(gene_id) %>% dplyr::mutate(keep = thin_snps(exon_pos, depth, THIN_BP)) %>% dplyr::ungroup() %>% dplyr::filter(keep)
+gene_rows <- use %>% dplyr::semi_join(kept, by = c("gene_id", "contig", "position")) %>%
+  dplyr::group_by(gene_id, sample, condition, cross_direction) %>%
+  dplyr::summarise(y = sum(ref_n), n = sum(total), .groups = "drop") %>% dplyr::filter(n > 0)
+cat(sum(snp_gene$multi_gene), "SNP-gene pairs in overlapping genes left out;", nrow(kept), "SNPs kept after thinning in",
+    length(unique(kept$gene_id)), "genes\n")
+if (nrow(excluded_chrom) > 0) knitr::kable(excluded_chrom, caption = "Rows on X, Y or MT: not tested (hemizygous X and maternal MT mimic imprinting)")
+```
+
+## Per-gene model and tests
+
+```{r test}
+build <- lapply(split(gene_rows, gene_rows$gene_id), function(r) {
+  nA <- sum(r$cross_direction == "AxB"); nB <- sum(r$cross_direction == "BxA")
+  if (nA < 2 || nB < 2) return(list(unit = NULL, why = sprintf("fewer than 2 samples with coverage in a direction (AxB %d, BxA %d)", nA, nB)))
+  X <- cbind("(Intercept)" = 1, d = ifelse(r$cross_direction == "AxB", 1, -1))
+  cl <- sort(unique(r$condition))
+  if (length(cl) > 1) {   # condition adjustment, sum-to-zero coding: b0 and b1 are averages over the conditions
+    C <- contr.sum(length(cl)); colnames(C) <- paste0("cond_", cl[-length(cl)])
+    X <- cbind(X, C[match(r$condition, cl), , drop = FALSE])
+  }
+  list(unit = list(y = r$y, n = r$n, X = X), why = NA_character_)
+})
+units <- lapply(Filter(function(b) !is.null(b$unit), build), `[[`, "unit")
+not_tested <- data.frame(gene_id = names(build), reason = vapply(build, `[[`, character(1), "why"), stringsAsFactors = FALSE)
+not_tested <- not_tested[!is.na(not_tested$reason), , drop = FALSE]
+if (length(units) == 0) stop("no gene has at least 2 samples with coverage in each cross direction", call. = FALSE)
+res <- ase_glm_test(units, list(strain = "(Intercept)", parent_of_origin = "d"), RHO_MIN)
+obs <- gene_rows %>% dplyr::group_by(gene_id) %>%
+  dplyr::summarise(n_samples_AxB = sum(cross_direction == "AxB"), n_samples_BxA = sum(cross_direction == "BxA"),
+                   frac_A_AxB = sum(y[cross_direction == "AxB"]) / sum(n[cross_direction == "AxB"]),
+                   frac_A_BxA = sum(y[cross_direction == "BxA"]) / sum(n[cross_direction == "BxA"]), .groups = "drop")
+gene <- res %>% dplyr::rename(gene_id = unit) %>%
+  dplyr::left_join(dplyr::count(kept, gene_id, name = "n_snps_used"), by = "gene_id") %>%
+  dplyr::left_join(obs, by = "gene_id") %>%
+  dplyr::mutate(b0_strain = `beta_(Intercept)`, b1_parent_of_origin = beta_d,
+                frac_A = plogis(b0_strain), maternal_frac = plogis(b1_parent_of_origin),
+                padj_strain = p.adjust(p_strain, "BH"), padj_parent_of_origin = p.adjust(p_parent_of_origin, "BH"),
+                sig_strain = !is.na(padj_strain) & padj_strain < FDR_SIG & abs(frac_A - 0.5) >= ABS_DEV_SIG,
+                sig_parent_of_origin = !is.na(padj_parent_of_origin) & padj_parent_of_origin < FDR_SIG & abs(maternal_frac - 0.5) >= ABS_DEV_SIG,
+                direction_strain = dplyr::case_when(!sig_strain ~ "none", b0_strain > 0 ~ paste(STRAIN_A, "higher"), TRUE ~ paste(STRAIN_B, "higher")),
+                direction_parent_of_origin = dplyr::case_when(!sig_parent_of_origin ~ "none", b1_parent_of_origin > 0 ~ "maternal higher",
+                                                              TRUE ~ "paternal higher"),
+                category = dplyr::case_when(sig_strain & sig_parent_of_origin ~ "strain and parent-of-origin", sig_strain ~ "strain (cis)",
+                                            sig_parent_of_origin ~ "parent-of-origin", TRUE ~ "none")) %>%
+  dplyr::arrange(gene_id)
+cat("Dispersion between replicate animals (phi_common):", signif(gene$phi_common[1], 4), "; floor RHO_MIN =", RHO_MIN, "\n")
+knitr::kable(dplyr::count(gene, status), caption = "Fit status (ok_at_bound = monoallelic gene, coefficient at the bound, p valid)")
+knitr::kable(head(dplyr::filter(gene, category != "none"), 40), digits = 4,
+             caption = paste0("Significant genes (first 40): strain effect = ", STRAIN_A, " fraction averaged over directions; ",
+                              "parent-of-origin effect = maternal fraction", if (any(bias$flagged)) "; some samples flagged for reference bias" else ""))
+```
+
+## Summary
+
+```{r summary}
+row_for <- function(test, sig, b, pos_lab, neg_lab) {
+  p <- gene[[paste0("p_", test)]]
+  data.frame(test = test, genes_tested = sum(!is.na(p)), genes_not_tested = nrow(not_tested) + sum(is.na(p)), sig_genes = sum(sig),
+             direction_pos = pos_lab, n_pos = sum(sig & b > 0, na.rm = TRUE), direction_neg = neg_lab, n_neg = sum(sig & b < 0, na.rm = TRUE),
+             phi_common = gene$phi_common[1], samples_AxB = n_dir[["AxB"]], samples_BxA = n_dir[["BxA"]], stringsAsFactors = FALSE)
+}
+summary_rec <- rbind(row_for("strain", gene$sig_strain, gene$b0_strain, paste(STRAIN_A, "higher"), paste(STRAIN_B, "higher")),
+                     row_for("parent_of_origin", gene$sig_parent_of_origin, gene$b1_parent_of_origin, "maternal higher", "paternal higher"))
+knitr::kable(summary_rec, digits = 4, caption = "Summary (FDR_SIG, ABS_DEV_SIG as in the constants block)")
+```
+
+## Figure
+
+```{r figure}
+gene_plot <- dplyr::filter(gene, !is.na(p_strain))
+stopifnot(sum(gene_plot$sig_strain) == summary_rec$sig_genes[1], sum(gene_plot$sig_parent_of_origin) == summary_rec$sig_genes[2])
+cat("Figure sig counts equal Summary counts: TRUE\n")
+p1 <- ggplot(gene_plot, aes(frac_A, maternal_frac, colour = category)) + geom_hline(yintercept = 0.5, linetype = 2) +
+  geom_vline(xintercept = 0.5, linetype = 2) + geom_point(size = 2, alpha = 0.8) +
+  labs(x = paste0(STRAIN_A, " fraction (strain effect, plogis(b0))"), y = "maternal fraction (parent-of-origin effect, plogis(b1))",
+       colour = NULL, caption = paste0("sig: BH < ", FDR_SIG, " and |fraction - 0.5| >= ", ABS_DEV_SIG,
+                                       if (any(bias$flagged)) "; some samples flagged for reference bias" else "")) + theme_bw()
+print(p1)
+ggsave(file.path(RESULTS_DIR, paste0(DATE_TAG, "_ASE_reciprocal.pdf")), p1, width = 9, height = 7)
+```
+
+## Export
+
+```{r export}
+out_names <- function(d) {
+  names(d) <- sub("^frac_A$", paste0("frac_", STRAIN_A), names(d))
+  names(d) <- sub("^frac_A_(AxB|BxA)$", paste0("frac_", STRAIN_A, "_\\1"), names(d))
+  d
+}
+xlsx_file <- file.path(RESULTS_DIR, paste0(DATE_TAG, "_ASE_reciprocal.xlsx"))
+wb <- openxlsx::createWorkbook()
+for (nm in c("Gene", "SNPs_used", "Design", "Excluded", "Summary")) openxlsx::addWorksheet(wb, nm)
+openxlsx::writeData(wb, "Gene", out_names(gene))
+openxlsx::writeData(wb, "SNPs_used", kept)
+openxlsx::writeData(wb, "Design", dirs)
+openxlsx::writeData(wb, "Excluded", rbind(data.frame(what = sprintf("chromosome %s", excluded_chrom$chrom), n = excluded_chrom$sample_site_rows),
+                                           data.frame(what = sprintf("not tested: %s", not_tested$reason), n = rep(1, nrow(not_tested)))) %>%
+                                       dplyr::group_by(what) %>% dplyr::summarise(n = sum(n), .groups = "drop"))
+openxlsx::writeData(wb, "Summary", summary_rec)
+openxlsx::saveWorkbook(wb, xlsx_file, overwrite = TRUE)
+saveRDS(list(gene = gene, not_tested = not_tested, snps_used = kept, design = dirs, excluded_chrom = excluded_chrom, summary = summary_rec,
+             constants = c(ck$constants, list(RHO_MIN = RHO_MIN, THIN_BP = THIN_BP))),
+        file.path(RESULTS_DIR, "ase_reciprocal_checkpoint.rds"))
+write.table(summary_rec, file.path(RESULTS_DIR, "summary_numbers_reciprocal.tsv"), sep = "\t", quote = FALSE, row.names = FALSE)
+cat("wrote", xlsx_file, "and summary_numbers_reciprocal.tsv\n")
+sessionInfo()
+```
+````
+
+Render it with `{RESULTS_DIR}/scripts/run_03_reciprocal.sh`. This is the same script as `run_01_import_qc.sh` (Step 12), with job name `ase_03_reciprocal`, log `run_03_reciprocal_%j.out`, the Rmd 03 file name, the same `--bind` rule and `-n 1 --mem=16G -t 4:00:00`. The Rmd runs single-threaded. The time covers genome-wide gene sets (the runtime check of the Step 14 unit tests, `ase-pipeline/tests/r/test_ase_stats_stage2.R`, projects under 3 h for 60,000 genes on one core). If the job stops with "cross_direction must be AxB", correct `{SAMPLES_CSV}` (Step 5), re-render Rmd 01, then Rmd 03. Submission order: Step 15.
+
+---
+
 ## Notes for the assistant
 
 - **Containers, not modules.** Tools come from the cached Singularity images of Step 2; the only module ever loaded is `singularity/3.10.4`, always with a checked `|| exit 1`. R exists only in the `bulkrnaseq` image (`{R_SIF}`).
