@@ -2,6 +2,10 @@
 # Stage 2 synthetic ground-truth ASE data: reciprocal x two-condition F1 (f1_recip/) and paired two-condition outbred (outbred_diff/).
 # Usage: Rscript simulate_ase_stage2.R <outdir> <seed>
 # Direct counts (ASEReadCounter format) are counted from the simulated fragments, ignoring sequencing errors.
+# Conventions: F1 truth fractions p_A_* are strain-A (= REF) fractions. In outbred_diff/truth_genes.tsv, f_ctrl and f_treat are ALT-side
+# fractions (p_alt): individuals with phase +1 (and every individual for consistent genes) have p_alt = f, phase -1 have 1 - f. So REF
+# fragment fraction = 1 - p_alt, and expect_diff = down (REF falls in treat) for diff_consistent, mixed for diff_phase (delta > 0 means
+# REF higher in the tested condition).
 suppressPackageStartupMessages(library(Biostrings))
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) != 2) stop("usage: simulate_ase_stage2.R <outdir> <seed>")
@@ -95,6 +99,9 @@ stopifnot(!anyDuplicated(snp$pos))
 snp <- snp[order(snp$pos), ]; rownames(snp) <- NULL
 gidx <- lapply(setNames(gene_ids, gene_ids), function(g) which(snp$gene_id == g))   # ascending pos == ascending offset
 
+# Adapted from the Stage 1 haplo(), not verbatim: uses the stored transcript offsets (tx_off) and does not reverse-complement,
+# because every gene here is on the plus strand (asserted below), so transcript and spliced offsets coincide.
+stopifnot(all(vapply(genes, function(x) x$strand, "") == "+"))
 haplo <- function(g, alleles) { s <- strsplit(spliced(g), "")[[1]]; s[snp$tx_off[gidx[[g]]]] <- alleles; paste(s, collapse = "") }
 
 frags2 <- function(hseq, n, snp_offs) {
@@ -174,7 +181,7 @@ oc[bias_gene, "class"] <- "bias"
 bi <- ord2[1:3]; dp <- ord2[4:6]; dc <- ord2[7:8]
 oc[bi, c("class", "f_ctrl", "f_treat")] <- list("base_imbalanced", 0.75, 0.75)
 oc[dp, c("class", "f_ctrl", "f_treat")] <- list("diff_phase", 0.5, 0.8)
-oc[dc, c("class", "f_ctrl", "f_treat")] <- list("diff_consistent", 0.5, 0.75); oc[dc, "consistent"] <- TRUE; oc[dc, "expect_diff"] <- "up"
+oc[dc, c("class", "f_ctrl", "f_treat")] <- list("diff_consistent", 0.5, 0.75); oc[dc, "consistent"] <- TRUE; oc[dc, "expect_diff"] <- "down"; oc[dp, "expect_diff"] <- "mixed"
 GT <- function(n) matrix(sample(c("0/1", "0/0", "1/1"), n * 4, replace = TRUE, prob = c(0.6, 0.2, 0.2)), n, 4)
 gtm <- matrix(NA_character_, nrow(snp), 4); phase <- matrix(1, length(gene_ids), 4, dimnames = list(gene_ids, inds))
 for (g in gene_ids) {

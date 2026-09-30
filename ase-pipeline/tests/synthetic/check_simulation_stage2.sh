@@ -1,5 +1,6 @@
 #!/bin/bash
 # Usage: check_simulation_stage2.sh <outdir>   (after simulate_ase_stage2.R); exact quotas, designs and consistency
+# Truth conventions: F1 p_A_* = strain-A (REF) fractions; outbred f_*/p_alt_* = ALT-side fractions (REF fraction = 1 - p_alt); see simulate_ase_stage2.R header.
 set -u; D=${1:?usage: check_simulation_stage2.sh <outdir>}; fail=0
 bad() { echo "FAIL: $*"; fail=1; }
 chk() { [ -s "$1" ] || bad "missing/empty $1"; }
@@ -30,17 +31,17 @@ tail -n +2 $O/samples.csv | awk -F, '{c[$6","$4]++; i[$6]++; if ($5!="NA") e=1}
   END{ n=0; for (k in i) { n++; if (c[k",ctrl"]!=1 || c[k",treat"]!=1) e=1 } if (n!=4 || NR!=8) e=1; exit e }' || bad "outbred_diff design (4 paired individuals, 8 rows, cross_direction NA)"
 # F1 truth: exact planted classes and values; cell fractions = plogis(b0 + b1 d + bc t)
 keys=$(awk -F'\t' 'function pl(x){return 1/(1+exp(-x))}
-  NR>1{ print $3":"sprintf("%.2f",pl($4))":"sprintf("%.2f",pl($5))":"sprintf("%.2f",pl($6))
+  NR>1{ print $3":"sprintf("%.2f",pl($4))":"sprintf("%.2f",pl($5))":"sprintf("%.2f",pl($6))":"$11":"$12":"$13
         for (j=0;j<4;j++){ d=(j<2)?1:-1; t=j%2; p=pl($4+$5*d+$6*t); if ((p-$(7+j))^2>1e-8) print "BADCELL:"$1 } }' $F/truth_genes.tsv | sort | uniq -c | awk '{print $2"="$1}' | paste -sd' ')
-want="bias:0.50:0.50:0.50=1 dense_null:0.50:0.50:0.50=2 diff_down:0.50:0.50:0.25=1 diff_on_strain:0.70:0.50:0.30=1 diff_up:0.50:0.50:0.75=2 maternal:0.50:0.85:0.50=1 maternal:0.50:0.95:0.50=1 null:0.50:0.50:0.50=44 paternal:0.50:0.10:0.50=1 paternal:0.50:0.15:0.50=1 strain_A_high:0.70:0.50:0.50=1 strain_A_high:0.75:0.50:0.50=1 strain_B_high:0.25:0.50:0.50=1 strain_B_high:0.30:0.50:0.50=1 strain_and_maternal:0.70:0.80:0.50=1"
+want="bias:0.50:0.50:0.50:none:none:none=1 dense_null:0.50:0.50:0.50:none:none:none=2 diff_down:0.50:0.50:0.25:any:none:down=1 diff_on_strain:0.70:0.50:0.30:any:none:down=1 diff_up:0.50:0.50:0.75:any:none:up=2 maternal:0.50:0.85:0.50:none:maternal:none=1 maternal:0.50:0.95:0.50:none:maternal:none=1 null:0.50:0.50:0.50:none:none:none=44 paternal:0.50:0.10:0.50:none:paternal:none=1 paternal:0.50:0.15:0.50:none:paternal:none=1 strain_A_high:0.70:0.50:0.50:A_higher:none:none=1 strain_A_high:0.75:0.50:0.50:A_higher:none:none=1 strain_B_high:0.25:0.50:0.50:B_higher:none:none=1 strain_B_high:0.30:0.50:0.50:B_higher:none:none=1 strain_and_maternal:0.70:0.80:0.50:A_higher:maternal:none=1"
 [ "$keys" = "$want" ] || bad "f1_recip truth classes/values: got '$keys'"
 awk -F'\t' 'NR>1 && (($3=="dense_null" && $2!=8) || ($3=="bias" && $2!=5) || ($3!="dense_null" && $3!="bias" && $2!=4)){e=1} END{exit e}' $F/truth_genes.tsv || bad "f1_recip n_snps (8 dense, 5 bias, 4 otherwise)"
 # dense_null genes: 8 SNPs within 300 transcript bases; bias gene: 5 SNPs within 60
 awk -F'\t' 'NR==FNR{ if (FNR>1) c[$1]=$3; next } FNR>1{ k=$5; if (!(k in lo) || $6<lo[k]) lo[k]=$6; if (!(k in hi) || $6>hi[k]) hi[k]=$6 }
   END{ for (k in c) { if (c[k]=="dense_null" && hi[k]-lo[k]>=300) e=1; if (c[k]=="bias" && hi[k]-lo[k]>=60) e=1 } exit e }' $F/truth_genes.tsv $F/truth_snps.tsv || bad "dense/bias SNP spans"
 # outbred truth: classes and values
-keys=$(awk -F'\t' 'NR>1{print $3":"sprintf("%.2f",$4)":"sprintf("%.2f",$5)":"$6}' $O/truth_genes.tsv | sort | uniq -c | awk '{print $2"="$1}' | paste -sd' ')
-want="base_imbalanced:0.75:0.75:FALSE=3 bias:0.50:0.50:FALSE=1 diff_consistent:0.50:0.75:TRUE=2 diff_phase:0.50:0.80:FALSE=3 null:0.50:0.50:FALSE=51"
+keys=$(awk -F'\t' 'NR>1{print $3":"sprintf("%.2f",$4)":"sprintf("%.2f",$5)":"$6":"$7}' $O/truth_genes.tsv | sort | uniq -c | awk '{print $2"="$1}' | paste -sd' ')
+want="base_imbalanced:0.75:0.75:FALSE:none=3 bias:0.50:0.50:FALSE:none=1 diff_consistent:0.50:0.75:TRUE:down=2 diff_phase:0.50:0.80:FALSE:mixed=3 null:0.50:0.50:FALSE:none=51"
 [ "$keys" = "$want" ] || bad "outbred_diff truth classes/values: got '$keys'"
 # outbred per-individual truth: p_alt follows phase; every planted gene has >= 3 individuals with a het SNP; diff_phase phases mixed
 awk -F'\t' 'NR==FNR{ if (FNR>1){ c[$1]=$3; fc[$1]=$4; ft[$1]=$5; cons[$1]=$6 } next }
@@ -72,4 +73,32 @@ awk -F'\t' 'FNR==1{ f++; next } f==1{ gene[$2]=$5; next }                       
   { s=FILENAME; sub(/.*\//,"",s); sub(/\.table$/,"",s); k=gene[$2]"|"cell[s]; A[k]+=$6; N[k]+=$8 }
   END{ for (k in N) if (N[k]>=200 && (A[k]/N[k]-p[k])^2>0.10^2) { print "  " k, A[k]/N[k], p[k]; e=1 } exit e }' \
   $F/truth_snps.tsv $F/samples.csv $F/truth_genes.tsv $F/direct_counts/*.table || bad "F1 direct-count strain-A fractions differ from truth by more than 0.10"
+# Per-sample z rules (data against truth; catches label swaps that keep the design quotas, and sign/REF-ALT errors).
+# Variance of a pooled REF (or strain-A) fraction A/N at a gene in one sample, p = planted fraction:
+#   p(1-p) * (PHI_BIO + 1.5/N). PHI_BIO = 0.005 is the beta-binomial (biological) dispersion; the binomial term is 1.5/N
+#   because N counts a fragment once per covered SNP (mean weight ~1.3, so sum(w^2)/N^2 ~ 1.5/N for fragments covering 1-2 SNPs).
+# FAIL on any |z| > 5; F1: also on sum z^2 over the 13 planted genes of a sample > ZSUM (calibrated below, see task-2-report.md).
+ZSUM=${ZSUM:-45}; ZREPORT=${ZREPORT:-0}
+awk -F'\t' -v zsum=$ZSUM -v rep=$ZREPORT 'FNR==1{ f++; next } f==1{ gene[$2]=$5; next }
+  f==2{ split($0,a,","); cell[a[1]]=a[5]"_"a[4]; next }
+  f==3{ if ($3!="null" && $3!="dense_null" && $3!="bias") pl[$1]=1; P[$1"|AxB_ctrl"]=$7; P[$1"|AxB_treat"]=$8; P[$1"|BxA_ctrl"]=$9; P[$1"|BxA_treat"]=$10; next }
+  { s=FILENAME; sub(/.*\//,"",s); sub(/\.table$/,"",s); k=s"|"gene[$2]; A[k]+=$6; N[k]+=$8 }
+  END{ for (k in N) { split(k,b,"|"); g=b[2]; if (!(g in pl) || N[k]<50) continue
+         p=P[g"|"cell[b[1]]]; z=(A[k]/N[k]-p)/sqrt(p*(1-p)*(0.005+1.5/N[k])); if (z<0) z=-z
+         ss[b[1]]+=z*z; ng[b[1]]++; if (z>mz[b[1]]) mz[b[1]]=z }
+       n=0; for (s in ss) { n++; if (rep) print "F1z", s, ng[s], ss[s], mz[s]; if (mz[s]>5 || ss[s]>zsum || ng[s]<10) e=1 }
+       if (n!=12) e=1; exit e }' \
+  $F/truth_snps.tsv $F/samples.csv $F/truth_genes.tsv $F/direct_counts/*.table || bad "F1 per-sample z rule (|z| > 5 or sum z^2 > $ZSUM over planted genes; sample labels vs data)"
+outs=$(for s in $(tail -n +2 $O/samples.csv | cut -d, -f1); do echo $O/direct_counts/$s.table; done)
+awk -F'\t' -v rep=$ZREPORT 'FNR==1{ f++; next } f==1{ gene[$2]=$5; next }
+  f==2{ split($0,a,","); ind[a[1]]=a[6]; cnd[a[1]]=a[4]; next }
+  f==3{ pc[$1"|"$2]=$5; pt[$1"|"$2]=$6; next }
+  { s=FILENAME; sub(/.*\//,"",s); sub(/\.table$/,"",s); k=s"|"gene[$2]; R[k]+=$6; N[k]+=$8 }
+  END{ for (k in N) { if (N[k]<100) continue; split(k,b,"|"); q=b[1]; g=b[2]
+         pa=(cnd[q]=="ctrl") ? pc[ind[q]"|"g] : pt[ind[q]"|"g]
+         z=(R[k]/N[k]-(1-pa))/sqrt(pa*(1-pa)*(0.005+1.5/N[k])); if (z<0) z=-z
+         nt++; if (pa!=0.5) np++; if (z>mz) mz=z; if (z>5) e=1 }
+       if (rep) print "OBz tested", nt, "nonnull", np, "max|z|", mz
+       if (nt<100 || np<30) e=1; exit e }' \
+  $O/truth_snps.tsv $O/samples.csv $O/truth_individual_genes.tsv $outs || bad "outbred per-individual REF fraction vs 1 - p_alt (|z| > 5, or fewer than 100 tested / 30 non-null individual-gene-condition units)"
 [ $fail -eq 0 ] && echo PASS || exit 1
