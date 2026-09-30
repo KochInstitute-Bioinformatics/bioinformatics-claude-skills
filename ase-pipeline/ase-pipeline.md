@@ -1822,6 +1822,314 @@ Render it with `{RESULTS_DIR}/scripts/run_03_reciprocal.sh`. This is the same sc
 
 ---
 
+## Step 17 — Rmd 04: differential ASE between conditions
+
+Only when "Differential ASE between conditions" was selected in Step 7. Write `{CWD}/{TODAY}_{WD_NAME}_04_differential.Rmd` with the conventions of Step 12, and the same `{AUTHOR}` and `{PROJECT_TITLE}`. It loads `ase_checkpoint.rds` (Rmd 01), checks the constants (including the strain names) against it, pastes the statistics functions of Step 14 into the chunk marked below, and writes these files to `{RESULTS_DIR}`: `{TODAY}_{WD_NAME}_ASE_differential.xlsx` (sheets `SNP`, `Gene`, `Design`, `Excluded`, `Summary`), `{TODAY}_{WD_NAME}_ASE_differential.pdf`, `ase_differential_checkpoint.rds` and `summary_numbers_differential.tsv`. Every condition other than `{REF_CONDITION}` (Step 7) is compared with it, one contrast at a time (1-df likelihood-ratio test), with BH within each contrast and level (SNP or gene). The contrast is labelled `<condition> vs {REF_CONDITION}`, for example `treat vs ctrl`.
+
+- **F1.** Per gene (rows = samples, strain-A and total counts summed over the thinned SNPs exactly as in Rmd 03) and per SNP (rows = samples), `logit(p) = b0 + b_condition * cond`. Here p is the strain-A (`{STRAIN_A}`, REF) fraction and cond = 1 for the tested condition. When both cross directions are among the contrast's samples, the cross-direction term `d` (+1 `AxB`, −1 `BxA`) is added, so that parent-of-origin genes are not mistaken for condition effects. If condition and direction are confounded (every sample of one condition has one direction and every sample of the other the other direction), the Rmd stops, because the two effects cannot be separated. The dispersion and the tests are those of Rmd 03 (`ase_glm_test`). `delta_frac = plogis(b0 + b_condition) - plogis(b0)`: **delta_frac > 0 means the `{STRAIN_A}` fraction is higher in the tested condition**. `sig` requires `padj < FDR_SIG` and `|delta_frac| >= ABS_DEV_SIG`. Per gene or SNP, at least 2 samples with coverage in each condition are needed; a unit whose covered samples make the design not estimable (condition confounded with direction in those samples) is listed in `not_tested` with that reason. If no gene has a valid fit (status `ok` or `ok_at_bound`), the Rmd stops and prints the fit status.
+- **Outbred.** Only individuals sampled in both conditions of a contrast are used (the others are listed as unpaired in the `Design` sheet and do not change the results of the paired ones). `ase_paired_test` works per individual. First, a pair dispersion is estimated from all its SNPs (each SNP keeps its own REF fraction, floored at `RHO_MIN`; below 20 paired SNPs the individual is not tested). Then each SNP gets a likelihood-ratio test of one REF fraction against one per condition. The per-SNP statistic is the sum over the informative individuals (df = their number), and at least 2 individuals are needed. The test has no direction, because the allele that carries a regulatory variant differs between individuals: in one person the REF allele of a SNP can rise while in another it falls. `mean_delta` (REF fraction change, tested minus reference), `n_up` and `n_down` describe the individual changes. A significant SNP is labelled "REF higher (or lower) in the tested condition (all individuals)" only when all individuals agree, and "mixed (phase differs)" otherwise. Genes use `acat` over their SNP p-values and are labelled "unphased, no direction". `sig` requires `padj < FDR_SIG` and `max_abs_delta >= ABS_DEV_SIG`. If no SNP can be tested, the Rmd stops.
+- **Excluded chromosomes.** X, Y and MT are excluded in both modes, as in Rmd 03. Only the contigs present in the GTF gene map are tested at the gene level (a SNP must lie in an exon of a GTF gene); alt, random and unplaced contigs are treated as autosomes (`chrom_class` recognises only the X, Y and MT names). The Rmd 01 bias flags are printed first.
+
+````rmd
+---
+title: "{PROJECT_TITLE} - ASE differential between conditions"
+author: "{AUTHOR}"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(cache = FALSE, echo = TRUE, message = FALSE, warning = FALSE, fig.width = 10, fig.height = 7)
+options(scipen = 9)
+library(GenomicRanges); library(rtracklayer); library(openxlsx)   # Bioconductor first
+library(tidyverse)
+```
+
+## Constants and checkpoint
+
+```{r constants}
+MODE          <- "{MODE}"
+STRAIN_A      <- "{STRAIN_A}"
+STRAIN_B      <- "{STRAIN_B}"
+RESULTS_DIR   <- "{RESULTS_DIR}"
+GTF_PATH      <- "{GTF_PATH}"
+DATE_TAG      <- "{TODAY}_{WD_NAME}"
+MIN_DEPTH     <- {MIN_DEPTH}
+FDR_SIG       <- {FDR_SIG}
+ABS_DEV_SIG   <- {ABS_DEV_SIG}
+RHO_MIN       <- {RHO_MIN}             # floor for the dispersion used by the tests
+BIAS_TOL      <- {BIAS_TOL}
+THIN_BP       <- {THIN_BP}             # F1 genes: SNPs closer than this (exon coordinates) can share a read pair: one kept per window
+REF_CONDITION <- "{REF_CONDITION}"     # every other condition is compared with this one
+stopifnot(MODE %in% c("f1", "outbred"))
+ck <- readRDS(file.path(RESULTS_DIR, "ase_checkpoint.rds"))
+same <- c(MODE = identical(ck$constants$MODE, MODE),   # swapped strain names would invert every strain label
+          STRAIN_A = identical(ck$constants$STRAIN_A, STRAIN_A), STRAIN_B = identical(ck$constants$STRAIN_B, STRAIN_B),
+          vapply(c("MIN_DEPTH", "FDR_SIG", "ABS_DEV_SIG", "BIAS_TOL"),
+                 function(k) isTRUE(all.equal(ck$constants[[k]], get(k))), logical(1)))
+if (!all(same)) stop("constants differ from the Rmd 01 checkpoint (", paste(names(same)[!same], collapse = ", "),
+                     "); re-render Rmd 01 with the same values", call. = FALSE)
+sites <- ck$sites; bias <- ck$bias
+knitr::kable(bias, digits = 4, caption = paste0("Reference-bias diagnostic from Rmd 01 (REF = ", STRAIN_A, "); a screen, not a test"))
+if (any(bias$flagged)) cat("FLAGGED samples:", paste(bias$sample[bias$flagged], collapse = ", "), "- read the fractions with caution\n")
+```
+
+## Statistics functions
+
+```{r stats}
+# <<< paste here the code of Step 14 between the two marker lines (the marker lines themselves are not pasted) >>>
+```
+
+## Design and contrasts
+
+```{r design}
+smp <- unique(ck$samples[, c("sample", "condition", "cross_direction", "individual")])
+if (!REF_CONDITION %in% smp$condition) stop("reference condition '", REF_CONDITION, "' is not a condition in samples.csv (conditions: ",
+                                            paste(sort(unique(smp$condition)), collapse = ", "), ")", call. = FALSE)
+if (MODE == "f1") {
+  bad <- smp$sample[!smp$cross_direction %in% c("AxB", "BxA")]
+  if (length(bad) > 0) stop("cross_direction must be AxB (", STRAIN_A, " mother) or BxA (", STRAIN_B, " mother); other values for: ",
+                            paste(bad, collapse = ", "), call. = FALSE)
+} else {
+  bad <- smp$sample[is.na(smp$individual) | smp$individual %in% c("", "NA")]
+  if (length(bad) > 0) stop("outbred mode needs the individual of every sample; missing for: ", paste(bad, collapse = ", "), call. = FALSE)
+}
+levels_test <- setdiff(sort(unique(smp$condition)), REF_CONDITION)
+if (length(levels_test) == 0) stop("differential ASE needs at least two conditions", call. = FALSE)
+design <- list(); skipped <- character()
+for (L in levels_test) {
+  s <- smp[smp$condition %in% c(REF_CONDITION, L), ]
+  if (MODE == "f1") {
+    nc <- table(factor(s$condition, levels = c(REF_CONDITION, L)))
+    if (any(nc < 2)) { skipped[L] <- sprintf("fewer than 2 samples in a condition (%s %d, %s %d)", REF_CONDITION, nc[[1]], L, nc[[2]]); next }
+    use_d <- all(c("AxB", "BxA") %in% s$cross_direction)
+    if (use_d && qr(cbind(1, s$condition == L, s$cross_direction == "AxB"))$rank < 3)
+      stop("condition '", L, "' versus '", REF_CONDITION, "' is confounded with the cross direction (each condition has only one ",
+           "direction), so a condition effect cannot be separated from a parent-of-origin effect. Samples per condition and direction:\n",
+           paste(capture.output(print(table(condition = s$condition, direction = s$cross_direction))), collapse = "\n"),
+           "\nAdd samples of both directions to a condition, or restrict samples.csv to one direction and re-run Rmd 01", call. = FALSE)
+    design[[L]] <- list(samples = s, use_d = use_d)
+  } else {
+    pairs <- intersect(s$individual[s$condition == REF_CONDITION], s$individual[s$condition == L])
+    if (length(pairs) < 2) { skipped[L] <- sprintf("fewer than 2 individuals sampled in both %s and %s", REF_CONDITION, L); next }
+    design[[L]] <- list(samples = s[s$individual %in% pairs, ], unpaired = sort(setdiff(s$individual, pairs)))
+    if (length(design[[L]]$unpaired) > 0) cat(paste(L, "vs", REF_CONDITION), "- unpaired individuals, not used:",
+                                              paste(design[[L]]$unpaired, collapse = ", "), "\n")
+  }
+}
+if (length(skipped) > 0) cat("Contrasts not tested:", paste(names(skipped), skipped, sep = ": ", collapse = "; "), "\n")
+if (length(design) == 0) stop("no contrast can be tested: ", paste(names(skipped), skipped, sep = ": ", collapse = "; "), call. = FALSE)
+design_tbl <- dplyr::bind_rows(lapply(names(design), function(L) dplyr::mutate(design[[L]]$samples, contrast = paste(L, "vs", REF_CONDITION),
+  cross_direction_term = if (MODE == "f1") design[[L]]$use_d else NA,
+  unpaired_individuals = if (MODE == "outbred") paste(design[[L]]$unpaired, collapse = ";") else NA_character_)))
+knitr::kable(design_tbl, caption = "Samples per contrast (outbred: paired individuals only; unpaired ones listed)")
+```
+
+## Gene map in exon coordinates and SNP thinning
+
+Only SNPs in exons of GTF genes enter the gene tables: only the contigs present in the GTF gene map are tested at the gene level. X, Y and MT (`chrX`, `chrY`, `chrM`) are set aside and counted below; alt, random and unplaced contigs are treated as autosomes. The per-SNP tests use every autosomal SNP.
+
+```{r genemap}
+gtf <- rtracklayer::import(GTF_PATH)
+if (is.null(gtf$gene_id)) stop("the GTF has no gene_id attribute", call. = FALSE)
+ex <- gtf[gtf$type == "exon" & !is.na(gtf$gene_id)]
+exd <- as.data.frame(GenomicRanges::reduce(split(ex, ex$gene_id)))              # exon union per gene: group_name = gene_id
+exd <- exd[order(exd$group_name, exd$start), ]
+exd$offset <- ave(exd$width, exd$group_name, FUN = function(w) cumsum(w) - w)    # exonic bases of the gene before this exon
+pos <- unique(sites[, c("contig", "position")])
+gr <- GenomicRanges::GRanges(pos$contig, IRanges::IRanges(pos$position, width = 1))
+exr <- GenomicRanges::GRanges(as.character(exd$seqnames), IRanges::IRanges(exd$start, exd$end))
+hits <- GenomicRanges::findOverlaps(gr, exr); qh <- S4Vectors::queryHits(hits); sh <- S4Vectors::subjectHits(hits)
+if (length(qh) == 0) stop("no SNP lies in an exon of the GTF (contig names: counts ", paste(head(unique(pos$contig), 3), collapse = ", "),
+                          "; GTF ", paste(head(unique(as.character(exd$seqnames)), 3), collapse = ", "), ")", call. = FALSE)
+snp_gene <- data.frame(contig = pos$contig[qh], position = pos$position[qh], gene_id = exd$group_name[sh],
+                       exon_pos = exd$offset[sh] + pos$position[qh] - exd$start[sh] + 1, stringsAsFactors = FALSE)
+ng <- table(paste(snp_gene$contig, snp_gene$position))
+snp_gene$multi_gene <- as.vector(ng[paste(snp_gene$contig, snp_gene$position)]) > 1
+sites <- dplyr::mutate(sites, chrom = chrom_class(contig))
+excluded_chrom <- dplyr::count(dplyr::filter(sites, chrom != "autosome"), chrom, name = "sample_site_rows")
+auto <- dplyr::filter(sites, chrom == "autosome")                                  # every autosomal SNP: the per-SNP tests
+use <- dplyr::inner_join(auto, dplyr::filter(snp_gene, !multi_gene), by = c("contig", "position"))
+kept <- use %>% dplyr::group_by(gene_id, contig, position, exon_pos) %>% dplyr::summarise(depth = sum(total), .groups = "drop") %>%
+  dplyr::group_by(gene_id) %>% dplyr::mutate(keep = thin_snps(exon_pos, depth, THIN_BP)) %>% dplyr::ungroup() %>% dplyr::filter(keep)
+gene_rows <- use %>% dplyr::semi_join(kept, by = c("gene_id", "contig", "position")) %>%
+  dplyr::group_by(gene_id, sample, condition, cross_direction) %>%
+  dplyr::summarise(y = sum(ref_n), n = sum(total), .groups = "drop") %>% dplyr::filter(n > 0)
+if (nrow(kept) == 0)
+  stop("no autosomal SNP in a single GTF gene is left after the gene map: ", nrow(unique(snp_gene[, c("contig", "position")])),
+       " SNP positions lie in GTF exons, ", sum(snp_gene$multi_gene), " SNP-gene pairs are in overlapping genes, ",
+       sum(excluded_chrom$sample_site_rows), " sample-site rows are on X, Y or MT. Check the contigs and genes of the GTF (",
+       GTF_PATH, ") against the count tables", call. = FALSE)
+snp_to_gene <- dplyr::distinct(use, SNP, gene_id)   # outbred genes: acat over all their SNPs (valid under dependence, no thinning)
+cat(sum(snp_gene$multi_gene), "SNP-gene pairs in overlapping genes left out;", nrow(kept), "SNPs kept after thinning in",
+    length(unique(kept$gene_id)), "genes (F1 gene rows)\n")
+if (nrow(excluded_chrom) > 0) knitr::kable(excluded_chrom, caption = "Rows on X, Y or MT: not tested")
+```
+
+## F1: per-gene and per-SNP condition effect
+
+delta_frac > 0: the strain-A fraction is higher in the tested condition. With both cross directions in a contrast, `d` (+1 AxB, −1 BxA) is in the model, so parent-of-origin effects are not read as condition effects.
+
+```{r f1, eval = (MODE == "f1")}
+f1_units <- function(rows, id, L, use_d) {
+  b <- lapply(split(rows, rows[[id]]), function(r) {
+    cc <- as.numeric(r$condition == L)
+    if (sum(cc == 1) < 2 || sum(cc == 0) < 2) return(list(unit = NULL, why = "fewer than 2 samples with coverage in a condition"))
+    X <- cbind("(Intercept)" = 1, cond = cc)
+    if (use_d && length(unique(r$cross_direction)) == 2) X <- cbind(X, d = ifelse(r$cross_direction == "AxB", 1, -1))
+    if (qr(X)$rank < ncol(X)) return(list(unit = NULL, why = "design not estimable (condition confounded with direction in the covered samples)"))
+    list(unit = list(y = r$y, n = r$n, X = X), why = NA_character_)
+  })
+  ok <- vapply(b, function(x) !is.null(x$unit), logical(1))
+  list(units = lapply(b[ok], `[[`, "unit"),
+       not_tested = data.frame(id = names(b)[!ok], reason = vapply(b[!ok], `[[`, character(1), "why"), stringsAsFactors = FALSE))
+}
+f1_table <- function(res, L, idname) {
+  names(res)[names(res) == "unit"] <- idname
+  res %>% dplyr::mutate(contrast = paste(L, "vs", REF_CONDITION), b0 = `beta_(Intercept)`, b_condition = beta_cond,
+                        frac_A_ref = plogis(b0), frac_A_test = plogis(b0 + b_condition), delta_frac = frac_A_test - frac_A_ref,
+                        padj = p.adjust(p_condition, "BH"), sig = !is.na(padj) & padj < FDR_SIG & abs(delta_frac) >= ABS_DEV_SIG,
+                        direction = dplyr::case_when(!sig ~ "none", b_condition > 0 ~ paste0(STRAIN_A, " fraction higher in ", L),
+                                                     TRUE ~ paste0(STRAIN_A, " fraction lower in ", L))) %>%
+    dplyr::relocate(contrast, dplyr::all_of(idname), b0, b_condition, frac_A_ref, frac_A_test, delta_frac, p_condition, padj, sig,
+                    direction, status, phi_common, phi_unit, phi_used, n_rows)
+}
+snp_rows <- dplyr::transmute(auto, SNP, sample, condition, cross_direction, y = ref_n, n = total) %>% dplyr::filter(n > 0)
+gene_l <- list(); snp_l <- list()
+nt_l <- list(data.frame(contrast = character(0), level = character(0), id = character(0), reason = character(0), stringsAsFactors = FALSE))
+for (L in names(design)) {
+  ks <- design[[L]]$samples$sample; ct <- paste(L, "vs", REF_CONDITION)
+  gu <- f1_units(dplyr::filter(gene_rows, sample %in% ks), "gene_id", L, design[[L]]$use_d)
+  su <- f1_units(dplyr::filter(snp_rows, sample %in% ks), "SNP", L, design[[L]]$use_d)
+  if (length(gu$units) > 0) gene_l[[L]] <- f1_table(ase_glm_test(gu$units, list(condition = "cond"), RHO_MIN), L, "gene_id")
+  if (length(su$units) > 0) snp_l[[L]] <- f1_table(ase_glm_test(su$units, list(condition = "cond"), RHO_MIN), L, "SNP")
+  nt_l <- c(nt_l, list(dplyr::mutate(gu$not_tested, contrast = ct, level = "gene"), dplyr::mutate(su$not_tested, contrast = ct, level = "SNP")))
+}
+gene <- dplyr::bind_rows(gene_l); snp <- dplyr::bind_rows(snp_l)
+not_tested <- dplyr::bind_rows(nt_l) %>% dplyr::select(contrast, level, id, reason)
+if (nrow(gene) == 0) stop("no gene can be tested in any contrast; genes per reason: ",
+                          paste(sprintf("%s: %d", names(table(not_tested$reason[not_tested$level == "gene"])),
+                                        table(not_tested$reason[not_tested$level == "gene"])), collapse = "; "), call. = FALSE)
+st <- table(gene$status)
+if (!any(gene$status %in% c("ok", "ok_at_bound")))
+  stop("no gene could be tested in any contrast (fit status: ", paste(sprintf("%s %d", names(st), st), collapse = ", "),
+       "; phi_common ", paste(signif(unique(gene$phi_common), 4), collapse = ", "), ")", call. = FALSE)
+dispersion <- dplyr::distinct(gene, contrast, phi_common)
+knitr::kable(dispersion, digits = 4, caption = paste("Dispersion between replicate animals per contrast (gene level); floor RHO_MIN =", RHO_MIN))
+knitr::kable(dplyr::count(gene, contrast, status), caption = "Fit status per contrast (gene level)")
+knitr::kable(head(dplyr::filter(gene, sig), 40), digits = 4, caption = paste0("Significant genes (first 40); delta_frac = change of the ", STRAIN_A,
+                                                                             " fraction (tested - reference)", if (any(bias$flagged)) "; some samples flagged for reference bias" else ""))
+```
+
+## Outbred: paired per-SNP test and gene combination
+
+Unphased: a SNP's direction is reported only when all individuals agree; genes carry no direction.
+
+```{r outbred, eval = (MODE == "outbred")}
+snp_l <- list(); gene_l <- list(); phi_l <- list()
+nt_l <- list(data.frame(contrast = character(0), level = character(0), id = character(0), reason = character(0), stringsAsFactors = FALSE))
+for (L in names(design)) {
+  s <- design[[L]]$samples; ct <- paste(L, "vs", REF_CONDITION)
+  dp <- auto %>% dplyr::filter(sample %in% s$sample) %>%
+    dplyr::transmute(snp = SNP, individual, cond = as.numeric(condition == L), y = ref_n, n = total)
+  r <- ase_paired_test(as.data.frame(dp), RHO_MIN)
+  st <- r$snp %>% dplyr::rename(SNP = snp) %>%
+    dplyr::mutate(contrast = ct, padj = p.adjust(p, "BH"), sig = !is.na(padj) & padj < FDR_SIG & max_abs_delta >= ABS_DEV_SIG,
+                  direction = dplyr::case_when(!sig ~ "none", n_down == 0 ~ paste0("REF higher in ", L, " (all individuals)"),
+                                               n_up == 0 ~ paste0("REF lower in ", L, " (all individuals)"), TRUE ~ "mixed (phase differs)")) %>%
+    dplyr::select(contrast, SNP, n_individuals, n_failed, stat, df, p, padj, mean_delta, max_abs_delta, n_up, n_down, sig, direction, status)
+  gt <- st %>% dplyr::inner_join(snp_to_gene, by = "SNP") %>% dplyr::filter(!is.na(p)) %>% dplyr::group_by(gene_id) %>%
+    dplyr::summarise(n_snps = dplyr::n(), acat_p = acat(p), max_abs_delta = max(max_abs_delta), .groups = "drop") %>%
+    dplyr::mutate(contrast = ct, padj = p.adjust(acat_p, "BH"), sig = !is.na(padj) & padj < FDR_SIG & max_abs_delta >= ABS_DEV_SIG,
+                  note = "unphased, no direction") %>%
+    dplyr::select(contrast, gene_id, n_snps, acat_p, padj, max_abs_delta, sig, note)
+  snp_l[[L]] <- st; gene_l[[L]] <- gt; phi_l[[L]] <- dplyr::mutate(r$phi, contrast = ct)
+  bad <- st$status != "ok"
+  ng <- setdiff(unique(snp_to_gene$gene_id[snp_to_gene$SNP %in% st$SNP]), gt$gene_id)   # genes without any tested SNP
+  nt_l <- c(nt_l, list(data.frame(contrast = rep(ct, sum(bad)), level = rep("SNP", sum(bad)), id = st$SNP[bad], reason = st$status[bad]),
+                       data.frame(contrast = rep(ct, length(ng)), level = rep("gene", length(ng)), id = ng, reason = rep("no tested SNP", length(ng)))))
+}
+snp <- dplyr::bind_rows(snp_l); gene <- dplyr::bind_rows(gene_l); not_tested <- dplyr::bind_rows(nt_l)
+dispersion <- dplyr::bind_rows(phi_l)
+if (!any(snp$status == "ok"))
+  stop("no SNP could be tested in any contrast (SNP status: ", paste(sprintf("%s %d", names(table(snp$status)), table(snp$status)), collapse = ", "),
+       "; individuals without a pair dispersion (fewer than 20 paired SNPs): ",
+       paste(dispersion$individual[is.na(dispersion$phi_pair)], collapse = ", "), ")", call. = FALSE)
+knitr::kable(dispersion, digits = 4, caption = "Pair dispersion per individual (floored at RHO_MIN; NA = fewer than 20 paired SNPs, not tested)")
+knitr::kable(head(dplyr::filter(snp, sig), 40), digits = 4, caption = paste0("Significant SNPs (first 40); unphased: direction only when all individuals agree",
+                                                                            if (any(bias$flagged)) "; some samples flagged for reference bias" else ""))
+```
+
+## Summary
+
+```{r summary}
+cnt <- function(tab, lev) {
+  if (nrow(tab) == 0) return(NULL)
+  dplyr::bind_rows(lapply(split(tab, tab$contrast), function(t) {
+    pcol <- if ("p_condition" %in% names(t)) t$p_condition else if ("acat_p" %in% names(t)) t$acat_p else t$p
+    ids <- if (lev == "gene") t$gene_id else t$SNP
+    nt_ids <- not_tested$id[not_tested$contrast == t$contrast[1] & not_tested$level == lev]
+    up <- if (MODE == "f1") sum(t$sig & t$delta_frac > 0) else if (lev == "SNP") sum(t$sig & t$n_down == 0) else NA_integer_
+    dn <- if (MODE == "f1") sum(t$sig & t$delta_frac < 0) else if (lev == "SNP") sum(t$sig & t$n_up == 0) else NA_integer_
+    disp <- if (MODE == "f1") sprintf("phi_common %.4f", t$phi_common[1]) else {
+      ph <- dispersion$phi_pair[dispersion$contrast == t$contrast[1]]; sprintf("phi_pair %.4f-%.4f", min(ph, na.rm = TRUE), max(ph, na.rm = TRUE)) }
+    data.frame(contrast = t$contrast[1], mode = MODE, level = lev, tested = sum(!is.na(pcol)),
+               not_tested = length(unique(c(nt_ids, ids[is.na(pcol)]))),   # a unit listed in not_tested and with p NA counts once
+               sig = sum(t$sig), n_up = up, n_down = dn, dispersion = disp, stringsAsFactors = FALSE)
+  }))
+}
+summary_diff <- dplyr::bind_rows(cnt(gene, "gene"), cnt(snp, "SNP"))
+knitr::kable(summary_diff, caption = paste0("Summary (n_up / n_down: F1 = ", STRAIN_A, " fraction higher / lower in the tested condition; ",
+                                            "outbred SNPs = REF higher / lower in all individuals; outbred genes: no direction)"))
+```
+
+## Figure
+
+```{r figure}
+fig <- if (MODE == "f1") dplyr::filter(gene, !is.na(p_condition)) %>% dplyr::transmute(contrast, x = delta_frac, p = p_condition, sig) else
+  dplyr::filter(snp, !is.na(p)) %>% dplyr::transmute(contrast, x = mean_delta, p = p, sig)
+lev <- if (MODE == "f1") "gene" else "SNP"
+fig_n <- tapply(fig$sig, fig$contrast, sum); sum_n <- setNames(summary_diff$sig[summary_diff$level == lev], summary_diff$contrast[summary_diff$level == lev])
+stopifnot(identical(as.integer(fig_n[names(sum_n)]), as.integer(sum_n)))
+cat("Figure sig counts equal Summary counts: TRUE\n")
+p1 <- ggplot(fig, aes(x, -log10(p), colour = sig)) + geom_vline(xintercept = 0, linetype = 2) + geom_point(alpha = 0.7) +
+  scale_colour_manual(values = c(`FALSE` = "grey60", `TRUE` = "firebrick")) + facet_wrap(~contrast) +
+  labs(x = if (MODE == "f1") paste0("change of the ", STRAIN_A, " fraction (tested - reference)") else "mean change of the REF fraction (unphased)",
+       y = "-log10 p", caption = paste0("sig: BH < ", FDR_SIG, " and |change| >= ", ABS_DEV_SIG,
+                                        if (any(bias$flagged)) "; some samples flagged for reference bias" else "")) + theme_bw()
+print(p1)
+ggsave(file.path(RESULTS_DIR, paste0(DATE_TAG, "_ASE_differential.pdf")), p1, width = 10, height = 7)
+```
+
+## Export
+
+```{r export}
+xlsx_file <- file.path(RESULTS_DIR, paste0(DATE_TAG, "_ASE_differential.xlsx"))
+wb <- openxlsx::createWorkbook()
+for (nm in c("SNP", "Gene", "Design", "Excluded", "Summary")) openxlsx::addWorksheet(wb, nm)
+openxlsx::writeData(wb, "SNP", snp); openxlsx::writeData(wb, "Gene", gene); openxlsx::writeData(wb, "Design", design_tbl)
+openxlsx::writeData(wb, "Excluded", dplyr::bind_rows(
+  dplyr::transmute(excluded_chrom, what = sprintf("chromosome %s (sample-site rows)", chrom), n = sample_site_rows),
+  dplyr::count(not_tested, contrast, level, reason, name = "n") %>% dplyr::transmute(what = sprintf("%s, %s not tested: %s", contrast, level, reason), n)))
+openxlsx::writeData(wb, "Summary", summary_diff)
+openxlsx::saveWorkbook(wb, xlsx_file, overwrite = TRUE)
+saveRDS(list(snp = snp, gene = gene, not_tested = not_tested, design = design_tbl, excluded_chrom = excluded_chrom, snp_gene = snp_to_gene,
+             dispersion = dispersion, summary = summary_diff,
+             constants = c(ck$constants, list(RHO_MIN = RHO_MIN, THIN_BP = THIN_BP, REF_CONDITION = REF_CONDITION))),
+        file.path(RESULTS_DIR, "ase_differential_checkpoint.rds"))
+write.table(summary_diff, file.path(RESULTS_DIR, "summary_numbers_differential.tsv"), sep = "\t", quote = FALSE, row.names = FALSE)
+cat("wrote", xlsx_file, "and summary_numbers_differential.tsv\n")
+sessionInfo()
+```
+````
+
+Render it with `{RESULTS_DIR}/scripts/run_04_differential.sh`. This is the same script as `run_01_import_qc.sh` (Step 12), with job name `ase_04_differential`, log `run_04_differential_%j.out`, the Rmd 04 file name, the same `--bind` rule and `-n 1 --mem=16G -t 4:00:00` (single-threaded; F1 tests every gene and every SNP). If the job stops with "is confounded with the cross direction", show the message to the user. The design cannot answer the question; never edit the Rmd. If it stops with "cross_direction must be AxB" or "reference condition ... is not a condition", correct `{SAMPLES_CSV}` (Step 5) or `{REF_CONDITION}` (Step 7), re-render Rmd 01, then Rmd 04. Submission order: Step 15.
+
+---
+
 ## Notes for the assistant
 
 - **Containers, not modules.** Tools come from the cached Singularity images of Step 2; the only module ever loaded is `singularity/3.10.4`, always with a checked `|| exit 1`. R exists only in the `bulkrnaseq` image (`{R_SIF}`).

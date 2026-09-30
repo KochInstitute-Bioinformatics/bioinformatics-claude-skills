@@ -362,4 +362,32 @@ grep -qF "trap 'rm -f" "$SYN/render_from_skill.sh" || { echo "FAIL: render_from_
 grep -qF 'no statistics block between the ase-stats markers' "$SYN/render_from_skill.sh" || { echo "FAIL: render_from_skill.sh must stop without the stats markers"; fail=1; }
 # --- end Stage 2 Task 3 review fixes
 
+# --- Stage 2 Task 4 (Rmd 04, Step 17); each check fails on the f083a98 skill and tools
+need "## Step 17 — Rmd 04: differential ASE between conditions"
+need "{CWD}/{TODAY}_{WD_NAME}_04_differential.Rmd"   # "_04_differential.Rmd" alone already occurs in Step 14
+need "_ASE_differential.xlsx"
+need "ase_differential_checkpoint.rds"
+need "summary_numbers_differential.tsv"
+need "run_04_differential.sh"
+need 'REF_CONDITION <- "{REF_CONDITION}"'
+need "is confounded with the cross direction"
+need 'ase_glm_test(gu$units, list(condition = "cond"), RHO_MIN)'
+need "r <- ase_paired_test(as.data.frame(dp), RHO_MIN)"
+need '"mixed (phase differs)"'
+need "acat_p = acat(p), max_abs_delta = max(max_abs_delta)"
+# Task 3 review fixes repeated in Rmd 04 (the Rmds are self-contained): these strings must occur in Step 16 AND Step 17
+need_n() { [ "$(grep -cF -- "$2" "$SKILL")" -ge "$1" ] || { echo "FAIL: fewer than $1 lines with: $2"; fail=1; }; }
+need_n 2 'STRAIN_A = identical(ck$constants$STRAIN_A, STRAIN_A), STRAIN_B = identical(ck$constants$STRAIN_B, STRAIN_B)'
+need_n 2 "no autosomal SNP in a single GTF gene is left after the gene map"
+need_n 2 "design not estimable (condition confounded with direction in the covered samples)"
+need_n 3 "alt, random and unplaced contigs are treated as autosomes"
+need "no gene could be tested in any contrast (fit status: "
+need "no SNP could be tested in any contrast"
+# the outbred not_tested count must not count a SNP twice (listed in not_tested AND with p NA)
+need "not_tested = length(unique(c(nt_ids, ids[is.na(pcol)])))"
+# evaluator: the differential branches exist and check the summary file
+grep -qF 'what == "differential_outbred"' "$SYN/evaluate_stage2.R" || { echo "FAIL: evaluate_stage2.R lacks the differential_outbred branch"; fail=1; }
+grep -qF 'summary_numbers_differential.tsv' "$SYN/evaluate_stage2.R" || { echo "FAIL: evaluate_stage2.R must check summary_numbers_differential.tsv"; fail=1; }
+# --- end Stage 2 Task 4
+
 [ $fail -eq 0 ] && echo "PASS" || exit 1
