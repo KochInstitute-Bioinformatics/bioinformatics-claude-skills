@@ -68,8 +68,8 @@ if (what == "phaser") {
       # table (an independent tool, not phASER's allelic_counts); the first SNP of each two_block gene sits at transcript offset 2
       # and the WASP filter removes the few reads there, so 6 is not observable on the synthetic data
       act <- read.delim(file.path(ASE_DIR, paste0(s, ".table")), stringsAsFactors = FALSE)
-      cov_pos <- act$position[act$totalCount >= 1]
-      orc <- vapply(tb$name, function(x) sum(ph$pos[ph$gene_id == x] %in% cov_pos), integer(1))
+      cov_key <- paste(act$contig, act$position)[act$totalCount >= 1]   # contig AND position
+      orc <- vapply(tb$name, function(x) sum(paste(ph$chrom, ph$pos)[ph$gene_id == x] %in% cov_key), integer(1))
       both <- vapply(tb$variants, function(v) length(unique(ts$cluster[match(pos_of(v), ts$pos)])) == 2, logical(1))
       crit(nrow(tb) == 2 && all(tb$n_variants == orc & both & tb$gw_phased == "1"),
            sprintf("[ph_two_block] %s: two_block genes use both blocks: n_variants %s = het SNPs with reads in ASEReadCounter %s, both clusters %s, genome-wide phased %s",

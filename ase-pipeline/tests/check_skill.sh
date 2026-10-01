@@ -803,10 +803,10 @@ th_vals=$(awk '{ if (sub(/\\$/, "")) { buf = buf $0 " "; next } print buf $0; bu
   { echo "FAIL: phASER commands must use --threads 1 (found: $(echo $th_vals)); above 1 thread phaser.py stops with NameError under Python 3.14"; fail=1; }
 need "phaser.py\` with more than one thread stops with \`NameError: name 'args' is not defined\`"
 need "has never been tested. **Consequence:** request one core"
-need 'rm -f "$OUT".*'
+forbid 'rm -f "$OUT".*'   # review I1: a glob s1.* also removes the outputs of a sample s1.redo; explicit suffixes only
 need "phaser_gene_ae splits variant IDs on '_'"
 need "PHASED_GT=1 but only"
-need 'N_COV=$(awk -F'"'"'\t'"'"' '"'"'NR > 1 && $7 > 0'"'"' "$OUT.gene_ae.txt"'
+need 'N_COV=$(awk -F'"'"'\t'"'"' '"'"'NR > 1 && $7 > 0'"'"' "$OUT.gene_ae.txt.part"'
 need "(ASEReadCounter and phASER; a plain VCF fails there). Block R has already run before the loop; then the gene-spans block below; then block I"
 [ "$(grep -c 'PHASER_COMMIT=aa1f8ec5fe1cc676e37cfa6f6a0bce6b09070301' "$SKILL")" = 2 ] || { echo "FAIL: the pinned commit must be set in setup_phaser_env.sh and phaser_count.sh"; fail=1; }
 [ -s "$HERE/synthetic/assemble_outbred_from_skill.sh" ] || { echo "FAIL: missing tests/synthetic/assemble_outbred_from_skill.sh"; fail=1; }
@@ -820,17 +820,17 @@ pline 'export PYTHONNOUSERSITE=1      # a per-user site-packages directory of th
 pline 'export PATH="$PHASER_HOME/env/bin:$PATH"; PY="$PHASER_HOME/env/bin/python"; SRC="$PHASER_HOME/src/phaser"'
 pline '[ "$(sed -n 1p "$PHASER_HOME/install_ok.txt" 2>/dev/null)" = "commit $PHASER_COMMIT" ] && sed -n 2p "$PHASER_HOME/install_ok.txt" 2>/dev/null | grep -qE '"'"'^env_sha256 [0-9a-f]{64}$'"'"' && [ -x "$PY" ] \'
 pline '[ -n "$SAMPLE" ] && [ -n "$INDIVIDUAL" ] || die "empty sample or individual in row $SLURM_ARRAY_TASK_ID of {SAMPLES_CSV}"'
-pline 'rm -f "$OUT".*                 # never keep outputs of an earlier run: a failed sample must have none'
+pline 'clean_out                      # never keep outputs of an earlier run: a failed sample must have none'
 pline '[ "$N_OFF" -eq 0 ] || die "$N_OFF heterozygous sites of $VCF lie on contigs that are not in the BAM header"'
-pline '[ "$N_BLK" -gt 0 ] || { rm -f "$OUT".*; die "phASER wrote no haplotype block (check the BAM, the VCF sample $VS and the contig names; log $LOG)"; }'
-pline '  || { tail -5 "$LOG" >&2; rm -f "$OUT".*; die "phaser.py failed (log $LOG)"; }'
-pline '  || { tail -5 "$LOG" >&2; rm -f "$OUT".*; die "phaser_gene_ae.py failed (log $LOG)"; }'
+pline '[ "$N_BLK" -gt 0 ] || { clean_out; die "phASER wrote no haplotype block (check the BAM, the VCF sample $VS and the contig names; log $LOG)"; }'
+pline '  || { tail -5 "$LOG" >&2; clean_out; die "phaser.py failed (log $LOG)"; }'
+pline '  || { tail -5 "$LOG" >&2; clean_out; die "phaser_gene_ae.py failed (log $LOG)"; }'
 pstart() { printf '%s\n' "$PHC" | awk -v p="$1" 'index($0, p) == 1 {f = 1} END {exit !f}' || { echo "FAIL: phaser_count.sh lacks a line starting with: $1"; fail=1; }; }
 pstart '[ "$NS" -eq 1 ] || die "$VCF has $NS sample columns'
 pstart '[ "$N_US" -eq 0 ] || die "$N_US heterozygous sites lie on contigs whose names contain '"'_'"
 pstart '[ "$N_BED" -gt 0 ] || die "no gene of $BED lies on a contig of the BAM'
 pstart '  [ $((N_PH * 10)) -ge $((N_HET * 9)) ] || die "PHASED_GT=1 but only'
-pstart '[ "$N_COV" -gt 0 ] || { rm -f "$OUT".*; die "no gene has haplotype counts (totalCount > 0)'
+pstart '[ "$N_COV" -gt 0 ] || { clean_out; die "no gene has haplotype counts (totalCount > 0)'
 if printf '%s\n' "$PHC" | grep -qE '^ *(module|conda|source) '; then echo "FAIL: phaser_count.sh must load no module and activate no conda environment"; fail=1; fi
 SPC=$(bash "$HERE/synthetic/cut_block.sh" "$SKILL" '### Gene spans for phASER' 2>/dev/null)
 printf '%s\n' "$SPC" | grep -qF '$3 == "exon" && match($9, /gene_id "[^"]+"/)' && printf '%s\n' "$SPC" | grep -qF 'print c[1] "\t" lo[g] - 1 "\t" hi[g] "\t" g' ||
@@ -842,5 +842,55 @@ for t in $(grep -oE '"\[ph_[a-z0-9_]+\] ' "$EV3" 2>/dev/null | grep -oE '\[[a-z0
   grep -qF -- "\"$t" "$PR3P" 2>/dev/null || { echo "FAIL: prove_evaluate_stage3_phaser.R has no proof for evaluator gate $t"; fail=1; }; done
 [ "$(grep -oE '"\[ph_[a-z0-9_]+\] ' "$EV3" 2>/dev/null | sort -u | grep -c .)" -ge 6 ] || { echo "FAIL: evaluate_stage3.R has fewer than 6 phaser-mode [ph_*] gates"; fail=1; }
 # --- end Stage 3 Task 5
+
+# --- Stage 3 Task 5 review fixes (I1, I2, M1-M7, M9-M11); each line fails on the 68e4bb8 skill
+# I1: this sample's outputs by explicit suffix, never a glob
+pline 'PH_SFX="haplotypic_counts.txt haplotypes.txt allelic_counts.txt allele_config.txt variant_connections.txt vcf.gz vcf.gz.tbi gene_ae.txt gene_ae.txt.part"'
+pline 'clean_out() { local x; for x in $PH_SFX; do rm -f "$OUT.$x"; done; }'
+if printf '%s\n' "$PHC" | grep -E 'rm ' | grep -vxF -e 'clean_out() { local x; for x in $PH_SFX; do rm -f "$OUT.$x"; done; }' -e "trap 'rm -rf \"\$TMPD\"' EXIT     # this sample's temporary files go on success and on failure" | grep -q .; then
+  echo "FAIL: phaser_count.sh may remove files only through clean_out and the TMPD trap"; fail=1; fi
+# M1: pins of the temp directory, the contig computations, the input guards and the --features path; the stale-output removal
+#     comes before the first input guard
+pline 'OUT="$R/phaser/$SAMPLE"; LOG="$R/logs/phaser_$SAMPLE.log"; TMPD="$R/tmp/phaser_$SAMPLE"'
+pline "trap 'rm -rf \"\$TMPD\"' EXIT     # this sample's temporary files go on success and on failure"
+pline 'N_OFF=$(bcftools query -f '"'"'%CHROM\n'"'"' "$VCF" | awk '"'"'NR == FNR {c[$1] = 1; next} !($1 in c)'"'"' "$BAM_CTG" - | wc -l)'
+pline 'N_BED=$(awk '"'"'NR == FNR {c[$1] = 1; next} ($1 in c)'"'"' "$BAM_CTG" "$BED" | wc -l)'
+pline '[ -s "$BAM" ] && [ -s "$BAM.bai" ] || die "missing $BAM or its index (run the per-sample array job first)"'
+pline '[ -s "$VCF" ] && [ -s "$VCF.tbi" ] || die "missing $VCF or its index (run prep_genotypes.sh first)"'
+pline '[ -s "$BED" ] || die "missing $BED (written by prep_genotypes.sh)"'
+pline '"$PY" "$SRC/phaser_gene_ae/phaser_gene_ae.py" --haplotypic_counts "$OUT.haplotypic_counts.txt" --features "$BED" --o "$OUT.gene_ae.txt.part" >> "$LOG" 2>&1 \'
+pline 'mv "$OUT.gene_ae.txt.part" "$OUT.gene_ae.txt" || { clean_out; die "cannot rename $OUT.gene_ae.txt.part"; }'
+pline ': > "$LOG" || die "cannot write $LOG"   # the log describes this run only'
+ln_of() { printf '%s\n' "$PHC" | awk -v p="$1" 'index($0, p) == 1 {print NR; exit}'; }
+l_clean=$(ln_of 'clean_out    '); l_bam=$(ln_of '[ -s "$BAM" ]'); l_trap=$(ln_of "trap 'rm -rf")
+[ -n "$l_clean" ] && [ -n "$l_bam" ] && [ -n "$l_trap" ] && [ "$l_trap" -lt "$l_clean" ] && [ "$l_clean" -lt "$l_bam" ] ||
+  { echo "FAIL: phaser_count.sh must set the TMPD trap, then remove stale outputs, before the first input guard (lines trap $l_trap, clean_out $l_clean, BAM guard $l_bam)"; fail=1; }
+printf '%s\n' "$SPC" | grep -qxF '    else { if ($4 < lo[g]) lo[g] = $4; if ($5 > hi[g]) hi[g] = $5 } }' ||
+  { echo "FAIL: the gene-spans block must take the minimum start and maximum end over the gene's exons"; fail=1; }
+# M2: no path characters in the sample name (script and Step 5)
+pline 'case "$SAMPLE" in */*|*..*|.*|-*|*[[:space:]]*) die "sample name '"'"'$SAMPLE'"'"' must not contain '"'"'/'"'"', '"'"'..'"'"' or whitespace, nor start with '"'"'.'"'"' or '"'"'-'"'"' (Step 5)" ;; esac'
+need "no \`/\` or \`..\` in \`sample\`, and \`sample\` does not start with \`.\`"
+# M5, M6: PHASED_GT is 0 or 1; the BAM holds paired reads
+pline 'case "$PHASED_GT" in 0|1) ;; *) die "PHASED_GT must be 0 or 1, not '"'"'$PHASED_GT'"'"' (Step 7)" ;; esac'
+pline '[ -n "$(samtools view -f 1 "$BAM" 2>/dev/null | head -n 1)" ] || die "$BAM holds no paired reads; phASER is run with --paired_end 1 and is offered only for paired-end data (Step 7)"'
+# M7: honest --mapq wording
+need "phASER also drops reads whose alignment score falls below its own quantile cutoff"
+forbid "the same reads as ASEReadCounter's \`--min-mapping-quality\` 10 keeps"
+# I2: contig names with '_' are found before alignment: prep warns (non-fatal), the wizard refuses phASER for such a reference
+printf '%s\n' "$SPC" | grep -qF 'N_US_CTG=$(cut -f1 "$FASTA.fai" | grep -c _)' ||
+  { echo "FAIL: the gene-spans block of prep_genotypes.sh must count FASTA contig names with '_' (N_US_CTG)"; fail=1; }
+printf '%s\n' "$SPC" | grep -qF "echo \"WARNING: \$N_US_CTG contig names of the FASTA and \$N_US_SPAN of the gene spans contain '_'" ||
+  { echo "FAIL: prep_genotypes.sh must warn about contig names with '_'"; fail=1; }
+need "**phASER and contig names with \`_\`.**"
+need "phASER cannot be used with this reference:"
+# M9: the negative tests of phaser_count.sh are committed
+[ -s "$HERE/synthetic/test_phaser_count_guards.sh" ] || { echo "FAIL: missing tests/synthetic/test_phaser_count_guards.sh"; fail=1; }
+for m in "lies on a contig of the BAM" "PHASED_GT=1 but only 0 of" "contigs whose names contain '_'" "no complete phASER installation" "must not contain '/'" "PHASED_GT must be 0 or 1" "holds no paired reads" "s1.redo outputs survive"; do
+  grep -qF -- "$m" "$HERE/synthetic/test_phaser_count_guards.sh" 2>/dev/null || { echo "FAIL: test_phaser_count_guards.sh does not test: $m"; fail=1; }; done
+# M10: the two_block oracle matches contig and position
+grep -qF 'paste(act$contig, act$position)' "$EV3" 2>/dev/null || { echo "FAIL: the two_block oracle of evaluate_stage3.R must match contig and position"; fail=1; }
+# M11: Step 10 points to Step 19's note on spans
+need "The span includes introns: every heterozygous SNP inside it counts for the gene, including SNPs of genes nested in its introns or overlapping it (Step 19, Gene spans)."
+# --- end Stage 3 Task 5 review fixes
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1

@@ -131,7 +131,7 @@ sample,fastq_1,fastq_2,condition,cross_direction,individual
 
 Show the full table, ask "Does this look correct?", and write the file only after confirmation (if it exists, ask: overwrite or choose another filename).
 
-**Validation rules:** no dashes or spaces in `sample`, `condition`, `cross_direction` or `individual`; no space or comma in any `fastq_1` / `fastq_2` path (stop with the Step 0 message naming the path); sample names unique; each condition should have replicates (defined below; warn, do not stop, when it has only one sample); in F1 mode `cross_direction` is exactly `AxB` or `BxA` for every sample (stop and ask again otherwise); in F1 mode every `individual` value must be unique: run `awk -F, 'NR > 1 {c[$6]++} END {for (i in c) if (c[i] > 1) print i}' {SAMPLES_CSV}` and, if it prints anything, stop and tell the user: "F1 mode needs one sample per animal; these individual values occur more than once: <the printed values>. Merge the FASTQ files of the technical replicates of each animal into one sample and start again." (outbred mode may repeat an `individual`); reciprocal analysis needs at least 2 samples of each cross direction (checked again in Step 7).
+**Validation rules:** no dashes or spaces in `sample`, `condition`, `cross_direction` or `individual`; no `/` or `..` in `sample`, and `sample` does not start with `.` (it names files and directories under `{RESULTS_DIR}`, and the scripts remove files by these names); no space or comma in any `fastq_1` / `fastq_2` path (stop with the Step 0 message naming the path); sample names unique; each condition should have replicates (defined below; warn, do not stop, when it has only one sample); in F1 mode `cross_direction` is exactly `AxB` or `BxA` for every sample (stop and ask again otherwise); in F1 mode every `individual` value must be unique: run `awk -F, 'NR > 1 {c[$6]++} END {for (i in c) if (c[i] > 1) print i}' {SAMPLES_CSV}` and, if it prints anything, stop and tell the user: "F1 mode needs one sample per animal; these individual values occur more than once: <the printed values>. Merge the FASTQ files of the technical replicates of each animal into one sample and start again." (outbred mode may repeat an `individual`); reciprocal analysis needs at least 2 samples of each cross direction (checked again in Step 7).
 
 **Replicates (definition used here and in Step 7):** replicates = at least 2 samples in the condition. A condition with a single sample triggers the warning above.
 
@@ -188,6 +188,8 @@ Ask (numbered, multi-select, for example "1,3"):
 2. **Reciprocal F1 analysis** (strain effect versus parent-of-origin effect, Rmd 03, Step 16): offered only when `{MODE}` = `f1` and at least 2 samples have `cross_direction` `AxB` and at least 2 have `BxA`. When there are several conditions, at least one condition must hold samples of both directions; otherwise condition and cross direction are confounded and Rmd 03 stops, so the option is hidden.
 3. **Differential ASE between conditions** (Rmd 04, Step 17): offered only when at least two conditions each have replicates and the design allows a paired or adjusted comparison. In F1 mode, condition and cross direction must not be confounded: when both directions are present, it must not be true that every sample of one condition has one direction and every sample of the other condition has the other. In outbred mode, at least one pair of conditions with at least 2 individuals sampled in both is needed (the test pairs each individual's samples); which contrasts can be tested is checked after the reference condition is chosen (below).
 4. **phASER haplotype phasing**: offered only when `{MODE}` = `outbred`; available in a later stage.
+
+**phASER and contig names with `_`.** Before offering option 4, check the contig names of the reference with a light command on the login node (contig names only, never the sequence): `cut -f1 {FASTA_PATH}.fai | grep -c _` when the `.fai` exists, otherwise `grep '^>' {FASTA_PATH} | grep -c _` (header lines of an uncompressed FASTA). When the count is above 0, do not offer phASER and tell the user: "phASER cannot be used with this reference: <count> contig names contain `_` (for example <the first three names>), and phASER's gene step (`phaser_gene_ae`) splits variant IDs on `_`. Use a reference without such contigs (for example Ensembl contig names, or a FASTA and GTF restricted to the primary chromosomes, with genotype VCFs on the same contigs), or continue without phASER." When the FASTA does not exist yet (Step 4 option 1, downloaded by the prep job), the prep job prints the same warning (Step 10, Gene spans); `phaser_count.sh` stops on any heterozygous site on such a contig.
 
 Show only the options whose preconditions hold, and say why any other is hidden, for example "Differential ASE is hidden: condition and cross direction are confounded (all ctrl samples are AxB and all treat samples BxA), so a condition effect cannot be told apart from a parent-of-origin effect." Store the selection as `{ANALYSES}`, which holds the words, separated by spaces, never the menu numbers: menu number 1 is the word `per-sample`, 2 is `reciprocal`, 3 is `differential` (`per-sample` is always present); for example the answer "1,2,3" is stored as `per-sample reciprocal differential`. Menu number 4 (phASER) runs nothing yet and is not stored in `{ANALYSES}`; `submit_chain.sh` (Step 15) stops when `{ANALYSES}` holds any other word. If the user chooses phASER, say "available in a later stage" and continue.
 
@@ -525,7 +527,9 @@ The array job reads `{RESULTS_DIR}/genotypes/{individual}.het.vcf` (STAR) and `{
 
 ### Gene spans for phASER (end of `prep_genotypes.sh`, before block I)
 
-Written in every outbred project (a few seconds; phASER, if selected, reads it in Step 18). One row per gene: the span of the gene's exons on its contig, 0-based start, 4 columns (contig, start, stop, `gene_id`), as `phaser_gene_ae` needs. Genes whose exons lie on more than one contig or strand are left out and counted. Built from the exons, not from `gene` lines, so it works for GTFs without `gene` lines and uses the same `gene_id`s as Rmd 02.
+Written in every outbred project (a few seconds; phASER, if selected, reads it in Step 18). One row per gene: the span of the gene's exons on its contig, 0-based start, 4 columns (contig, start, stop, `gene_id`), as `phaser_gene_ae` needs. Genes whose exons lie on more than one contig or strand are left out and counted. Built from the exons, not from `gene` lines, so it works for GTFs without `gene` lines and uses the same `gene_id`s as Rmd 02. The span includes introns: every heterozygous SNP inside it counts for the gene, including SNPs of genes nested in its introns or overlapping it (Step 19, Gene spans).
+
+The block also warns, without stopping, when a contig name of the FASTA or of the gene spans contains `_` (for example UCSC `chrUn_...` or `chr1_..._random`): `phaser_gene_ae` splits variant IDs on `_`, so phASER cannot be used with this reference, and `phaser_count.sh` would stop on any heterozygous site on such a contig. The wizard refuses phASER for such a reference in Step 7; the warning covers a FASTA that was downloaded by the prep job and could not be checked then. No site is filtered.
 
 ```bash
 SPAN_BED="{RESULTS_DIR}/reference/genes_span.bed"; mkdir -p "{RESULTS_DIR}/reference" || exit 1
@@ -541,6 +545,10 @@ N_SPAN_ON=$(awk 'NR == FNR {c[$1] = 1; next} ($1 in c)' "$FASTA.fai" "$SPAN_BED"
 [ "$N_SPAN" -gt 0 ] && [ "$N_SPAN_ON" -gt 0 ] \
   || { echo "ERROR: no gene span of {GTF_PATH} lies on a contig of $FASTA (GTF contigs: $(cut -f1 "$SPAN_BED" | uniq | head -3 | paste -sd' '); FASTA contigs: $(cut -f1 "$FASTA.fai" | head -3 | paste -sd' '))" >&2; exit 1; }
 echo "Gene spans for phASER: $N_SPAN genes, $N_SPAN_ON on contigs of the FASTA"
+N_US_CTG=$(cut -f1 "$FASTA.fai" | grep -c _); N_US_SPAN=$(cut -f1 "$SPAN_BED" | sort -u | grep -c _)
+if [ "$N_US_CTG" -gt 0 ] || [ "$N_US_SPAN" -gt 0 ]; then
+  echo "WARNING: $N_US_CTG contig names of the FASTA and $N_US_SPAN of the gene spans contain '_' (for example $(cut -f1 "$FASTA.fai" | grep _ | head -3 | paste -sd' ')): phASER cannot be used with this reference (phaser_gene_ae splits variant IDs on '_'; phaser_count.sh stops on such sites). Use a reference without such contigs, or run without phASER (Step 7)."
+fi
 ```
 
 ### `extract_mgp_parental_vcf.sh` (F1 mode, mouse helper; optional)
@@ -2474,7 +2482,7 @@ A SLURM array job, one task per data row of `{SAMPLES_CSV}`, submitted by `submi
 
 **Flags.** The flags are the tested set:
 - `--paired_end 1` (the reason phASER is offered only for paired-end data);
-- `--mapq 255` (STAR's unique alignments, the same reads as ASEReadCounter's `--min-mapping-quality` 10 keeps);
+- `--mapq 255`: STAR's unique alignments (STAR gives MAPQ 255 to unique and 3, 1 or 0 to multi-mapping reads), so phASER keeps the same alignments as ASEReadCounter keeps with `{MIN_MAPQ}` between 4 and 255. phASER also drops reads whose alignment score falls below its own quantile cutoff (`--as_q_cutoff`, default 0.05 of the `AS` tags), which ASEReadCounter does not do, so its counts can be slightly lower: on the synthetic test the gene counts were 0.77 to 0.93 of the simulated read pairs (median per sample), never above them.
 - `--baseq {MIN_BASEQ}`;
 - `--pass_only 0` (the prepared VCF has FILTER `.`; with the default 1 phASER keeps no site);
 - `--unique_ids 1` (its ID column is `.`);
@@ -2487,6 +2495,11 @@ A SLURM array job, one task per data row of `{SAMPLES_CSV}`, submitted by `submi
 - het sites on contigs missing from the BAM header, or no gene span on a BAM contig (mismatched names give silent zero counts in phASER);
 - `{PHASED_GT}` = 1 while fewer than 90 % of the het genotypes are phased;
 - an empty haplotype table, or a gene table without any gene with counts.
+- `{PHASED_GT}` other than 0 or 1;
+- a sample name with `/`, `..` or whitespace, or starting with `.` or `-` (it builds the names of the files the script removes; Step 5 forbids these names);
+- a BAM without paired reads (`--paired_end 1` would count nothing).
+
+Before the guards run, the script removes this sample's earlier phASER outputs by their exact names (never a glob, so a sample `s1` never touches the files of a sample `s1.redo`) and empties its log. The gene table is written as `{sample}.gene_ae.txt.part` and renamed only when it is complete, so a job killed by SLURM never leaves a cut-short `gene_ae.txt`; the temporary directory `tmp/phaser_{sample}` is removed on success and on failure.
 
 The script loads no module and activates no conda environment: it puts `{PHASER_HOME}/env/bin` first on `PATH`, exports `PYTHONNOUSERSITE=1` and unsets `PYTHONPATH` and `PYTHONHOME` (Step 18, Environment).
 
@@ -2510,6 +2523,7 @@ unset PYTHONPATH PYTHONHOME    # an inherited Python search path would shadow th
 export PATH="$PHASER_HOME/env/bin:$PATH"; PY="$PHASER_HOME/env/bin/python"; SRC="$PHASER_HOME/src/phaser"
 SAMPLE=""
 die() { echo "ERROR: sample ${SAMPLE:-?}: $*" >&2; exit 1; }
+case "$PHASED_GT" in 0|1) ;; *) die "PHASED_GT must be 0 or 1, not '$PHASED_GT' (Step 7)" ;; esac
 # install_ok.txt (Step 18): line 1 the pinned commit, line 2 the package-list hash; this script only refuses to run without them
 [ "$(sed -n 1p "$PHASER_HOME/install_ok.txt" 2>/dev/null)" = "commit $PHASER_COMMIT" ] && sed -n 2p "$PHASER_HOME/install_ok.txt" 2>/dev/null | grep -qE '^env_sha256 [0-9a-f]{64}$' && [ -x "$PY" ] \
   || die "no complete phASER installation of commit $PHASER_COMMIT in $PHASER_HOME (run setup_phaser_env.sh, Step 18)"
@@ -2517,17 +2531,27 @@ ROW=$(awk -v n="$SLURM_ARRAY_TASK_ID" 'NR==n+1' "{SAMPLES_CSV}" | tr -d '\r')
 [ -n "$ROW" ] || die "no row $SLURM_ARRAY_TASK_ID in {SAMPLES_CSV}"
 IFS=, read -r SAMPLE FQ1 FQ2 CONDITION CROSS INDIVIDUAL <<< "$ROW"
 [ -n "$SAMPLE" ] && [ -n "$INDIVIDUAL" ] || die "empty sample or individual in row $SLURM_ARRAY_TASK_ID of {SAMPLES_CSV}"
+# the sample name builds the file and directory names removed below: no path characters (Step 5)
+case "$SAMPLE" in */*|*..*|.*|-*|*[[:space:]]*) die "sample name '$SAMPLE' must not contain '/', '..' or whitespace, nor start with '.' or '-' (Step 5)" ;; esac
 BAM="$R/bam/$SAMPLE.bam"; VCF="$R/genotypes/$INDIVIDUAL.het.vcf.gz"
 OUT="$R/phaser/$SAMPLE"; LOG="$R/logs/phaser_$SAMPLE.log"; TMPD="$R/tmp/phaser_$SAMPLE"
-mkdir -p "$R/phaser" "$TMPD" || die "cannot create output directories"
-rm -f "$OUT".*                 # never keep outputs of an earlier run: a failed sample must have none
+# this sample's phASER files by name, never a glob: "$OUT".* would also match the outputs of a sample named "$SAMPLE.redo"
+PH_SFX="haplotypic_counts.txt haplotypes.txt allelic_counts.txt allele_config.txt variant_connections.txt vcf.gz vcf.gz.tbi gene_ae.txt gene_ae.txt.part"
+clean_out() { local x; for x in $PH_SFX; do rm -f "$OUT.$x"; done; }
+mkdir -p "$R/phaser" "$R/logs" "$TMPD" || die "cannot create output directories"
+trap 'rm -rf "$TMPD"' EXIT     # this sample's temporary files go on success and on failure
+clean_out                      # never keep outputs of an earlier run: a failed sample must have none
+: > "$LOG" || die "cannot write $LOG"   # the log describes this run only
 [ -s "$BAM" ] && [ -s "$BAM.bai" ] || die "missing $BAM or its index (run the per-sample array job first)"
 [ -s "$VCF" ] && [ -s "$VCF.tbi" ] || die "missing $VCF or its index (run prep_genotypes.sh first)"
 [ -s "$BED" ] || die "missing $BED (written by prep_genotypes.sh)"
+# --paired_end 1 counts no read of a single-end BAM (the first paired read found is enough)
+[ -n "$(samtools view -f 1 "$BAM" 2>/dev/null | head -n 1)" ] || die "$BAM holds no paired reads; phASER is run with --paired_end 1 and is offered only for paired-end data (Step 7)"
 NS=$(bcftools query -l "$VCF" | wc -l); VS=$(bcftools query -l "$VCF" | head -1)
 [ "$NS" -eq 1 ] || die "$VCF has $NS sample columns; phASER needs exactly one"
-# contig names: phaser_gene_ae splits variant IDs on '_' (a contig such as chrUn_xxx breaks it), and names that differ between
-# the VCF, the BAM and the gene spans give silent zero counts
+# contig names: phaser_gene_ae splits variant IDs on '_' (a contig such as chrUn_xxx breaks it; prep_genotypes.sh warns and the
+# wizard refuses phASER for such a reference, Step 7), and names that differ between the VCF, the BAM and the gene spans give
+# silent zero counts
 N_US=$(bcftools query -f '%CHROM\n' "$VCF" | awk '$1 ~ /_/' | wc -l)
 [ "$N_US" -eq 0 ] || die "$N_US heterozygous sites lie on contigs whose names contain '_' ($(bcftools query -f '%CHROM\n' "$VCF" | awk '$1 ~ /_/' | uniq | head -3 | paste -sd' ')); phaser_gene_ae splits variant IDs on '_'. Supply genotype VCFs without these contigs (Step 6)"
 BAM_CTG="$TMPD/bam_contigs.txt"
@@ -2544,17 +2568,18 @@ elif [ $((N_PH * 10)) -ge $((N_HET * 9)) ]; then
   echo "WARNING: $N_PH of $N_HET genotypes are phased but PHASED_GT=0: gene counts use the most-covered block of each gene only (Step 7)"
 fi
 "$PY" "$SRC/phaser/phaser.py" --vcf "$VCF" --bam "$BAM" --sample "$VS" --paired_end 1 --mapq 255 --baseq {MIN_BASEQ} \
-     --pass_only 0 --unique_ids 1 --gw_phase_vcf "$PHASED_GT" --threads 1 --temp_dir "$TMPD" --o "$OUT" > "$LOG" 2>&1 \
-  || { tail -5 "$LOG" >&2; rm -f "$OUT".*; die "phaser.py failed (log $LOG)"; }
+     --pass_only 0 --unique_ids 1 --gw_phase_vcf "$PHASED_GT" --threads 1 --temp_dir "$TMPD" --o "$OUT" >> "$LOG" 2>&1 \
+  || { tail -5 "$LOG" >&2; clean_out; die "phaser.py failed (log $LOG)"; }
 N_BLK=$(awk 'NR > 1' "$OUT.haplotypic_counts.txt" 2>/dev/null | wc -l)
-[ "$N_BLK" -gt 0 ] || { rm -f "$OUT".*; die "phASER wrote no haplotype block (check the BAM, the VCF sample $VS and the contig names; log $LOG)"; }
-"$PY" "$SRC/phaser_gene_ae/phaser_gene_ae.py" --haplotypic_counts "$OUT.haplotypic_counts.txt" --features "$BED" --o "$OUT.gene_ae.txt" >> "$LOG" 2>&1 \
-  || { tail -5 "$LOG" >&2; rm -f "$OUT".*; die "phaser_gene_ae.py failed (log $LOG)"; }
-N_COV=$(awk -F'\t' 'NR > 1 && $7 > 0' "$OUT.gene_ae.txt" 2>/dev/null | wc -l)
-[ "$N_COV" -gt 0 ] || { rm -f "$OUT".*; die "no gene has haplotype counts (totalCount > 0): the gene spans and the variants do not overlap (contig names? log $LOG)"; }
+[ "$N_BLK" -gt 0 ] || { clean_out; die "phASER wrote no haplotype block (check the BAM, the VCF sample $VS and the contig names; log $LOG)"; }
+# the gene table gets its final name only when it is complete: a job killed by SLURM leaves at most the .part file
+"$PY" "$SRC/phaser_gene_ae/phaser_gene_ae.py" --haplotypic_counts "$OUT.haplotypic_counts.txt" --features "$BED" --o "$OUT.gene_ae.txt.part" >> "$LOG" 2>&1 \
+  || { tail -5 "$LOG" >&2; clean_out; die "phaser_gene_ae.py failed (log $LOG)"; }
+N_COV=$(awk -F'\t' 'NR > 1 && $7 > 0' "$OUT.gene_ae.txt.part" 2>/dev/null | wc -l)
+[ "$N_COV" -gt 0 ] || { clean_out; die "no gene has haplotype counts (totalCount > 0): the gene spans and the variants do not overlap (contig names? log $LOG)"; }
+mv "$OUT.gene_ae.txt.part" "$OUT.gene_ae.txt" || { clean_out; die "cannot rename $OUT.gene_ae.txt.part"; }
 N_GW=$(awk -F'\t' 'NR > 1 && $7 > 0 && $11 == 1' "$OUT.gene_ae.txt" | wc -l)
 echo "Sample $SAMPLE: $N_BLK haplotype blocks, $N_COV genes with counts ($N_GW genome-wide phased); $(grep -m1 'PHASED' "$LOG")"
-rm -rf "$TMPD"
 ```
 
 | Output | Content |
