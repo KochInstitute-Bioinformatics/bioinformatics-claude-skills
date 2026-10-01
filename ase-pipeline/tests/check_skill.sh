@@ -783,10 +783,64 @@ done
 EV3="$HERE/synthetic/evaluate_stage3.R"; PR3="$HERE/synthetic/prove_evaluate_stage3.R"
 tags=$(grep -oE '"\[[a-z0-9_]+\] ' "$EV3" 2>/dev/null | grep -oE '\[[a-z0-9_]+\]' | sort -u)
 [ "$(printf '%s\n' "$tags" | grep -c .)" -ge 12 ] || { echo "FAIL: evaluate_stage3.R gates carry fewer than 12 [tag]s"; fail=1; }
-for t in $tags; do grep -qF -- "\"$t" "$PR3" 2>/dev/null || { echo "FAIL: prove_evaluate_stage3.R has no proof for evaluator gate $t"; fail=1; }; done
+for t in $tags; do grep -qF -- "\"$t" "$PR3" "$HERE/synthetic/prove_evaluate_stage3_phaser.R" 2>/dev/null || { echo "FAIL: prove_evaluate_stage3.R (rmd mode) or prove_evaluate_stage3_phaser.R (phaser mode) has no proof for evaluator gate $t"; fail=1; }; done
 # I1: the oracle and the completeness gate read the input phASER tables, never only the Rmd's own gene table; M3: true rho parsed from the generator
 grep -qF 'file.path(RES, "phaser", paste0(sm$sample, ".gene_ae.txt"))' "$EV3" 2>/dev/null || { echo "FAIL: evaluate_stage3.R does not read the input phASER tables"; fail=1; }
 grep -qF 'PHI_BIO <-' "$EV3" 2>/dev/null && ! grep -qE '^ *PHI_TRUE <- [0-9]' "$EV3" || { echo "FAIL: evaluate_stage3.R must parse PHI_BIO from the generator, not hard-code it"; fail=1; }
 # --- end Stage 3 Task 4 review fixes
+
+# --- Stage 3 Task 5 (phaser_count.sh, gene spans, assembler); each string is absent from the Task 4 skill
+need "### Gene spans for phASER (end of \`prep_genotypes.sh\`, before block I)"
+need 'SPAN_BED="{RESULTS_DIR}/reference/genes_span.bed"'
+need "### \`phaser_count.sh\`"
+need '--paired_end 1 --mapq 255 --baseq {MIN_BASEQ}'
+need '--pass_only 0 --unique_ids 1 --gw_phase_vcf "$PHASED_GT"'
+need '--gw_phase_vcf "$PHASED_GT" --threads 1 --temp_dir "$TMPD"'   # Python 3.14 workers do not inherit phASER's global args (NameError above 1 thread)
+# every --threads on a phaser.py / phaser_gene_ae.py command line (continuation lines joined) is exactly "--threads 1", and there is one
+th_vals=$(awk '{ if (sub(/\\$/, "")) { buf = buf $0 " "; next } print buf $0; buf = "" }' "$SKILL" | grep -E 'phaser/phaser\.py|phaser_gene_ae/phaser_gene_ae\.py' |
+  grep -oE -- '--threads[ =][^ ]+' | sed -E 's/^--threads[ =]//' | sort | uniq -c)
+[ -n "$th_vals" ] && ! printf '%s\n' "$th_vals" | awk '{print $2}' | grep -qvx '1' ||
+  { echo "FAIL: phASER commands must use --threads 1 (found: $(echo $th_vals)); above 1 thread phaser.py stops with NameError under Python 3.14"; fail=1; }
+need "phaser.py\` with more than one thread stops with \`NameError: name 'args' is not defined\`"
+need "has never been tested. **Consequence:** request one core"
+need 'rm -f "$OUT".*'
+need "phaser_gene_ae splits variant IDs on '_'"
+need "PHASED_GT=1 but only"
+need 'N_COV=$(awk -F'"'"'\t'"'"' '"'"'NR > 1 && $7 > 0'"'"' "$OUT.gene_ae.txt"'
+need "(ASEReadCounter and phASER; a plain VCF fails there). Block R has already run before the loop; then the gene-spans block below; then block I"
+[ "$(grep -c 'PHASER_COMMIT=aa1f8ec5fe1cc676e37cfa6f6a0bce6b09070301' "$SKILL")" = 2 ] || { echo "FAIL: the pinned commit must be set in setup_phaser_env.sh and phaser_count.sh"; fail=1; }
+[ -s "$HERE/synthetic/assemble_outbred_from_skill.sh" ] || { echo "FAIL: missing tests/synthetic/assemble_outbred_from_skill.sh"; fail=1; }
+# carried items (Task 3 ruling) and guards: lines of the block cut from Step 18, so text only in prose or in setup_phaser_env.sh never satisfies them
+PHC=$(bash "$HERE/synthetic/cut_block.sh" "$SKILL" '### `phaser_count.sh`' 2>/dev/null)
+[ -n "$PHC" ] || { echo "FAIL: no code block under ### \`phaser_count.sh\`"; fail=1; }
+pline() { printf '%s\n' "$PHC" | grep -qxF -- "$1" || { echo "FAIL: phaser_count.sh lacks the line: $1"; fail=1; }; }
+pline 'set -uo pipefail'
+pline 'unset PYTHONPATH PYTHONHOME    # an inherited Python search path would shadow the environment the same way'
+pline 'export PYTHONNOUSERSITE=1      # a per-user site-packages directory of the same Python version would shadow the environment'
+pline 'export PATH="$PHASER_HOME/env/bin:$PATH"; PY="$PHASER_HOME/env/bin/python"; SRC="$PHASER_HOME/src/phaser"'
+pline '[ "$(sed -n 1p "$PHASER_HOME/install_ok.txt" 2>/dev/null)" = "commit $PHASER_COMMIT" ] && sed -n 2p "$PHASER_HOME/install_ok.txt" 2>/dev/null | grep -qE '"'"'^env_sha256 [0-9a-f]{64}$'"'"' && [ -x "$PY" ] \'
+pline '[ -n "$SAMPLE" ] && [ -n "$INDIVIDUAL" ] || die "empty sample or individual in row $SLURM_ARRAY_TASK_ID of {SAMPLES_CSV}"'
+pline 'rm -f "$OUT".*                 # never keep outputs of an earlier run: a failed sample must have none'
+pline '[ "$N_OFF" -eq 0 ] || die "$N_OFF heterozygous sites of $VCF lie on contigs that are not in the BAM header"'
+pline '[ "$N_BLK" -gt 0 ] || { rm -f "$OUT".*; die "phASER wrote no haplotype block (check the BAM, the VCF sample $VS and the contig names; log $LOG)"; }'
+pline '  || { tail -5 "$LOG" >&2; rm -f "$OUT".*; die "phaser.py failed (log $LOG)"; }'
+pline '  || { tail -5 "$LOG" >&2; rm -f "$OUT".*; die "phaser_gene_ae.py failed (log $LOG)"; }'
+pstart() { printf '%s\n' "$PHC" | awk -v p="$1" 'index($0, p) == 1 {f = 1} END {exit !f}' || { echo "FAIL: phaser_count.sh lacks a line starting with: $1"; fail=1; }; }
+pstart '[ "$NS" -eq 1 ] || die "$VCF has $NS sample columns'
+pstart '[ "$N_US" -eq 0 ] || die "$N_US heterozygous sites lie on contigs whose names contain '"'_'"
+pstart '[ "$N_BED" -gt 0 ] || die "no gene of $BED lies on a contig of the BAM'
+pstart '  [ $((N_PH * 10)) -ge $((N_HET * 9)) ] || die "PHASED_GT=1 but only'
+pstart '[ "$N_COV" -gt 0 ] || { rm -f "$OUT".*; die "no gene has haplotype counts (totalCount > 0)'
+if printf '%s\n' "$PHC" | grep -qE '^ *(module|conda|source) '; then echo "FAIL: phaser_count.sh must load no module and activate no conda environment"; fail=1; fi
+SPC=$(bash "$HERE/synthetic/cut_block.sh" "$SKILL" '### Gene spans for phASER' 2>/dev/null)
+printf '%s\n' "$SPC" | grep -qF '$3 == "exon" && match($9, /gene_id "[^"]+"/)' && printf '%s\n' "$SPC" | grep -qF 'print c[1] "\t" lo[g] - 1 "\t" hi[g] "\t" g' ||
+  { echo "FAIL: the gene-spans block must build one 0-based row per gene from the exons"; fail=1; }
+# the phaser-mode gates of the evaluator have their own tamper proofs
+PR3P="$HERE/synthetic/prove_evaluate_stage3_phaser.R"
+[ -s "$PR3P" ] || { echo "FAIL: missing tests/synthetic/prove_evaluate_stage3_phaser.R"; fail=1; }
+for t in $(grep -oE '"\[ph_[a-z0-9_]+\] ' "$EV3" 2>/dev/null | grep -oE '\[[a-z0-9_]+\]' | sort -u); do
+  grep -qF -- "\"$t" "$PR3P" 2>/dev/null || { echo "FAIL: prove_evaluate_stage3_phaser.R has no proof for evaluator gate $t"; fail=1; }; done
+[ "$(grep -oE '"\[ph_[a-z0-9_]+\] ' "$EV3" 2>/dev/null | sort -u | grep -c .)" -ge 6 ] || { echo "FAIL: evaluate_stage3.R has fewer than 6 phaser-mode [ph_*] gates"; fail=1; }
+# --- end Stage 3 Task 5
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1

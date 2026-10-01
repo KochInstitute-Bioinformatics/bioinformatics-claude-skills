@@ -521,7 +521,27 @@ while IFS=$'\t' read -r IND VCF VSAMPLE; do
 done < "$GENO_DIR/genotype_map.tsv"
 ```
 
-The array job reads `{RESULTS_DIR}/genotypes/{individual}.het.vcf` (STAR) and `{individual}.het.vcf.gz` (ASEReadCounter; a plain VCF fails there). Block R has already run before the loop; then block I with `INDEX_FASTA="$FASTA"; STAR_INDEX="{STAR_INDEX}"; INDEX_KEY="unmasked"` (the unmasked genome), then `echo "prep_genotypes done"`.
+The array job reads `{RESULTS_DIR}/genotypes/{individual}.het.vcf` (STAR) and `{individual}.het.vcf.gz` (ASEReadCounter and phASER; a plain VCF fails there). Block R has already run before the loop; then the gene-spans block below; then block I with `INDEX_FASTA="$FASTA"; STAR_INDEX="{STAR_INDEX}"; INDEX_KEY="unmasked"` (the unmasked genome), then `echo "prep_genotypes done"`.
+
+### Gene spans for phASER (end of `prep_genotypes.sh`, before block I)
+
+Written in every outbred project (a few seconds; phASER, if selected, reads it in Step 18). One row per gene: the span of the gene's exons on its contig, 0-based start, 4 columns (contig, start, stop, `gene_id`), as `phaser_gene_ae` needs. Genes whose exons lie on more than one contig or strand are left out and counted. Built from the exons, not from `gene` lines, so it works for GTFs without `gene` lines and uses the same `gene_id`s as Rmd 02.
+
+```bash
+SPAN_BED="{RESULTS_DIR}/reference/genes_span.bed"; mkdir -p "{RESULTS_DIR}/reference" || exit 1
+awk -F'\t' '$3 == "exon" && match($9, /gene_id "[^"]+"/) {
+    g = substr($9, RSTART + 9, RLENGTH - 10); k = $1 SUBSEP $7
+    if (!(g in key)) { key[g] = k; lo[g] = $4; hi[g] = $5 } else if (key[g] != k) bad[g] = 1
+    else { if ($4 < lo[g]) lo[g] = $4; if ($5 > hi[g]) hi[g] = $5 } }
+  END { for (g in key) if (!(g in bad)) { split(key[g], c, SUBSEP); print c[1] "\t" lo[g] - 1 "\t" hi[g] "\t" g }
+        n = 0; for (g in bad) n++; if (n > 0) print n " genes on more than one contig or strand left out" > "/dev/stderr" }' "{GTF_PATH}" \
+  | sort -k1,1 -k2,2n > "$SPAN_BED" || { echo "ERROR: cannot write $SPAN_BED" >&2; exit 1; }
+N_SPAN=$(wc -l < "$SPAN_BED")
+N_SPAN_ON=$(awk 'NR == FNR {c[$1] = 1; next} ($1 in c)' "$FASTA.fai" "$SPAN_BED" | wc -l)
+[ "$N_SPAN" -gt 0 ] && [ "$N_SPAN_ON" -gt 0 ] \
+  || { echo "ERROR: no gene span of {GTF_PATH} lies on a contig of $FASTA (GTF contigs: $(cut -f1 "$SPAN_BED" | uniq | head -3 | paste -sd' '); FASTA contigs: $(cut -f1 "$FASTA.fai" | head -3 | paste -sd' '))" >&2; exit 1; }
+echo "Gene spans for phASER: $N_SPAN genes, $N_SPAN_ON on contigs of the FASTA"
+```
 
 ### `extract_mgp_parental_vcf.sh` (F1 mode, mouse helper; optional)
 
@@ -2443,6 +2463,106 @@ The versions in `environment.phaser.yml` are the ones conda resolved from phASER
 3. Re-run the synthetic acceptance (README, Validation status), and only then use it.
 
 Change the version list of `environment.phaser.yml` the same way, after a test installation: a changed package list changes this hash (line 2 of `install_ok.txt`), so the new hash must also replace the old one wherever the chain compares it. A changed commit or package list makes `setup_phaser_env.sh` reinstall into `{PHASER_HOME}`: the old clone and environment are removed, so a project that still needs the old commit or versions must use another `{PHASER_HOME}`.
+
+### `phaser_count.sh`
+
+A SLURM array job, one task per data row of `{SAMPLES_CSV}`, submitted by `submit_chain.sh` (Step 15) after the per-sample array job (Step 11) and, when it runs, the installation job. Write it to `{RESULTS_DIR}/scripts/phaser_count.sh` and substitute the placeholders: `{PHASER_RESOURCES}` from Step 9, and `{PHASED_GT}` and `{PHASER_HOME}` from Step 7.
+
+**Inputs.**
+- The BAM is `bam/{sample}.bam`, which is WASP-filtered and duplicate-marked; phASER does no WASP of its own and removes the duplicates itself.
+- The VCF is `genotypes/{individual}.het.vcf.gz`, the heterozygous VCF that STAR and ASEReadCounter use. phASER needs the sample name inside that VCF, so the script reads it from the file.
+
+**Flags.** The flags are the tested set:
+- `--paired_end 1` (the reason phASER is offered only for paired-end data);
+- `--mapq 255` (STAR's unique alignments, the same reads as ASEReadCounter's `--min-mapping-quality` 10 keeps);
+- `--baseq {MIN_BASEQ}`;
+- `--pass_only 0` (the prepared VCF has FILTER `.`; with the default 1 phASER keeps no site);
+- `--unique_ids 1` (its ID column is `.`);
+- `--gw_phase_vcf` 1 for phased genotypes, 0 otherwise.
+- `--threads 1`, always. **Why:** with the pinned Python 3.14 environment, `phaser.py` with more than one thread stops with `NameError: name 'args' is not defined`, because the default process start method of Python 3.14 no longer passes phASER's settings (a global variable set in `main()`) to its worker processes (seen on the synthetic test, every array task). A pin to Python 3.13 or older, which would start workers the old way, has never been tested. **Consequence:** request one core for this job (`{PHASER_RESOURCES}` holds `-n 1`); each sample runs single-threaded, so the time grows with the sample's reads and cannot be shortened by more cores, only by the array running samples side by side.
+
+**Guards.** The script stops, and leaves no output of the sample, in these cases:
+- an installation of another commit, or one whose `install_ok.txt` lacks its second line (`env_sha256 ...`, an interrupted installation); the script only refuses to run, and `setup_phaser_env.sh` decides about a re-installation;
+- a contig name containing `_` (`phaser_gene_ae` splits variant IDs on `_`);
+- het sites on contigs missing from the BAM header, or no gene span on a BAM contig (mismatched names give silent zero counts in phASER);
+- `{PHASED_GT}` = 1 while fewer than 90 % of the het genotypes are phased;
+- an empty haplotype table, or a gene table without any gene with counts.
+
+The script loads no module and activates no conda environment: it puts `{PHASER_HOME}/env/bin` first on `PATH`, exports `PYTHONNOUSERSITE=1` and unsets `PYTHONPATH` and `PYTHONHOME` (Step 18, Environment).
+
+```bash
+#!/bin/bash
+#SBATCH -J ase_phaser
+#SBATCH -N 1 -p bcc
+#SBATCH --array=1-{ARRAY_N}
+#SBATCH {PHASER_RESOURCES}
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user={USER_EMAIL}
+#SBATCH -o {RESULTS_DIR}/logs/phaser_count_%A_%a.out
+set -uo pipefail
+# phASER for one sample (array task = data row of samples.csv): read-backed phasing on the WASP-filtered, duplicate-marked BAM
+# with the heterozygous VCF that STAR used, then gene-level haplotype counts. No module and no container: the pinned environment
+# of setup_phaser_env.sh is used through its bin directory (python, samtools, bcftools and tabix come from it).
+PHASER_HOME="{PHASER_HOME}"; PHASER_COMMIT=aa1f8ec5fe1cc676e37cfa6f6a0bce6b09070301; PHASED_GT={PHASED_GT}
+R="{RESULTS_DIR}"; BED="$R/reference/genes_span.bed"
+export PYTHONNOUSERSITE=1      # a per-user site-packages directory of the same Python version would shadow the environment
+unset PYTHONPATH PYTHONHOME    # an inherited Python search path would shadow the environment the same way
+export PATH="$PHASER_HOME/env/bin:$PATH"; PY="$PHASER_HOME/env/bin/python"; SRC="$PHASER_HOME/src/phaser"
+SAMPLE=""
+die() { echo "ERROR: sample ${SAMPLE:-?}: $*" >&2; exit 1; }
+# install_ok.txt (Step 18): line 1 the pinned commit, line 2 the package-list hash; this script only refuses to run without them
+[ "$(sed -n 1p "$PHASER_HOME/install_ok.txt" 2>/dev/null)" = "commit $PHASER_COMMIT" ] && sed -n 2p "$PHASER_HOME/install_ok.txt" 2>/dev/null | grep -qE '^env_sha256 [0-9a-f]{64}$' && [ -x "$PY" ] \
+  || die "no complete phASER installation of commit $PHASER_COMMIT in $PHASER_HOME (run setup_phaser_env.sh, Step 18)"
+ROW=$(awk -v n="$SLURM_ARRAY_TASK_ID" 'NR==n+1' "{SAMPLES_CSV}" | tr -d '\r')
+[ -n "$ROW" ] || die "no row $SLURM_ARRAY_TASK_ID in {SAMPLES_CSV}"
+IFS=, read -r SAMPLE FQ1 FQ2 CONDITION CROSS INDIVIDUAL <<< "$ROW"
+[ -n "$SAMPLE" ] && [ -n "$INDIVIDUAL" ] || die "empty sample or individual in row $SLURM_ARRAY_TASK_ID of {SAMPLES_CSV}"
+BAM="$R/bam/$SAMPLE.bam"; VCF="$R/genotypes/$INDIVIDUAL.het.vcf.gz"
+OUT="$R/phaser/$SAMPLE"; LOG="$R/logs/phaser_$SAMPLE.log"; TMPD="$R/tmp/phaser_$SAMPLE"
+mkdir -p "$R/phaser" "$TMPD" || die "cannot create output directories"
+rm -f "$OUT".*                 # never keep outputs of an earlier run: a failed sample must have none
+[ -s "$BAM" ] && [ -s "$BAM.bai" ] || die "missing $BAM or its index (run the per-sample array job first)"
+[ -s "$VCF" ] && [ -s "$VCF.tbi" ] || die "missing $VCF or its index (run prep_genotypes.sh first)"
+[ -s "$BED" ] || die "missing $BED (written by prep_genotypes.sh)"
+NS=$(bcftools query -l "$VCF" | wc -l); VS=$(bcftools query -l "$VCF" | head -1)
+[ "$NS" -eq 1 ] || die "$VCF has $NS sample columns; phASER needs exactly one"
+# contig names: phaser_gene_ae splits variant IDs on '_' (a contig such as chrUn_xxx breaks it), and names that differ between
+# the VCF, the BAM and the gene spans give silent zero counts
+N_US=$(bcftools query -f '%CHROM\n' "$VCF" | awk '$1 ~ /_/' | wc -l)
+[ "$N_US" -eq 0 ] || die "$N_US heterozygous sites lie on contigs whose names contain '_' ($(bcftools query -f '%CHROM\n' "$VCF" | awk '$1 ~ /_/' | uniq | head -3 | paste -sd' ')); phaser_gene_ae splits variant IDs on '_'. Supply genotype VCFs without these contigs (Step 6)"
+BAM_CTG="$TMPD/bam_contigs.txt"
+samtools view -H "$BAM" | awk -F'\t' '$1 == "@SQ" {sub(/^SN:/, "", $2); print $2}' > "$BAM_CTG" || die "cannot read the header of $BAM"
+N_OFF=$(bcftools query -f '%CHROM\n' "$VCF" | awk 'NR == FNR {c[$1] = 1; next} !($1 in c)' "$BAM_CTG" - | wc -l)
+[ "$N_OFF" -eq 0 ] || die "$N_OFF heterozygous sites of $VCF lie on contigs that are not in the BAM header"
+N_BED=$(awk 'NR == FNR {c[$1] = 1; next} ($1 in c)' "$BAM_CTG" "$BED" | wc -l)
+[ "$N_BED" -gt 0 ] || die "no gene of $BED lies on a contig of the BAM (gene contigs: $(cut -f1 "$BED" | uniq | head -3 | paste -sd' '); BAM contigs: $(head -3 "$BAM_CTG" | paste -sd' '))"
+# phased genotypes: --gw_phase_vcf 1 only when the user said so (Step 7) and the VCF really is phased
+N_HET=$(bcftools view -H "$VCF" | wc -l); N_PH=$(bcftools query -f '[%GT]\n' "$VCF" | grep -c '|')
+if [ "$PHASED_GT" = 1 ]; then
+  [ $((N_PH * 10)) -ge $((N_HET * 9)) ] || die "PHASED_GT=1 but only $N_PH of $N_HET heterozygous genotypes in $VCF are phased (0|1 or 1|0); answer 'not phased' in Step 7 or supply phased VCFs"
+elif [ $((N_PH * 10)) -ge $((N_HET * 9)) ]; then
+  echo "WARNING: $N_PH of $N_HET genotypes are phased but PHASED_GT=0: gene counts use the most-covered block of each gene only (Step 7)"
+fi
+"$PY" "$SRC/phaser/phaser.py" --vcf "$VCF" --bam "$BAM" --sample "$VS" --paired_end 1 --mapq 255 --baseq {MIN_BASEQ} \
+     --pass_only 0 --unique_ids 1 --gw_phase_vcf "$PHASED_GT" --threads 1 --temp_dir "$TMPD" --o "$OUT" > "$LOG" 2>&1 \
+  || { tail -5 "$LOG" >&2; rm -f "$OUT".*; die "phaser.py failed (log $LOG)"; }
+N_BLK=$(awk 'NR > 1' "$OUT.haplotypic_counts.txt" 2>/dev/null | wc -l)
+[ "$N_BLK" -gt 0 ] || { rm -f "$OUT".*; die "phASER wrote no haplotype block (check the BAM, the VCF sample $VS and the contig names; log $LOG)"; }
+"$PY" "$SRC/phaser_gene_ae/phaser_gene_ae.py" --haplotypic_counts "$OUT.haplotypic_counts.txt" --features "$BED" --o "$OUT.gene_ae.txt" >> "$LOG" 2>&1 \
+  || { tail -5 "$LOG" >&2; rm -f "$OUT".*; die "phaser_gene_ae.py failed (log $LOG)"; }
+N_COV=$(awk -F'\t' 'NR > 1 && $7 > 0' "$OUT.gene_ae.txt" 2>/dev/null | wc -l)
+[ "$N_COV" -gt 0 ] || { rm -f "$OUT".*; die "no gene has haplotype counts (totalCount > 0): the gene spans and the variants do not overlap (contig names? log $LOG)"; }
+N_GW=$(awk -F'\t' 'NR > 1 && $7 > 0 && $11 == 1' "$OUT.gene_ae.txt" | wc -l)
+echo "Sample $SAMPLE: $N_BLK haplotype blocks, $N_COV genes with counts ($N_GW genome-wide phased); $(grep -m1 'PHASED' "$LOG")"
+rm -rf "$TMPD"
+```
+
+| Output | Content |
+|---|---|
+| `{RESULTS_DIR}/phaser/{sample}.haplotypic_counts.txt` | haplotype blocks with `aCount`, `bCount`, `blockGWPhase` |
+| `{RESULTS_DIR}/phaser/{sample}.gene_ae.txt` | one row per gene of `genes_span.bed`: `aCount bCount totalCount n_variants gw_phased` (Rmd 05) |
+| `{RESULTS_DIR}/phaser/{sample}.allele_config.txt`, `.variant_connections.txt`, `.haplotypes.txt`, `.allelic_counts.txt`, `.vcf.gz` | other phASER outputs (not used by the Rmds) |
+| `{RESULTS_DIR}/logs/phaser_{sample}.log` | phASER and phaser_gene_ae output |
 
 ---
 
