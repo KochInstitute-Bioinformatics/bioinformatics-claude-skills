@@ -2353,13 +2353,16 @@ phASER phases each sample's heterozygous SNPs from the reads themselves: a read 
 - `env`: a conda environment, about 630 MB;
 - `environment.phaser.yml`: the pinned package list;
 - `conda_list.txt`;
+- `.ase_pipeline_phaser`: an empty marker that the directory belongs to this installation;
 - `install_ok.txt`: written last, after the checks pass.
 
-The installation is a compute job: conda and `git` need the internet, which the compute nodes have, and the job takes 10 to 20 minutes, mostly conda's classic solver. `module add miniconda3/v4` in this job is the only module besides `singularity/3.10.4` that the skill ever loads. The phASER scripts of a project load no module and do not activate the environment: they put `{PHASER_HOME}/env/bin` first on `PATH`, and `samtools`, `bcftools`, `tabix` and `python` come from it. Every script that runs the environment's Python exports `PYTHONNOUSERSITE=1`, because a `pip --user` site-packages directory of the same Python version (`~/.local/lib/python3.14`) would otherwise shadow the environment's packages (it fails with `GLIBC_2.27 not found` on this cluster).
+`{PHASER_HOME}` must be an absolute path to a new or empty directory that holds nothing but phASER. The script deletes and rebuilds `env`, `src/phaser` and `pkgs` inside it, so it refuses a directory that is not empty and has no `.ase_pipeline_phaser` marker. The installation needs about 2.6 GB free while it runs: the conda package cache `pkgs` (about 1.9 GB) is removed at the end, and about 650 MB stay (the environment and the 22 MB clone).
+
+The installation is a compute job: conda and `git` need the internet, which the compute nodes have, and the job takes 10 to 20 minutes, mostly conda's classic solver. `module add miniconda3/v4` in this job is the only module besides `singularity/3.10.4` that the skill ever loads. The phASER scripts of a project load no module and do not activate the environment: they put `{PHASER_HOME}/env/bin` first on `PATH`, and `samtools`, `bcftools`, `tabix` and `python` come from it. Every script that runs the environment's Python exports `PYTHONNOUSERSITE=1` and unsets `PYTHONPATH` and `PYTHONHOME`. Otherwise the user site-packages directory of the same Python version (`~/.local/lib/python3.14`, filled by pip's per-user installs) would shadow the environment's packages (it fails with `GLIBC_2.27 not found` on this cluster), and an inherited Python search path would do the same.
 
 ### `setup_phaser_env.sh`
 
-Written to `{RESULTS_DIR}/scripts/setup_phaser_env.sh` (substitute the placeholders) and submitted by `submit_chain.sh` (Step 15) only when `{PHASER_HOME}/install_ok.txt` does not start with the pinned commit. If it does, the chain skips this job. Two projects that install into the same `{PHASER_HOME}` at the same time are stopped by the lock directory `{PHASER_HOME}/.installing`. If a job was killed, remove that directory by hand.
+Written to `{RESULTS_DIR}/scripts/setup_phaser_env.sh` (substitute the placeholders). `install_ok.txt` starts with two key lines: line 1 is exactly `commit <PHASER_COMMIT>` and line 2 is exactly `env_sha256 <sha256 of the package list>`, the hash of `environment.phaser.yml` as the script writes it (`sha256sum environment.phaser.yml`). `submit_chain.sh` (Step 15) submits the job only when these two lines do not both match the script; otherwise the chain skips it. The script makes the same test first and, when both lines match, prints "phASER already installed" and exits 0. Two projects that install into the same `{PHASER_HOME}` at the same time are stopped by the lock directory `{PHASER_HOME}/.installing`. If a job was killed, remove that directory by hand.
 
 ```bash
 #!/bin/bash
@@ -2375,17 +2378,10 @@ set -uo pipefail
 PHASER_HOME="{PHASER_HOME}"
 PHASER_REPO=https://github.com/secastel/phaser.git
 PHASER_COMMIT=aa1f8ec5fe1cc676e37cfa6f6a0bce6b09070301   # no releases or tags upstream: pinned by SHA (Step 18, bumping)
+MARK=.ase_pipeline_phaser   # ownership marker: env, src/phaser and pkgs are deleted and rebuilt only in a directory that carries it
 die() { echo "ERROR: $*" >&2; exit 1; }
-if [ "$(sed -n 1p "$PHASER_HOME/install_ok.txt" 2>/dev/null)" = "commit $PHASER_COMMIT" ]; then echo "phASER already installed in $PHASER_HOME"; exit 0; fi
-mkdir -p "$PHASER_HOME" || die "cannot create $PHASER_HOME"
-mkdir "$PHASER_HOME/.installing" 2>/dev/null || die "another installation is running in $PHASER_HOME (if not, remove $PHASER_HOME/.installing)"
-trap 'rmdir "$PHASER_HOME/.installing" 2>/dev/null' EXIT
-rm -f "$PHASER_HOME/install_ok.txt"
-rm -rf "$PHASER_HOME/src/phaser" "$PHASER_HOME/env"
-git clone -q "$PHASER_REPO" "$PHASER_HOME/src/phaser" || die "git clone of $PHASER_REPO failed"
-git -C "$PHASER_HOME/src/phaser" checkout -q "$PHASER_COMMIT" || die "commit $PHASER_COMMIT not found"
-[ "$(git -C "$PHASER_HOME/src/phaser" rev-parse HEAD)" = "$PHASER_COMMIT" ] || die "the checked-out commit differs from $PHASER_COMMIT"
-cat > "$PHASER_HOME/environment.phaser.yml" <<'YML'
+case "$PHASER_HOME" in /*) ;; *) die "PHASER_HOME must be an absolute path, not '$PHASER_HOME'" ;; esac
+ENV_YML=$(cat <<'YML'
 name: phaser-pinned
 channels:
   - conda-forge
@@ -2403,19 +2399,37 @@ dependencies:
   - bedtools=2.31.1
   - pip
 YML
+)
+ENV_SHA=$(printf '%s\n' "$ENV_YML" | sha256sum | cut -d ' ' -f 1)   # line 2 of install_ok.txt: a changed package list reinstalls
+if [ "$(sed -n 1p "$PHASER_HOME/install_ok.txt" 2>/dev/null)" = "commit $PHASER_COMMIT" ] && [ "$(sed -n 2p "$PHASER_HOME/install_ok.txt" 2>/dev/null)" = "env_sha256 $ENV_SHA" ]; then
+  echo "phASER already installed in $PHASER_HOME"; exit 0
+fi
+mkdir -p "$PHASER_HOME" || die "cannot create $PHASER_HOME"
+L=$(ls -A "$PHASER_HOME") || die "cannot list $PHASER_HOME"
+[ -e "$PHASER_HOME/$MARK" ] || [ -z "$L" ] || die "$PHASER_HOME is not empty and has no $MARK (it was not created by setup_phaser_env.sh): choose another, new or empty directory for phASER"
+touch "$PHASER_HOME/$MARK" || die "cannot write $PHASER_HOME/$MARK"
+mkdir "$PHASER_HOME/.installing" 2>/dev/null || die "another installation is running in $PHASER_HOME (if not, remove $PHASER_HOME/.installing)"
+trap 'rmdir "$PHASER_HOME/.installing" 2>/dev/null' EXIT
+rm -f "$PHASER_HOME/install_ok.txt"
+rm -rf "$PHASER_HOME/src/phaser" "$PHASER_HOME/env" "$PHASER_HOME/pkgs"
+git clone -q "$PHASER_REPO" "$PHASER_HOME/src/phaser" || die "git clone of $PHASER_REPO failed"
+git -C "$PHASER_HOME/src/phaser" checkout -q "$PHASER_COMMIT" || die "commit $PHASER_COMMIT not found"
+[ "$(git -C "$PHASER_HOME/src/phaser" rev-parse HEAD)" = "$PHASER_COMMIT" ] || die "the checked-out commit differs from $PHASER_COMMIT"
+printf '%s\n' "$ENV_YML" > "$PHASER_HOME/environment.phaser.yml" || die "cannot write $PHASER_HOME/environment.phaser.yml"
 module add miniconda3/v4 || die "cannot load the miniconda3/v4 module"
 source /home/software/conda/miniconda3/bin/condainit || die "cannot initialise conda"
 export CONDA_PKGS_DIRS="$PHASER_HOME/pkgs"
 conda env create -p "$PHASER_HOME/env" -f "$PHASER_HOME/environment.phaser.yml" || die "conda env create failed"
 rm -rf "$PHASER_HOME/pkgs"     # the package cache (about 1.9 GB) is not needed after the installation
-export PYTHONNOUSERSITE=1      # a pip --user site-packages directory of the same Python version would shadow the environment
+export PYTHONNOUSERSITE=1      # the user site-packages directory (~/.local/lib/python3.14) would shadow the environment
+unset PYTHONPATH PYTHONHOME    # an inherited Python search path would shadow the environment the same way
 export PATH="$PHASER_HOME/env/bin:$PATH"; PY="$PHASER_HOME/env/bin/python"
 "$PY" -c "import numpy, scipy, pysam, pandas, intervaltree" || die "the environment's Python packages do not import"
 "$PY" "$PHASER_HOME/src/phaser/phaser/phaser.py" --help > /dev/null || die "phaser.py --help failed"
 "$PY" "$PHASER_HOME/src/phaser/phaser_gene_ae/phaser_gene_ae.py" --help > /dev/null || die "phaser_gene_ae.py --help failed"
-for t in samtools bcftools bgzip tabix bedtools; do command -v "$t" > /dev/null || die "$t is missing from the environment"; done
+for t in python samtools bcftools bgzip tabix bedtools; do [ -x "$PHASER_HOME/env/bin/$t" ] || die "$t is missing from $PHASER_HOME/env/bin"; done
 conda list -p "$PHASER_HOME/env" > "$PHASER_HOME/conda_list.txt" || die "conda list failed"
-{ echo "commit $PHASER_COMMIT"; "$PY" -c 'import sys; print("python", sys.version.split()[0])'; date -u; } > "$PHASER_HOME/install_ok.txt" \
+{ echo "commit $PHASER_COMMIT"; echo "env_sha256 $ENV_SHA"; "$PY" -c 'import sys; print("python", sys.version.split()[0])'; date -u; } > "$PHASER_HOME/install_ok.txt" \
   || die "cannot write $PHASER_HOME/install_ok.txt"
 echo "phASER installed in $PHASER_HOME"
 ```
@@ -2427,7 +2441,7 @@ The versions in `environment.phaser.yml` are the ones conda resolved from phASER
 2. Install into a new `{PHASER_HOME}` and re-record `ase-pipeline/tests/fixtures/phaser_help.txt` and `phaser_gene_ae_help.txt` from it (the checker compares every phASER flag in this file with them).
 3. Re-run the synthetic acceptance (README, Validation status), and only then use it.
 
-Change the version list of `environment.phaser.yml` the same way, after a test installation. A changed commit makes `setup_phaser_env.sh` reinstall into `{PHASER_HOME}`: the old clone and environment are removed, so a project that still needs the old commit must use another `{PHASER_HOME}`.
+Change the version list of `environment.phaser.yml` the same way, after a test installation: a changed package list changes this hash (line 2 of `install_ok.txt`), so the new hash must also replace the old one wherever the chain compares it. A changed commit or package list makes `setup_phaser_env.sh` reinstall into `{PHASER_HOME}`: the old clone and environment are removed, so a project that still needs the old commit or versions must use another `{PHASER_HOME}`.
 
 ---
 

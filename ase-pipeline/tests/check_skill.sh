@@ -25,8 +25,8 @@ for f in phaser_help.txt phaser_gene_ae_help.txt; do
 $(grep -oE -- '--[a-z][a-z0-9_]*' "$FIX/$f" | sed 's/^--//' | sort -u)"
 done
 # Non-STAR/non-GATK flags: sbatch/singularity (bind mem mail-type mail-user array dependency parsable),
-# bcftools (regions samples genotype types min-alleles max-alleles rename-chrs), pip (user: Step 18 names pip --user installs).
-allow="bind mem mail-type mail-user array dependency parsable regions samples genotype types min-alleles max-alleles rename-chrs user"
+# bcftools (regions samples genotype types min-alleles max-alleles rename-chrs).
+allow="bind mem mail-type mail-user array dependency parsable regions samples genotype types min-alleles max-alleles rename-chrs"
 [ -n "${SHOW_TOOL_FLAGS:-}" ] && echo "$tool_flags"
 for flag in $(grep -oE '(^|[ `(=])--[A-Za-z][A-Za-z0-9_-]*' "$SKILL" | sed -E 's/^[^-]*--//' | sort -u); do
   echo "$tool_flags $allow" | tr ' ' '\n' | grep -qx -- "$flag" || { echo "FAIL: flag not in fixtures or allowlist: --$flag"; fail=1; }
@@ -696,5 +696,44 @@ ph_check() {   # $1 = script path fragment on the command line, $2 = fixture
 ph_out=$(ph_check "phaser/phaser.py" phaser_help.txt; ph_check "phaser_gene_ae/phaser_gene_ae.py" phaser_gene_ae_help.txt)
 [ -z "$ph_out" ] || { echo "$ph_out"; fail=1; }
 # --- end Stage 3 Task 3
+
+# --- Stage 3 Task 3 review fixes (I1-I4, M1-M3, M5, M8); structural checks run on the block cut from Step 18
+# I1: no pip --user wording, and the flag allowlist is exactly the reviewed list (a new entry must be added here on purpose)
+forbid "pip --user"
+[ "$allow" = "bind mem mail-type mail-user array dependency parsable regions samples genotype types min-alleles max-alleles rename-chrs" ] ||
+  { echo "FAIL: the flag allowlist of section (a) differs from the reviewed list"; fail=1; }
+SETUP=$(bash "$HERE/synthetic/cut_block.sh" "$SKILL" '### `setup_phaser_env.sh`' 2>/dev/null)
+[ -n "$SETUP" ] || { echo "FAIL: no code block under ### \`setup_phaser_env.sh\`"; fail=1; }
+sline() { printf '%s\n' "$SETUP" | grep -qxF -- "$1" || { echo "FAIL: setup_phaser_env.sh lacks the line: $1"; fail=1; }; }
+sline 'set -uo pipefail'
+sline 'PHASER_COMMIT=aa1f8ec5fe1cc676e37cfa6f6a0bce6b09070301   # no releases or tags upstream: pinned by SHA (Step 18, bumping)'
+sline 'case "$PHASER_HOME" in /*) ;; *) die "PHASER_HOME must be an absolute path, not '"'"'$PHASER_HOME'"'"'" ;; esac'
+sline 'ENV_SHA=$(printf '"'"'%s\n'"'"' "$ENV_YML" | sha256sum | cut -d '"'"' '"'"' -f 1)   # line 2 of install_ok.txt: a changed package list reinstalls'
+sline 'if [ "$(sed -n 1p "$PHASER_HOME/install_ok.txt" 2>/dev/null)" = "commit $PHASER_COMMIT" ] && [ "$(sed -n 2p "$PHASER_HOME/install_ok.txt" 2>/dev/null)" = "env_sha256 $ENV_SHA" ]; then'
+sline '  echo "phASER already installed in $PHASER_HOME"; exit 0'
+sline 'printf '"'"'%s\n'"'"' "$ENV_YML" > "$PHASER_HOME/environment.phaser.yml" || die "cannot write $PHASER_HOME/environment.phaser.yml"'
+sline 'L=$(ls -A "$PHASER_HOME") || die "cannot list $PHASER_HOME"'
+sline '[ -e "$PHASER_HOME/$MARK" ] || [ -z "$L" ] || die "$PHASER_HOME is not empty and has no $MARK (it was not created by setup_phaser_env.sh): choose another, new or empty directory for phASER"'
+sline 'touch "$PHASER_HOME/$MARK" || die "cannot write $PHASER_HOME/$MARK"'
+sline 'mkdir "$PHASER_HOME/.installing" 2>/dev/null || die "another installation is running in $PHASER_HOME (if not, remove $PHASER_HOME/.installing)"'
+sline '[ "$(git -C "$PHASER_HOME/src/phaser" rev-parse HEAD)" = "$PHASER_COMMIT" ] || die "the checked-out commit differs from $PHASER_COMMIT"'
+sline 'module add miniconda3/v4 || die "cannot load the miniconda3/v4 module"'
+sline 'unset PYTHONPATH PYTHONHOME    # an inherited Python search path would shadow the environment the same way'
+sline '"$PY" -c "import numpy, scipy, pysam, pandas, intervaltree" || die "the environment'"'"'s Python packages do not import"'
+sline 'for t in python samtools bcftools bgzip tabix bedtools; do [ -x "$PHASER_HOME/env/bin/$t" ] || die "$t is missing from $PHASER_HOME/env/bin"; done'
+sline '{ echo "commit $PHASER_COMMIT"; echo "env_sha256 $ENV_SHA"; "$PY" -c '"'"'import sys; print("python", sys.version.split()[0])'"'"'; date -u; } > "$PHASER_HOME/install_ok.txt" \'
+printf '%s\n' "$SETUP" | grep -qE '^export PYTHONNOUSERSITE=1( |$)' || { echo "FAIL: setup_phaser_env.sh does not export PYTHONNOUSERSITE=1"; fail=1; }
+[ "$(printf '%s\n' "$SETUP" | grep -c '^module add miniconda3/v4')" = 1 ] || { echo "FAIL: the miniconda3/v4 line must be inside setup_phaser_env.sh"; fail=1; }
+# every pinned package of phaser_env.txt is pinned to the same version in the block (python first, then the others)
+while read -r p v _; do sline "  - $p=$v"; done < <(grep -E '^(python|numpy|scipy|pandas|pysam|intervaltree|samtools|bcftools|htslib|bedtools) ' "$FIX/phaser_env.txt")
+# M1: the commit named in the prose is the commit pinned in the block
+pc=$(printf '%s\n' "$SETUP" | sed -n 's/^PHASER_COMMIT=\([0-9a-f]\{40\}\).*/\1/p')
+[ -n "$pc" ] && grep -qF "pinned to commit \`$pc\`" "$SKILL" || { echo "FAIL: the prose commit differs from PHASER_COMMIT of setup_phaser_env.sh"; fail=1; }
+# M3, M5, M8 prose
+need "exports \`PYTHONNOUSERSITE=1\` and unsets \`PYTHONPATH\` and \`PYTHONHOME\`"
+need "about 2.6 GB free"
+need "line 1 is exactly \`commit <PHASER_COMMIT>\` and line 2 is exactly \`env_sha256 <sha256 of the package list>\`"
+need "a changed package list changes this hash"
+# --- end Stage 3 Task 3 review fixes
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1
