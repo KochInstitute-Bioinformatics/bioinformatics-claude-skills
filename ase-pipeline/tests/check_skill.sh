@@ -1013,7 +1013,10 @@ rneed "Fast Beta"
 rneed "module add miniconda3/v4"
 rforbid "phASER (Stage 3) is not implemented"
 rforbid "the only module the skill ever loads"
-grep -qE "^Stage 3 synthetic acceptance run: (PENDING|DONE \(2026-[0-9-]+\))$" "$RD" || { echo "FAIL: README must state the Stage 3 acceptance status"; fail=1; }
+grep -qE "Stage 3 synthetic acceptance run: DONE \(2026-[0-9-]+\)" "$RD" && ! grep -qF "Stage 3 synthetic acceptance run: PENDING" "$RD" || { echo "FAIL: README must state Stage 3 synthetic acceptance DONE"; fail=1; }
+rneed "102 evaluator checks PASS and 0 FAIL"
+rneed "13 with unphased genotypes, while the unphased ACAT test of Rmd 02 detects 14"
+rneed "phASER was therefore not better than ACAT on moderate genes"
 grep -qE "^Stage 3 real-data smoke test: (PENDING|DONE \(2026-[0-9-]+\))" "$RD" || { echo "FAIL: README must state the Stage 3 real-data smoke test status"; fail=1; }
 grep -q "/ase-pipeline.*phASER haplotype counts" "$RR" || { echo "FAIL: root README row must mention phASER haplotype counts"; fail=1; }
 ! grep -q "/ase-pipeline.*phASER not included" "$RR" || { echo "FAIL: root README row still says phASER not included"; fail=1; }
