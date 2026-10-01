@@ -754,7 +754,7 @@ need 'dplyr::full_join(unph, by = c("sample", "gene_id"))'
 # carried items: M9 (dispersion warnings per sample), M10 (runtime scale), M11 (lists of Rmds), M8 (cohort median in the Rmd text)
 need 'ht$samples$rho_warning <- ""'
 need '    w <- collect_warnings(bb_estimate_rho_trim(genes$aCount[u], genes$totalCount[u]))$warn'
-need "Time and memory per sample grow in proportion to the sample's total haplotype reads"
+need "its time grows in proportion to a sample's haplotype reads: about 4.6 s per million haplotype reads (projected)"
 need "is pasted verbatim into Rmd 02, 03, 04 and 05"
 forbid "is pasted verbatim into Rmd 02, 03 and 04;"
 need "Rmd 02, 03, 04 and 05 read its checkpoint"
@@ -762,5 +762,31 @@ forbid "Rmd 02, 03 and 04 read its checkpoint"
 need "so adding or removing samples can change the p-values of the samples already analysed"
 need 'if (anyDuplicated(genes[, c("sample", "gene_id")]))'
 # --- end Stage 3 Task 4
+
+# --- Stage 3 Task 4 review fixes (I1-I3, M1, M3-M6); each skill string is absent from the 84a9c8e skill
+need "{TODAY}_{WD_NAME}_ASE_phaser_gene.tsv.gz"
+need "{TODAY}_{WD_NAME}_ASE_phaser_comparison.tsv.gz"
+need 'XL_MAX <- 1048575   # data rows per worksheet: Excel holds 1,048,576 rows including the header'
+need "share the same Excel limit of 1,048,576 rows per sheet"
+need "about 4.6 s per million haplotype reads"
+forbid "Raise \`-t\` for more than about 200 samples of that size"
+need 'stop("no gene with haplotype reads in the phASER table of sample(s) "'
+need 'stop("missing counts (aCount, bCount or totalCount) in the phASER gene tables: "'
+need '"; expected (columns of phaser_gene_ae at the commit pinned in Step 18): "'
+need "no SNP of the gene was tested in Rmd 02 (none reached \`MIN_DEPTH\`, or none lies in its exons after the Rmd 01 filters)"
+forbid '"phASER only (no SNP tested unphased)": no SNP of the gene reached `MIN_DEPTH` in Rmd 02;'
+# committed proofs (I2): the evaluator proofs, the per-sample warning test, the stop tests, the orientation-invariance test
+for f in prove_evaluate_stage3.R test_rmd05_warnings.R test_rmd05_stops.R check_orientation_invariance_stage3.R; do
+  [ -s "$HERE/synthetic/$f" ] || { echo "FAIL: missing tests/synthetic/$f"; fail=1; }
+done
+# every evaluator gate tag "[name]" has a tamper proof that names it (a new gate without a proof is noticed here)
+EV3="$HERE/synthetic/evaluate_stage3.R"; PR3="$HERE/synthetic/prove_evaluate_stage3.R"
+tags=$(grep -oE '"\[[a-z0-9_]+\] ' "$EV3" 2>/dev/null | grep -oE '\[[a-z0-9_]+\]' | sort -u)
+[ "$(printf '%s\n' "$tags" | grep -c .)" -ge 12 ] || { echo "FAIL: evaluate_stage3.R gates carry fewer than 12 [tag]s"; fail=1; }
+for t in $tags; do grep -qF -- "\"$t" "$PR3" 2>/dev/null || { echo "FAIL: prove_evaluate_stage3.R has no proof for evaluator gate $t"; fail=1; }; done
+# I1: the oracle and the completeness gate read the input phASER tables, never only the Rmd's own gene table; M3: true rho parsed from the generator
+grep -qF 'file.path(RES, "phaser", paste0(sm$sample, ".gene_ae.txt"))' "$EV3" 2>/dev/null || { echo "FAIL: evaluate_stage3.R does not read the input phASER tables"; fail=1; }
+grep -qF 'PHI_BIO <-' "$EV3" 2>/dev/null && ! grep -qE '^ *PHI_TRUE <- [0-9]' "$EV3" || { echo "FAIL: evaluate_stage3.R must parse PHI_BIO from the generator, not hard-code it"; fail=1; }
+# --- end Stage 3 Task 4 review fixes
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1

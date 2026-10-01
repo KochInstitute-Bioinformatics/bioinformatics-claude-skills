@@ -1,10 +1,14 @@
 # Usage: Rscript evaluate_stage3.R rmd    <RESULTS_DIR> <truth dir (outbred_phase)> <phased|unphased>
 #        Rscript evaluate_stage3.R phaser <RESULTS_DIR> <truth dir (outbred_phase)> <phased|unphased>
-# rmd: Rmd 05 results (ase_phaser_checkpoint.rds, summary_numbers_phaser.tsv) against the planted truth.
+# rmd: Rmd 05 results (ase_phaser_checkpoint.rds, summary_numbers_phaser.tsv, the Rmd 05 HTML) against the planted truth and against
+#      the input phASER gene tables the Rmd read (RESULTS_DIR/phaser/<sample>.gene_ae.txt).
 # phaser: the raw phASER outputs (RESULTS_DIR/phaser/<sample>.*) against the truth (added by the phaser_count task).
-# Prints PASS / FAIL / REPORT lines; exits 1 if any criterion fails. REPORT lines are informational.
-# Orientation (truth): haplotype 1 is the left allele of the phased genotype (alt_on 1 is written 1|0), and phASER's
-# aCount is haplotype 1 in genome-wide phased genes, so h1 > 0.5 means "haplotype A higher".
+# Prints PASS / FAIL / REPORT lines; exits 1 if any criterion fails. REPORT lines are informational. Every gate message starts with
+# a [tag]; prove_evaluate_stage3.R holds a tampered-copy proof for every tag (check_skill.sh checks that).
+# Orientation (truth): haplotype 1 is the left allele of the phased genotype (alt_on 1 is written 1|0), and phASER's aCount is
+# haplotype 1 in genome-wide phased genes, so h1 > 0.5 means "haplotype A higher".
+# Not exercised by the synthetic data: in the phased tables every gene with counts is genome-wide phased, so the rule "rows that are
+# not genome-wide phased get no direction under PHASED_GT = 1" is not tested here.
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) != 4 || !args[1] %in% c("rmd", "phaser") || !args[4] %in% c("phased", "unphased"))
   stop("usage: Rscript evaluate_stage3.R <rmd|phaser> <RESULTS_DIR> <truth dir> <phased|unphased>", call. = FALSE)
@@ -13,48 +17,82 @@ fail <- 0
 crit <- function(cond, msg) { cat(if (isTRUE(cond)) "PASS" else "FAIL", msg, "\n"); if (!isTRUE(cond)) fail <<- 1 }
 rd <- function(f, ...) read.delim(file.path(TRUTH, f), stringsAsFactors = FALSE, ...)
 tg <- rd("truth_genes.tsv"); tig <- rd("truth_individual_genes.tsv"); tf <- rd("truth_fragments.tsv")
+# truth_phase.tsv and truth_snps.tsv are read for the phaser mode (phaser_count task); the rmd mode does not use them
 tp <- rd("truth_phase.tsv", colClasses = c(gt = "character", alt_on = "character")); ts <- rd("truth_snps.tsv")
 sm <- read.csv(file.path(TRUTH, "samples.csv"), stringsAsFactors = FALSE)
 cell <- merge(merge(tf, sm[, c("sample", "individual")], by = "sample"), tig, by = c("individual", "gene_id"))
 cell <- merge(cell, tg[, c("gene_id", "class")], by = "gene_id")
+# true dispersion of the generator: PHI_BIO in simulate_ase_stage3.R next to this script (each cell's haplotype-1 probability is
+# drawn from a beta with mean h1 and rho PHI_BIO, then the read pairs binomially)
+self <- sub("^--file=", "", grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)[1])
+gen <- file.path(dirname(normalizePath(self)), "simulate_ase_stage3.R")
+if (!file.exists(gen)) stop("the generator ", gen, " is missing: the true dispersion (PHI_BIO) cannot be read", call. = FALSE)
+pl_line <- grep("PHI_BIO <- [0-9.eE-]+", readLines(gen), value = TRUE)
+if (length(pl_line) != 1) stop("expected exactly one 'PHI_BIO <- <number>' assignment in ", gen, call. = FALSE)
+PHI_TRUE <- suppressWarnings(as.numeric(sub(".*PHI_BIO <- ([0-9.eE-]+).*", "\\1", pl_line)))
+if (!is.finite(PHI_TRUE) || PHI_TRUE <= 0) stop("PHI_BIO in ", gen, " is not a positive number", call. = FALSE)
 if (what == "phaser") stop("the phaser mode is not written yet (phaser_count task); nothing was checked", call. = FALSE)
 if (what == "rmd") {
   ck <- readRDS(file.path(RES, "ase_phaser_checkpoint.rds"))
-  crit(identical(as.numeric(ck$constants$PHASED_GT), if (GT == "phased") 1 else 0), sprintf("checkpoint PHASED_GT matches '%s'", GT))
+  crit(identical(as.numeric(ck$constants$PHASED_GT), if (GT == "phased") 1 else 0), sprintf("[phased_gt] checkpoint PHASED_GT matches '%s'", GT))
   g <- ck$gene; MIN_D <- ck$constants$MIN_DEPTH
   crit(nrow(g) > 0 && all(g$totalCount > 0) && all(is.na(g$p[g$totalCount < MIN_D])),
-       "no gene row with totalCount 0, and every row below MIN_DEPTH has p NA")
+       "[rows] no gene row with totalCount 0, and every row below MIN_DEPTH has p NA")
+  # the input phASER gene tables (what the Rmd read): independent of the Rmd's own output
+  cls <- c(contig = "character", start = "numeric", stop = "numeric", name = "character", aCount = "numeric", bCount = "numeric",
+           totalCount = "numeric", log2_aFC = "character", n_variants = "numeric", variants = "character", gw_phased = "character",
+           bam = "character")
+  fin <- file.path(RES, "phaser", paste0(sm$sample, ".gene_ae.txt"))
+  if (!all(file.exists(fin)))
+    stop("input phASER tables missing in ", file.path(RES, "phaser"), ": ", paste(sm$sample[!file.exists(fin)], collapse = ", "), call. = FALSE)
+  inp <- do.call(rbind, lapply(seq_along(fin), function(i) {
+    d <- read.delim(fin[i], colClasses = cls, quote = "", na.strings = character(0)); d$sample <- rep(sm$sample[i], nrow(d)); d }))
+  kept <- inp[inp$totalCount > 0, c("sample", "name", "aCount", "bCount", "totalCount")]
+  key_in <- paste(kept$sample, kept$name); key_g <- paste(g$sample, g$gene_id)
+  mi <- match(key_in, key_g)
+  same <- !is.na(mi)
+  same[same] <- g$aCount[mi[same]] == kept$aCount[same] & g$bCount[mi[same]] == kept$bCount[same] & g$totalCount[mi[same]] == kept$totalCount[same]
+  crit(nrow(kept) > 0 && !anyDuplicated(key_g) && all(same) && all(key_g %in% key_in),
+       sprintf("[input_complete] every input row with counts is in the gene table once with identical counts, and nothing else: %d of %d input rows matched; %d gene rows, %d duplicated, %d not in the input",
+               sum(same), nrow(kept), nrow(g), sum(duplicated(key_g)), sum(!key_g %in% key_in)))
+  htm <- list.files(RES, pattern = "_05_phaser\\.html$", full.names = TRUE)
+  ln <- if (length(htm) == 1) grep("[0-9]+ sample-gene rows read; [0-9]+ with haplotype counts;", readLines(htm, warn = FALSE), value = TRUE) else character(0)   # the printed line, not the echoed code
+  hit <- if (length(ln) == 1) regmatches(ln, regexpr("[0-9]+ sample-gene rows read; [0-9]+ with haplotype counts; [0-9]+ at or above MIN_DEPTH", ln)) else character(0)
+  num <- if (length(hit) == 1) as.numeric(strsplit(gsub("[^0-9]+", " ", hit), " ")[[1]]) else numeric(0)
+  num <- num[!is.na(num)]
+  want <- c(nrow(inp), nrow(kept), sum(kept$totalCount >= MIN_D))
+  crit(length(htm) == 1 && length(num) == 3 && all(num == want),
+       sprintf("[row_counts] the Rmd 05 log reports rows read / with counts / at MIN_DEPTH equal to the input tables: reported %s, input %s",
+               paste(num, collapse = "/"), paste(want, collapse = "/")))
   m <- merge(cell, g[, c("sample", "gene_id", "aCount", "bCount", "totalCount", "gw_phased", "p", "padj", "sig", "hap_A_frac",
                          "major_frac", "direction")], by = c("sample", "gene_id"), all.x = TRUE)
   m$sig[is.na(m$sig)] <- FALSE
   cnt <- function(cls) c(sum(m$sig[m$class == cls]), sum(m$class == cls))
-  x <- cnt("hap_strong"); crit(x[2] > 0 && x[1] == x[2], sprintf("hap_strong cells significant: %d of %d (all)", x[1], x[2]))
-  # two_block (controller ruling, Task 4): per-cell power at about 100 reads and h1 = 0.8 is well below 1, so "all 12" is not a
-  # justified gate. Bound: observed calls >= 0.9 x the calls of an ORACLE test on the SAME counts: exact two-sided beta-binomial
-  # against 0.5 with the TRUE dispersion PHI_BIO = 0.005 (simulate_ase_stage3.R, line 18: each cell's haplotype-1 probability is
-  # drawn from a beta with mean h1 and rho PHI_BIO, then the read pairs binomially), BH within sample over the same tested rows
-  # (totalCount >= MIN_DEPTH), and the same sig rule (padj < FDR_SIG and major fraction - 0.5 >= ABS_DEV_SIG).
-  PHI_TRUE <- 0.005
+  x <- cnt("hap_strong"); crit(x[2] > 0 && x[1] == x[2], sprintf("[hap_strong] hap_strong cells significant: %d of %d (all)", x[1], x[2]))
+  # two_block (controller ruling): observed calls >= 0.9 x the calls of an ORACLE test on the INPUT counts: exact two-sided
+  # beta-binomial against 0.5 with the TRUE dispersion PHI_BIO, BH within sample over the input rows with totalCount >= MIN_DEPTH,
+  # and the same sig rule (padj < FDR_SIG and major fraction - 0.5 >= ABS_DEV_SIG). The input tables serve both runs: for the
+  # unphased run they hold the single-block counts the Rmd sees, which the truth cover counts (all blocks) are not.
   or_p <- function(x, n, rho) {   # same definition as bb_pvalue of the skill, written out here so the oracle does not depend on it
     k <- 0:n; a <- 0.5 * (1 - rho) / rho
     lp <- lchoose(n, k) + lbeta(k + a, n - k + a) - lbeta(a, a)
     min(1, sum(exp(lp[lp <= lp[x + 1] + 1e-9])))
   }
-  gt_rows <- g[g$totalCount >= MIN_D, c("sample", "gene_id", "aCount", "totalCount")]
-  gt_rows$p_or <- mapply(or_p, gt_rows$aCount, gt_rows$totalCount, MoreArgs = list(rho = PHI_TRUE))
-  gt_rows$padj_or <- ave(gt_rows$p_or, gt_rows$sample, FUN = function(p) p.adjust(p, method = "BH"))
-  gt_rows$sig_or <- gt_rows$padj_or < ck$constants$FDR_SIG &
-    pmax(gt_rows$aCount, gt_rows$totalCount - gt_rows$aCount) / gt_rows$totalCount - 0.5 >= ck$constants$ABS_DEV_SIG
-  m <- merge(m, gt_rows[, c("sample", "gene_id", "padj_or", "sig_or")], by = c("sample", "gene_id"), all.x = TRUE)
+  orc <- kept[kept$totalCount >= MIN_D, ]
+  orc$p_or <- mapply(or_p, orc$aCount, orc$totalCount, MoreArgs = list(rho = PHI_TRUE))
+  orc$padj_or <- ave(orc$p_or, orc$sample, FUN = function(p) p.adjust(p, method = "BH"))
+  orc$sig_or <- orc$padj_or < ck$constants$FDR_SIG &
+    pmax(orc$aCount, orc$totalCount - orc$aCount) / orc$totalCount - 0.5 >= ck$constants$ABS_DEV_SIG
+  m <- merge(m, data.frame(sample = orc$sample, gene_id = orc$name, sig_or = orc$sig_or), by = c("sample", "gene_id"), all.x = TRUE)
   m$sig_or[is.na(m$sig_or)] <- FALSE
   x <- cnt("two_block"); n_or <- sum(m$sig_or[m$class == "two_block"])
   crit(x[2] > 0 && n_or > 0 && x[1] >= 0.9 * n_or,
-       sprintf("two_block cells significant: observed %d, oracle (true rho %.3f, same counts) %d, bound >= %.1f, of %d cells", x[1], PHI_TRUE, n_or, 0.9 * n_or, x[2]))
+       sprintf("[two_block] two_block cells significant: observed %d, oracle (true rho %.3f, input counts) %d, bound >= %.1f, of %d cells", x[1], PHI_TRUE, n_or, 0.9 * n_or, x[2]))
   for (cls in c("hap_strong", "hap_moderate", "hap_lowdepth", "null", "null_linked"))
     cat(sprintf("REPORT oracle (true rho %.3f) %-12s: observed %d, oracle %d of %d cells\n", PHI_TRUE, cls, cnt(cls)[1], sum(m$sig_or[m$class == cls]), cnt(cls)[2]))
   x <- cnt("hap_lowdepth")
   if (GT == "phased") {
-    crit(x[2] == 18 && x[1] >= 15, sprintf("hap_lowdepth cells significant (phased genotypes): %d of %d (>= 15)", x[1], x[2]))
+    crit(x[2] == 18 && x[1] >= 15, sprintf("[hap_lowdepth] hap_lowdepth cells significant (phased genotypes): %d of %d (>= 15)", x[1], x[2]))
   } else {
     cat(sprintf("REPORT hap_lowdepth cells significant (unphased genotypes, single best block): %d of %d\n", x[1], x[2]))
   }
@@ -62,30 +100,30 @@ if (what == "rmd") {
   lo <- merge(m[m$class == "hap_lowdepth", c("sample", "gene_id", "sig")], cmp[, c("sample", "gene_id", "category")],
               by = c("sample", "gene_id"), all.x = TRUE)
   n_only <- sum(lo$sig & lo$category %in% "phASER only (no SNP tested unphased)")
-  crit(n_only == sum(lo$sig), sprintf("significant hap_lowdepth cells labelled 'phASER only (no SNP tested unphased)': %d of %d", n_only, sum(lo$sig)))
+  crit(n_only == sum(lo$sig), sprintf("[lowdepth_category] significant hap_lowdepth cells labelled 'phASER only (no SNP tested unphased)': %d of %d", n_only, sum(lo$sig)))
   mod <- tg$gene_id[tg$class == "hap_moderate"]
   x <- cnt("hap_moderate")
   cat(sprintf("REPORT hap_moderate cells significant: phASER %d of %d; unphased ACAT (Rmd 02) %d\n", x[1], x[2],
               sum(cmp$sig_unphased[cmp$gene_id %in% mod])))
   nul <- m$class %in% c("null", "null_linked")
-  crit(sum(nul) > 0 && sum(m$sig[nul]) <= 6, sprintf("null cells significant: %d of %d tested (limit 6)", sum(m$sig[nul]), sum(nul & !is.na(m$p))))
+  crit(sum(nul) > 0 && sum(m$sig[nul]) <= 6, sprintf("[null] null cells significant: %d of %d tested (limit 6)", sum(m$sig[nul]), sum(nul & !is.na(m$p))))
   pl <- m$sig & !nul
   if (GT == "phased") {
     agree <- sign(m$hap_A_frac[pl] - 0.5) == sign(m$h1[pl] - 0.5)
     crit(sum(pl) > 0 && all(m$gw_phased[pl]) && all(agree),
-         sprintf("phased: significant planted cells genome-wide phased, haplotype A = haplotype 1 (left GT allele): %d of %d", sum(agree), sum(pl)))
+         sprintf("[phased_orient] phased: significant planted cells genome-wide phased, haplotype A = haplotype 1 (left GT allele): %d of %d", sum(agree), sum(pl)))
     lab <- ifelse(m$h1[pl] > 0.5, "haplotype A higher", "haplotype B higher")
     crit(sum(pl) > 0 && all(m$direction[pl] == lab),
-         sprintf("phased: direction label of significant planted cells follows haplotype 1: %d of %d", sum(m$direction[pl] == lab), sum(pl)))
+         sprintf("[phased_label] phased: direction label of significant planted cells follows haplotype 1: %d of %d", sum(m$direction[pl] == lab), sum(pl)))
   } else {
-    crit(sum(g$sig) > 0 && all(g$direction[g$sig] == "no direction (haplotype labels arbitrary)"), "unphased: no significant row carries a direction")
+    crit(sum(g$sig) > 0 && all(g$direction[g$sig] == "no direction (haplotype labels arbitrary)"), "[unphased_direction] unphased: no significant row carries a direction")
   }
-  crit(all(g$direction[!g$sig] == "none"), "rows that are not significant have the direction 'none'")
+  crit(all(g$direction[!g$sig] == "none"), "[nonsig_none] rows that are not significant have the direction 'none'")
   s <- read.delim(file.path(RES, "summary_numbers_phaser.tsv"), stringsAsFactors = FALSE)
   crit(identical(names(s), c("sample", "genotypes", "genes_with_counts", "genes_tested", "sig_genes", "gw_phased_genes", "sig_unphased", "sig_both",
                              "sig_phaser_only", "sig_phaser_only_untested_unphased", "sig_unphased_only", "rho_used", "rho_own", "rho_cohort")) &&
        nrow(s) == nrow(sm) && all(s$sig_genes == vapply(s$sample, function(x) sum(g$sig[g$sample == x]), integer(1))),
-       "summary_numbers_phaser.tsv: exact columns, one row per sample, sig_genes equal to the gene table")
+       "[summary] summary_numbers_phaser.tsv: exact columns, one row per sample, sig_genes equal to the gene table")
   # informational: the phASER test next to the unphased ACAT test of Rmd 02, per planted class (sample-gene cells)
   cc <- merge(cell[, c("sample", "gene_id", "class")], cmp[, c("sample", "gene_id", "sig", "sig_unphased", "category")],
               by = c("sample", "gene_id"), all.x = TRUE)

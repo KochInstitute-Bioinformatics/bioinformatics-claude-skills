@@ -1639,6 +1639,7 @@ hap_gene_test <- function(a, b, sample, rho_min, min_genes = 20) {
     - The haplotype test's null size is 0.0184 (300) and 0.0042 (40).
     - The simulation puts all SNPs of a gene into one haplotype block (every fragment that covers any of its SNPs counts). With unphased genotypes, SNPs that no read pair links fall into separate blocks and `phaser_gene_ae` keeps only the most-covered one, so the haplotype-test power and tested fractions above are optimistic for that case.
   - **Runtime:** 55 s and 2027 MB for one sample of 20,000 genes on one core.
+- **Excel row limit.** Rmd 05 writes its full gene tables as `.tsv.gz` because an xlsx sheet holds at most 1,048,576 rows. The `SNP` and `Gene` sheets of Rmd 02 and Rmd 04 share the same Excel limit of 1,048,576 rows per sheet, which a very large cohort can exceed; their checkpoints (`.rds`) always hold the full tables.
 
 ---
 
@@ -2459,6 +2460,7 @@ It pastes the statistics functions of Step 14 into the chunk marked below.
 **Outputs, written to `{RESULTS_DIR}`:**
 - `{TODAY}_{WD_NAME}_ASE_phaser.xlsx` (sheets `Gene`, `Comparison`, `Samples`, `Summary`);
 - `{TODAY}_{WD_NAME}_ASE_phaser.pdf`;
+- `{TODAY}_{WD_NAME}_ASE_phaser_gene.tsv.gz` and `{TODAY}_{WD_NAME}_ASE_phaser_comparison.tsv.gz`: the full `Gene` and `Comparison` tables (tab-separated, gzip). The xlsx sheets hold the full tables while they fit in a worksheet (1,048,575 data rows); beyond that they hold only the significant rows, and the Rmd prints a NOTE;
 - `ase_phaser_checkpoint.rds`;
 - `summary_numbers_phaser.tsv`.
 
@@ -2475,6 +2477,7 @@ It pastes the statistics functions of Step 14 into the chunk marked below.
   - Genes with `totalCount` below `MIN_DEPTH` are not tested: `hap_gene_test` does not apply `MIN_DEPTH`, so the Rmd sets these rows to `NA` before the call.
   - Genes that phASER wrote with zero counts (no covered heterozygous SNP; written with `log2_aFC` `inf` and `gw_phased` 1) are dropped.
   - If no sample has 20 genes at `MIN_DEPTH`, the Rmd stops.
+  - The Rmd also stops, naming the samples, when a sample's phASER table has no gene with haplotype reads (every `totalCount` 0, or no data rows), when a count field is empty, and when the columns differ from those of `phaser_gene_ae` at the pinned commit. Such a sample is not reported with 0 genes: fix it or drop it (Step 15).
 - **Direction.** The test is symmetric in the two haplotypes, because the haplotype labels carry no meaning without phased genotypes.
   - **Unphased genotypes** (`{PHASED_GT}` = 0): A and B are arbitrary per gene and sample. Only the size of the imbalance is reported, with the direction "no direction (haplotype labels arbitrary)". Each gene's counts come from its most-covered haplotype block only, because `phaser_gene_ae` keeps a single block per gene when the genotypes are unphased. The other blocks are dropped, which costs coverage (on the synthetic test, one sample used 113 of 153 heterozygous SNPs).
   - **Phased genotypes** (`{PHASED_GT}` = 1, phASER run with `--gw_phase_vcf 1`): in genome-wide phased genes (`gw_phased` TRUE), haplotype A is the haplotype of the first (left) allele of the phased genotype (`0|1`: A carries the REF allele at that SNP), and the direction is "haplotype A higher" or "haplotype B higher". Genes that are not genome-wide phased keep arbitrary labels and get "no direction (haplotype labels arbitrary)".
@@ -2486,7 +2489,7 @@ It pastes the statistics functions of Step 14 into the chunk marked below.
 - **Comparison table.** Every sample and gene of either analysis gets one row and one category:
   - "both";
   - "phASER only";
-  - "phASER only (no SNP tested unphased)": no SNP of the gene reached `MIN_DEPTH` in Rmd 02;
+  - "phASER only (no SNP tested unphased)": the gene has no row in the gene table of Rmd 02, because no SNP of the gene was tested in Rmd 02 (none reached `MIN_DEPTH`, or none lies in its exons after the Rmd 01 filters), for example a gene whose heterozygous SNPs are all intronic (phASER counts the whole span);
   - "unphased only";
   - "unphased only (not tested by phASER)";
   - "neither".
@@ -2568,14 +2571,25 @@ cls <- c(contig = "character", start = "numeric", stop = "numeric", name = "char
          bam = "character")
 ga <- dplyr::bind_rows(lapply(seq_len(nrow(samples)), function(i) {
   d <- read.delim(f[i], colClasses = cls, quote = "", na.strings = character(0))
-  if (!identical(names(d), names(cls))) stop("unexpected columns in ", f[i], call. = FALSE)
+  if (!identical(names(d), names(cls)))
+    stop("unexpected columns in ", f[i], ": found ", paste(names(d), collapse = ", "),
+         "; expected (columns of phaser_gene_ae at the commit pinned in Step 18): ", paste(names(cls), collapse = ", "), call. = FALSE)
   dplyr::mutate(d, sample = samples$sample[i])
 }))
 n_rows <- nrow(ga)
+na_cnt <- is.na(ga$aCount) | is.na(ga$bCount) | is.na(ga$totalCount)   # an empty count field is read as NA
+if (any(na_cnt))
+  stop("missing counts (aCount, bCount or totalCount) in the phASER gene tables: ", sum(na_cnt), " row(s), for example ",
+       paste(utils::head(paste0(ga$sample[na_cnt], " / ", ga$name[na_cnt]), 5), collapse = ", "),
+       "; re-run phaser_gene_ae for these samples", call. = FALSE)
 genes <- ga %>% dplyr::filter(totalCount > 0) %>%   # genes without counts are written with 0 counts, log2_aFC inf and gw_phased 1
   dplyr::transmute(sample, gene_id = name, contig, aCount, bCount, totalCount, n_variants, gw_phased = gw_phased == "1", variants) %>%
   dplyr::left_join(samples, by = "sample")
-if (nrow(genes) == 0) stop("no gene has haplotype counts in any sample (every totalCount is 0)", call. = FALSE)
+no_gene <- setdiff(samples$sample, genes$sample)   # every totalCount 0, or a header without data rows
+if (length(no_gene) > 0)
+  stop("no gene with haplotype reads in the phASER table of sample(s) ", paste(no_gene, collapse = ", "),
+       ": every totalCount is 0 or the table has no data rows (for example contig names that differ between the BAM, the VCF and ",
+       "genes_span.bed). Check their phaser_count logs, re-run them, or drop the samples (Step 15)", call. = FALSE)
 if (any(genes$aCount + genes$bCount != genes$totalCount)) stop("aCount + bCount differs from totalCount in the phASER gene tables", call. = FALSE)
 if (anyDuplicated(genes[, c("sample", "gene_id")]))
   stop("a gene name occurs twice in one sample's phASER gene table (gene names in genes_span.bed must be unique)", call. = FALSE)
@@ -2697,16 +2711,30 @@ ggsave(file.path(RESULTS_DIR, paste0(DATE_TAG, "_ASE_phaser.pdf")), p1, width = 
 ```{r export}
 xlsx_file <- file.path(RESULTS_DIR, paste0(DATE_TAG, "_ASE_phaser.xlsx"))
 cut_cell <- function(x) ifelse(nchar(x) > 32000, paste0(substr(x, 1, 32000), " ... (cut: an Excel cell holds at most 32,767 characters; the full list is in ase_phaser_checkpoint.rds)"), x)
+# the full tables, whatever their size: tab-separated and gzipped
+write_gz <- function(d, name) {
+  con <- gzfile(file.path(RESULTS_DIR, paste0(DATE_TAG, name)), "w")
+  write.table(d, con, sep = "\t", quote = FALSE, row.names = FALSE); close(con)
+}
+write_gz(genes, "_ASE_phaser_gene.tsv.gz"); write_gz(cmp, "_ASE_phaser_comparison.tsv.gz")
+XL_MAX <- 1048575   # data rows per worksheet: Excel holds 1,048,576 rows including the header
+xl_rows <- function(d, keep, what) {   # the full table if it fits, otherwise its significant rows
+  if (nrow(d) <= XL_MAX) return(d)
+  cat("NOTE: the", what, "table has", nrow(d), "rows, more than a worksheet holds; the", what, "sheet holds its", sum(keep),
+      "significant rows only; the full table is in", paste0(DATE_TAG, "_ASE_phaser_", tolower(what), ".tsv.gz"), "\n")
+  utils::head(d[keep, , drop = FALSE], XL_MAX)
+}
 wb <- openxlsx::createWorkbook()
 for (nm in c("Gene", "Comparison", "Samples", "Summary")) openxlsx::addWorksheet(wb, nm)
-openxlsx::writeData(wb, "Gene", dplyr::mutate(genes, variants = cut_cell(variants))); openxlsx::writeData(wb, "Comparison", cmp)
+openxlsx::writeData(wb, "Gene", dplyr::mutate(xl_rows(genes, genes$sig, "Gene"), variants = cut_cell(variants)))
+openxlsx::writeData(wb, "Comparison", xl_rows(cmp, cmp$sig | cmp$sig_unphased, "Comparison"))
 openxlsx::writeData(wb, "Samples", ht$samples); openxlsx::writeData(wb, "Summary", summary_ph)
 openxlsx::saveWorkbook(wb, xlsx_file, overwrite = TRUE)
 saveRDS(list(gene = genes, comparison = cmp, samples = ht$samples, summary = summary_ph,
              constants = c(ck$constants, list(RHO_MIN = RHO_MIN, PHASED_GT = PHASED_GT))),
         file.path(RESULTS_DIR, "ase_phaser_checkpoint.rds"))
 write.table(summary_ph, file.path(RESULTS_DIR, "summary_numbers_phaser.tsv"), sep = "\t", quote = FALSE, row.names = FALSE)
-cat("wrote", xlsx_file, "and summary_numbers_phaser.tsv\n")
+cat("wrote", xlsx_file, ", the gene and comparison tables (.tsv.gz) and summary_numbers_phaser.tsv\n")
 sessionInfo()
 ```
 ````
@@ -2716,9 +2744,12 @@ Render it with `{RESULTS_DIR}/scripts/run_05_phaser.sh`. This is the same script
 - the first case of the `--bind` rule (`--bind {CWD}`): the Rmd reads no GTF;
 - `-n 1 --mem=16G -t 4:00:00`. It runs single-threaded, one sample after another.
 
-Runtime and memory, from the unit-test check of Step 14 (one measurement, not a genome-scale render): 55 s and about 2 GB for one sample of 20,000 genes holding about 12 million haplotype reads, so 100 such samples take about 1.5 h, inside the 4 h request. Time and memory per sample grow in proportion to the sample's total haplotype reads, because the trimmed dispersion fit enumerates every possible count of every gene: a sample with 50 million reads needs about 8 GB and, projected, about 4 minutes. The total time grows with the number of samples; the memory does not, because the samples are fitted one after another. Raise `-t` for more than about 200 samples of that size, and `--mem` when one sample holds more than about 80 million haplotype reads.
+**Runtime and memory.** Only the test step has been measured, by the unit-test check of Step 14: 55 s and about 2 GB for one sample of 20,000 genes holding about 12 million haplotype reads (`totalCount` summed over its genes), on one core. Everything else below is a projection from that one measurement, not a genome-scale render.
+- **Time.** The trimmed dispersion fit enumerates every possible count of every gene, so its time grows in proportion to a sample's haplotype reads: about 4.6 s per million haplotype reads (projected). The samples run one after another, so the test step takes about `4.6 s × (sum over all samples of their haplotype reads in millions)`. For example, 100 samples of 12 million reads take about 1.5 h, and samples of 50 million reads take about 4 minutes each, so the 4 h request fits about 55 of them. Reading, the tables and the export add time that was not measured: keep the projection below about 3 h, and otherwise raise `-t` (for example to twice the projection). Do not split the samples into several runs to save time: `rho_cohort` is the median over the samples of one run, so split runs give different p-values from one joint run.
+- **Memory.** The fit of one sample needs about 2 GB per 12 million haplotype reads (projected: about 8 GB at 50 million), and the samples are fitted one after another, so the largest sample sets this part. The gene and comparison tables of all samples are held in memory together, and the xlsx is written from them; that part was not measured. The 16 GB request leaves room up to about 60 million haplotype reads in the largest sample; raise `--mem` beyond that, or when the cohort's gene table is very large.
+- **Table size.** The `Gene` and `Comparison` tables have one row per sample and gene (100 samples × 20,000 genes = 2 million rows). The full tables are always written as `{TODAY}_{WD_NAME}_ASE_phaser_gene.tsv.gz` and `{TODAY}_{WD_NAME}_ASE_phaser_comparison.tsv.gz` and kept in the checkpoint. An xlsx sheet holds at most 1,048,575 data rows, so beyond that the `Gene` sheet holds only the significant genes and the `Comparison` sheet only the rows significant in either analysis, and the Rmd prints a NOTE that names the `.tsv.gz` file.
 
-If the job stops with "phASER gene counts missing for sample(s)", the named samples have no phASER output: look at their `phaser_count` logs, re-run them, or drop them (Step 15). If it stops with "the Rmd 02 checkpoint does not come from the current Rmd 01 checkpoint", re-render Rmd 02 first. If it stops with "a gene name occurs twice", the gene span file has duplicated names; rebuild `reference/genes_span.bed` with unique names. Submission order: Step 15.
+If the job stops with "phASER gene counts missing for sample(s)", the named samples have no phASER output: look at their `phaser_count` logs, re-run them, or drop them (Step 15). If it stops with "the Rmd 02 checkpoint does not come from the current Rmd 01 checkpoint", re-render Rmd 02 first. If it stops with "a gene name occurs twice", the gene span file has duplicated names; rebuild `reference/genes_span.bed` with unique names. If it stops with "no gene with haplotype reads in the phASER table of sample(s)", phASER counted nothing for these samples: compare the contig names of their BAM, the genotype VCF and `genes_span.bed`, look at their `phaser_count` logs, re-run them, or drop them (Step 15). If it stops with "missing counts" or "unexpected columns", the named tables were not written by `phaser_gene_ae` at the pinned commit, or were cut short: re-run `phaser_count` for these samples. Submission order: Step 15.
 
 ---
 
