@@ -1275,7 +1275,7 @@ Besides the xlsx, Rmd 02 writes `{RESULTS_DIR}/summary_numbers.tsv` (one row per
 
 ## Step 14 — Statistics functions
 
-These base-R functions are pasted verbatim into Rmd 02, Rmd 03 and Rmd 04 (`{TODAY}_{WD_NAME}_02_imbalance.Rmd`, `..._03_reciprocal.Rmd`, `..._04_differential.Rmd`); the marker lines delimit the code that `ase-pipeline/tests/r/test_ase_stats.R` extracts from this file and unit-tests, so the tested code is the shipped code. They need no packages beyond base R.
+These base-R functions are pasted verbatim into Rmd 02, Rmd 03, Rmd 04 and Rmd 05 (`{TODAY}_{WD_NAME}_02_imbalance.Rmd`, `..._03_reciprocal.Rmd`, `..._04_differential.Rmd`, `..._05_phaser.Rmd`); the marker lines delimit the code that `ase-pipeline/tests/r/test_ase_stats.R` extracts from this file and unit-tests, so the tested code is the shipped code. They need no packages beyond base R.
 
 ```r
 # --- ase-stats-begin
@@ -1568,6 +1568,32 @@ ase_paired_test <- function(d, rho_min, min_individuals = 2, bound = 15) {
   rownames(snp) <- NULL
   list(snp = snp, phi = data.frame(individual = inds, phi_pair = unname(phi), stringsAsFactors = FALSE))
 }
+hap_gene_test <- function(a, b, sample, rho_min, min_genes = 20) {
+  # phASER gene-level haplotype counts, one row per sample and gene (a = aCount, b = bCount of phaser_gene_ae). Symmetric in a
+  # and b: without phased genotypes the labels A and B are arbitrary per gene and sample, so only |a / (a + b) - 0.5| carries
+  # information, and every quantity below is unchanged when a and b are swapped in any row.
+  # Dispersion: rho_own = bb_estimate_rho_trim over the sample's usable genes (folded central-region H0 fit, truncation-
+  # corrected, so genes with real imbalance do not inflate it; NA below min_genes genes); rho_cohort = the median of rho_own
+  # over the samples; per sample rho_used = max(rho_cohort, rho_own, rho_min). Test per row: bb_pvalue against 0.5 (exact,
+  # two-sided). Rows with a or b missing, infinite or negative, or a + b = 0, are not used and get p = NA, as does every row
+  # when no sample has min_genes usable rows.
+  n <- a + b
+  use <- is.finite(a) & is.finite(b) & a >= 0 & b >= 0 & n > 0
+  sample <- as.character(sample); smp <- sort(unique(sample))
+  own <- vapply(smp, function(s) {
+    i <- use & sample == s
+    if (sum(i) >= min_genes) bb_estimate_rho_trim(a[i], n[i]) else c(rho = NA_real_, central_frac = NA_real_)
+  }, c(rho = 0, central_frac = 0))
+  coh <- if (all(is.na(own["rho", ]))) NA_real_ else median(own["rho", ], na.rm = TRUE)
+  ru <- if (is.na(coh)) rep(NA_real_, length(smp)) else pmax(coh, ifelse(is.na(own["rho", ]), 0, own["rho", ]), rho_min)
+  per <- data.frame(sample = smp, n_genes = unname(vapply(smp, function(s) sum(use & sample == s), integer(1))),
+                    rho_own = unname(own["rho", ]), central_frac = unname(own["central_frac", ]), rho_cohort = coh,
+                    rho_used = unname(ru), stringsAsFactors = FALSE)
+  rr <- per$rho_used[match(sample, per$sample)]
+  p <- rep(NA_real_, length(n))
+  for (j in which(use & !is.na(rr))) p[j] <- bb_pvalue(a[j], n[j], rr[j])
+  list(p = p, rho_used = rr, samples = per)
+}
 # --- ase-stats-end
 ```
 
@@ -1583,6 +1609,23 @@ ase_paired_test <- function(d, rho_min, min_individuals = 2, bound = 15) {
 - **Outbred differential: `ase_paired_test`.** Each individual gets its own pair dispersion from `bb_pair_phi_trim`, floored at `RHO_MIN`. Under H0 each SNP has one REF fraction for all its samples, so the Williams statistic of a SNP is about chi-square with df = rows - 1. The plain moment estimate (`phi_all`, sum of the statistics = sum of the df) counts every SNP that really changes between conditions as noise: with 10 percent of the SNPs changed 0.5 -> 0.8 it gives 0.0365 (phase-heterogeneous) / 0.0394 (consistent) for a true 0.02, and a power of 0.7625 / 0.7977. The trimmed estimate keeps the central SNPs (`pchisq(X2, df) <= keep`, `keep` = 0.9, so the most-changed SNPs are set aside), solves the truncation-corrected moment equation on them (each kept statistic matched to `E[chi2_df | chi2_df <= qchisq(keep, df)]`), iterates down from `phi_all` to a fixed point and is capped at `phi_all`; fewer than 20 paired SNPs give `NA` and the individual is not tested. It recovers 0.0097 / 0.0201 / 0.0507 for 0.01 / 0.02 / 0.05 without changes, and 0.0248 for 0.02 with 10 percent of the SNPs changed. A 1-df LRT per SNP and individual uses that dispersion; the statistics are summed over individuals (df = number of individuals), which is direction-free because the allele carrying a regulatory variant differs between individuals. Genes use `acat`. A SNP is tested only when at least 2 individuals are heterozygous and paired for it; the others are reported as `too_few_individuals` with p `NA`. With 60 percent of individuals heterozygous per SNP, the tested fraction of the reported SNPs is 0.4244 (I = 2), 0.6961 (I = 3), 0.8434 (I = 4) and 0.9646 (I = 6). The paired SNP sizes and power are over the tested SNPs only. Measured, 10 seeds x 3000 SNPs, true dispersion 0.02: the SNP / gene null sizes are 0.0485 / 0.0490 (I = 2), 0.0511 / 0.0505 (I = 3), 0.0515 / 0.0526 (I = 4) and 0.0490 / 0.0514 (I = 6), so the paired test is nominal (not conservative); at a true dispersion of 0.005 (below `RHO_MIN`) they are at most 0.0205 (SNP) / 0.0191 (gene). Power for a 0.5 -> 0.8 change in 10 percent of the SNPs with 4 individuals is 0.8653 (phase-heterogeneous) / 0.9174 (consistent), against an oracle power of 0.9022 / 0.9424 with the dispersion fixed at its true value (the ceiling of this design: 4 individuals, 60 percent heterozygous, depth 30-200), while the unchanged SNPs keep a size of 0.0287 / 0.0304. When 30 percent of the SNPs change, the trimmed dispersion is still inflated (0.0454 for 0.02) and power drops to 0.6698 against an oracle 0.9163 (untrimmed: 0.3675), which is conservative (no false positives added).
 - **X chromosome in F1 mode.** The functions above do not know chromosomes: Rmd 03 and Rmd 04 leave X, Y and MT out with `chrom_class`, but Rmd 01 and Rmd 02 do not set X aside (they keep it in every table and in the reference-bias mean). Male F1 animals carry one X, so X genes can look imbalanced and X sites can trip the reference-bias flag; read X rows with care (Step 13).
 - **SNPs sharing read pairs.** In a fragment-level simulation (ASEReadCounter-style counting, 30 percent SNP-dense genes), the thinned gene tests have null sizes of 0.0314 (strain) / 0.0288 (parent of origin) (dense genes 0.0331), against 0.0354 without thinning (dense genes 0.0578). The Stage 1 Rmd 02 F1 gene LRT has a size of 0.1450 unthinned (0.2084 in SNP-dense genes): counting shared read pairs at every SNP makes it anti-conservative. Thinned, its size is 0.0497; that figure excludes the SNP-dense genes, which keep a single SNP after thinning and so have no multi-SNP gene test.
+- **phASER gene test (Rmd 05): `hap_gene_test`.**
+  - **Input:** one row per sample and gene with phASER's haplotype counts (`aCount`, `bCount` of `phaser_gene_ae`). phASER counts a read pair once per haplotype block, so the pooled counts are not inflated by SNPs that share reads.
+  - **Test:** each row is tested against 0.5 with `bb_pvalue`. The test is symmetric in the two haplotypes: without phased genotypes the labels are arbitrary per gene and sample. Swapping the labels in any row changes no p-value and no dispersion; the unit tests check this.
+  - **Dispersion:** `rho_own` is the trimmed central-region fit (`bb_estimate_rho_trim`) over the sample's genes. `rho_cohort` is the median of `rho_own` over the samples. `rho_used = max(rho_cohort, rho_own, RHO_MIN)`. A sample with fewer than 20 genes at `MIN_DEPTH` is tested with `max(rho_cohort, RHO_MIN)`.
+  - **Null sizes** (measured; 10 seeds; cohorts of 6 samples × 2000 genes):
+    - true rho 0.005 / 0.02 / 0.05 without imbalance: 0.0141 / 0.0454 / 0.0462;
+    - with 20 % imbalanced genes: 0.0147 / 0.0357 / 0.0238;
+    - with 40 %: 0.0145 / 0.0188 / 0.0008;
+    - few genes (6 samples × 20 / 30 / 60): 0.0233 / 0.0210 / 0.0265;
+    - one sample with 15 genes: 0.0357;
+    - heterogeneous cohort: 0.0223 overall and 0.0225 for the noisiest sample.
+  - **Power:** for 0.75/0.25 genes at rho 0.02 the power is 0.8560, against an oracle with the true rho of 0.8751.
+  - **Comparison with the unphased path** (fragment-level simulation in which read pairs are shared between SNPs; genes with 4 or more SNPs within 600 transcript bases):
+    - haplotype-test power 0.7877 against 0.5873 for the per-SNP tests combined with ACAT (Rmd 02) at 300 fragments per gene, and 0.1495 against 0.0357 at 40;
+    - at 40 fragments per gene, 0.9962 of 8-SNP genes are tested by the haplotype test and 0.4169 by the unphased path. That path needs one SNP with at least `MIN_DEPTH` reads.
+    - The haplotype test's null size is 0.0184 (300) and 0.0042 (40).
+  - **Runtime:** 55 s and 2027 MB for one sample of 20,000 genes on one core.
 
 ---
 

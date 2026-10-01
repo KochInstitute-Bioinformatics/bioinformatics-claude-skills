@@ -293,7 +293,6 @@ need "ase_glm_test <- function(units, tests, rho_min, min_df_unit = 2, bound = 1
 need "ase_paired_test <- function(d, rho_min, min_individuals = 2, bound = 15)"
 need "bb_pair_phi_trim <- function(y, n, cell, keep = 0.9, max_iter = 50)"
 need '| `THIN_BP` | 500 |'
-need "pasted verbatim into Rmd 02, Rmd 03 and Rmd 04"
 need "**Stage 2 models (Rmd 03 and 04): \`ase_glm_test\`.**"
 need "**Outbred differential: \`ase_paired_test\`.**"
 need "**SNPs sharing read pairs.**"
@@ -644,5 +643,14 @@ rneed "verified with a stub scheduler, not live"
 rneed "manually adapted chain"
 rforbid "the skill's own \`submit_chain.sh\` and \`wait_chain.sh\` ran"
 # --- end Stage 2 final-review fix wave
+
+# --- Stage 3 statistics (hap_gene_test); each string is absent from the Stage 2 skill (de43444)
+need "hap_gene_test <- function(a, b, sample, rho_min, min_genes = 20)"
+need "per sample rho_used = max(rho_cohort, rho_own, rho_min)"
+need "pasted verbatim into Rmd 02, Rmd 03, Rmd 04 and Rmd 05"
+need "**phASER gene test (Rmd 05): \`hap_gene_test\`.**"
+[ -s "$HERE/r/test_ase_stats_stage3.R" ] || { echo "FAIL: missing tests/r/test_ase_stats_stage3.R"; fail=1; }
+grep -qF 'test_ase_stats_stage3.R' "$HERE/r/run_stats_tests.sh" || { echo "FAIL: run_stats_tests.sh does not run the Stage 3 tests"; fail=1; }
+# --- end Stage 3 statistics
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1
