@@ -2340,6 +2340,97 @@ Render it with `{RESULTS_DIR}/scripts/run_04_differential.sh`. This is the same 
 
 ---
 
+## Step 18 — phASER: installation and per-sample haplotype counts (outbred, optional)
+
+Only when phASER was selected in Step 7 (`{MODE}` = `outbred`, paired-end data).
+
+phASER phases each sample's heterozygous SNPs from the reads themselves: a read pair that covers two SNPs shows which alleles lie on one molecule. It then counts the read pairs of each haplotype, once per read pair, over the SNPs of a haplotype block, and `phaser_gene_ae` turns the blocks into one haplotype-A and one haplotype-B count per gene. These counts are tested in Rmd 05 (Step 19), next to the unphased per-SNP and ACAT results of Rmd 02, never instead of them.
+
+**Which phASER.** Use the repository https://github.com/secastel/phaser (maintained by PEJ Lab as a "Fast Beta"; Python 3; no releases or tags), pinned to commit `aa1f8ec5fe1cc676e37cfa6f6a0bce6b09070301` (phASER v1.2.0, 2026-03-21). Use this repository, never the bioconda package `phaser`, which is version 0.1.1 for Python 2.7.
+
+**Environment.** Installed once per user by `setup_phaser_env.sh` into `{PHASER_HOME}` (Step 7) and reused by every project:
+- `src/phaser`: the clone at the pinned commit;
+- `env`: a conda environment, about 630 MB;
+- `environment.phaser.yml`: the pinned package list;
+- `conda_list.txt`;
+- `install_ok.txt`: written last, after the checks pass.
+
+The installation is a compute job: conda and `git` need the internet, which the compute nodes have, and the job takes 10 to 20 minutes, mostly conda's classic solver. `module add miniconda3/v4` in this job is the only module besides `singularity/3.10.4` that the skill ever loads. The phASER scripts of a project load no module and do not activate the environment: they put `{PHASER_HOME}/env/bin` first on `PATH`, and `samtools`, `bcftools`, `tabix` and `python` come from it. Every script that runs the environment's Python exports `PYTHONNOUSERSITE=1`, because a `pip --user` site-packages directory of the same Python version (`~/.local/lib/python3.14`) would otherwise shadow the environment's packages (it fails with `GLIBC_2.27 not found` on this cluster).
+
+### `setup_phaser_env.sh`
+
+Written to `{RESULTS_DIR}/scripts/setup_phaser_env.sh` (substitute the placeholders) and submitted by `submit_chain.sh` (Step 15) only when `{PHASER_HOME}/install_ok.txt` does not start with the pinned commit. If it does, the chain skips this job. Two projects that install into the same `{PHASER_HOME}` at the same time are stopped by the lock directory `{PHASER_HOME}/.installing`. If a job was killed, remove that directory by hand.
+
+```bash
+#!/bin/bash
+#SBATCH -J ase_phaser_setup
+#SBATCH -N 1 -p bcc
+#SBATCH -n 4 --mem=16G -t 2:00:00
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user={USER_EMAIL}
+#SBATCH -o {RESULTS_DIR}/logs/setup_phaser_env_%j.out
+set -uo pipefail
+# One-time installation of phASER (pinned commit) and its pinned conda environment under {PHASER_HOME}; reused by every project.
+# never the bioconda package "phaser" (version 0.1.1, Python 2.7). Runs on a compute node (internet for git and conda).
+PHASER_HOME="{PHASER_HOME}"
+PHASER_REPO=https://github.com/secastel/phaser.git
+PHASER_COMMIT=aa1f8ec5fe1cc676e37cfa6f6a0bce6b09070301   # no releases or tags upstream: pinned by SHA (Step 18, bumping)
+die() { echo "ERROR: $*" >&2; exit 1; }
+if [ "$(sed -n 1p "$PHASER_HOME/install_ok.txt" 2>/dev/null)" = "commit $PHASER_COMMIT" ]; then echo "phASER already installed in $PHASER_HOME"; exit 0; fi
+mkdir -p "$PHASER_HOME" || die "cannot create $PHASER_HOME"
+mkdir "$PHASER_HOME/.installing" 2>/dev/null || die "another installation is running in $PHASER_HOME (if not, remove $PHASER_HOME/.installing)"
+trap 'rmdir "$PHASER_HOME/.installing" 2>/dev/null' EXIT
+rm -f "$PHASER_HOME/install_ok.txt"
+rm -rf "$PHASER_HOME/src/phaser" "$PHASER_HOME/env"
+git clone -q "$PHASER_REPO" "$PHASER_HOME/src/phaser" || die "git clone of $PHASER_REPO failed"
+git -C "$PHASER_HOME/src/phaser" checkout -q "$PHASER_COMMIT" || die "commit $PHASER_COMMIT not found"
+[ "$(git -C "$PHASER_HOME/src/phaser" rev-parse HEAD)" = "$PHASER_COMMIT" ] || die "the checked-out commit differs from $PHASER_COMMIT"
+cat > "$PHASER_HOME/environment.phaser.yml" <<'YML'
+name: phaser-pinned
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.14.7
+  - numpy=2.5.3
+  - scipy=1.18.1
+  - pandas=3.0.6
+  - pysam=0.24.1
+  - intervaltree=3.2.1
+  - samtools=1.24
+  - bcftools=1.24
+  - htslib=1.24
+  - bedtools=2.31.1
+  - pip
+YML
+module add miniconda3/v4 || die "cannot load the miniconda3/v4 module"
+source /home/software/conda/miniconda3/bin/condainit || die "cannot initialise conda"
+export CONDA_PKGS_DIRS="$PHASER_HOME/pkgs"
+conda env create -p "$PHASER_HOME/env" -f "$PHASER_HOME/environment.phaser.yml" || die "conda env create failed"
+rm -rf "$PHASER_HOME/pkgs"     # the package cache (about 1.9 GB) is not needed after the installation
+export PYTHONNOUSERSITE=1      # a pip --user site-packages directory of the same Python version would shadow the environment
+export PATH="$PHASER_HOME/env/bin:$PATH"; PY="$PHASER_HOME/env/bin/python"
+"$PY" -c "import numpy, scipy, pysam, pandas, intervaltree" || die "the environment's Python packages do not import"
+"$PY" "$PHASER_HOME/src/phaser/phaser/phaser.py" --help > /dev/null || die "phaser.py --help failed"
+"$PY" "$PHASER_HOME/src/phaser/phaser_gene_ae/phaser_gene_ae.py" --help > /dev/null || die "phaser_gene_ae.py --help failed"
+for t in samtools bcftools bgzip tabix bedtools; do command -v "$t" > /dev/null || die "$t is missing from the environment"; done
+conda list -p "$PHASER_HOME/env" > "$PHASER_HOME/conda_list.txt" || die "conda list failed"
+{ echo "commit $PHASER_COMMIT"; "$PY" -c 'import sys; print("python", sys.version.split()[0])'; date -u; } > "$PHASER_HOME/install_ok.txt" \
+  || die "cannot write $PHASER_HOME/install_ok.txt"
+echo "phASER installed in $PHASER_HOME"
+```
+
+The versions in `environment.phaser.yml` are the ones conda resolved from phASER's own unpinned `environment.yml` when this installation was tested; they are pinned so that a later installation gets the tested set. A pin to another Python (for example 3.12) has not been tested.
+
+**Bumping the pinned commit.** phASER has no releases or tags, so the skill pins a commit SHA, and a newer commit is adopted on purpose, never by accident. To adopt one:
+1. Change `PHASER_COMMIT` in `setup_phaser_env.sh` and in `phaser_count.sh`, and the commit string in the phASER check of `submit_chain.sh` (Step 15). All three must agree.
+2. Install into a new `{PHASER_HOME}` and re-record `ase-pipeline/tests/fixtures/phaser_help.txt` and `phaser_gene_ae_help.txt` from it (the checker compares every phASER flag in this file with them).
+3. Re-run the synthetic acceptance (README, Validation status), and only then use it.
+
+Change the version list of `environment.phaser.yml` the same way, after a test installation. A changed commit makes `setup_phaser_env.sh` reinstall into `{PHASER_HOME}`: the old clone and environment are removed, so a project that still needs the old commit must use another `{PHASER_HOME}`.
+
+---
+
 ## Notes for the assistant
 
 - **Containers, not modules.** Tools come from the cached Singularity images of Step 2; the only module ever loaded is `singularity/3.10.4`, always with a checked `|| exit 1`. R exists only in the `bulkrnaseq` image (`{R_SIF}`).

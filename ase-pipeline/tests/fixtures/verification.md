@@ -42,3 +42,14 @@ Interpretation: the synthetic data has a mild reference bias (about +0.02 REF ex
 ## Remaining open item
 
 The third-allele masking script from the earlier published analysis has not been located; the deterministic rule in the spec (first of A, C, G, T that is neither allele) is used unless it is found.
+
+## Stage 3: phASER (2026-10-01)
+
+- Gate report: `.superpowers/sdd/stage3-phaser-gate-report.md` (phASER's own unpinned `environment.yml` at commit aa1f8ec resolved to the versions below; job 11377680, 1252 s).
+- Installation from the skill text: `setup_phaser_env.sh` cut from Step 18 with `tests/synthetic/cut_block.sh`, placeholders substituted, submitted with `sbatch -p bcc` as job 11378119 (node b13). Exit 0, log ends `phASER installed in .../phaser_home`. Wall time 631 s (scontrol StartTime 13:30:39, EndTime 13:41:10), of which most is the classic conda 4.14.0 solver; the pinned solve reported no conflicts (only conda's `.*` version-spec warnings). Environment 632 MB; the package cache was removed; the lock directory `.installing` was removed by the EXIT trap.
+- `install_ok.txt`: `commit aa1f8ec5fe1cc676e37cfa6f6a0bce6b09070301`, `python 3.14.7`.
+- Pinned versions resolved exactly (`phaser_env.txt`, from `conda list`): python 3.14.7, numpy 2.5.3, scipy 1.18.1, pandas 3.0.6, pysam 0.24.1, intervaltree 3.2.1, samtools 1.24, bcftools 1.24, htslib 1.24, bedtools 2.31.1 (the same builds as the gate environment). `pip` is not pinned and resolved to 26.2.1.
+- Idempotence: the same script submitted again (job 11378121) printed `phASER already installed in .../phaser_home` and ended with exit 0 in under 1 s.
+- Run-time setup without module or activation (job 11378120): `PATH` with `env/bin` first and `PYTHONNOUSERSITE=1`. Without `PYTHONNOUSERSITE` the import of numpy fails: `/usr/lib64/libm.so.6: version 'GLIBC_2.27' not found (required by /home/yannvrb/.local/lib/python3.14/site-packages/numpy/...)`. With it, `imports ok` and numpy loads from `phaser_home/env/lib/python3.14/site-packages`; `python`, `samtools`, `bcftools`, `tabix`, `bgzip` and `bedtools` resolve to `phaser_home/env/bin`.
+- Smoke run (same job): `phaser.py` on the Stage 2 acceptance `bam/ob_s1.bam` and `genotypes/ind1.het.vcf.gz` (sample `ind1`, `--paired_end 1 --mapq 255 --baseq 10 --pass_only 0 --unique_ids 1 --gw_phase_vcf 0 --threads 1`), exit 0: `PHASED 99 of 153 all variants (= 0.647059)`, 94 haplotype blocks, the same figures as the gate run. The inputs were unchanged afterwards (listing with modification times compared).
+- `phaser_help.txt` and `phaser_gene_ae_help.txt` are the `--help` output of `phaser.py` and `phaser_gene_ae.py` at commit aa1f8ec5fe1cc676e37cfa6f6a0bce6b09070301, recorded in job 11378120 from this installation. The checker compares every flag on a `phaser/phaser.py` or `phaser_gene_ae/phaser_gene_ae.py` command line in the skill with them.

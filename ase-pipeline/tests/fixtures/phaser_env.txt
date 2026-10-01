@@ -1,0 +1,13 @@
+repository https://github.com/secastel/phaser
+commit aa1f8ec5fe1cc676e37cfa6f6a0bce6b09070301
+python 3.14.7
+bcftools                  1.24                 h118bc1c_2    bioconda
+bedtools                  2.31.1               h13024bc_3    bioconda
+htslib                    1.24                 ha79157c_0    bioconda
+intervaltree              3.2.1              pyh5ded981_0    conda-forge
+numpy                     2.5.3           py314hd3a7d6b_0    conda-forge
+pandas                    3.0.6           np2py314h9e1d7c2_0    conda-forge
+pysam                     0.24.1          py314ha0fe93d_0    bioconda
+python                    3.14.7          hcd007b5_106_cp314    conda-forge
+samtools                  1.24                 h9dcdb79_1    bioconda
+scipy                     1.18.1          py314h36f0660_1    conda-forge

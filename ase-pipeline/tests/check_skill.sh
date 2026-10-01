@@ -20,9 +20,13 @@ forbid() { ! grep -qF -- "$1" "$SKILL" || { echo "FAIL: forbidden text present: 
 tool_flags=$( { grep -oE '^--[A-Za-z][A-Za-z0-9_-]*' "$FIX/gatk_ASEReadCounter_help.txt"
                 awk 'prev ~ /^[A-Za-z][A-Za-z0-9_]*( |$)/ && $0 ~ /^ +(string|int|double|uint|bool|-|[A-Za-z0-9]+\(?s?\)?:)/ {split(prev,a," "); print a[1]} {prev=$0}' "$FIX/star_help.txt"
               } | sed 's/^--//' | sort -u )
+for f in phaser_help.txt phaser_gene_ae_help.txt; do
+  [ -s "$FIX/$f" ] && tool_flags="$tool_flags
+$(grep -oE -- '--[a-z][a-z0-9_]*' "$FIX/$f" | sed 's/^--//' | sort -u)"
+done
 # Non-STAR/non-GATK flags: sbatch/singularity (bind mem mail-type mail-user array dependency parsable),
-# bcftools (regions samples genotype types min-alleles max-alleles rename-chrs).
-allow="bind mem mail-type mail-user array dependency parsable regions samples genotype types min-alleles max-alleles rename-chrs"
+# bcftools (regions samples genotype types min-alleles max-alleles rename-chrs), pip (user: Step 18 names pip --user installs).
+allow="bind mem mail-type mail-user array dependency parsable regions samples genotype types min-alleles max-alleles rename-chrs user"
 [ -n "${SHOW_TOOL_FLAGS:-}" ] && echo "$tool_flags"
 for flag in $(grep -oE '(^|[ `(=])--[A-Za-z][A-Za-z0-9_-]*' "$SKILL" | sed -E 's/^[^-]*--//' | sort -u); do
   echo "$tool_flags $allow" | tr ' ' '\n' | grep -qx -- "$flag" || { echo "FAIL: flag not in fixtures or allowlist: --$flag"; fail=1; }
@@ -667,5 +671,30 @@ need "so the haplotype-test power and tested fractions above are optimistic for 
 forbid "so the pooled counts are not inflated by SNPs that share reads"
 grep -qF 'non_integer = c(2.5, 7.5)' "$HERE/r/test_ase_stats_stage3.R" || { echo "FAIL: Stage 3 tests do not cover unusable count rows one by one"; fail=1; }
 # --- end Stage 3 Task 1 review fixes
+
+# --- Stage 3 Task 3 (phASER installation, fixtures, flag rule); each check fails on the Task 2 skill
+need "## Step 18 — phASER: installation and per-sample haplotype counts (outbred, optional)"
+need "PHASER_COMMIT=aa1f8ec5fe1cc676e37cfa6f6a0bce6b09070301"
+need "PHASER_REPO=https://github.com/secastel/phaser.git"
+need 'conda env create -p "$PHASER_HOME/env" -f "$PHASER_HOME/environment.phaser.yml"'
+need "  - python=3.14.7"
+need "export PYTHONNOUSERSITE=1"
+need "never the bioconda package"
+need "**Bumping the pinned commit.**"
+[ "$(grep -c '^module add miniconda3/v4' "$SKILL")" = 1 ] || { echo "FAIL: exactly one line may load miniconda3/v4 (setup_phaser_env.sh)"; fail=1; }
+forbid "conda install -c bioconda phaser"
+forbid "bioconda::phaser"
+for f in phaser_help.txt phaser_gene_ae_help.txt phaser_env.txt; do [ -s "$FIX/$f" ] || { echo "FAIL: missing fixture $f"; fail=1; }; done
+[ -s "$HERE/synthetic/cut_block.sh" ] || { echo "FAIL: missing tests/synthetic/cut_block.sh"; fail=1; }
+# phASER flags: every --flag on a phaser.py / phaser_gene_ae.py command (continuation lines joined) is in the fixture of the pinned commit
+ph_flags() { grep -oE -- '--[a-z][a-z0-9_]*' "$FIX/$1" 2>/dev/null | sed 's/^--//' | sort -u; }
+ph_check() {   # $1 = script path fragment on the command line, $2 = fixture
+  awk '{ if (sub(/\\$/, "")) { buf = buf $0 " "; next } print buf $0; buf = "" }' "$SKILL" | grep -F -- "$1" |
+    grep -oE -- '(^|[ (])--[a-z][a-z0-9_]*' | sed -E 's/^[ (]?--//' | sort -u |
+    while read -r f; do ph_flags "$2" | grep -qx -- "$f" || echo "FAIL: $1 flag not in fixtures/$2: --$f"; done
+}
+ph_out=$(ph_check "phaser/phaser.py" phaser_help.txt; ph_check "phaser_gene_ae/phaser_gene_ae.py" phaser_gene_ae_help.txt)
+[ -z "$ph_out" ] || { echo "$ph_out"; fail=1; }
+# --- end Stage 3 Task 3
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1

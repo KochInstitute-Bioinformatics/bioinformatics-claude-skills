@@ -1,0 +1,164 @@
+usage: phaser.py [-h] [--bam BAM] --vcf VCF [--sample SAMPLE] --mapq MAPQ
+                 --baseq BASEQ --paired_end PAIRED_END --o O
+                 [--python_string PYTHON_STRING]
+                 [--haplo_count_bam_exclude HAPLO_COUNT_BAM_EXCLUDE]
+                 [--haplo_count_blacklist HAPLO_COUNT_BLACKLIST]
+                 [--cc_threshold CC_THRESHOLD] [--isize ISIZE]
+                 [--as_q_cutoff AS_Q_CUTOFF] [--blacklist BLACKLIST]
+                 [--write_vcf WRITE_VCF] [--prefilter_hets PREFILTER_HETS]
+                 [--reintegrate_vcf REINTEGRATE_VCF]
+                 [--include_indels INCLUDE_INDELS]
+                 [--output_read_ids OUTPUT_READ_IDS]
+                 [--remove_dups REMOVE_DUPS] [--pass_only PASS_ONLY]
+                 [--unphased_vars UNPHASED_VARS] [--chr_prefix CHR_PREFIX]
+                 [--gw_phase_method GW_PHASE_METHOD]
+                 [--gw_af_field GW_AF_FIELD] [--gw_phase_vcf GW_PHASE_VCF]
+                 [--gw_phase_vcf_min_confidence GW_PHASE_VCF_MIN_CONFIDENCE]
+                 [--threads THREADS] [--io_threads IO_THREADS]
+                 [--max_block_size MAX_BLOCK_SIZE] [--temp_dir TEMP_DIR]
+                 [--max_items_per_thread MAX_ITEMS_PER_THREAD]
+                 [--show_warning SHOW_WARNING] [--debug DEBUG] [--chr CHR]
+                 [--unique_ids UNIQUE_IDS] [--id_separator ID_SEPARATOR]
+                 [--output_network OUTPUT_NETWORK]
+                 [--process_slow PROCESS_SLOW]
+
+options:
+  -h, --help            show this help message and exit
+  --bam BAM             Indexed BAMs (comma separated) containing aligned
+                        reads
+  --vcf VCF             VCF for the sample, must be gzipped and tabix indexed.
+  --sample SAMPLE       Sample name in VCF
+  --mapq MAPQ           Minimum MAPQ for reads to be used for phasing. Can be
+                        a comma separated list, each value corresponding to
+                        the min MAPQ for a file in the input BAM list. Useful
+                        in cases when using both for example DNA and RNA
+                        libraries which might have differing mapping
+                        qualities.
+  --baseq BASEQ         Minimum baseq for bases to be used for phasing
+  --paired_end PAIRED_END
+                        Sequencing data comes from a paired end assay (0,1).
+                        Can be a comma separated list, each value specifying
+                        whether sequencing data comes from a paired end assay
+                        for the files in the input BAM list. If set to true
+                        phASER will require all reads to have the 'read mapped
+                        in proper pair' flag.
+  --o O                 Out prefix
+  --python_string PYTHON_STRING
+                        Command that specifies which python2.x interpreter has
+                        to be used, required for running read variant mapping
+                        script.
+  --haplo_count_bam_exclude HAPLO_COUNT_BAM_EXCLUDE
+                        Comma separated list of BAMs to exclude when
+                        generating haplotypic counts (outputted in
+                        o.haplotypic_counts.txt). When left blank haplotypic
+                        counts will be generated for all input BAMs, otherwise
+                        will they will not be generated for the BAMs specified
+                        here. Specify libraries by index where 1 = first
+                        library in --bam list, 2 = second, etc...
+  --haplo_count_blacklist HAPLO_COUNT_BLACKLIST
+                        BED file containing genomic intervals to be excluded
+                        from haplotypic counts. Reads from any variants which
+                        lie within these regions will not be counted for
+                        haplotypic counts.
+  --cc_threshold CC_THRESHOLD
+                        Threshold for significant conflicting variant
+                        configuration. The connection between any two variants
+                        with a conflicting configuration having p-value lower
+                        than this threshold will be removed.
+  --isize ISIZE         Maximum allowed insert size for read pairs. Can be a
+                        comma separated list, each value corresponding to a
+                        max isize for a file in the input BAM list. Set to 0
+                        for no maximum size.
+  --as_q_cutoff AS_Q_CUTOFF
+                        Bottom quantile to cutoff for read alignment score.
+  --blacklist BLACKLIST
+                        BED file containing genomic intervals to be excluded
+                        from phasing (for example HLA).
+  --write_vcf WRITE_VCF
+                        Create a VCF containing phasing information (0,1).
+  --prefilter_hets PREFILTER_HETS
+                        Prefilter the input VCF to heterozygous sites for the
+                        selected sample before phasing (0,1).
+  --reintegrate_vcf REINTEGRATE_VCF
+                        When --prefilter_hets = 1 and --write_vcf = 1, write
+                        output against the full input VCF for backward
+                        compatibility (1) or only against the het-filtered VCF
+                        for faster output (0).
+  --include_indels INCLUDE_INDELS
+                        Include indels in the analysis (0,1). NOTE: since
+                        mapping is a problem for indels including them will
+                        likely result in poor quality phasing unless specific
+                        precautions have been taken.
+  --output_read_ids OUTPUT_READ_IDS
+                        Output read IDs in the coverage files (0,1).
+  --remove_dups REMOVE_DUPS
+                        Remove duplicate reads from all analyses (0,1).
+  --pass_only PASS_ONLY
+                        Only use variants labled with PASS in the VCF filter
+                        field (0,1).
+  --unphased_vars UNPHASED_VARS
+                        Output unphased variants (singletons) in the
+                        haplotypic_counts and haplotypes files (0,1).
+  --chr_prefix CHR_PREFIX
+                        Add the string to the begining of the VCF contig name.
+                        For example set to 'chr' if VCF contig is listed as
+                        '1' and bam reference is 'chr1'.
+  --gw_phase_method GW_PHASE_METHOD
+                        Method to use for determing genome wide phasing. NOTE
+                        requires input VCF to be phased and have allele
+                        frequencies for MAF weighted mode (see --gw_af_field).
+                        0 = Use most common haplotype phase. 1 = MAF weighted
+                        phase anchoring.
+  --gw_af_field GW_AF_FIELD
+                        Field from --vcf to use for allele frequency.
+  --gw_phase_vcf GW_PHASE_VCF
+                        Replace GT field of output VCF using phASER genome
+                        wide phase. 0: do not replace; 1: replace when
+                        gw_confidence >= --gw_phase_vcf_min_confidence; 2: as
+                        in (1), but in addition replace with haplotype block
+                        phase when gw_confidence <
+                        --gw_phase_vcf_min_confidence and include PS field.
+                        See --gw_phase_method for options.
+  --gw_phase_vcf_min_confidence GW_PHASE_VCF_MIN_CONFIDENCE
+                        If replacing GT field in VCF, only replace when phASER
+                        haplotype gw_confidence >= this value.
+  --threads THREADS     Maximum number of threads to use. Note the maximum
+                        thread count for some tasks is bounded by the data
+                        (for example 1 thread per contig for haplotype
+                        construction).
+  --io_threads IO_THREADS
+                        Thread count for I/O bound helpers (samtools
+                        view/bgzip). Set to 0 to disable multi-threaded I/O.
+  --max_block_size MAX_BLOCK_SIZE
+                        Maximum number of variants to phase at once. Number of
+                        haplotypes tested = 2 ^ # variants in block. Blocks
+                        larger than this will be split into sub blocks,
+                        phased, and then the best scoring sub blocks will be
+                        phased with each other.
+  --temp_dir TEMP_DIR   Location of temporary directory to use for storing
+                        files. If left blank will default to system temp dir.
+                        NOTE: potentially large files will be stored in this
+                        directory, so please ensure there is sufficient free
+                        space.
+  --max_items_per_thread MAX_ITEMS_PER_THREAD
+                        Maximum number of items that can be assigned to a
+                        single thread to process. NOTE: if this number is too
+                        high Python will stall when trying to join the pools.
+  --show_warning SHOW_WARNING
+                        Show warnings in stdout (0,1).
+  --debug DEBUG         Show debug mode messages (0,1).
+  --chr CHR             Restrict haplotype phasing to a specific chromosome.
+  --unique_ids UNIQUE_IDS
+                        Generate and output unique IDs instead of those
+                        provided in the VCF (0,1). NOTE: this should be used
+                        if your VCF does not contain a unique ID for each
+                        variant.
+  --id_separator ID_SEPARATOR
+                        Separator to use when generating unique IDs. Must not
+                        be found in contig name, and cannot include ':'.
+  --output_network OUTPUT_NETWORK
+                        Output the haplotype connection network for the given
+                        variant.
+  --process_slow PROCESS_SLOW
+                        Argument to process data slow in chunks (by
+                        chromosome) to handle memory limits.
