@@ -67,7 +67,6 @@ need "offered only when \`{MODE}\` = \`outbred\`"
 need "replicates = at least 2 samples in the condition"
 need "#SBATCH --array=1-{ARRAY_N}"
 need "-n 8 --mem=48G -t 4:00:00"
-need "available in a later stage"
 need "f1_het_sites.vcf.gz"
 need "RNA-derived genotypes are circular"
 need "Step 5, part 2"
@@ -471,7 +470,6 @@ need 'R3=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_03_reciproca
 need 'R4=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_04_differential.sh)'
 need "### Reciprocal F1 section"
 need "### Differential ASE section"
-need "offered only when \`{MODE}\` = \`outbred\`; available in a later stage"
 need "pasted verbatim into Rmd 02, 03, 04 and 05"   # Stage 3 Task 4 (M11): Rmd 05 added to the Notes line
 forbid "Stage 1 implements only the always-on analysis"
 forbid "**Stage 1 only.**"
@@ -599,7 +597,6 @@ forbid "per_sample"
 need 'menu number 1 is the word `per-sample`, 2 is `reciprocal`, 3 is `differential`'
 need 'holds the words, separated by spaces, never the menu numbers'
 need 'case "$ANALYSES" in "") die "ANALYSES is empty: write the Step 7 words'
-need 'for w in $ANALYSES; do case "$w" in per-sample|reciprocal|differential) ;; *) die "ANALYSES contains '"'"'$w'"'"'; the accepted words are per-sample, reciprocal and differential'
 # M1: the Rmd 03 / Rmd 04 submission must sit directly under its case line (the NEED line cannot satisfy this)
 pair_need() { awk -v a="$1" -v b="$2" 'index($0,b) && p {f=1} {p = index($0,a) > 0} END {exit !f}' "$SKILL" || { echo "FAIL: line not directly under its case line: $2"; fail=1; }; }
 pair_need 'case " $ANALYSES " in *reciprocal*)' '  R3=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_03_reciprocal.sh); got run_03_reciprocal.sh "$R3" ;;'
@@ -638,7 +635,7 @@ forbid "the Stage 2 beta-binomial"
 ! grep -qE 'job [0-9]{6,}' "$SKILL" || { echo "FAIL: skill mentions a job id"; fail=1; }
 ! grep -qE 'Singularity\. [a-z]' "$HERE/../../README.md" || { echo "FAIL: root README row: lower-case sentence start"; fail=1; }
 # M13
-need "PAT='error|halted|due to time limit|cancelled|out of memory|oom-kill'"
+need "PAT='error|exception|halted|due to time limit|cancelled|out of memory|oom-kill'"   # Stage 3: 'exception' added for phASER (Python) tracebacks
 need 'grep -h -m1 -iE "$PAT"'
 forbid "-iE 'error|halted'"
 # README: M6, M8
@@ -808,7 +805,7 @@ need "phaser_gene_ae splits variant IDs on '_'"
 need "PHASED_GT=1 but only"
 need 'N_COV=$(awk -F'"'"'\t'"'"' '"'"'NR > 1 && $7 > 0'"'"' "$OUT.gene_ae.txt.part"'
 need "(ASEReadCounter and phASER; a plain VCF fails there). Block R has already run before the loop; then the gene-spans block below; then block I"
-[ "$(grep -c 'PHASER_COMMIT=aa1f8ec5fe1cc676e37cfa6f6a0bce6b09070301' "$SKILL")" = 2 ] || { echo "FAIL: the pinned commit must be set in setup_phaser_env.sh and phaser_count.sh"; fail=1; }
+[ "$(grep -c 'PHASER_COMMIT=aa1f8ec5fe1cc676e37cfa6f6a0bce6b09070301' "$SKILL")" = 3 ] || { echo "FAIL: the pinned commit must be set in setup_phaser_env.sh, phaser_count.sh and submit_chain.sh (Step 18: all three places)"; fail=1; }
 [ -s "$HERE/synthetic/assemble_outbred_from_skill.sh" ] || { echo "FAIL: missing tests/synthetic/assemble_outbred_from_skill.sh"; fail=1; }
 # carried items (Task 3 ruling) and guards: lines of the block cut from Step 18, so text only in prose or in setup_phaser_env.sh never satisfies them
 PHC=$(bash "$HERE/synthetic/cut_block.sh" "$SKILL" '### `phaser_count.sh`' 2>/dev/null)
@@ -892,5 +889,65 @@ grep -qF 'paste(act$contig, act$position)' "$EV3" 2>/dev/null || { echo "FAIL: t
 # M11: Step 10 points to Step 19's note on spans
 need "The span includes introns: every heterozygous SNP inside it counts for the gene, including SNPs of genes nested in its introns or overlapping it (Step 19, Gene spans)."
 # --- end Stage 3 Task 5 review fixes
+
+# --- Stage 3 chain integration (wizard Steps 2/7/9, submit_chain.sh, wait_chain.sh, summary page, Notes); each check fails on ceb4667
+forbid "available in a later stage"
+forbid "phASER is a later stage"
+forbid "Menu number 4 (phASER) runs nothing yet"
+forbid "the only module ever loaded is"
+forbid "the job just before the first cancelled one in chain order"
+forbid "so the new hash must also replace the old one wherever the chain compares it"
+need "No conda environment is needed for this skill, except for the optional phASER analysis (Steps 18-19)"
+need "offered only when \`{MODE}\` = \`outbred\` and the data are paired-end"
+need 'menu number 1 is the word `per-sample`, 2 is `reciprocal`, 3 is `differential`, 4 is `phaser`'
+need "Are the genotype VCFs phased?"
+need "Store it as \`{PHASED_GT}\`"
+need "Where should phASER be installed?"
+need "set \`{PHASED_GT}\` to 0 and \`{PHASER_HOME}\` to the word \`none\`"
+need "\`{PHASER_RESOURCES}\` for \`phaser_count.sh\` (phASER only; one array task per sample, always one core):"
+need "- otherwise: \`-n 1 --mem=16G -t 4:00:00\`."
+need "these figures say nothing about real data"
+need "### phASER section (only when Rmd 05 ran)"
+need "\`{TODAY}_{WD_NAME}_ASE_phaser_gene.tsv.gz\` and \`{TODAY}_{WD_NAME}_ASE_phaser_comparison.tsv.gz\` (the full tables"
+need "a direction (haplotype A or B higher) is given only for genome-wide phased genes"
+need "run_05_phaser_<jobid>.out"
+need "the one exception is \`module add miniconda3/v4\`"
+need "- **phASER.** Always the repository https://github.com/secastel/phaser at the pinned commit"
+# {PHASER_RESOURCES}: one core (phaser.py runs with --threads 1); no tier of that list asks for more
+! grep -qE -- '`-n ([2-9]|[1-9][0-9]+) --mem=' <(sed -n '/^`{PHASER_RESOURCES}` for/,/^$/p' "$SKILL") ||
+  { echo "FAIL: {PHASER_RESOURCES} must request one core (-n 1)"; fail=1; }
+[ -n "$(sed -n '/^`{PHASER_RESOURCES}` for/,/^$/p' "$SKILL")" ] || { echo "FAIL: no {PHASER_RESOURCES} list in Step 9"; fail=1; }
+# submit_chain.sh and wait_chain.sh: exact lines inside the cut blocks (comments or prose cannot satisfy them)
+SUBC=$(bash "$HERE/synthetic/cut_block.sh" "$SKILL" "### Submission order (one block" 2>/dev/null)
+WAITC=$(bash "$HERE/synthetic/cut_block.sh" "$SKILL" "**Waiting.**" 2>/dev/null)
+cline() { printf '%s\n' "$SUBC" | grep -qxF -- "$1" || { echo "FAIL: submit_chain.sh lacks the line: $1"; fail=1; }; }
+wline() { printf '%s\n' "$WAITC" | grep -qxF -- "$1" || { echo "FAIL: wait_chain.sh lacks the line: $1"; fail=1; }; }
+cline 'MODE="{MODE}"; ANALYSES="{ANALYSES}"; PHASER_HOME="{PHASER_HOME}"   # Step 7: MODE f1 or outbred; ANALYSES the words, e.g. "per-sample phaser"; PHASER_HOME a path or none'
+cline 'for w in $ANALYSES; do case "$w" in per-sample|reciprocal|differential|phaser) ;; *) die "ANALYSES contains '"'"'$w'"'"'; the accepted words are per-sample, reciprocal, differential and phaser, separated by spaces (not menu numbers or other spellings)" ;; esac; done'
+cline 'case " $ANALYSES " in *" phaser "*) [ "$MODE" = outbred ] || die "phaser analysis is outbred only"; NEED="$NEED setup_phaser_env.sh phaser_count.sh run_05_phaser.sh" ;; esac'
+cline 'PHASER_COMMIT=aa1f8ec5fe1cc676e37cfa6f6a0bce6b09070301; INSTALL=no'
+cline '  ESHA=$(awk '"'"'index($0, "ENV_YML=$(cat <<") == 1 {f = 1; next} f && $0 == "YML" {exit} f'"'"' "$S/setup_phaser_env.sh" | sha256sum | cut -d '"'"' '"'"' -f 1)'
+cline '  [ "$(sed -n 1p "$PHASER_HOME/install_ok.txt" 2>/dev/null)" = "commit $PHASER_COMMIT" ] && [ "$(sed -n 2p "$PHASER_HOME/install_ok.txt" 2>/dev/null)" = "env_sha256 $ESHA" ] || INSTALL=yes ;;'
+cline 'DEP=""; R3="not selected"; R4="not selected"; R5="not selected"; PS=""   # DEP stays empty unless the mouse helper below is used'
+cline 'echo "Rmd 03: $R3; Rmd 04: $R4; Rmd 05: $R5"'
+pair_need '  case "$INSTALL" in yes) PS=$(sbatch -p bcc --parsable $S/setup_phaser_env.sh); got setup_phaser_env.sh "$PS" ;; esac' \
+          '  PH=$(sbatch -p bcc --parsable --dependency=afterok:$A${PS:+:$PS} $S/phaser_count.sh); got phaser_count.sh "$PH"'
+pair_need '  PH=$(sbatch -p bcc --parsable --dependency=afterok:$A${PS:+:$PS} $S/phaser_count.sh); got phaser_count.sh "$PH"' \
+          '  R5=$(sbatch -p bcc --parsable --dependency=afterok:$PH:$R2 $S/run_05_phaser.sh); got run_05_phaser.sh "$R5" ;;'
+pair_need 'case " $ANALYSES " in *" phaser "*)' '  case "$INSTALL" in yes) PS=$(sbatch -p bcc --parsable $S/setup_phaser_env.sh); got setup_phaser_env.sh "$PS" ;; esac'
+# the commit of the install test in submit_chain.sh is the commit pinned by setup_phaser_env.sh ($pc, Task 3 review block)
+sc=$(printf '%s\n' "$SUBC" | sed -n 's/^PHASER_COMMIT=\([0-9a-f]\{40\}\); INSTALL=no$/\1/p')
+[ -n "$sc" ] && [ "$sc" = "${pc:-}" ] || { echo "FAIL: submit_chain.sh PHASER_COMMIT (${sc:-none}) differs from setup_phaser_env.sh (${pc:-none})"; fail=1; }
+wline "PAT='error|exception|halted|due to time limit|cancelled|out of memory|oom-kill'   # first matching line of a job log (a time-limit kill has no \"error\" word)"
+wline '                         run_05_*) echo summary_numbers_phaser.tsv ;; esac; }'
+wline '                       run_05_*) echo run_02_imbalance.sh phaser_count.sh ;; esac; }'
+wline '    echo "$name $id CANCELLED: never satisfiable, upstream failure: ${UP[$name]}"; bad=1'
+# the stub-scheduler dry run of both scripts (bash and stubs only, under env -i; see the script header) must pass
+[ -s "$HERE/chain/dry_run_chain.sh" ] || { echo "FAIL: missing tests/chain/dry_run_chain.sh"; fail=1; }
+DRYD=$(mktemp -d "${TMPDIR:-/tmp}/ase_dry.XXXXXX") && {
+  dry_out=$(env -i PATH=/usr/bin:/bin HOME="${HOME:-/nonexistent}" /bin/bash --noprofile --norc "$HERE/chain/dry_run_chain.sh" "$SKILL" "$DRYD/w" 2>&1)
+  printf '%s\n' "$dry_out" | tail -1 | grep -qx "DRY RUN PASS" || { echo "FAIL: tests/chain/dry_run_chain.sh did not pass:"; printf '%s\n' "$dry_out" | grep -E '^FAIL|^  ' | head -20; fail=1; }
+  rm -rf "$DRYD"; }
+# --- end Stage 3 chain integration
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1
