@@ -5,6 +5,7 @@ bad() { echo "FAIL: $*"; fail=1; }
 chk() { [ -s "$1" ] || bad "missing/empty $1"; }
 export LC_ALL=C
 O=$D/outbred_phase
+CH=$(grep "^>" $D/genome/genome.fa 2>/dev/null | head -1 | sed "s/^>//; s/ .*//")   # the only contig; table contigs must equal it exactly (no chr-prefix drift)
 for f in $D/seed.txt $D/genome/genome.fa $D/genome/genome.gtf $O/samples.csv $O/truth_genes.tsv $O/truth_snps.tsv \
          $O/truth_individual_genes.tsv $O/truth_phase.tsv $O/truth_fragments.tsv $O/direct_flips.tsv; do chk $f; done
 [ "$(head -1 $O/samples.csv 2>/dev/null)" = "sample,fastq_1,fastq_2,condition,cross_direction,individual" ] || bad "samples.csv header"
@@ -42,7 +43,7 @@ vcf_rows() { grep -v '^#' "$1" | awk -F'\t' '{print $1"\t"$2"\t"$4"\t"$5}' | sor
 truth_rows() { tail -n +2 "$1" | awk -F'\t' '{print $1"\t"$2"\t"$3"\t"$4}' | sort; }
 for i in 1 2 3 4 5 6; do
   I=ind$i
-  for f in all het all.phased het.phased; do chk $O/$I.$f.vcf; done
+  for f in all het all.phased het.phased; do chk $O/$I.$f.vcf; [ "$(grep "^#CHROM" $O/$I.$f.vcf 2>/dev/null | cut -f10)" = "$I" ] || bad "$I.$f.vcf sample column name is not $I"; done
   diff <(vcf_rows $O/$I.all.vcf) <(truth_rows $O/truth_snps.tsv) >/dev/null || bad "$I.all.vcf sites differ from truth_snps.tsv"
   diff <(vcf_rows $O/$I.all.phased.vcf) <(truth_rows $O/truth_snps.tsv) >/dev/null || bad "$I.all.phased.vcf sites differ from truth_snps.tsv"
   awk -F'\t' -v ind=$I 'NR==FNR{ if ($1==ind) g[$3]=$5; next } !/^#/{ if (g[$2]!=$10) e=1 } END{exit e}' $O/truth_phase.tsv $O/$I.all.vcf \
@@ -66,6 +67,18 @@ for s in $(tail -n +2 $O/samples.csv | cut -d, -f1); do
     $O/direct_counts/$s.table || bad "$s direct counts header or ref+alt/total/rawDepth"
   awk -F'\t' 'NR==FNR{ if (!/^#/ && $10=="0/1") h[$2]=1; next } FNR>1 && !($2 in h){e=1} END{exit e}' $O/$ind.het.vcf $O/direct_counts/$s.table \
     || bad "$s direct counts at positions that are not het in $ind"
+  for k in 1 2; do
+    p=$(awk -F, -v s=$s -v c=$((k+1)) '$1==s{print $c}' $O/samples.csv)
+    { [ "$(basename "$p")" = "${s}_$k.fastq.gz" ] && [ -s "$O/$(basename "$p")" ]; } || bad "$s samples.csv fastq_$k path ($p) is not this sample's file"
+  done
+  awk -F'\t' 'FNR>1{ if (seen[$1 SUBSEP $2]++) e=1 } END{exit e}' $O/direct_counts/$s.table || bad "$s direct counts duplicate rows"
+  awk -F'\t' -v c=$CH 'FNR>1 && $1!=c{e=1} END{exit e}' $O/direct_counts/$s.table || bad "$s direct counts contig is not $CH"
+  for m in phased unphased; do
+    t=$O/direct_gene_ae_$m/$s.gene_ae.txt
+    awk -F'\t' 'NR==FNR{ if (FNR>1) g[$1]=1; next } FNR>1{ n++; if (seen[$4]++ || !($4 in g)) e=1 } END{ if (n!=80) e=1; exit e }' $O/truth_genes.tsv $t \
+      || bad "$s gene_ae_$m duplicate, unknown or missing gene rows (80 distinct genes expected)"
+    awk -F'\t' -v c=$CH 'FNR>1 && $1!=c{e=1} END{exit e}' $t || bad "$s gene_ae_$m contig is not $CH"
+  done
   cmp -s $O/direct_counts/$s.table $O/direct_counts/$s.unfiltered.table || bad "$s unfiltered.table must equal the table"
   awk -F'\t' -v s=$s 'NR==FNR{ if ($1==s) { c1[$2]=$5; c2[$2]=$6 } next }
     FNR==1{ if ($4!="name"||$5!="aCount"||$6!="bCount"||$7!="totalCount"||$9!="n_variants"||$11!="gw_phased"||$12!="bam") e=1; next }
@@ -97,17 +110,29 @@ awk -F'\t' 'NR==FNR{ if (FNR>1) { ha[$1]=$3; cl[$1]=$2 } next } FNR>1{ d=$3-0.5;
   END{ split("hap_strong hap_moderate hap_lowdepth two_block", c, " "); for (i in c) if (!up[c[i]] || !dn[c[i]]) e=1; exit e }' \
   $O/truth_genes.tsv $O/truth_individual_genes.tsv || bad "truth_individual_genes h1 (|h1 - 0.5| = h_abs, both signs in every planted class)"
 # direct counts against the truth (labels): the haplotype-1 side of the counts (altCount where alt_on = 1, refCount where alt_on = 2)
-# must follow h1 in the planted cells. z = (H - T h1) / sqrt(T h1 (1-h1) n_het): the factor n_het is the maximal design effect (one
-# fragment can be counted at every het SNP of its gene); a ref/alt label flip in the counts moves z far beyond the bound
-# (bounds calibrated on correct data, see the report); STAT=1 prints the cell statistics instead of checking.
+# must follow h1 in the planted cells (hap_strong, hap_moderate, hap_lowdepth, two_block: 78 cells).
+# y = sign(h1 - 0.5) * (H - T h1) / sqrt(T h1 (1-h1) D); D = the largest number of SNPs of the gene inside any 350-bp transcript window
+# (a fragment of <= 350 bp is counted at most D times). On correct data y ~ N(0,1); a ref/alt swap turns y into a large NEGATIVE value.
+# Bounds (model): a cell fails when y < -4.4 (P = 5.4e-6 per cell, 4.2e-4 per 78 cells); the dataset fails when sum y^2 > 126 = qchisq(0.9995, 78)
+# (5e-4); false-fail risk per dataset < 1e-3. Observed on correct data, 5 seeds (20261001,03,05,06,07): max |y| 2.6-3.7, sum y^2 58-104
+# (mean 78, as for chi-square(78)). Smallest |y| after a single-cell swap over the same seeds: hap_lowdepth 6.4, two_block 7.9,
+# hap_moderate 4.5 (4.54, 4.58, 5.04, 5.32, 5.48), hap_strong 11.7: all above 4.4. STAT=1 prints the cell statistics.
+ZB=4.4; ZS=126
+cells=""
 for s in $(tail -n +2 $O/samples.csv | cut -d, -f1); do
   ind=$(awk -F, -v s=$s '$1==s{print $6}' $O/samples.csv)
-  awk -F'\t' -v ind=$ind -v stat=${STAT:-0} 'FILENAME ~ /truth_genes/ { if (FNR>1) cl[$1]=$2; next } FILENAME ~ /truth_individual_genes/ { if ($1==ind) { h[$2]=$3; nh[$2]=$4 } next }
-    FILENAME ~ /truth_snps/ { if (FNR>1) gg[$2]=$5; next } FILENAME ~ /truth_phase/ { if ($1==ind) ao[$3]=$6; next }
-    FNR>1 { g=gg[$2]; if (cl[g]=="null" || cl[g]=="null_linked" || !(g in nh)) next; T[g]+=$8; H[g]+=(ao[$2]=="1") ? $7 : $6 }
-    END{ for (g in T) { p=h[g]; z=(H[g]-T[g]*p)/sqrt(T[g]*p*(1-p)*nh[g]); if (stat) print ind, g, z; else if (z>5 || z<-5) { print "  " ind, g, z; e=1 } } exit e }' \
-    $O/truth_genes.tsv $O/truth_individual_genes.tsv $O/truth_snps.tsv $O/truth_phase.tsv $O/direct_counts/$s.table || bad "$s direct counts: haplotype-1 side does not follow h1 (ref/alt labels vs alt_on)"
+  cells="$cells
+$(awk -F'\t' -v ind=$ind 'FILENAME ~ /truth_genes/ { if (FNR>1) cl[$1]=$2; next } FILENAME ~ /truth_individual_genes/ { if ($1==ind) h[$2]=$3; next }
+    FILENAME ~ /truth_snps/ { if (FNR>1) { gg[$2]=$5; n[$5]++; off[$5,n[$5]]=$6 } next } FILENAME ~ /truth_phase/ { if ($1==ind) ao[$3]=$6; next }
+    FNR>1 { g=gg[$2]; if (!(g in h) || cl[g]=="null" || cl[g]=="null_linked") next; T[g]+=$8; H[g]+=(ao[$2]=="1") ? $7 : $6 }
+    END{ for (g in T) { D=0; for (i=1;i<=n[g];i++) { c=0; for (j=i;j<=n[g];j++) if (off[g,j]-off[g,i]<350) c++; if (c>D) D=c }
+           p=h[g]; sd=sqrt(T[g]*p*(1-p)*D); sg=(p>0.5)?1:-1; print ind, g, cl[g], sg*(H[g]-T[g]*p)/sd, sg*(T[g]-H[g]-T[g]*p)/sd } }' \
+    $O/truth_genes.tsv $O/truth_individual_genes.tsv $O/truth_snps.tsv $O/truth_phase.tsv $O/direct_counts/$s.table)"
 done
+if [ "${STAT:-0}" = 1 ]; then echo "$cells" | awk 'NF==5{print "STAT", $0}'; fi
+echo "$cells" | awk -v zb=$ZB -v zs=$ZS 'NF==5{ k++; s2+=$4*$4; if ($4<-zb) { print "  " $1, $2, $4; e=1 } }
+  END{ if (k!=78) { print "  cells " k; e=1 } if (s2>zs) { print "  sum z^2 " s2; e=1 } exit e }' \
+  || bad "direct counts label rule: haplotype-1 side does not follow h1 (cell y < -4.4 or sum y^2 > 126; ref/alt labels vs alt_on)"
 # the unphased emulation flips labels both ways (>= 10 each over all covered cells)
 awk -F'\t' 'NR>1 && $5=="TRUE"{t++} NR>1 && $5=="FALSE"{f++} END{exit !(t>=10 && f>=10)}' $O/direct_flips.tsv || bad "direct_flips: fewer than 10 flipped or unflipped cells"
 [ $fail -eq 0 ] && echo PASS || exit 1

@@ -8,6 +8,9 @@
 # Direct counts (ASEReadCounter columns: refCount = REF-allele fragments, altCount = ALT-allele fragments) and the emulated phASER
 # gene tables (aCount = haplotype-1 side, bCount = haplotype-2 side for the phased table) ignore sequencing errors: they test the
 # Rmds, not the aligner or phASER. Deterministic for a given seed (no dependence on time or locale).
+# Orientation limit: the direction of haplotype 1 vs 2 is observable only for genes with h1 != 0.5. For null and null_linked genes
+# (h1 = 0.5) neither the reads nor the tables can show which haplotype is "1", so a swap of the labels there is undetectable;
+# tests of phase direction must use the planted classes (hap_strong, hap_moderate, hap_lowdepth, two_block).
 suppressPackageStartupMessages(library(Biostrings))
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) != 2) stop("usage: simulate_ase_stage3.R <outdir> <seed>")
@@ -71,7 +74,7 @@ frags2 <- function(hseq, n, snp_offs) {
   list(r1 = r1, r2 = r2, cover = cover)
 }
 
-# Block emulation for unphased phaser_gene_ae (copied from the plan)
+# Block emulation for unphased phaser_gene_ae (union-find of SNPs joined by a fragment)
 emulate_blocks <- function(cover1, cover2, het) {   # fragment x SNP logical matrices of haplotype 1 / 2; het: logical over the gene's SNPs
   cv <- rbind(cover1, cover2)[, het, drop = FALSE]; hs <- c(rep(1L, nrow(cover1)), rep(2L, nrow(cover2)))
   cov_snp <- which(colSums(cv) > 0); if (length(cov_snp) == 0) return(NULL)
