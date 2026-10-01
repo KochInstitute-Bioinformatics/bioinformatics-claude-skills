@@ -874,7 +874,7 @@ forbid "the same reads as ASEReadCounter's \`--min-mapping-quality\` 10 keeps"
 # I2: contig names with '_' are found before alignment: prep warns (non-fatal), the wizard refuses phASER for such a reference
 printf '%s\n' "$SPC" | grep -qF 'N_US_CTG=$(cut -f1 "$FASTA.fai" | grep -c _)' ||
   { echo "FAIL: the gene-spans block of prep_genotypes.sh must count FASTA contig names with '_' (N_US_CTG)"; fail=1; }
-printf '%s\n' "$SPC" | grep -qF "echo \"WARNING: \$N_US_CTG contig names of the FASTA and \$N_US_SPAN of the gene spans contain '_'" ||
+printf '%s\n' "$SPC" | grep -qF "echo \"WARNING: \$N_US_CTG contig names of the FASTA contain '_' (for example \$(cut -f1 \"\$FASTA.fai\" | grep _ | head -3 | paste -sd' ')): phASER cannot be used" ||
   { echo "FAIL: prep_genotypes.sh must warn about contig names with '_'"; fail=1; }
 need "**phASER and contig names with \`_\`.**"
 need "phASER cannot be used with this reference:"
@@ -903,7 +903,7 @@ need "Store it as \`{PHASED_GT}\`"
 need "Where should phASER be installed?"
 need "set \`{PHASED_GT}\` to 0 and \`{PHASER_HOME}\` to the word \`none\`"
 need "\`{PHASER_RESOURCES}\` for \`phaser_count.sh\` (phASER only; one array task per sample, always one core):"
-need "- otherwise: \`-n 1 --mem=32G -t 4:00:00\`."
+need "- otherwise: \`-n 1 --mem=16G -t 2:00:00\`."
 need "these figures say nothing about real data"
 need "### phASER section (only when Rmd 05 ran)"
 need "\`{TODAY}_{WD_NAME}_ASE_phaser_gene.tsv.gz\` and \`{TODAY}_{WD_NAME}_ASE_phaser_comparison.tsv.gz\` (the full tables"
@@ -1017,7 +1017,7 @@ grep -qE "Stage 3 synthetic acceptance run: DONE \(2026-[0-9-]+\)" "$RD" && ! gr
 rneed "102 evaluator checks PASS and 0 FAIL"
 rneed "13 with unphased genotypes, while the unphased ACAT test of Rmd 02 detects 14"
 rneed "phASER was therefore not better than ACAT on moderate genes"
-grep -qE "^Stage 3 real-data smoke test: (PENDING|DONE \(2026-[0-9-]+\))" "$RD" || { echo "FAIL: README must state the Stage 3 real-data smoke test status"; fail=1; }
+grep -qE "^Stage 3 real-data smoke test: DONE \(2026-[0-9-]+\)$" "$RD" && ! grep -qF "Stage 3 real-data smoke test: PENDING" "$RD" || { echo "FAIL: README must state the Stage 3 real-data smoke test DONE (whole line, nothing trailing)"; fail=1; }
 grep -q "/ase-pipeline.*phASER haplotype counts" "$RR" || { echo "FAIL: root README row must mention phASER haplotype counts"; fail=1; }
 ! grep -q "/ase-pipeline.*phASER not included" "$RR" || { echo "FAIL: root README row still says phASER not included"; fail=1; }
 # honesty statements: each is absent from the 11162ea README
@@ -1060,5 +1060,58 @@ rneed "41 checks"
 rneed "single-end data"
 rneed "phaser_pop"
 # --- end Stage 3 README and registration
+
+# --- Stage 3 real-data fix wave (gene spans, phASER resources, BLAS threads, unphased loss, README record); each check fails on 2d7b325
+# (1) gene spans: only genes on contigs of the FASTA are written; the '_' warning uses the FASTA's contig names only (as Step 7)
+sline() { printf '%s\n' "$SPC" | grep -qxF -- "$1" || { echo "FAIL: the gene-spans block lacks the line: $1"; fail=1; }; }
+sline 'SPAN_ALL="$SPAN_BED.all.tmp"   # every gene of the GTF; only the rows on contigs of $FASTA.fai go into $SPAN_BED'
+sline '  | sort -k1,1 -k2,2n > "$SPAN_ALL" || { echo "ERROR: cannot write $SPAN_ALL" >&2; exit 1; }'
+sline "awk -F'\\t' 'NR == FNR {c[\$1] = 1; next} (\$1 in c)' \"\$FASTA.fai\" \"\$SPAN_ALL\" > \"\$SPAN_BED\" || { echo \"ERROR: cannot write \$SPAN_BED\" >&2; exit 1; }"
+sline 'N_SPAN=$(wc -l < "$SPAN_ALL"); N_SPAN_ON=$(wc -l < "$SPAN_BED")'
+sline 'N_US_CTG=$(cut -f1 "$FASTA.fai" | grep -c _)'
+sline 'if [ "$N_US_CTG" -gt 0 ]; then'
+[ "$(printf '%s\n' "$SPC" | grep -c '> "$SPAN_BED"')" = 1 ] || { echo "FAIL: the gene-spans block must write \$SPAN_BED only once (the FASTA-contig filter)"; fail=1; }
+! printf '%s\n' "$SPC" | grep -qF 'N_US_SPAN' || { echo "FAIL: the '_' warning must not count gene-span contigs (N_US_SPAN): GTF-only patch contigs gave a false alarm"; fail=1; }
+need "awk '/^>/ {print substr(\$1, 2)}' {FASTA_PATH} | grep -c _"
+forbid "otherwise \`grep '^>' {FASTA_PATH} | grep -c _\`"
+need "Only the FASTA's contig names count, the same input and rule as the prep job's warning (Step 10, Gene spans)"
+need "Contigs with \`_\` that exist only in the GTF do not trigger it"
+[ -s "$HERE/synthetic/test_gene_spans_contigs.sh" ] || { echo "FAIL: missing tests/synthetic/test_gene_spans_contigs.sh"; fail=1; }
+for m in '### Gene spans for phASER' 'HSCHR6_MHC_COX' 'chrUn_test' '(for example )' 'ALL GENE-SPAN TESTS OK'; do
+  grep -qF -- "$m" "$HERE/synthetic/test_gene_spans_contigs.sh" 2>/dev/null || { echo "FAIL: test_gene_spans_contigs.sh does not test: $m"; fail=1; }; done
+# (2) {PHASER_RESOURCES} large tier and the measured / projected statement of Step 9
+forbid "- otherwise: \`-n 1 --mem=32G -t 4:00:00\`."
+need "- small genome (under 100 Mb): \`-n 1 --mem=4G -t 0:30:00\`;"
+forbid "Neither the time nor the memory of a real human sample has been measured"
+need "\`phaser.py\` took 2-3.6 s and about 117 MB per sample"
+need "took 32 s and 1.59 GB, so memory grows mainly with the number of heterozygous sites"
+need "**Projected, not measured:** a whole-genome sample like these (about 30 million read pairs) needs about 3-5 min and 2-3 GB"
+need "**assumed** genome-wide heterozygous-site count"
+need "it agrees with the upstream benchmark's 88 s for NA06986"
+# (3) one BLAS/OpenMP thread in phaser_count.sh, on the line right after PYTHONNOUSERSITE
+pline 'export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1   # nodes do not bind a -n 1 job to one core: numpy used 71 s CPU vs 6.6 s, no speed gain'
+l_pnus=$(ln_of 'export PYTHONNOUSERSITE=1'); l_omp=$(ln_of 'export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1')
+[ -n "$l_pnus" ] && [ -n "$l_omp" ] && [ "$l_omp" -eq $((l_pnus + 1)) ] ||
+  { echo "FAIL: phaser_count.sh must export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 on the line after PYTHONNOUSERSITE (lines ${l_pnus:-none}, ${l_omp:-none})"; fail=1; }
+need "the script alone used 71 s of CPU time against 6.6 s with these variables, with no gain in wall time"
+# (4) Step 7: measured loss with unphased genotypes; phASER recommended mainly with phased genotypes; unphased still allowed
+need "phASER is recommended mainly with phased genotypes."
+need "that rule lost 76-77% of the covered SNPs of the covered genes, against 25-35% on the synthetic data"
+need "You may still run phASER with unphased genotypes."
+# (5) README record of the real-data smoke test (the whole-line DONE status is checked above)
+rneed "1,099 of 1,140 directly connected SNP pairs (96.4%)"
+rneed "96.5% / 97.1% / 98.9% agree for pairs linked by at least 2 / 5 / 10 reads"
+rneed "lost 76-77% of the covered SNPs of the covered genes (1,692 of 2,218 and 1,914 of 2,478)"
+rneed "The only flag change: \`--mapq 91\` was chosen for GEM's MAPQ scale, while the skill's \`--mapq 255\` is for STAR."
+rneed "renamed from \`chr22\` to \`22\`"
+rneed "marked them with \`samtools markdup\`"
+rneed "of the 13 pairs more than 10 kb apart, 9 agree. The cause of these discordant pairs is unexplained"
+rneed "uses an **assumed** genome-wide count of heterozygous sites"
+rneed "no whole-genome run was made"
+rneed "a median 0.74 of the phased totals"
+rforbid "the real-data smoke test is pending and optional"
+rforbid "nothing was measured with this pinned environment"
+rforbid "-n 1 --mem=32G -t 4:00:00"
+# --- end Stage 3 real-data fix wave
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1
