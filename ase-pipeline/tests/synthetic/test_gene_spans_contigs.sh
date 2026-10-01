@@ -1,14 +1,14 @@
 #!/bin/bash
 # Usage: bash test_gene_spans_contigs.sh <skill.md> <genome.gtf> <genome.fa.fai> <work dir (must not exist)> [expected BED]
-# Tests the gene-span block of prep_genotypes.sh (Step 10, cut from the skill) and the wizard's contig check of Step 7 (the two
-# commands cut from the "phASER and contig names with `_`" paragraph) on the synthetic genome, with three variants:
+# Tests the gene-span block of prep_genotypes.sh (Step 10, cut from the skill) and the wizard's contig check of Step 7 (the .fai
+# command cut from the "phASER and contig names with `_`" paragraph) on the synthetic genome, with three variants:
 #   A. the genome as it is: every gene is written, no warning, Step 7 counts 0 (and, with [expected BED], the BED is unchanged)
 #   B. one extra gene on a patch contig "HSCHR6_MHC_COX" that exists only in the GTF: no warning, the contig is not in the BED,
 #      the log counts it among the genes of the GTF only; Step 7 counts 0 (phASER offered)
 #   C. one extra contig "chrUn_test" in the FASTA (.fai and header) with a gene on it: the warning fires and names chrUn_test;
-#      Step 7 counts 1 with the .fai and with the FASTA header lines (phASER refused)
-# The FASTA used for the Step 7 header command holds header lines only (one 'N' per contig), with a description that contains '_'
-# so the first-word rule is tested. Text tools only (awk, sort, grep, bash): it may run on the login node on these small files.
+#      Step 7 counts 1 with the .fai (phASER refused)
+# Step 7 must never read the FASTA on the login node: every {FASTA_PATH} of its paragraph must be {FASTA_PATH}.fai. The test FASTA
+# holds header lines only (one 'N' per contig). Text tools only (awk, sort, grep, bash): it may run on the login node on these small files.
 # Ends with "ALL GENE-SPAN TESTS OK" (exit 0) or "SOME GENE-SPAN TESTS BAD" (exit 1).
 set -uo pipefail
 SKILL=${1:?usage}; GTF=${2:?usage}; FAI=${3:?usage}; WORK=${4:?usage}; EXP_BED=${5:-}; HERE=$(cd "$(dirname "$0")" && pwd)
@@ -20,8 +20,10 @@ mkdir -p "$WORK" || die "cannot create $WORK"
 BLOCK=$(bash "$HERE/cut_block.sh" "$SKILL" "### Gene spans for phASER") || die "no gene-span block in $SKILL"
 PARA=$(grep -F '**phASER and contig names with `_`.**' "$SKILL") || die "no Step 7 contig paragraph in $SKILL"
 C_FAI=$(printf '%s\n' "$PARA" | grep -oE '`cut -f1 \{FASTA_PATH\}\.fai[^`]*`' | head -1 | tr -d '`')
-C_HDR=$(printf '%s\n' "$PARA" | grep -oE "\`awk '/\^>/[^\`]*\{FASTA_PATH\}[^\`]*\`" | head -1 | tr -d '`')
-[ -n "$C_FAI" ] && [ -n "$C_HDR" ] || die "cannot cut the two Step 7 commands (got: '$C_FAI' / '$C_HDR')"
+[ -n "$C_FAI" ] || die "cannot cut the Step 7 .fai command (got: '$C_FAI')"
+# the paragraph names the FASTA only through its index: a {FASTA_PATH} not followed by .fai would read the sequence file
+N_RAW=$(printf '%s\n' "$PARA" | grep -o '{FASTA_PATH}[^ `]*' | grep -vcx '{FASTA_PATH}\.fai')
+[ "$N_RAW" = 0 ] || die "the Step 7 paragraph reads {FASTA_PATH} itself ($N_RAW times), not only its .fai; the login node must never read the FASTA"
 N_GTF_GENES=$(awk -F'\t' '$3 == "exon"' "$GTF" | grep -o 'gene_id "[^"]*"' | sort -u | wc -l)
 bad=0
 ok()  { echo "ok   $*"; }
@@ -48,8 +50,8 @@ grep -q WARNING "$LOGF" && nok "A: unexpected warning" || ok "A: no warning"
 [ "$(wc -l < "$BEDF")" = "$N_GTF_GENES" ] && ok "A: BED has $N_GTF_GENES rows" || nok "A: BED rows $(wc -l < "$BEDF")"
 [ ! -e "$BEDF.all.tmp" ] && ok "A: temporary span file removed" || nok "A: $BEDF.all.tmp left"
 if [ -n "$EXP_BED" ]; then cmp -s "$BEDF" "$EXP_BED" && ok "A: BED identical to $EXP_BED" || nok "A: BED differs from $EXP_BED"; fi
-[ "$(step7 "$C_FAI")" = 0 ] && [ "$(step7 "$C_HDR")" = 0 ] && ok "A: Step 7 counts 0 (.fai and header; '_' in descriptions ignored)" \
-  || nok "A: Step 7 counts $(step7 "$C_FAI") / $(step7 "$C_HDR")"
+[ "$(step7 "$C_FAI")" = 0 ] && ok "A: Step 7 counts 0 (.fai)" \
+  || nok "A: Step 7 counts $(step7 "$C_FAI")"
 
 # B. a patch contig with '_' only in the GTF
 GB="$WORK/gtf_patch.gtf"
@@ -61,8 +63,8 @@ grep -qxF "Gene spans for phASER: $((N_GTF_GENES + 1)) genes, $N_GTF_GENES on co
 grep -q WARNING "$LOGF" && nok "B: warning fired for a GTF-only '_' contig: $(grep WARNING "$LOGF" | cut -c1-160)" || ok "B: no warning"
 cut -f1 "$BEDF" | grep -q _ && nok "B: a '_' contig is in the BED" || ok "B: no '_' contig in the BED"
 grep -qF PATCH0001 "$BEDF" && nok "B: the patch gene is in the BED" || ok "B: patch gene not in the BED"
-[ "$(step7 "$C_FAI")" = 0 ] && [ "$(step7 "$C_HDR")" = 0 ] && ok "B: Step 7 counts 0 (phASER offered)" \
-  || nok "B: Step 7 counts $(step7 "$C_FAI") / $(step7 "$C_HDR")"
+[ "$(step7 "$C_FAI")" = 0 ] && ok "B: Step 7 counts 0 (phASER offered)" \
+  || nok "B: Step 7 counts $(step7 "$C_FAI")"
 
 # C. a contig with '_' in the FASTA (.fai) with a gene on it
 GC="$WORK/gtf_un.gtf"; FC="$WORK/fai_un.fai"
@@ -73,8 +75,8 @@ grep -qxF "rc 0" "$LOGF" && ok "C: block exit 0 (warning only)" || nok "C: block
 grep -qF "WARNING: 1 contig names of the FASTA contain '_' (for example chrUn_test): phASER cannot be used with this reference" "$LOGF" \
   && ok "C: warning fires and names chrUn_test" || nok "C: warning: $(grep WARNING "$LOGF" | cut -c1-200)"
 grep -q "(for example )" "$LOGF" && nok "C: empty example list" || ok "C: example list not empty"
-[ "$(step7 "$C_FAI")" = 1 ] && [ "$(step7 "$C_HDR")" = 1 ] && ok "C: Step 7 counts 1 with the .fai and with the header lines (phASER refused)" \
-  || nok "C: Step 7 counts $(step7 "$C_FAI") / $(step7 "$C_HDR")"
+[ "$(step7 "$C_FAI")" = 1 ] && ok "C: Step 7 counts 1 with the .fai (phASER refused)" \
+  || nok "C: Step 7 counts $(step7 "$C_FAI")"
 
 [ "$bad" = 0 ] && { echo "ALL GENE-SPAN TESTS OK"; exit 0; }
 echo "SOME GENE-SPAN TESTS BAD"; exit 1

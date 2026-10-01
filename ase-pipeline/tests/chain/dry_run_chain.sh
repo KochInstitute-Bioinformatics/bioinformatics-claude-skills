@@ -206,6 +206,14 @@ run_02_imbalance.sh afterok:run_01_import_qc.sh
 setup_phaser_env.sh -
 phaser_count.sh afterok:setup_phaser_env.sh
 run_05_phaser.sh afterok:phaser_count.sh:run_02_imbalance.sh" ""
+# recipe E (a sample dropped): no phaser_count.sh and no installation job, even when the installation test says "install"
+RECIPE=E scenario recipe_E_drop_sample_diff outbred "per-sample differential phaser" yes "run_01_import_qc.sh -
+run_02_imbalance.sh afterok:run_01_import_qc.sh
+run_04_differential.sh afterok:run_01_import_qc.sh
+run_05_phaser.sh afterok:run_02_imbalance.sh" ""
+RECIPE=E scenario recipe_E_drop_sample_not_installed outbred "per-sample phaser" no "run_01_import_qc.sh -
+run_02_imbalance.sh afterok:run_01_import_qc.sh
+run_05_phaser.sh afterok:run_02_imbalance.sh" ""
 EXPECT_PART="$BASE_OB" RECIPE=naive scenario naive_copy_without_PH outbred "per-sample phaser" yes "STOP:sbatch returned no job id for run_05_phaser.sh" ""
 
 # wait scenarios: $1 name, $2 job list (script<TAB>id lines), $3 result files written after the job list, $4 logs ("file|line"

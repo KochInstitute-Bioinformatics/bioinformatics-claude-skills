@@ -803,7 +803,7 @@ need "phaser_gene_ae splits variant IDs on '_'"
 need "PHASED_GT=1 but only"
 need 'N_COV=$(awk -F'"'"'\t'"'"' '"'"'NR > 1 && $7 > 0'"'"' "$OUT.gene_ae.txt.part"'
 need "(ASEReadCounter and phASER; a plain VCF fails there). Block R has already run before the loop; then the gene-spans block below; then block I"
-[ "$(grep -c 'PHASER_COMMIT=aa1f8ec5fe1cc676e37cfa6f6a0bce6b09070301' "$SKILL")" = 3 ] || { echo "FAIL: the pinned commit must be set in setup_phaser_env.sh, phaser_count.sh and submit_chain.sh (Step 18: all three places)"; fail=1; }
+[ "$(grep -c 'PHASER_COMMIT=aa1f8ec5fe1cc676e37cfa6f6a0bce6b09070301' "$SKILL")" = 3 ] || { echo "FAIL: the pinned commit must be set in setup_phaser_env.sh, phaser_count.sh and submit_chain.sh (the three PHASER_COMMIT= lines of the five copies; Step 18: all four places must agree, the Step 7 and prose copies are counted below)"; fail=1; }
 [ -s "$HERE/synthetic/assemble_outbred_from_skill.sh" ] || { echo "FAIL: missing tests/synthetic/assemble_outbred_from_skill.sh"; fail=1; }
 # carried items (Task 3 ruling) and guards: lines of the block cut from Step 18, so text only in prose or in setup_phaser_env.sh never satisfies them
 PHC=$(bash "$HERE/synthetic/cut_block.sh" "$SKILL" '### `phaser_count.sh`' 2>/dev/null)
@@ -971,7 +971,7 @@ esac'"
 $L_PS
 $L_PH"'
 R5=$(sbatch -p bcc --parsable --dependency=afterok:$PH:$R2 $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"'
-for r in A B C D; do grep -q "RECIPE=$r scenario" "$HERE/chain/dry_run_chain.sh" || { echo "FAIL: the dry run does not run recipe $r"; fail=1; }; done
+for r in A B C D E; do grep -q "RECIPE=$r scenario" "$HERE/chain/dry_run_chain.sh" || { echo "FAIL: the dry run does not run recipe $r"; fail=1; }; done
 # M1, M2: runtime citation and the large-tier memory
 forbid "phASER's authors report"
 need "(\`docs/benchmarks/runtime_benchmark_report.md\` at the pinned commit) reports 89-466 s per sample"
@@ -1051,7 +1051,7 @@ rneed "\`n_variants\` 5,5"
 rneed "transcript offset 2"
 rneed "631 s"
 rneed "--threads 1"
-rneed "41 checks"
+rneed "43 checks ok"
 # no stale phASER status text and no process labels
 ! grep -qiE "phASER[^.|]*(not implemented|not included|later stage)" "$RD" || { echo "FAIL: README still says phASER is not implemented, not included or a later stage"; fail=1; }
 ! grep -qE "phASER[^|]*not included" "$RR" || { echo "FAIL: root README still says phASER is not included"; fail=1; }
@@ -1072,7 +1072,7 @@ sline 'N_US_CTG=$(cut -f1 "$FASTA.fai" | grep -c _)'
 sline 'if [ "$N_US_CTG" -gt 0 ]; then'
 [ "$(printf '%s\n' "$SPC" | grep -c '> "$SPAN_BED"')" = 1 ] || { echo "FAIL: the gene-spans block must write \$SPAN_BED only once (the FASTA-contig filter)"; fail=1; }
 ! printf '%s\n' "$SPC" | grep -qF 'N_US_SPAN' || { echo "FAIL: the '_' warning must not count gene-span contigs (N_US_SPAN): GTF-only patch contigs gave a false alarm"; fail=1; }
-need "awk '/^>/ {print substr(\$1, 2)}' {FASTA_PATH} | grep -c _"
+forbid "awk '/^>/ {print substr(\$1, 2)}' {FASTA_PATH} | grep -c _"
 forbid "otherwise \`grep '^>' {FASTA_PATH} | grep -c _\`"
 need "Only the FASTA's contig names count, the same input and rule as the prep job's warning (Step 10, Gene spans)"
 need "Contigs with \`_\` that exist only in the GTF do not trigger it"
@@ -1113,5 +1113,81 @@ rforbid "the real-data smoke test is pending and optional"
 rforbid "nothing was measured with this pinned environment"
 rforbid "-n 1 --mem=32G -t 4:00:00"
 # --- end Stage 3 real-data fix wave
+
+# --- Stage 3 final-review fix wave (I1, I2, M1-M7); each check fails on the 7416f89 skill, README or tests
+plines() { local l; while IFS= read -r l; do [ -n "$l" ] && pline "$l"; done; }
+# I1: phASER reads no PS tag and takes every '|' genotype as chromosome-wide phased. PHASED_GT=1: stop on a PS FORMAT tag;
+#     PHASED_GT=0: phASER gets a per-sample copy without phase in $TMPD (same sites), never the VCF STAR used
+plines <<'EOF'
+PH_VCF="$VCF"
+  N_PS=$( { bcftools view -h "$VCF" | grep '^##FORMAT=<ID=PS,'; bcftools view -H "$VCF" | cut -f9 | grep -E '(^|:)PS(:|$)'; } | wc -l)
+  PH_VCF="$TMPD/het_unphased.vcf.gz"   # removed with $TMPD by the trap
+  bcftools view "$VCF" | awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ { print; next } $9 ~ /^GT(:|$)/ { i = index($10, ":"); g = i ? substr($10, 1, i - 1) : $10; gsub(/\|/, "/", g); $10 = g (i ? substr($10, i) : "") } { print }' \
+    | bcftools view -Oz -o "$PH_VCF" - && bcftools index -t -f "$PH_VCF" || die "cannot write the unphased copy $PH_VCF of $VCF"
+  [ "$(bcftools view -H "$PH_VCF" | wc -l)" -eq "$N_HET" ] && [ "$(bcftools query -f '[%GT]\n' "$PH_VCF" | grep -c '|')" -eq 0 ] \
+EOF
+pstart '  [ "$N_PS" -eq 0 ] || die "PHASED_GT=1 but $VCF carries a PS FORMAT tag'
+pstart '"$PY" "$SRC/phaser/phaser.py" --vcf "$PH_VCF" --bam "$BAM" '
+! printf '%s\n' "$PHC" | grep -qF -- '--vcf "$VCF"' || { echo "FAIL: phaser_count.sh must give phASER \$PH_VCF (the VCF itself only under PHASED_GT=1), never --vcf \"\$VCF\" directly"; fail=1; }
+l_if=$(ln_of 'if [ "$PHASED_GT" = 1 ]; then'); l_ps=$(ln_of '  N_PS=$('); l_else=$(ln_of 'else'); l_cp=$(ln_of '  PH_VCF="$TMPD/'); l_fi=$(ln_of 'fi'); l_call=$(ln_of '"$PY" "$SRC/phaser/phaser.py"')
+[ -n "$l_if" ] && [ -n "$l_ps" ] && [ -n "$l_else" ] && [ -n "$l_cp" ] && [ -n "$l_fi" ] && [ -n "$l_call" ] &&
+  [ "$l_if" -lt "$l_ps" ] && [ "$l_ps" -lt "$l_else" ] && [ "$l_else" -lt "$l_cp" ] && [ "$l_cp" -lt "$l_fi" ] && [ "$l_fi" -lt "$l_call" ] ||
+  { echo "FAIL: phaser_count.sh: the PS stop must be in the PHASED_GT=1 branch and the unphased copy in the other, both before phaser.py (lines if ${l_if:-none}, PS ${l_ps:-none}, else ${l_else:-none}, copy ${l_cp:-none}, fi ${l_fi:-none}, call ${l_call:-none})"; fail=1; }
+need "Read-based or local phasing in phase sets (a \`PS\` FORMAT tag)"
+need "1. Yes: chromosome-wide phased genotypes"
+need "These VCFs are therefore not phased in the sense of Step 7: answer \"No\" there."
+need "phASER reads no \`PS\` (phase set) tag: it takes every \`|\` genotype as phased along the whole chromosome"
+need "- \`{PHASED_GT}\` = 1 and the VCF carries a \`PS\` FORMAT tag (phase sets, not chromosome-wide phase);"
+forbid "The rnavar VCFs of Step 6 option 2 are unphased: use 0."
+rneed "**Phase must be chromosome-wide, or is removed.**"
+rneed "phASER reads no phase-set (\`PS\`) tag and takes every \`|\` genotype as phased along the whole chromosome"
+GT3="$HERE/synthetic/test_phaser_count_guards.sh"
+for m in "9 partial phasing under PHASED_GT=0" "10 PS tag under PHASED_GT=1" "carries a PS FORMAT tag" "gene tables identical to the unphased run" "genotype VCF unchanged" "equal to the source run"; do
+  grep -qF -- "$m" "$GT3" 2>/dev/null || { echo "FAIL: test_phaser_count_guards.sh does not test: $m"; fail=1; }; done
+# M7: one PHASED_GT for the whole cohort
+need "**One answer for the whole cohort:** \`{PHASED_GT}\` applies to every individual."
+# I2: recipe E (a sample dropped with phASER selected: Rmd 01, 02, 04, then Rmd 05 after Rmd 02, no phaser_count.sh), the drop
+#     paragraph points to it, and the stale --array range of phaser_count.sh is never re-submitted
+rblock E 'R1=$(sbatch -p bcc --parsable $S/run_01_import_qc.sh); got run_01_import_qc.sh "$R1"
+R2=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_02_imbalance.sh); got run_02_imbalance.sh "$R2"
+case " $ANALYSES " in *differential*)
+  R4=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_04_differential.sh); got run_04_differential.sh "$R4" ;;
+esac
+R5=$(sbatch -p bcc --parsable --dependency=afterok:$R2 $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"'
+need "**Recipe E — after dropping a sample, with phASER selected**"
+need "Check first that every remaining sample has its finished phASER table:"
+need "when phASER was selected, build \`submit_rmds.sh\` from recipe E above"
+need "its stale \`--array=1-{ARRAY_N}\` range must never be re-submitted"
+need "**\`{ARRAY_N}\`** is the number of data rows of \`{SAMPLES_CSV}\` when the chain is submitted"
+grep -q '^RECIPE=E scenario recipe_E_drop_sample_not_installed ' "$HERE/chain/dry_run_chain.sh" || { echo "FAIL: the dry run must run recipe E without an installation (no setup or phaser_count.sh job)"; fail=1; }
+# M1: three code rules of Rmd 05, pinned as exact lines of its test chunk (cut from Step 19)
+R05T=$(awk '/^## Step 19 /{s = 1} s && /^```\{r test\}$/ {f = 1; next} f && /^```$/ {exit} f' "$SKILL")
+[ -n "$R05T" ] || { echo "FAIL: no \`\`\`{r test} chunk in Step 19"; fail=1; }
+rline() { printf '%s\n' "$R05T" | grep -qxF -- "$1" || { echo "FAIL: the Rmd 05 test chunk lacks the line: $1"; fail=1; }; }
+rline 'tst <- genes$totalCount >= MIN_DEPTH   # hap_gene_test does not apply MIN_DEPTH: rows below it are NA in the call'
+rline '  dplyr::group_by(sample) %>% dplyr::mutate(padj = p.adjust(p, method = "BH")) %>% dplyr::ungroup() %>%'
+rline '                major_frac = pmax(aCount, bCount) / totalCount, oriented = PHASED_GT == 1 & gw_phased) %>%'
+rline '                direction = dplyr::case_when(!sig ~ "none", !oriented ~ "no direction (haplotype labels arbitrary)",'
+l_tst=$(printf '%s\n' "$R05T" | awk 'index($0, "tst <- ") == 1 {print NR; exit}'); l_ht=$(printf '%s\n' "$R05T" | awk 'index($0, "  ht <- hap_gene_test(") == 1 {print NR; exit}')
+[ -n "$l_tst" ] && [ -n "$l_ht" ] && [ "$l_tst" -lt "$l_ht" ] || { echo "FAIL: Rmd 05 must set tst (MIN_DEPTH) before the hap_gene_test call (lines ${l_tst:-none}, ${l_ht:-none})"; fail=1; }
+# M2: Step 7 reads the FASTA index only (Steps 9 and 10: the login node never reads the FASTA); without a .fai the check is deferred
+need "a light command on the login node that reads the FASTA index only: \`cut -f1 {FASTA_PATH}.fai | grep -c _\`"
+need "tell the user that the contig check is deferred to the prep job"
+P7=$(grep -F '**phASER and contig names with `_`.**' "$SKILL")
+n_raw=$(printf '%s\n' "$P7" | grep -o '{FASTA_PATH}[^ `]*' | grep -vcx '{FASTA_PATH}\.fai')
+[ -n "$P7" ] && [ "$n_raw" = 0 ] || { echo "FAIL: the Step 7 contig paragraph must name {FASTA_PATH} only as {FASTA_PATH}.fai (found $n_raw other uses)"; fail=1; }
+grep -qF 'N_RAW=$(printf' "$HERE/synthetic/test_gene_spans_contigs.sh" && ! grep -qF 'C_HDR' "$HERE/synthetic/test_gene_spans_contigs.sh" ||
+  { echo "FAIL: test_gene_spans_contigs.sh must test that Step 7 reads only the .fai"; fail=1; }
+# M3: early login-node check of {PHASER_HOME} with test and ls only, with the installation job's message
+need '[ ! -e {PHASER_HOME} ] || [ -e {PHASER_HOME}/.ase_pipeline_phaser ] || [ -z "$(ls -A {PHASER_HOME})" ] || echo "refused"'
+need "\"{PHASER_HOME} is not empty and has no .ase_pipeline_phaser (it was not created by setup_phaser_env.sh): choose another, new or empty directory for phASER\""
+# M5: the lock paragraph names the directory once, without a dangling reference
+forbid "a lock left by a killed job is removed by hand (below). If a job was killed, remove that directory by hand."
+need "remove \`{PHASER_HOME}/.installing\` by hand (\`rmdir {PHASER_HOME}/.installing\`)"
+# M6: the phaser_count.sh intro lists every placeholder of its block
+PH_INTRO=$(grep -F 'A SLURM array job, one task per data row of `{SAMPLES_CSV}`, submitted by `submit_chain.sh`' "$SKILL")
+for p in $(printf '%s\n' "$PHC" | grep -oE '\{[A-Z][A-Z_0-9]*\}' | sort -u); do
+  printf '%s\n' "$PH_INTRO" | grep -qF -- "\`$p\`" || { echo "FAIL: the phaser_count.sh intro does not list its placeholder $p"; fail=1; }; done
+# --- end Stage 3 final-review fix wave
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1
