@@ -537,12 +537,11 @@ forbid "F1 = prep_f1_reference.sh, outbred = prep_genotypes.sh"
 RD="$HERE/../README.md"
 rneed() { grep -qF -- "$1" "$RD" || { echo "FAIL: README must contain: $1"; fail=1; }; }
 rforbid() { ! grep -qF -- "$1" "$RD" || { echo "FAIL: README must not contain: $1"; fail=1; }; }
-grep -qF "(Stages 1 and 2)" "$RD" || { echo "FAIL: README title must say Stages 1 and 2"; fail=1; }
 grep -qF "Reciprocal F1 (Rmd 03)" "$RD" && grep -qF "Differential ASE (Rmd 04)" "$RD" || { echo "FAIL: README must describe Rmd 03 and Rmd 04"; fail=1; }
 grep -qF "summary_numbers_reciprocal.tsv" "$RD" && grep -qF "summary_numbers_differential.tsv" "$RD" || { echo "FAIL: README outputs must list the Stage 2 TSVs"; fail=1; }
 grep -qF "direction-free" "$RD" || { echo "FAIL: README must explain the direction-free outbred test"; fail=1; }
 grep -qF "X, Y and MT" "$RD" || { echo "FAIL: README must state the X/Y/MT exclusion"; fail=1; }
-grep -qF "Stage 2 synthetic acceptance run: DONE (2026-09-30)" "$RD" && ! grep -qF "synthetic acceptance run: PENDING" "$RD" || { echo "FAIL: README must state Stage 2 acceptance DONE (2026-09-30)"; fail=1; }
+grep -qF "Stage 2 synthetic acceptance run: DONE (2026-09-30)" "$RD" && ! grep -qF "Stage 2 synthetic acceptance run: PENDING" "$RD" || { echo "FAIL: README must state Stage 2 acceptance DONE (2026-09-30)"; fail=1; }
 ! grep -qF "Stage 1 covers **per-sample allelic imbalance only**" "$RD" || { echo "FAIL: README still says Stage 1 only"; fail=1; }
 grep -q "/ase-pipeline.*reciprocal F1" "$HERE/../../README.md" || { echo "FAIL: root README row must mention reciprocal F1"; fail=1; }
 ! grep -q "/ase-pipeline.*Stage 1: per-sample imbalance only" "$HERE/../../README.md" || { echo "FAIL: root README row still says Stage 1 only"; fail=1; }
@@ -571,7 +570,6 @@ rneed "21 of 24 planted, 0 of 42 null, 65 significant SNPs unchanged"
 # limitations stated plainly
 rneed "with 30 percent changed (phase-heterogeneous) it is 0.6698 against an oracle of 0.9163"
 rneed "null sizes are about 0.036 at a true dispersion of 0.02"
-rneed "phASER (Stage 3) is not implemented"
 rneed "unplaced contigs are treated as autosomes"
 rneed "adding samples or conditions can change which SNP is kept"
 rneed "\`sacct\` is unavailable on the test cluster"
@@ -996,5 +994,68 @@ need "Mark a sample with \`genes_tested\` = 0 as \"nothing tested\""
 [ "$(grep -c 'rm -rf "$W"' "$HERE/chain/dry_run_chain.sh")" = 1 ] && grep -qF '  /net/bmc-lab3/data/bcc/ase_scratch/?*) rm -rf "$W" && mkdir -p "$W" || exit 1 ;;' "$HERE/chain/dry_run_chain.sh" ||
   { echo "FAIL: dry_run_chain.sh may delete its scratch argument only under /net/bmc-lab3/data/bcc/ase_scratch/"; fail=1; }
 # --- end Stage 3 chain integration review fixes
+# --- Stage 3 README and registration; each check fails on the 11162ea README and root README
+RD="$HERE/../README.md"
+RR="$HERE/../../README.md"
+rneed "(Stages 1 to 3)"
+rneed "**What Stage 3 adds**"
+rneed "phASER (Rmd 05)"
+rneed "aa1f8ec5fe1cc676e37cfa6f6a0bce6b09070301"
+rneed "never the bioconda package"
+rneed "PYTHONNOUSERSITE=1"
+rneed "summary_numbers_phaser.tsv"
+rneed "| 18 | phASER: installation and per-sample haplotype counts |"
+rneed "| 19 | Rmd 05: phASER gene-level haplotype imbalance |"
+rneed "haplotype labels are arbitrary"
+rneed "most-covered haplotype block"
+rneed "not verified on real data"
+rneed "Fast Beta"
+rneed "module add miniconda3/v4"
+rforbid "phASER (Stage 3) is not implemented"
+rforbid "the only module the skill ever loads"
+grep -qE "^Stage 3 synthetic acceptance run: (PENDING|DONE \(2026-[0-9-]+\))$" "$RD" || { echo "FAIL: README must state the Stage 3 acceptance status"; fail=1; }
+grep -qE "^Stage 3 real-data smoke test: (PENDING|DONE \(2026-[0-9-]+\))" "$RD" || { echo "FAIL: README must state the Stage 3 real-data smoke test status"; fail=1; }
+grep -q "/ase-pipeline.*phASER haplotype counts" "$RR" || { echo "FAIL: root README row must mention phASER haplotype counts"; fail=1; }
+! grep -q "/ase-pipeline.*phASER not included" "$RR" || { echo "FAIL: root README row still says phASER not included"; fail=1; }
+# honesty statements: each is absent from the 11162ea README
+rneed "single-threaded"
+rneed "NameError: name 'args' is not defined"
+rneed "a Python 3.13 or older pin was never tested"
+rneed "31 of the 50 genes"
+rneed "power gain measured by the fragment-level simulation is optimistic"
+rneed "contig names containing \`_\`"
+rneed "analyses word \`phaser\`"
+rneed "mode and paired-end data only"
+rneed "no differential ASE on phASER counts"
+rneed "median of the samples' own dispersions"
+rneed "1,048,575"
+rneed "ASE_phaser_gene.tsv.gz"
+rneed "network access on a compute node"
+rneed "Nothing on real biological data has been run"
+# measured numbers (sources in the Task 7 report): each is absent from the 11162ea README
+rneed "213 checks ok, 0 failed"
+rneed "0.8560 against an oracle of 0.8751"
+rneed "0.1460 against an oracle of 0.5961"
+rneed "0.6330 / 0.6757 / 0.7789"
+rneed "0.7877 against 0.5873"
+rneed "hap_strong 24 of 24 gene x sample cells"
+rneed "16 of 24 (unphased ACAT 12)"
+rneed "15 of 18"
+rneed "11 of 12"
+rneed "2 of 389 (phased) and 1 of 389 (unphased), unphased ACAT 0 of 402"
+rneed "66 of 66"
+rneed "\`n_variants\` 5,5"
+rneed "transcript offset 2"
+rneed "631 s"
+rneed "--threads 1"
+rneed "41 checks"
+# no stale phASER status text and no process labels
+! grep -qiE "phASER[^.|]*(not implemented|not included|later stage)" "$RD" || { echo "FAIL: README still says phASER is not implemented, not included or a later stage"; fail=1; }
+! grep -qE "phASER[^|]*not included" "$RR" || { echo "FAIL: root README still says phASER is not included"; fail=1; }
+! grep -qE "(Task [0-9]|task-[0-9]|\.superpowers)" "$RD" "$RR" || { echo "FAIL: README or root README contains a process label (Task N, task-N, .superpowers)"; fail=1; }
+# the 'What was not exercised' list names the Stage 3 gaps
+rneed "single-end data"
+rneed "phaser_pop"
+# --- end Stage 3 README and registration
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1
