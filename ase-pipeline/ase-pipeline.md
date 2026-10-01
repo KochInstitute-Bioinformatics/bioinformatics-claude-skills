@@ -1747,7 +1747,7 @@ Write the summary page only after `wait_chain.sh` has returned. A failure of the
 
 **Re-submitting part of the chain.** Copy `submit_chain.sh` to `submit_rmds.sh`, delete the lines of the jobs that need not run again (and their names in `NEED`), and remove `--dependency=afterok:$A` from the Rmd 01 line (or, when Rmd 01 is not re-run, `--dependency=afterok:$R1` from the lines of the Rmds that are); first move the old job list away (`mv {RESULTS_DIR}/logs/chain_job_ids.tsv {RESULTS_DIR}/logs/chain_job_ids_previous.tsv`; the `IDS` guard of the copied script refuses otherwise), run `submit_rmds.sh`, then `wait_chain.sh`: the new `submit_rmds.sh` writes a new `chain_job_ids.tsv`, so the wait covers the new jobs only. `afterok` on the array job id means every array task must succeed; if one fails, Rmd 01 and every Rmd after it stay pending with `DependencyNeverSatisfied` (`wait_chain.sh` cancels them; if you do it by hand, cancel them all: `awk -F'\t' '$1 ~ /^run_0/ {print $2}' {RESULTS_DIR}/logs/chain_job_ids.tsv | xargs -r scancel`). Fix the failed sample (its log is under `{RESULTS_DIR}/logs`), re-submit the failed task, wait until it has succeeded, then submit Rmd 01, Rmd 02 and the selected Rmd 03 / Rmd 04 again with `submit_rmds.sh`.
 
-**Dropping a failed sample.** If a sample cannot be fixed (for example it has no counted sites, or no sites left after filtering in Rmd 01), the supported way out is to remove it from the analysis, never to edit the Rmds: with the user's confirmation, remove that sample's row from `{SAMPLES_CSV}` (keep a copy of the original sheet next to it), cancel every pending Rmd job (see "Re-submitting part of the chain"), and re-run from Rmd 01 with `submit_rmds.sh` (Rmd 01 without a dependency on the old array job, then Rmd 02, and the selected Rmd 03 / Rmd 04 after Rmd 01), whether an array task or only an Rmd failed (only Rmd 01 reads `{SAMPLES_CSV}`; Rmd 02, 03 and 04 read its checkpoint, so they see the dropped sample until Rmd 01 has run again). The Rmds read the tables by the sample names in `{SAMPLES_CSV}`, so the dropped sample's files are simply ignored (if its table exists, Rmd 01 lists it as a table of a sample not in the sheet). Re-submitting the array job is not needed, because the other samples' tables already exist; if the array job is re-run anyway, `{ARRAY_N}` must be updated to the new number of rows (task numbers follow the rows of the edited sheet). Rmd 03 and Rmd 04 are re-run after Rmd 01 in the same way (a dropped sample can change whether a design is still valid, so re-check Step 7's preconditions first). Rmd 02 is always re-run too, even when it had succeeded: the thinning pools the depth over all samples of the project, so removing a sample can change which SNP a dense gene keeps, and with it the gene p-values of the remaining samples. Say in the summary page which sample was dropped and why.
+**Dropping a failed sample.** If a sample cannot be fixed (for example it has no counted sites, or no sites left after filtering in Rmd 01), the supported way out is to remove it from the analysis, never to edit the Rmds: with the user's confirmation, remove that sample's row from `{SAMPLES_CSV}` (keep a copy of the original sheet next to it), cancel every pending Rmd job (see "Re-submitting part of the chain"), and re-run from Rmd 01 with `submit_rmds.sh` (Rmd 01 without a dependency on the old array job, then Rmd 02, and the selected Rmd 03 / Rmd 04 after Rmd 01), whether an array task or only an Rmd failed (only Rmd 01 reads `{SAMPLES_CSV}`; Rmd 02, 03, 04 and 05 read its checkpoint, so they see the dropped sample until Rmd 01 has run again). The Rmds read the tables by the sample names in `{SAMPLES_CSV}`, so the dropped sample's files are simply ignored (if its table exists, Rmd 01 lists it as a table of a sample not in the sheet). Re-submitting the array job is not needed, because the other samples' tables already exist; if the array job is re-run anyway, `{ARRAY_N}` must be updated to the new number of rows (task numbers follow the rows of the edited sheet). Rmd 03 and Rmd 04 are re-run after Rmd 01 in the same way (a dropped sample can change whether a design is still valid, so re-check Step 7's preconditions first). Rmd 02 is always re-run too, even when it had succeeded: the thinning pools the depth over all samples of the project, so removing a sample can change which SNP a dense gene keeps, and with it the gene p-values of the remaining samples. When phASER was selected, Rmd 05 (Step 19) is re-run after Rmd 02 for a similar reason: its dispersion uses the median over all samples (`rho_cohort`), so removing a sample can change the p-values of the remaining samples. Say in the summary page which sample was dropped and why.
 
 ### Summary report `{WD_NAME}_summary_report.html`
 
@@ -2445,16 +2445,293 @@ Change the version list of `environment.phaser.yml` the same way, after a test i
 
 ---
 
+## Step 19 — Rmd 05: phASER gene-level haplotype imbalance (outbred, optional)
+
+Only when phASER was selected in Step 7. Write `{CWD}/{TODAY}_{WD_NAME}_05_phaser.Rmd` with the same conventions as Step 12 and the same `{AUTHOR}` and `{PROJECT_TITLE}`.
+
+**Inputs:**
+- `ase_checkpoint.rds` (Rmd 01): samples, constants, bias flags;
+- `ase_imbalance_checkpoint.rds` (Rmd 02): the unphased gene results;
+- `phaser/{sample}.gene_ae.txt` (Step 18), read for every sample of `samples.csv` by name.
+
+It pastes the statistics functions of Step 14 into the chunk marked below.
+
+**Outputs, written to `{RESULTS_DIR}`:**
+- `{TODAY}_{WD_NAME}_ASE_phaser.xlsx` (sheets `Gene`, `Comparison`, `Samples`, `Summary`);
+- `{TODAY}_{WD_NAME}_ASE_phaser.pdf`;
+- `ase_phaser_checkpoint.rds`;
+- `summary_numbers_phaser.tsv`.
+
+- **What it adds, and what it does not replace.** The unphased per-SNP tests and the ACAT gene test of Rmd 02 stay the main per-sample result; Rmd 05 is reported next to them, never instead of them.
+  - phASER counts each read pair once per haplotype block, so a gene's count pools all the heterozygous SNPs of the block without counting a fragment twice.
+  - This gives one effect size per gene: the major haplotype fraction.
+  - It can test genes whose SNPs each have fewer than `MIN_DEPTH` reads.
+- **Test.** Per sample and gene, `hap_gene_test` (Step 14): an exact two-sided beta-binomial test of `aCount` out of `totalCount` against 0.5.
+  - The dispersion comes from the trimmed central-region fit over the sample's genes (`rho_own`); the cohort value (`rho_cohort`) is the median of `rho_own`, and `rho_used = max(rho_cohort, rho_own, RHO_MIN)`.
+  - Because `rho_cohort` is a median over the samples of the run, adding or removing samples can change the p-values of the samples already analysed.
+  - Any warning of the dispersion fit is printed with its sample and kept in the `rho_warning` column of the `Samples` sheet and of the checkpoint.
+  - BH within each sample.
+  - `sig` requires `padj < FDR_SIG` and a major haplotype fraction `max(aCount, bCount) / totalCount` at least `0.5 + ABS_DEV_SIG`.
+  - Genes with `totalCount` below `MIN_DEPTH` are not tested: `hap_gene_test` does not apply `MIN_DEPTH`, so the Rmd sets these rows to `NA` before the call.
+  - Genes that phASER wrote with zero counts (no covered heterozygous SNP; written with `log2_aFC` `inf` and `gw_phased` 1) are dropped.
+  - If no sample has 20 genes at `MIN_DEPTH`, the Rmd stops.
+- **Direction.** The test is symmetric in the two haplotypes, because the haplotype labels carry no meaning without phased genotypes.
+  - **Unphased genotypes** (`{PHASED_GT}` = 0): A and B are arbitrary per gene and sample. Only the size of the imbalance is reported, with the direction "no direction (haplotype labels arbitrary)". Each gene's counts come from its most-covered haplotype block only, because `phaser_gene_ae` keeps a single block per gene when the genotypes are unphased. The other blocks are dropped, which costs coverage (on the synthetic test, one sample used 113 of 153 heterozygous SNPs).
+  - **Phased genotypes** (`{PHASED_GT}` = 1, phASER run with `--gw_phase_vcf 1`): in genome-wide phased genes (`gw_phased` TRUE), haplotype A is the haplotype of the first (left) allele of the phased genotype (`0|1`: A carries the REF allele at that SNP), and the direction is "haplotype A higher" or "haplotype B higher". Genes that are not genome-wide phased keep arbitrary labels and get "no direction (haplotype labels arbitrary)".
+- **What comparisons the results support.** Across samples and individuals, only the size of the imbalance can be compared.
+  - Haplotype A of one individual is unrelated to haplotype A of another, even with phased genotypes.
+  - With unphased genotypes, even two samples of one individual may label a gene's haplotypes differently.
+  - Differential ASE on phASER counts is therefore not offered (use Rmd 04).
+- **Gene spans.** phASER counts every heterozygous SNP inside the gene span (`reference/genes_span.bed`, introns included), while Rmd 02 uses exonic SNPs only. Overlapping genes share reads. The gene names of the phASER tables must be the GTF `gene_id`s that Rmd 02 uses; if none matches, the Rmd prints a WARNING and the comparison pairs nothing.
+- **Comparison table.** Every sample and gene of either analysis gets one row and one category:
+  - "both";
+  - "phASER only";
+  - "phASER only (no SNP tested unphased)": no SNP of the gene reached `MIN_DEPTH` in Rmd 02;
+  - "unphased only";
+  - "unphased only (not tested by phASER)";
+  - "neither".
+
+````rmd
+---
+title: "{PROJECT_TITLE} - ASE phASER haplotype counts"
+author: "{AUTHOR}"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(cache = FALSE, echo = TRUE, message = FALSE, warning = FALSE, fig.width = 10, fig.height = 7)
+options(scipen = 9)
+library(openxlsx)   # no Bioconductor package is needed in this Rmd
+library(tidyverse)
+```
+
+## Constants and checkpoints
+
+```{r constants}
+MODE        <- "{MODE}"
+RESULTS_DIR <- "{RESULTS_DIR}"
+DATE_TAG    <- "{TODAY}_{WD_NAME}"
+MIN_DEPTH   <- {MIN_DEPTH}
+FDR_SIG     <- {FDR_SIG}
+ABS_DEV_SIG <- {ABS_DEV_SIG}
+RHO_MIN     <- {RHO_MIN}             # floor for the dispersion used by the tests
+BIAS_TOL    <- {BIAS_TOL}
+PHASED_GT   <- {PHASED_GT}           # 1: phased genotype VCFs, phASER ran with --gw_phase_vcf 1 (Step 7); 0: unphased
+if (MODE != "outbred") stop("Rmd 05 (phASER) needs MODE = outbred", call. = FALSE)
+if (!PHASED_GT %in% c(0, 1)) stop("PHASED_GT must be 0 or 1 (Step 7)", call. = FALSE)
+ck <- readRDS(file.path(RESULTS_DIR, "ase_checkpoint.rds"))
+same <- c(MODE = identical(ck$constants$MODE, MODE),
+          vapply(c("MIN_DEPTH", "FDR_SIG", "ABS_DEV_SIG", "BIAS_TOL"),
+                 function(k) isTRUE(all.equal(ck$constants[[k]], get(k))), logical(1)))
+if (!all(same)) stop("constants differ from the Rmd 01 checkpoint (", paste(names(same)[!same], collapse = ", "),
+                     "); re-render Rmd 01 with the same values", call. = FALSE)
+ck2 <- readRDS(file.path(RESULTS_DIR, "ase_imbalance_checkpoint.rds"))   # Rmd 02: the unphased per-SNP and ACAT gene results
+if (!isTRUE(all.equal(ck2$constants, ck$constants)))
+  stop("the Rmd 02 checkpoint does not come from the current Rmd 01 checkpoint; re-render Rmd 02", call. = FALSE)
+bias <- ck$bias
+knitr::kable(bias, digits = 4, caption = "Reference-bias diagnostic from Rmd 01 (a screen, not a test)")
+if (any(bias$flagged)) cat("FLAGGED samples:", paste(bias$sample[bias$flagged], collapse = ", "), "- read their results with caution\n")
+orient_note <- if (PHASED_GT == 1) {
+  paste("Phased genotypes: in genome-wide phased genes, haplotype A is the haplotype of the first (left) allele of the phased genotype",
+        "(0|1: A carries REF at that SNP); haplotype A of one individual is unrelated to haplotype A of another;",
+        "genes that are not genome-wide phased have arbitrary labels.")
+} else {
+  paste("Unphased genotypes: the haplotype labels A and B are arbitrary per gene and sample, so only the size of the imbalance",
+        "(major haplotype fraction) is reported, without a direction; each gene's counts come from its most-covered haplotype block.")
+}
+cat("NOTE:", orient_note, "\n")
+```
+
+## Statistics functions
+
+```{r stats}
+# <<< paste here the code of Step 14 between the two marker lines (the marker lines themselves are not pasted) >>>
+```
+
+## phASER gene counts
+
+The gene tables are read by sample name from `samples.csv`, never by globbing. Rows with no haplotype reads (phASER writes every gene of the span file, with 0 counts, `log2_aFC` `inf` and `gw_phased` 1 when no heterozygous SNP of the gene is covered) are dropped.
+
+```{r read}
+samples <- unique(ck$samples[, c("sample", "condition", "individual")])
+f <- file.path(RESULTS_DIR, "phaser", paste0(samples$sample, ".gene_ae.txt"))
+miss <- samples$sample[!file.exists(f) | is.na(file.size(f)) | file.size(f) == 0]
+if (length(miss) > 0)
+  stop("phASER gene counts missing for sample(s) ", paste(miss, collapse = ", "), " (", file.path(RESULTS_DIR, "phaser"),
+       "/<sample>.gene_ae.txt): check their phaser_count logs, re-run them, or drop the samples (Step 15)", call. = FALSE)
+cls <- c(contig = "character", start = "numeric", stop = "numeric", name = "character", aCount = "numeric", bCount = "numeric",
+         totalCount = "numeric", log2_aFC = "character", n_variants = "numeric", variants = "character", gw_phased = "character",
+         bam = "character")
+ga <- dplyr::bind_rows(lapply(seq_len(nrow(samples)), function(i) {
+  d <- read.delim(f[i], colClasses = cls, quote = "", na.strings = character(0))
+  if (!identical(names(d), names(cls))) stop("unexpected columns in ", f[i], call. = FALSE)
+  dplyr::mutate(d, sample = samples$sample[i])
+}))
+n_rows <- nrow(ga)
+genes <- ga %>% dplyr::filter(totalCount > 0) %>%   # genes without counts are written with 0 counts, log2_aFC inf and gw_phased 1
+  dplyr::transmute(sample, gene_id = name, contig, aCount, bCount, totalCount, n_variants, gw_phased = gw_phased == "1", variants) %>%
+  dplyr::left_join(samples, by = "sample")
+if (nrow(genes) == 0) stop("no gene has haplotype counts in any sample (every totalCount is 0)", call. = FALSE)
+if (any(genes$aCount + genes$bCount != genes$totalCount)) stop("aCount + bCount differs from totalCount in the phASER gene tables", call. = FALSE)
+if (anyDuplicated(genes[, c("sample", "gene_id")]))
+  stop("a gene name occurs twice in one sample's phASER gene table (gene names in genes_span.bed must be unique)", call. = FALSE)
+if (PHASED_GT == 1 && mean(genes$gw_phased) < 0.5)
+  cat("WARNING: PHASED_GT = 1 but only", sum(genes$gw_phased), "of", nrow(genes), "genes with counts are genome-wide phased\n")
+if (PHASED_GT == 0 && any(genes$gw_phased))
+  cat("WARNING: PHASED_GT = 0 but", sum(genes$gw_phased), "genes are genome-wide phased; their labels are treated as arbitrary\n")
+cat(n_rows, "sample-gene rows read;", nrow(genes), "with haplotype counts;", sum(genes$totalCount >= MIN_DEPTH), "at or above MIN_DEPTH\n")
+```
+
+## Haplotype-level gene test
+
+Per sample and gene, `hap_gene_test` (Step 14) tests the haplotype counts against 0.5. The test is symmetric in the two haplotypes. `hap_gene_test` does not apply `MIN_DEPTH`, so rows below it are set to `NA` before the call and are not tested. The dispersion is the larger of the sample's own trimmed fit and the cohort median, floored at `RHO_MIN`. `rho_cohort` is the median over the samples of this run, so adding or removing samples can change the p-values of the samples already analysed. A warning of the dispersion fit is printed with its sample and kept in `rho_warning`.
+
+```{r test}
+collect_warnings <- function(expr) {
+  w <- character()
+  v <- withCallingHandlers(expr, warning = function(cond) { w <<- c(w, conditionMessage(cond)); invokeRestart("muffleWarning") })
+  list(value = v, warn = paste(unique(w), collapse = "; "))
+}
+tst <- genes$totalCount >= MIN_DEPTH   # hap_gene_test does not apply MIN_DEPTH: rows below it are NA in the call
+ht_w <- character()
+withCallingHandlers({
+  ht <- hap_gene_test(ifelse(tst, genes$aCount, NA), ifelse(tst, genes$bCount, NA), genes$sample, RHO_MIN)
+}, warning = function(cond) { ht_w <<- c(ht_w, conditionMessage(cond)); invokeRestart("muffleWarning") })
+ht$samples$rho_warning <- ""
+if (length(ht_w) > 0) {   # the dispersion fit warned: re-fit each sample alone (same rows as hap_gene_test) to name the sample
+  for (j in seq_len(nrow(ht$samples))) {
+    u <- tst & genes$sample == ht$samples$sample[j] & genes$aCount == round(genes$aCount) & genes$bCount == round(genes$bCount)
+    if (sum(u) < 20) next
+    w <- collect_warnings(bb_estimate_rho_trim(genes$aCount[u], genes$totalCount[u]))$warn
+    ht$samples$rho_warning[j] <- w
+  }
+  if (all(ht$samples$rho_warning == "")) ht$samples$rho_warning <- paste("cohort fit:", paste(unique(ht_w), collapse = "; "))
+  for (j in which(ht$samples$rho_warning != ""))
+    cat("WARNING (rho estimation), sample", ht$samples$sample[j], ":", ht$samples$rho_warning[j], "\n")
+}
+if (all(is.na(ht$p)))
+  stop("no sample has 20 genes with at least MIN_DEPTH haplotype reads, so no dispersion can be estimated; genes per sample at MIN_DEPTH: ",
+       paste(sprintf("%s %d", ht$samples$sample, ht$samples$n_genes), collapse = ", "), call. = FALSE)
+genes <- genes %>%
+  dplyr::mutate(tested = tst, p = ht$p, rho_used = ht$rho_used, hap_A_frac = aCount / totalCount,
+                major_frac = pmax(aCount, bCount) / totalCount, oriented = PHASED_GT == 1 & gw_phased) %>%
+  dplyr::group_by(sample) %>% dplyr::mutate(padj = p.adjust(p, method = "BH")) %>% dplyr::ungroup() %>%
+  dplyr::mutate(sig = !is.na(padj) & padj < FDR_SIG & major_frac - 0.5 >= ABS_DEV_SIG,
+                direction = dplyr::case_when(!sig ~ "none", !oriented ~ "no direction (haplotype labels arbitrary)",
+                                             hap_A_frac > 0.5 ~ "haplotype A higher", TRUE ~ "haplotype B higher")) %>%
+  dplyr::arrange(sample, gene_id)
+knitr::kable(ht$samples, digits = 4, caption = paste("Dispersion per sample: rho_own = trimmed central-region fit over the sample's genes",
+             "(NA below 20 genes), rho_cohort = median of rho_own, rho_used = max(rho_cohort, rho_own, RHO_MIN);",
+             "rho_warning = warning of the dispersion fit, empty if none"))
+knitr::kable(head(dplyr::filter(genes, sig), 40), digits = 4, caption = paste("Significant genes (first 40).", orient_note))
+```
+
+## Next to the unphased result of Rmd 02
+
+The unphased ACAT gene test of Rmd 02 stays the main per-sample result; this table puts both results side by side.
+
+```{r compare}
+unph <- ck2$gene %>% dplyr::transmute(sample, gene_id, n_snps_unphased = n_snps, acat_p, padj_unphased = padj, sig_unphased = sig)
+if (nrow(unph) > 0 && !any(genes$gene_id %in% unph$gene_id))
+  cat("WARNING: no phASER gene name is a gene_id of Rmd 02, so the comparison pairs nothing; the gene names of genes_span.bed must be the GTF gene_id\n")
+cmp <- genes %>% dplyr::select(sample, gene_id, totalCount, n_variants, gw_phased, major_frac, p, padj, sig) %>%
+  dplyr::full_join(unph, by = c("sample", "gene_id")) %>%
+  dplyr::mutate(sig = !is.na(sig) & sig, sig_unphased = !is.na(sig_unphased) & sig_unphased,
+                category = dplyr::case_when(sig & sig_unphased ~ "both",
+                                            sig & is.na(acat_p) ~ "phASER only (no SNP tested unphased)",
+                                            sig ~ "phASER only",
+                                            sig_unphased & is.na(p) ~ "unphased only (not tested by phASER)",
+                                            sig_unphased ~ "unphased only",
+                                            TRUE ~ "neither")) %>%
+  dplyr::arrange(sample, gene_id)
+knitr::kable(dplyr::count(cmp, category), caption = "Sample-gene pairs by category: phASER haplotype test next to the unphased ACAT test of Rmd 02")
+```
+
+## Summary
+
+```{r summary}
+z0 <- function(x) dplyr::coalesce(as.integer(x), 0L)
+summary_ph <- samples %>% dplyr::select(sample) %>%
+  dplyr::left_join(dplyr::select(ht$samples, sample, rho_used, rho_own, rho_cohort), by = "sample") %>%
+  dplyr::left_join(genes %>% dplyr::group_by(sample) %>%
+                     dplyr::summarise(genes_with_counts = dplyr::n(), genes_tested = sum(!is.na(p)), sig_genes = sum(sig),
+                                      gw_phased_genes = sum(gw_phased), .groups = "drop"), by = "sample") %>%
+  dplyr::left_join(cmp %>% dplyr::group_by(sample) %>%
+                     dplyr::summarise(sig_unphased = sum(sig_unphased), sig_both = sum(category == "both"),
+                                      sig_phaser_only = sum(startsWith(category, "phASER only")),
+                                      sig_phaser_only_untested_unphased = sum(category == "phASER only (no SNP tested unphased)"),
+                                      sig_unphased_only = sum(startsWith(category, "unphased only")), .groups = "drop"), by = "sample") %>%
+  dplyr::mutate(dplyr::across(c(genes_with_counts, genes_tested, sig_genes, gw_phased_genes, sig_unphased, sig_both, sig_phaser_only,
+                                sig_phaser_only_untested_unphased, sig_unphased_only), z0),
+                genotypes = if (PHASED_GT == 1) "phased" else "unphased") %>%
+  dplyr::select(sample, genotypes, genes_with_counts, genes_tested, sig_genes, gw_phased_genes, sig_unphased, sig_both, sig_phaser_only,
+                sig_phaser_only_untested_unphased, sig_unphased_only, rho_used, rho_own, rho_cohort)
+knitr::kable(summary_ph, digits = 4, caption = "Summary per sample (FDR_SIG, ABS_DEV_SIG and MIN_DEPTH as in the constants block)")
+```
+
+## Figure
+
+```{r figure}
+fig <- dplyr::filter(genes, !is.na(p))
+fig_n <- vapply(summary_ph$sample, function(s) sum(fig$sig[fig$sample == s]), integer(1))
+stopifnot(identical(unname(fig_n), summary_ph$sig_genes))
+cat("Figure sig counts equal Summary counts: TRUE\n")
+lab <- fig %>% dplyr::group_by(sample) %>%
+  dplyr::summarise(lab = paste0(dplyr::first(sample), ": ", sum(sig), " significant of ", dplyr::n(), " genes"), .groups = "drop")
+p1 <- dplyr::left_join(fig, lab, by = "sample") %>%
+  ggplot(aes(totalCount, major_frac, colour = sig)) + geom_hline(yintercept = 0.5, linetype = 2) + geom_point(alpha = 0.7) +
+  scale_x_log10() + scale_colour_manual(values = c(`FALSE` = "grey60", `TRUE` = "firebrick")) + facet_wrap(~lab) +
+  labs(x = "haplotype reads per gene (log10)", y = "major haplotype fraction (folded, no direction)", colour = "sig",
+       caption = paste0("sig: BH < ", FDR_SIG, " and major fraction - 0.5 >= ", ABS_DEV_SIG,
+                        if (any(bias$flagged)) "; some samples flagged for reference bias" else "")) + theme_bw()
+print(p1)
+ggsave(file.path(RESULTS_DIR, paste0(DATE_TAG, "_ASE_phaser.pdf")), p1, width = 10, height = 7)
+```
+
+## Export
+
+```{r export}
+xlsx_file <- file.path(RESULTS_DIR, paste0(DATE_TAG, "_ASE_phaser.xlsx"))
+cut_cell <- function(x) ifelse(nchar(x) > 32000, paste0(substr(x, 1, 32000), " ... (cut: an Excel cell holds at most 32,767 characters; the full list is in ase_phaser_checkpoint.rds)"), x)
+wb <- openxlsx::createWorkbook()
+for (nm in c("Gene", "Comparison", "Samples", "Summary")) openxlsx::addWorksheet(wb, nm)
+openxlsx::writeData(wb, "Gene", dplyr::mutate(genes, variants = cut_cell(variants))); openxlsx::writeData(wb, "Comparison", cmp)
+openxlsx::writeData(wb, "Samples", ht$samples); openxlsx::writeData(wb, "Summary", summary_ph)
+openxlsx::saveWorkbook(wb, xlsx_file, overwrite = TRUE)
+saveRDS(list(gene = genes, comparison = cmp, samples = ht$samples, summary = summary_ph,
+             constants = c(ck$constants, list(RHO_MIN = RHO_MIN, PHASED_GT = PHASED_GT))),
+        file.path(RESULTS_DIR, "ase_phaser_checkpoint.rds"))
+write.table(summary_ph, file.path(RESULTS_DIR, "summary_numbers_phaser.tsv"), sep = "\t", quote = FALSE, row.names = FALSE)
+cat("wrote", xlsx_file, "and summary_numbers_phaser.tsv\n")
+sessionInfo()
+```
+````
+
+Render it with `{RESULTS_DIR}/scripts/run_05_phaser.sh`. This is the same script as `run_01_import_qc.sh` (Step 12), with these differences:
+- job name `ase_05_phaser`, log `run_05_phaser_%j.out`, the Rmd 05 file name;
+- the first case of the `--bind` rule (`--bind {CWD}`): the Rmd reads no GTF;
+- `-n 1 --mem=16G -t 4:00:00`. It runs single-threaded, one sample after another.
+
+Runtime and memory, from the unit-test check of Step 14 (one measurement, not a genome-scale render): 55 s and about 2 GB for one sample of 20,000 genes holding about 12 million haplotype reads, so 100 such samples take about 1.5 h, inside the 4 h request. Time and memory per sample grow in proportion to the sample's total haplotype reads, because the trimmed dispersion fit enumerates every possible count of every gene: a sample with 50 million reads needs about 8 GB and, projected, about 4 minutes. The total time grows with the number of samples; the memory does not, because the samples are fitted one after another. Raise `-t` for more than about 200 samples of that size, and `--mem` when one sample holds more than about 80 million haplotype reads.
+
+If the job stops with "phASER gene counts missing for sample(s)", the named samples have no phASER output: look at their `phaser_count` logs, re-run them, or drop them (Step 15). If it stops with "the Rmd 02 checkpoint does not come from the current Rmd 01 checkpoint", re-render Rmd 02 first. If it stops with "a gene name occurs twice", the gene span file has duplicated names; rebuild `reference/genes_span.bed` with unique names. Submission order: Step 15.
+
+---
+
 ## Notes for the assistant
 
 - **Containers, not modules.** Tools come from the cached Singularity images of Step 2; the only module ever loaded is `singularity/3.10.4`, always with a checked `|| exit 1`. R exists only in the `bulkrnaseq` image (`{R_SIF}`).
-- **No R and no heavy work on the login node.** STAR, GATK, Picard, samtools, bcftools, R, the unit tests and the Rmd renders all run as `sbatch -p bcc` jobs; the login node only writes text, reads small files, submits and waits. The summary page is written from the summary TSVs (`summary_numbers.tsv`, and `summary_numbers_reciprocal.tsv` / `summary_numbers_differential.tsv` when Rmd 03 / 04 ran), not from R.
+- **No R and no heavy work on the login node.** STAR, GATK, Picard, samtools, bcftools, R, the unit tests and the Rmd renders all run as `sbatch -p bcc` jobs; the login node only writes text, reads small files, submits and waits. The summary page is written from the summary TSVs (`summary_numbers.tsv`, and `summary_numbers_reciprocal.tsv` / `summary_numbers_differential.tsv` / `summary_numbers_phaser.tsv` when Rmd 03 / 04 / 05 ran), not from R.
 - **`/tmp` is node-local.** Logs, temporary files (`--tmp-dir`, Picard `TMP_DIR`, `_STARtmp`) and every output live under `{RESULTS_DIR}` on the shared filesystem; create `{RESULTS_DIR}/logs` before submitting because `sbatch` silently drops output when the `-o` directory is missing.
 - **Every job is submitted with `sbatch -p bcc`**, and chained jobs use `--parsable` and `--dependency=afterok`.
 - **Unverified URLs are never embedded.** The five container URLs of Step 2 were verified; Ensembl and Mouse Genomes Project locations are resolved at run time and shown to the user first, never typed from memory.
 - **Duplicates are marked, not removed** (`REMOVE_DUPLICATES=false`); ASEReadCounter skips flagged duplicates itself. The read group is written by STAR (`--outSAMattrRGline`) and the het VCF must be bgzipped, tabix-indexed and carry a genotype column, otherwise ASEReadCounter silently counts nothing (the empty-table guard catches it).
 - **Orientation.** F1: REF = strain A (the reference assembly's allele) and ALT = strain B; every table and figure says which strain is "higher". Outbred: REF and ALT, gene calls "unphased, no direction".
 - **Honesty.** The reference-bias flag is printed next to every ratio table and figure and shown at the top of the summary page. The flag is a screen, not a test. No claim of reduced bias is made for masking or WASP.
-- **Statistics block.** The code between `# --- ase-stats-begin` and `# --- ase-stats-end` (Step 14) is pasted verbatim into Rmd 02, 03 and 04; never edit it inside a generated Rmd, because the unit tests check exactly that text.
+- **Statistics block.** The code between `# --- ase-stats-begin` and `# --- ase-stats-end` (Step 14) is pasted verbatim into Rmd 02, 03, 04 and 05; never edit it inside a generated Rmd, because the unit tests check exactly that text.
 - **Analyses available.** Per-sample imbalance (Rmd 01/02), reciprocal F1 (Rmd 03) and differential ASE (Rmd 04) are implemented. phASER is a later stage: say "available in a later stage" and continue. Never add a model or package that the Step 14 block does not contain. `lme4` and `aod` are not used by the Rmds (the Step 14 models are base R; Step 2 lists the mandatory packages).
 - **Never leave a `{...}` placeholder** in a generated script or Rmd, never push to a remote, and never modify raw FASTQ, BAM or VCF inputs.

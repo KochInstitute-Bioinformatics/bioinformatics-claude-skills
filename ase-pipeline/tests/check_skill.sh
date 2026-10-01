@@ -472,7 +472,7 @@ need 'R4=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_04_different
 need "### Reciprocal F1 section"
 need "### Differential ASE section"
 need "offered only when \`{MODE}\` = \`outbred\`; available in a later stage"
-need "pasted verbatim into Rmd 02, 03 and 04"
+need "pasted verbatim into Rmd 02, 03, 04 and 05"   # Stage 3 Task 4 (M11): Rmd 05 added to the Notes line
 forbid "Stage 1 implements only the always-on analysis"
 forbid "**Stage 1 only.**"
 # additions beyond the brief (review context of Tasks 3-5): Rmd 03 confounded stop, per-contrast checks,
@@ -735,5 +735,32 @@ need "about 2.6 GB free"
 need "line 1 is exactly \`commit <PHASER_COMMIT>\` and line 2 is exactly \`env_sha256 <sha256 of the package list>\`"
 need "a changed package list changes this hash"
 # --- end Stage 3 Task 3 review fixes
+
+# --- Stage 3 Task 4 (Rmd 05, Step 19); each string is absent from the Task 3 skill
+need "## Step 19 — Rmd 05: phASER gene-level haplotype imbalance (outbred, optional)"
+need "{CWD}/{TODAY}_{WD_NAME}_05_phaser.Rmd"   # "_05_phaser.Rmd" alone is already in Step 14 (Task 1)
+need "_ASE_phaser.xlsx"
+need "ase_phaser_checkpoint.rds"
+need "summary_numbers_phaser.tsv"
+need "run_05_phaser.sh"
+need 'PHASED_GT   <- {PHASED_GT}'
+need 'ht <- hap_gene_test(ifelse(tst, genes$aCount, NA), ifelse(tst, genes$bCount, NA), genes$sample, RHO_MIN)'
+need 'genes <- ga %>% dplyr::filter(totalCount > 0) %>%'
+need '"no direction (haplotype labels arbitrary)"'
+need "haplotype A is the haplotype of the first (left) allele of the phased genotype"
+need "Rmd 05 is reported next to them, never instead of them"
+need 'dplyr::full_join(unph, by = c("sample", "gene_id"))'
+[ -s "$HERE/synthetic/evaluate_stage3.R" ] || { echo "FAIL: missing tests/synthetic/evaluate_stage3.R"; fail=1; }
+# carried items: M9 (dispersion warnings per sample), M10 (runtime scale), M11 (lists of Rmds), M8 (cohort median in the Rmd text)
+need 'ht$samples$rho_warning <- ""'
+need '    w <- collect_warnings(bb_estimate_rho_trim(genes$aCount[u], genes$totalCount[u]))$warn'
+need "Time and memory per sample grow in proportion to the sample's total haplotype reads"
+need "is pasted verbatim into Rmd 02, 03, 04 and 05"
+forbid "is pasted verbatim into Rmd 02, 03 and 04;"
+need "Rmd 02, 03, 04 and 05 read its checkpoint"
+forbid "Rmd 02, 03 and 04 read its checkpoint"
+need "so adding or removing samples can change the p-values of the samples already analysed"
+need 'if (anyDuplicated(genes[, c("sample", "gene_id")]))'
+# --- end Stage 3 Task 4
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1
