@@ -650,7 +650,22 @@ need "per sample rho_used = max(rho_cohort, rho_own, rho_min)"
 need "pasted verbatim into Rmd 02, Rmd 03, Rmd 04 and Rmd 05"
 need "**phASER gene test (Rmd 05): \`hap_gene_test\`.**"
 [ -s "$HERE/r/test_ase_stats_stage3.R" ] || { echo "FAIL: missing tests/r/test_ase_stats_stage3.R"; fail=1; }
-grep -qF 'test_ase_stats_stage3.R' "$HERE/r/run_stats_tests.sh" || { echo "FAIL: run_stats_tests.sh does not run the Stage 3 tests"; fail=1; }
+grep -qE '^[^#]*Rscript ase-pipeline/tests/r/test_ase_stats_stage3\.R' "$HERE/r/run_stats_tests.sh" || { echo "FAIL: run_stats_tests.sh does not run the Stage 3 tests"; fail=1; }
 # --- end Stage 3 statistics
+
+# --- Stage 3 Task 1 review fixes (I1, M1-M8); the code lines pin the rule itself, not only its comment
+need '  ru <- if (is.na(coh)) rep(NA_real_, length(smp)) else pmax(coh, ifelse(is.na(own["rho", ]), 0, own["rho", ]), rho_min)'
+need '  if (anyNA(sample)) stop("hap_gene_test: sample labels must not be NA")'
+need '  use <- is.finite(a) & is.finite(b) & a >= 0 & b >= 0 & n > 0 & a == round(a) & b == round(b)'
+need "**One block per gene without genome-wide phasing:**"
+need "it keeps only the most-covered block (or single variant) of the gene"
+need "\`hap_gene_test\` does not apply \`MIN_DEPTH\`; Rmd 05 sets rows below \`MIN_DEPTH\` to \`NA\` before the call"
+need "adding or removing samples changes \`rho_cohort\`"
+need "**Limit: many imbalanced genes inflate the dispersion, which is conservative but costs power.**"
+need "\`rho_cohort\` 0.1324, power 0.1460 against an oracle 0.5961"
+need "so the haplotype-test power and tested fractions above are optimistic for that case"
+forbid "so the pooled counts are not inflated by SNPs that share reads"
+grep -qF 'non_integer = c(2.5, 7.5)' "$HERE/r/test_ase_stats_stage3.R" || { echo "FAIL: Stage 3 tests do not cover unusable count rows one by one"; fail=1; }
+# --- end Stage 3 Task 1 review fixes
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1

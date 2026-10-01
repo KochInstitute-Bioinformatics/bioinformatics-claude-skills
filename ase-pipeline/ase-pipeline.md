@@ -1573,12 +1573,16 @@ hap_gene_test <- function(a, b, sample, rho_min, min_genes = 20) {
   # and b: without phased genotypes the labels A and B are arbitrary per gene and sample, so only |a / (a + b) - 0.5| carries
   # information, and every quantity below is unchanged when a and b are swapped in any row.
   # Dispersion: rho_own = bb_estimate_rho_trim over the sample's usable genes (folded central-region H0 fit, truncation-
-  # corrected, so genes with real imbalance do not inflate it; NA below min_genes genes); rho_cohort = the median of rho_own
-  # over the samples; per sample rho_used = max(rho_cohort, rho_own, rho_min). Test per row: bb_pvalue against 0.5 (exact,
-  # two-sided). Rows with a or b missing, infinite or negative, or a + b = 0, are not used and get p = NA, as does every row
-  # when no sample has min_genes usable rows.
+  # corrected, so genes with real imbalance inflate it far less than an all-genes fit; NA below min_genes genes);
+  # rho_cohort = the median of rho_own over the samples; per sample rho_used = max(rho_cohort, rho_own, rho_min).
+  # Test per row: bb_pvalue against 0.5 (exact, two-sided). Rows with a or b missing, infinite, negative or non-integer,
+  # or a + b = 0, are not used (not in n_genes, not in the fit) and get p = NA, as does every row when no sample has
+  # min_genes usable rows. MIN_DEPTH is not applied here: the caller sets rows below MIN_DEPTH to NA first. A missing
+  # sample label or vectors of different lengths stop.
+  if (length(a) != length(b) || length(b) != length(sample)) stop("hap_gene_test: a, b and sample must have the same length")
+  if (anyNA(sample)) stop("hap_gene_test: sample labels must not be NA")
   n <- a + b
-  use <- is.finite(a) & is.finite(b) & a >= 0 & b >= 0 & n > 0
+  use <- is.finite(a) & is.finite(b) & a >= 0 & b >= 0 & n > 0 & a == round(a) & b == round(b)
   sample <- as.character(sample); smp <- sort(unique(sample))
   own <- vapply(smp, function(s) {
     i <- use & sample == s
@@ -1610,9 +1614,11 @@ hap_gene_test <- function(a, b, sample, rho_min, min_genes = 20) {
 - **X chromosome in F1 mode.** The functions above do not know chromosomes: Rmd 03 and Rmd 04 leave X, Y and MT out with `chrom_class`, but Rmd 01 and Rmd 02 do not set X aside (they keep it in every table and in the reference-bias mean). Male F1 animals carry one X, so X genes can look imbalanced and X sites can trip the reference-bias flag; read X rows with care (Step 13).
 - **SNPs sharing read pairs.** In a fragment-level simulation (ASEReadCounter-style counting, 30 percent SNP-dense genes), the thinned gene tests have null sizes of 0.0314 (strain) / 0.0288 (parent of origin) (dense genes 0.0331), against 0.0354 without thinning (dense genes 0.0578). The Stage 1 Rmd 02 F1 gene LRT has a size of 0.1450 unthinned (0.2084 in SNP-dense genes): counting shared read pairs at every SNP makes it anti-conservative. Thinned, its size is 0.0497; that figure excludes the SNP-dense genes, which keep a single SNP after thinning and so have no multi-SNP gene test.
 - **phASER gene test (Rmd 05): `hap_gene_test`.**
-  - **Input:** one row per sample and gene with phASER's haplotype counts (`aCount`, `bCount` of `phaser_gene_ae`). phASER counts a read pair once per haplotype block, so the pooled counts are not inflated by SNPs that share reads.
+  - **Input:** one row per sample and gene with phASER's haplotype counts (`aCount`, `bCount` of `phaser_gene_ae`). phASER counts a read pair once per haplotype block, so a block's counts are not inflated by SNPs that share reads.
+  - **One block per gene without genome-wide phasing:** with unphased genotypes `phaser_gene_ae` does not add up a gene's haplotype blocks; it keeps only the most-covered block (or single variant) of the gene (`phaser_gene_ae.py`, lines 136-164 at the pinned commit). The counts therefore cover the SNPs that read pairs link into that one block, not every SNP of the gene. Only with phased genotypes (phASER's genome-wide phasing option) are the blocks of a gene summed.
+  - **Rows the function uses:** `hap_gene_test` does not apply `MIN_DEPTH`; Rmd 05 sets rows below `MIN_DEPTH` to `NA` before the call. Rows with a missing, infinite, negative or non-integer count, or no reads, get p `NA` and count neither in `n_genes` nor in the dispersion fit. A missing sample label, or `a`, `b` and `sample` of different lengths, stop with an error.
   - **Test:** each row is tested against 0.5 with `bb_pvalue`. The test is symmetric in the two haplotypes: without phased genotypes the labels are arbitrary per gene and sample. Swapping the labels in any row changes no p-value and no dispersion; the unit tests check this.
-  - **Dispersion:** `rho_own` is the trimmed central-region fit (`bb_estimate_rho_trim`) over the sample's genes. `rho_cohort` is the median of `rho_own` over the samples. `rho_used = max(rho_cohort, rho_own, RHO_MIN)`. A sample with fewer than 20 genes at `MIN_DEPTH` is tested with `max(rho_cohort, RHO_MIN)`.
+  - **Dispersion:** `rho_own` is the trimmed central-region fit (`bb_estimate_rho_trim`) over the sample's genes. `rho_cohort` is the median of `rho_own` over the samples. `rho_used = max(rho_cohort, rho_own, RHO_MIN)`. A sample with fewer than 20 genes at `MIN_DEPTH` is tested with `max(rho_cohort, RHO_MIN)`. Because `rho_cohort` is a median over the samples of the run, adding or removing samples changes `rho_cohort`, and so can change the p-values of the samples already analysed.
   - **Null sizes** (measured; 10 seeds; cohorts of 6 samples × 2000 genes):
     - true rho 0.005 / 0.02 / 0.05 without imbalance: 0.0141 / 0.0454 / 0.0462;
     - with 20 % imbalanced genes: 0.0147 / 0.0357 / 0.0238;
@@ -1621,10 +1627,17 @@ hap_gene_test <- function(a, b, sample, rho_min, min_genes = 20) {
     - one sample with 15 genes: 0.0357;
     - heterogeneous cohort: 0.0223 overall and 0.0225 for the noisiest sample.
   - **Power:** for 0.75/0.25 genes at rho 0.02 the power is 0.8560, against an oracle with the true rho of 0.8751.
+  - **Limit: many imbalanced genes inflate the dispersion, which is conservative but costs power.** Real imbalance and overdispersion both add a depth-independent spread to a / (a + b), and one sample's unphased data separate the two only by the shape of the distribution: imbalanced genes that fall inside the central region of the trimmed fit raise `rho_own`, and so `rho_cohort` and `rho_used`. Measured (same simulation, 0.75/0.25 genes):
+    - true rho 0.05 with 40 % imbalanced genes: `rho_cohort` 0.1324, power 0.1460 against an oracle 0.5961;
+    - true rho 0.05 with 20 %: power 0.4882 against 0.5957;
+    - true rho 0.02 with 40 %: power 0.7843 against 0.8748;
+    - 20 genes per sample (rho 0.02, 20 %): power 0.6330 against 0.8765, because noisy per-sample estimates enter the maximum rule.
+    - These losses add no false positives: the null sizes stay below 0.05, down to 0.0008 in the worst case (rho 0.05, 40 %).
   - **Comparison with the unphased path** (fragment-level simulation in which read pairs are shared between SNPs; genes with 4 or more SNPs within 600 transcript bases):
     - haplotype-test power 0.7877 against 0.5873 for the per-SNP tests combined with ACAT (Rmd 02) at 300 fragments per gene, and 0.1495 against 0.0357 at 40;
     - at 40 fragments per gene, 0.9962 of 8-SNP genes are tested by the haplotype test and 0.4169 by the unphased path. That path needs one SNP with at least `MIN_DEPTH` reads.
     - The haplotype test's null size is 0.0184 (300) and 0.0042 (40).
+    - The simulation puts all SNPs of a gene into one haplotype block (every fragment that covers any of its SNPs counts). With unphased genotypes, SNPs that no read pair links fall into separate blocks and `phaser_gene_ae` keeps only the most-covered one, so the haplotype-test power and tested fractions above are optimistic for that case.
   - **Runtime:** 55 s and 2027 MB for one sample of 20,000 genes on one core.
 
 ---

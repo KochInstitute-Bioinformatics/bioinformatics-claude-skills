@@ -49,6 +49,18 @@ keep <- c(1:400, 402, 406)
 ok(isTRUE(all.equal(re$p[keep], hap_gene_test(ae[keep], be[keep], se[keep], RHO_MIN)$p, tolerance = 1e-12)),
    "NA, Inf and zero rows do not enter the dispersion fit (same p as without them)")
 ok(identical(as.integer(re$samples$n_genes), c(202L, 200L)), "n_genes counts the usable rows per sample")
+bad <- list(zero = c(0, 0), na = c(NA, 3), inf = c(Inf, 2), negative = c(-3, 10), non_integer = c(2.5, 7.5))
+one_bad <- vapply(names(bad), function(k) {   # each unusable row type alone must not touch n_genes, the fit or the other p-values
+  rb <- hap_gene_test(c(a, bad[[k]][1]), c(n - a, bad[[k]][2]), c(smp, "s1"), RHO_MIN)
+  is.na(rb$p[401]) && isTRUE(all.equal(rb$samples, r$samples, tolerance = 1e-12)) && isTRUE(all.equal(rb$p[1:400], r$p, tolerance = 1e-12))
+}, logical(1))
+ok(all(one_bad), sprintf("each unusable row alone (zero, NA, Inf, negative, non-integer count) gets p NA and leaves n_genes, the dispersions and every other p unchanged%s",
+                         if (all(one_bad)) "" else paste0(" (failing: ", paste(names(bad)[!one_bad], collapse = ", "), ")")))
+err_msg <- function(expr) tryCatch({ force(expr); "" }, error = function(e) conditionMessage(e))
+ok(grepl("sample labels must not be NA", err_msg(hap_gene_test(a, n - a, replace(smp, 3, NA), RHO_MIN)), fixed = TRUE),
+   "a missing (NA) sample label stops with a clear message")
+ok(grepl("same length", err_msg(hap_gene_test(a, n - a, smp[-1], RHO_MIN)), fixed = TRUE),
+   "a, b and sample of different lengths stop with a clear message")
 r19 <- hap_gene_test(a[1:19], (n - a)[1:19], rep("s1", 19), RHO_MIN)
 ok(all(is.na(r19$p)) && is.na(r19$samples$rho_cohort), "no sample with 20 usable genes: nothing tested (p NA, rho_cohort NA)")
 ix <- c(1:15, 201:400)
