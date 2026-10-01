@@ -905,7 +905,7 @@ need "Store it as \`{PHASED_GT}\`"
 need "Where should phASER be installed?"
 need "set \`{PHASED_GT}\` to 0 and \`{PHASER_HOME}\` to the word \`none\`"
 need "\`{PHASER_RESOURCES}\` for \`phaser_count.sh\` (phASER only; one array task per sample, always one core):"
-need "- otherwise: \`-n 1 --mem=16G -t 4:00:00\`."
+need "- otherwise: \`-n 1 --mem=32G -t 4:00:00\`."
 need "these figures say nothing about real data"
 need "### phASER section (only when Rmd 05 ran)"
 need "\`{TODAY}_{WD_NAME}_ASE_phaser_gene.tsv.gz\` and \`{TODAY}_{WD_NAME}_ASE_phaser_comparison.tsv.gz\` (the full tables"
@@ -949,5 +949,52 @@ DRYD=$(mktemp -d "${TMPDIR:-/tmp}/ase_dry.XXXXXX") && {
   printf '%s\n' "$dry_out" | tail -1 | grep -qx "DRY RUN PASS" || { echo "FAIL: tests/chain/dry_run_chain.sh did not pass:"; printf '%s\n' "$dry_out" | grep -E '^FAIL|^  ' | head -20; fail=1; }
   rm -rf "$DRYD"; }
 # --- end Stage 3 chain integration
+
+# --- Stage 3 chain integration review fixes (I1, M1-M4, M6-M8, M11); each check fails on f49d308
+# I1: exact phASER re-submission recipes (whole fenced block compared), and the old inexact wording is gone
+forbid "\`phaser_count.sh\` without its dependency on the old array job once the BAMs exist"
+need "**Re-submitting the phASER part (exact recipes).**"
+need "under \`set -u\` an unset variable inside \`\$(...)\` aborts only that substitution"
+rblock() { local got; got=$(bash "$HERE/synthetic/cut_block.sh" "$SKILL" "**Recipe $1 " 2>/dev/null)
+  [ "$got" = "$2" ] || { echo "FAIL: recipe $1 block differs from the tested lines"; fail=1; }; }
+L_PS='case "$INSTALL" in yes) PS=$(sbatch -p bcc --parsable $S/setup_phaser_env.sh); got setup_phaser_env.sh "$PS" ;; esac'
+L_PH='PH=$(sbatch -p bcc --parsable ${PS:+--dependency=afterok:$PS} $S/phaser_count.sh); got phaser_count.sh "$PH"'
+rblock A 'R5=$(sbatch -p bcc --parsable $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"'
+rblock B 'R2=$(sbatch -p bcc --parsable $S/run_02_imbalance.sh); got run_02_imbalance.sh "$R2"
+R5=$(sbatch -p bcc --parsable --dependency=afterok:$R2 $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"'
+rblock C "$L_PS
+$L_PH"'
+R5=$(sbatch -p bcc --parsable --dependency=afterok:$PH $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"'
+rblock D 'R1=$(sbatch -p bcc --parsable $S/run_01_import_qc.sh); got run_01_import_qc.sh "$R1"
+R2=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_02_imbalance.sh); got run_02_imbalance.sh "$R2"
+case " $ANALYSES " in *differential*)
+  R4=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_04_differential.sh); got run_04_differential.sh "$R4" ;;
+esac'"
+$L_PS
+$L_PH"'
+R5=$(sbatch -p bcc --parsable --dependency=afterok:$PH:$R2 $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"'
+for r in A B C D; do grep -q "RECIPE=$r scenario" "$HERE/chain/dry_run_chain.sh" || { echo "FAIL: the dry run does not run recipe $r"; fail=1; }; done
+# M1, M2: runtime citation and the large-tier memory
+forbid "phASER's authors report"
+need "(\`docs/benchmarks/runtime_benchmark_report.md\` at the pinned commit) reports 89-466 s per sample"
+need "The synthetic timings above say nothing for real data."
+forbid "- otherwise: \`-n 1 --mem=16G -t 4:00:00\`."
+# M3, M4: the Step 7 copy of the commit and the dry run's pinned hash are in the bump procedure
+grep -qF "its first line is \`commit ${pc:-none}\`" "$SKILL" || { echo "FAIL: the Step 7 install test must name the commit of setup_phaser_env.sh"; fail=1; }
+need "All four must agree"
+[ "$(grep -c "${pc:-none}" "$SKILL")" = 5 ] || { echo "FAIL: the pinned commit must occur on exactly 5 lines (Step 7 install test, submit_chain.sh, Step 18 prose, setup_phaser_env.sh, phaser_count.sh); found $(grep -c "${pc:-none}" "$SKILL")"; fail=1; }
+need "The stub dry run \`ase-pipeline/tests/chain/dry_run_chain.sh\` deliberately pins the hash of the tested installation (\`ENV_SHA_INSTALLED\`"
+grep -qE '^ENV_SHA_INSTALLED=[0-9a-f]{64}$' "$HERE/chain/dry_run_chain.sh" || { echo "FAIL: dry_run_chain.sh must pin ENV_SHA_INSTALLED"; fail=1; }
+# M6: commit match anchored at its end; the phASER scripts use the PHASER_HOME of submit_chain.sh
+cline '  for f in setup_phaser_env.sh phaser_count.sh; do grep -q "^PHASER_\(HOME=.*; PHASER_\)\{0,1\}COMMIT=$PHASER_COMMIT\($\|[ ;]\)" "$S/$f" || die "$f does not pin phASER commit $PHASER_COMMIT (Step 18: every copy must agree) - nothing submitted"'
+cline '    grep -qF "PHASER_HOME=\"$PHASER_HOME\"" "$S/$f" || die "$f uses another PHASER_HOME than '"'"'$PHASER_HOME'"'"' (substitute the Step 7 path in every script) - nothing submitted"; done'
+# M7: concurrent installations into one PHASER_HOME
+need "the job that starts second fails at once with \"another installation is running\" (it never waits)"
+# M8: nothing-tested note of the phASER section
+need "Mark a sample with \`genes_tested\` = 0 as \"nothing tested\""
+# M11: the dry run deletes its scratch argument only under the shared scratch area
+[ "$(grep -c 'rm -rf "$W"' "$HERE/chain/dry_run_chain.sh")" = 1 ] && grep -qF '  /net/bmc-lab3/data/bcc/ase_scratch/?*) rm -rf "$W" && mkdir -p "$W" || exit 1 ;;' "$HERE/chain/dry_run_chain.sh" ||
+  { echo "FAIL: dry_run_chain.sh may delete its scratch argument only under /net/bmc-lab3/data/bcc/ase_scratch/"; fail=1; }
+# --- end Stage 3 chain integration review fixes
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1

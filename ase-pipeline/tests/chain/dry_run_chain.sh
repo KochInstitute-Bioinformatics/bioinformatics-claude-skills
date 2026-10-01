@@ -1,5 +1,6 @@
 #!/bin/bash
-# Usage: dry_run_chain.sh <skill.md> <scratch dir>
+# Usage: dry_run_chain.sh <skill.md> <scratch dir>  (deleted and re-created only under /net/bmc-lab3/data/bcc/ase_scratch/;
+# anywhere else the run uses a new mktemp -d directory inside it and removes only that)
 # Cuts submit_chain.sh and wait_chain.sh out of Step 15 (cut_block.sh), edits them as the wizard would (placeholders; the four
 # mouse-helper lines deleted unless a scenario keeps them), and runs them against stub sbatch / squeue / scancel / sleep. Each
 # submission scenario compares the submitted jobs and their afterok dependencies (as script names) with the expected list, or
@@ -22,7 +23,16 @@ COMMIT=aa1f8ec5fe1cc676e37cfa6f6a0bce6b09070301
 # line 2 of install_ok.txt written by the real installation of the pinned package list (cluster run of setup_phaser_env.sh);
 # submit_chain.sh must compute the same hash from the script, otherwise it would reinstall on every run
 ENV_SHA_INSTALLED=ef6e8597e66a4e6c23c27fee56181c0ae37810c1e94370a375de44974f6507a2
-rm -rf "$W"; mkdir -p "$W/bin" || exit 1
+# the scratch argument is deleted only under the shared scratch area; anywhere else the test works in a new mktemp -d directory
+# inside it and removes only that directory at the end (a project directory given by mistake is never deleted)
+case "$W" in */../*|*/..|*/./*) echo "FAIL: scratch dir '$W' must be a plain absolute path"; exit 1 ;; esac
+W=${W%/}; OWN_TMP=""
+case "$W" in
+  /net/bmc-lab3/data/bcc/ase_scratch/?*) rm -rf "$W" && mkdir -p "$W" || exit 1 ;;
+  ""|/) echo "FAIL: refusing scratch dir '/'"; exit 1 ;;
+  *) mkdir -p "$W" && OWN_TMP=$(mktemp -d "$W/dry_run_chain.XXXXXX") || exit 1; W=$OWN_TMP ;;
+esac
+mkdir -p "$W/bin" || exit 1
 B="$W/bin"
 cat > "$B/sbatch" <<'EOF'
 #!/bin/bash
@@ -80,17 +90,29 @@ scenario() {
                phaser_count.sh) printf '%s\n' "$PHC" > "$D/res/scripts/$s" ;;
                *) echo '#!/bin/bash' > "$D/res/scripts/$s" ;; esac
   done
-  [ -n "${BAD_COMMIT:-}" ] && sed -i "s/$COMMIT/0000000000000000000000000000000000000000/" "$D/res/scripts/$BAD_COMMIT"
+  home=${HOMEVAL:-$D/home}
+  for s in setup_phaser_env.sh phaser_count.sh; do [ -f "$D/res/scripts/$s" ] && sed -i "s|{PHASER_HOME}|$home|g" "$D/res/scripts/$s"; done
+  [ -n "${BAD_COMMIT:-}" ] && sed -i "s/$COMMIT/${COMMIT_REPL:-0000000000000000000000000000000000000000}/" "$D/res/scripts/$BAD_COMMIT"
+  [ -n "${OTHER_HOME_IN:-}" ] && sed -i "s|PHASER_HOME=\"$home\"|PHASER_HOME=\"$D/other_home\"|" "$D/res/scripts/$OTHER_HOME_IN"
   case "$4" in yes)   printf 'commit %s\nenv_sha256 %s\npython 3.14.7\n' "$COMMIT" "$ENV_SHA_INSTALLED" > "$D/home/install_ok.txt" ;;
                stale) printf 'commit %s\nenv_sha256 %s\npython 3.14.7\n' "$COMMIT" "$(printf '%064d' 0)" > "$D/home/install_ok.txt" ;; esac
   [ -n "${EMPTY_FOR:-}" ] && echo "$EMPTY_FOR" > "$D/empty_for"
   [ -n "${PRE_IDS:-}" ] && printf 'old.sh\t1\n' > "$D/res/logs/chain_job_ids.tsv"
-  home=${HOMEVAL:-$D/home}
   if [ -n "${KEEP_HELPER:-}" ]; then printf '%s\n' "$SUB"
   else printf '%s\n' "$SUB" | awk '/^# Without the helper, delete the next four lines/ {print; skip = 4; next} skip > 0 {skip--; next} {print}'
-  fi | sed -e "s|{RESULTS_DIR}|$D/res|g" -e "s|{CWD}|$D|g" -e "s|{MODE}|$2|g" -e "s|{ANALYSES}|$3|g" -e "s|{PHASER_HOME}|$home|g" > "$D/submit_chain.sh"
+  fi | sed -e "s|{RESULTS_DIR}|$D/res|g" -e "s|{CWD}|$D|g" -e "s|{MODE}|$2|g" -e "s|{ANALYSES}|$3|g" -e "s|{PHASER_HOME}|$home|g" > "$D/full_chain.sh"
+  case "${RECIPE:-}" in
+    "") cp "$D/full_chain.sh" "$D/submit_chain.sh" ;;
+    naive) grep -v "^  PH=" "$D/full_chain.sh" > "$D/submit_chain.sh" ;;   # the copy-and-delete hazard the recipes avoid
+    *) { awk '{print} /^DEP=""; R3="not selected"; R4="not selected"; R5="not selected"; PS=""/ {exit}' "$D/full_chain.sh"
+         bash "$CUT" "$SKILL" "**Recipe $RECIPE " || echo "echo MISSING RECIPE $RECIPE; exit 3"; tail -n 2 "$D/full_chain.sh"; } > "$D/submit_chain.sh" ;;
+  esac
   grep -q '{[A-Z_]*}' "$D/submit_chain.sh" && { echo "FAIL: $1: placeholder left in submit_chain.sh"; fail=1; return; }
   out=$(run_stub "$D" "$D/submit_chain.sh"); rc=$?
+  case "${RECIPE:-}" in
+    naive) printf '%s' "$out" | grep -q 'PH: unbound variable' || { echo "FAIL: $1: expected the unbound-variable hazard: $out"; fail=1; } ;;
+    ?*) ! printf '%s' "$out" | grep -q 'unbound variable' || { echo "FAIL: $1: a recipe line uses an unset variable: $out"; fail=1; } ;;
+  esac
   case "$5" in
     DIE:*) if [ $rc -ne 0 ] && printf '%s' "$out" | grep -qF -- "${5#DIE:}" && [ ! -s "$D/calls" ]; then echo "ok   $1: stops ('${5#DIE:}'), nothing submitted"
            else echo "FAIL: $1: expected a stop with '${5#DIE:}' and no submission (rc $rc): $out"; fail=1; fi
@@ -162,6 +184,29 @@ EXPECT_PART="$BASE_OB" EMPTY_FOR=phaser_count.sh scenario empty_id_phaser outbre
 EXPECT_PART="$BASE_OB
 setup_phaser_env.sh -
 phaser_count.sh afterok:align_wasp_count.sh:setup_phaser_env.sh" EMPTY_FOR=run_05_phaser.sh scenario empty_id_rmd05 outbred "per-sample phaser" no "STOP:sbatch returned no job id for run_05_phaser.sh" ""
+BAD_COMMIT=phaser_count.sh COMMIT_REPL="${COMMIT}0" scenario commit_with_suffix outbred "per-sample phaser" yes "DIE:phaser_count.sh does not pin phASER commit" ""
+OTHER_HOME_IN=phaser_count.sh scenario home_mismatch_count outbred "per-sample phaser" yes "DIE:phaser_count.sh uses another PHASER_HOME" ""
+OTHER_HOME_IN=setup_phaser_env.sh scenario home_mismatch_setup outbred "per-sample phaser" yes "DIE:setup_phaser_env.sh uses another PHASER_HOME" ""
+echo "--- re-submission recipes of Step 15 (part 1 of submit_chain.sh + one recipe + the two echo lines)"
+RECIPE=A scenario recipe_A_rmd05_alone outbred "per-sample phaser" yes "run_05_phaser.sh -" ""
+RECIPE=B scenario recipe_B_rmd02_then_rmd05 outbred "per-sample phaser" yes "run_02_imbalance.sh -
+run_05_phaser.sh afterok:run_02_imbalance.sh" ""
+RECIPE=C scenario recipe_C_phaser_installed outbred "per-sample phaser" yes "phaser_count.sh -
+run_05_phaser.sh afterok:phaser_count.sh" ""
+RECIPE=C scenario recipe_C_phaser_with_install outbred "per-sample phaser" no "setup_phaser_env.sh -
+phaser_count.sh afterok:setup_phaser_env.sh
+run_05_phaser.sh afterok:phaser_count.sh" ""
+RECIPE=D scenario recipe_D_rmd01_on_diff outbred "per-sample differential phaser" yes "run_01_import_qc.sh -
+run_02_imbalance.sh afterok:run_01_import_qc.sh
+run_04_differential.sh afterok:run_01_import_qc.sh
+phaser_count.sh -
+run_05_phaser.sh afterok:phaser_count.sh:run_02_imbalance.sh" ""
+RECIPE=D scenario recipe_D_rmd01_on_install outbred "per-sample phaser" no "run_01_import_qc.sh -
+run_02_imbalance.sh afterok:run_01_import_qc.sh
+setup_phaser_env.sh -
+phaser_count.sh afterok:setup_phaser_env.sh
+run_05_phaser.sh afterok:phaser_count.sh:run_02_imbalance.sh" ""
+EXPECT_PART="$BASE_OB" RECIPE=naive scenario naive_copy_without_PH outbred "per-sample phaser" yes "STOP:sbatch returned no job id for run_05_phaser.sh" ""
 
 # wait scenarios: $1 name, $2 job list (script<TAB>id lines), $3 result files written after the job list, $4 logs ("file|line"
 # entries separated by newlines), $5 squeue outputs per call (blocks separated by a line "--"), $6 expected report lines (each
@@ -239,4 +284,5 @@ if [ -s "$W/forbidden" ]; then echo "FAIL: a forbidden command was called:"; cat
 n_sleep=$(cat "$W"/*/sleep 2>/dev/null | grep -c '^60$')   # the stub itself is bin/sleep and holds no such line
 [ "$n_sleep" = 1 ] && echo "sleep stub: called once (rmd02_blocks_rmd05: one polling round while Rmd 04 still ran), no real wait" ||
   { echo "FAIL: expected exactly one 'sleep 60' (rmd02_blocks_rmd05), got $n_sleep"; fail=1; }
+[ -n "$OWN_TMP" ] && rm -rf "$OWN_TMP"   # only the directory this run created with mktemp -d
 [ $fail -eq 0 ] && echo "DRY RUN PASS" || exit 1
