@@ -1,0 +1,411 @@
+== results/2026-10-01_g3_typed | NFCORE_RNASPLICE:PREPARE_GENOME:STAR_GENOMEGENERATE (X.fa) | work/78/9d58420bb0f9cbeaf1c866b9c6356f
+    --genomeDir star/ \
+== results/2026-10-01_g3_typed | NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:STAR_ALIGN (ERR204916) | work/41/3656ffc8f474ea19a44e0cad9e74c5
+    --genomeDir star \
+== results/2026-10-01_g3_typed | NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:STAR_ALIGN (ERR188454) | work/9c/1fe366ccaf38a3f86745ef3e250f84
+    --genomeDir star \
+== results/2026-10-01_g3_typed | NFCORE_RNASPLICE:PREPARE_GENOME:SALMON_INDEX (genome.transcripts.fa) | work/83/58302b15c1e3853819f50d35b47d46
+    -t gentrome.fa \
+== results/2026-10-01_g3_typed | NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:STAR_ALIGN (ERR188383) | work/31/7633d79cc9baa1f440cb8a40b2978e
+    --genomeDir star \
+== results/2026-10-01_g3_typed | NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:STAR_ALIGN (ERR188428) | work/42/120ce67a3f61477cef220329979269
+    --genomeDir star \
+== results/2026-10-01_g3_typed | NFCORE_RNASPLICE:RNASPLICE:EDGER_DEU:SUBREAD_FEATURECOUNTS (ERR188454) | work/01/bbdf35309e216dce4e3eb3daac1a93
+featureCounts \
+    -F SAF -t exon -g gene_id -f -O -B -C \
+    -o ERR188454.featureCounts.tsv \
+nxf_eval_cmd STDOUT STDERR bash -c "featureCounts -v 2>&1 | sed 's/featureCounts v//'"
+== results/2026-10-01_g3_typed | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_PREP (ERR188454) | work/96/1831f1dbcc2fde1fd5b1fd7af69c8d
+rmats.py \
+    --variable-read-length --allow-clipping -t paired --libType fr-unstranded \
+    --b1 ERR188454.prep.b1.txt \
+    --readLength 75 \
+    --tmp ERR188454_rmats_tmp \
+    --od ERR188454_rmats_prep
+cp ERR188454_rmats_tmp/*.txt ERR188454_read_outcomes_by_bam.txt
+cp ERR188454_rmats_tmp/*.rmats ERR188454.rmats
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g3_typed | NFCORE_RNASPLICE:RNASPLICE:DEXSEQ_DEU:DEXSEQ_COUNT (ERR204916) | work/ee/070d66098758ebf1cc4eea8873d321
+dexseq_count.py DEXSeq.gff  -p yes -f bam ERR204916_sorted.bam -r pos ERR204916.clean.count.txt -a 10 -s no
+== results/2026-10-01_g3_typed | NFCORE_RNASPLICE:RNASPLICE:DEXSEQ_DEU:DEXSEQ_COUNT (ERR188454) | work/07/cc7e333cd9b9b5e976d3385a574302
+dexseq_count.py DEXSeq.gff  -p yes -f bam ERR188454_sorted.bam -r pos ERR188454.clean.count.txt -a 10 -s no
+== results/2026-10-01_g3_typed | NFCORE_RNASPLICE:RNASPLICE:EDGER_DEU:SUBREAD_FEATURECOUNTS (ERR204916) | work/fd/342a2ddc20c258be8f1266cb40a840
+featureCounts \
+    -F SAF -t exon -g gene_id -f -O -B -C \
+    -o ERR204916.featureCounts.tsv \
+nxf_eval_cmd STDOUT STDERR bash -c "featureCounts -v 2>&1 | sed 's/featureCounts v//'"
+== results/2026-10-01_g3_typed | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_PREP (ERR204916) | work/58/6c012021d57915f169f943d0e407ca
+rmats.py \
+    --variable-read-length --allow-clipping -t paired --libType fr-unstranded \
+    --b1 ERR204916.prep.b1.txt \
+    --readLength 75 \
+    --tmp ERR204916_rmats_tmp \
+    --od ERR204916_rmats_prep
+cp ERR204916_rmats_tmp/*.txt ERR204916_read_outcomes_by_bam.txt
+cp ERR204916_rmats_tmp/*.rmats ERR204916.rmats
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g3_typed | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_PREP (ERR188383) | work/ad/f8a1b606315e5438d2ecbf0b9f5a2e
+rmats.py \
+    --variable-read-length --allow-clipping -t paired --libType fr-unstranded \
+    --b1 ERR188383.prep.b1.txt \
+    --readLength 75 \
+    --tmp ERR188383_rmats_tmp \
+    --od ERR188383_rmats_prep
+cp ERR188383_rmats_tmp/*.txt ERR188383_read_outcomes_by_bam.txt
+cp ERR188383_rmats_tmp/*.rmats ERR188383.rmats
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g3_typed | NFCORE_RNASPLICE:RNASPLICE:EDGER_DEU:SUBREAD_FEATURECOUNTS (ERR188383) | work/9e/f04b52c01e67f27a2c2c552e6d9d07
+featureCounts \
+    -F SAF -t exon -g gene_id -f -O -B -C \
+    -o ERR188383.featureCounts.tsv \
+nxf_eval_cmd STDOUT STDERR bash -c "featureCounts -v 2>&1 | sed 's/featureCounts v//'"
+== results/2026-10-01_g3_typed | NFCORE_RNASPLICE:RNASPLICE:DEXSEQ_DEU:DEXSEQ_COUNT (ERR188383) | work/5f/d01fcf02c81f64f8f5304475f70218
+dexseq_count.py DEXSeq.gff  -p yes -f bam ERR188383_sorted.bam -r pos ERR188383.clean.count.txt -a 10 -s no
+== results/2026-10-01_g3_typed | NFCORE_RNASPLICE:RNASPLICE:DEXSEQ_DEU:DEXSEQ_COUNT (ERR188428) | work/0d/ff2114888da43cbaff94e8a986aace
+dexseq_count.py DEXSeq.gff  -p yes -f bam ERR188428_sorted.bam -r pos ERR188428.clean.count.txt -a 10 -s no
+== results/2026-10-01_g3_typed | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_PREP (ERR188428) | work/db/6ee5f6306c5fc2b584d51609134442
+rmats.py \
+    --variable-read-length --allow-clipping -t paired --libType fr-unstranded \
+    --b1 ERR188428.prep.b1.txt \
+    --readLength 75 \
+    --tmp ERR188428_rmats_tmp \
+    --od ERR188428_rmats_prep
+cp ERR188428_rmats_tmp/*.txt ERR188428_read_outcomes_by_bam.txt
+cp ERR188428_rmats_tmp/*.rmats ERR188428.rmats
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g3_typed | NFCORE_RNASPLICE:RNASPLICE:EDGER_DEU:SUBREAD_FEATURECOUNTS (ERR188428) | work/7e/8a13a0d7dd2c1000263c05264b74a0
+featureCounts \
+    -F SAF -t exon -g gene_id -f -O -B -C \
+    -o ERR188428.featureCounts.tsv \
+nxf_eval_cmd STDOUT STDERR bash -c "featureCounts -v 2>&1 | sed 's/featureCounts v//'"
+== results/2026-10-01_g3_typed | NFCORE_RNASPLICE:RNASPLICE:RMATS:CREATE_BAMLIST (1) | work/db/1915a07c67a3f82de52d8d413009d8
+== results/2026-10-01_g3_typed | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_POST (GBR_vs_YRI) | work/a9/ab445703016264c064f2ca19f64cab
+rmats.py \
+    --b1 GBR_bamlist.txt \
+    --b2 YRI_bamlist.txt \
+    --readLength 75 \
+    --tmp rmats_tmp \
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g4_rmats_reverse | NFCORE_RNASPLICE:PREPARE_GENOME:STAR_GENOMEGENERATE (X.fa) | work/29/d356c7240e3798ca52bc9106b3fec6
+    --genomeDir star/ \
+== results/2026-10-01_g4_rmats_reverse | NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:STAR_ALIGN (ERR204916) | work/4d/a9ce32dc6d55440dfd5d85ca7cc1b0
+    --genomeDir star \
+== results/2026-10-01_g4_rmats_reverse | NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:STAR_ALIGN (ERR188383) | work/1c/2020f34099c6e8114feb4ca3a429bf
+    --genomeDir star \
+== results/2026-10-01_g4_rmats_reverse | NFCORE_RNASPLICE:PREPARE_GENOME:SALMON_INDEX (genome.transcripts.fa) | work/38/57f45a3aa7a76f69d9617fc0470863
+    -t gentrome.fa \
+== results/2026-10-01_g4_rmats_reverse | NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:STAR_ALIGN (ERR188454) | work/2a/d597399fc1f15dba2564c965745f83
+    --genomeDir star \
+== results/2026-10-01_g4_rmats_reverse | NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:STAR_ALIGN (ERR188428) | work/c1/fc9d07e7e02f59815b07b887106981
+    --genomeDir star \
+== results/2026-10-01_g4_rmats_reverse | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_PREP (ERR204916) | work/2d/1969728256f671d58d515c8fafeac2
+rmats.py \
+    --variable-read-length --allow-clipping -t paired --libType fr-firststrand \
+    --b1 ERR204916.prep.b1.txt \
+    --readLength 75 \
+    --tmp ERR204916_rmats_tmp \
+    --od ERR204916_rmats_prep
+cp ERR204916_rmats_tmp/*.txt ERR204916_read_outcomes_by_bam.txt
+cp ERR204916_rmats_tmp/*.rmats ERR204916.rmats
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g4_rmats_reverse | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_PREP (ERR188383) | work/93/8f859baffca7ad8c03d1f1560728b9
+rmats.py \
+    --variable-read-length --allow-clipping -t paired --libType fr-firststrand \
+    --b1 ERR188383.prep.b1.txt \
+    --readLength 75 \
+    --tmp ERR188383_rmats_tmp \
+    --od ERR188383_rmats_prep
+cp ERR188383_rmats_tmp/*.txt ERR188383_read_outcomes_by_bam.txt
+cp ERR188383_rmats_tmp/*.rmats ERR188383.rmats
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g4_rmats_reverse | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_PREP (ERR188428) | work/5f/6c0f66810fbcbe76930342de67ffec
+rmats.py \
+    --variable-read-length --allow-clipping -t paired --libType fr-firststrand \
+    --b1 ERR188428.prep.b1.txt \
+    --readLength 75 \
+    --tmp ERR188428_rmats_tmp \
+    --od ERR188428_rmats_prep
+cp ERR188428_rmats_tmp/*.txt ERR188428_read_outcomes_by_bam.txt
+cp ERR188428_rmats_tmp/*.rmats ERR188428.rmats
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g4_rmats_reverse | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_PREP (ERR188454) | work/3a/0488f0fb9c5243121ab8525d5a6a7c
+rmats.py \
+    --variable-read-length --allow-clipping -t paired --libType fr-firststrand \
+    --b1 ERR188454.prep.b1.txt \
+    --readLength 75 \
+    --tmp ERR188454_rmats_tmp \
+    --od ERR188454_rmats_prep
+cp ERR188454_rmats_tmp/*.txt ERR188454_read_outcomes_by_bam.txt
+cp ERR188454_rmats_tmp/*.rmats ERR188454.rmats
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g4_rmats_reverse | NFCORE_RNASPLICE:RNASPLICE:RMATS:CREATE_BAMLIST (1) | work/90/b4e25e7cb83d50d639541371f07134
+== results/2026-10-01_g4_rmats_reverse | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_POST (GBR_vs_YRI) | work/65/b41dfa96b080177adfafcbfa25ca1f
+rmats.py \
+    --b1 GBR_bamlist.txt \
+    --b2 YRI_bamlist.txt \
+    --readLength 75 \
+    --tmp rmats_tmp \
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g4o_order_paired | NFCORE_RNASPLICE:PREPARE_GENOME:STAR_GENOMEGENERATE (X.fa) | work/d9/00aa65b9f26a9458c33f96456676f5
+    --genomeDir star/ \
+== results/2026-10-01_g4o_order_paired | NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:STAR_ALIGN (ERR188454) | work/82/035f9c63eabfeab6e850bace0f1b4d
+    --genomeDir star \
+== results/2026-10-01_g4o_order_paired | NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:STAR_ALIGN (ERR204916) | work/90/fc331e49bd3d19ad729e803ba04fe9
+    --genomeDir star \
+== results/2026-10-01_g4o_order_paired | NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:STAR_ALIGN (ERR188428) | work/5c/13ea5f396d91b4bb74e2e69fa21dbe
+    --genomeDir star \
+== results/2026-10-01_g4o_order_paired | NFCORE_RNASPLICE:PREPARE_GENOME:SALMON_INDEX (genome.transcripts.fa) | work/6f/6993e02d19b2f12fdb9a0c71b7c96e
+    -t gentrome.fa \
+== results/2026-10-01_g4o_order_paired | NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_SORT (ERR188454) | work/3e/386c372b9fa2a91e8b8b5034d1a6aa
+samtools cat 1/ERR188454.Aligned.out.bam | samtools sort \
+== results/2026-10-01_g4o_order_paired | NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_SORT (ERR188428) | work/72/90dd1544390078140e87c46a76ad9a
+samtools cat 1/ERR188428.Aligned.out.bam | samtools sort \
+== results/2026-10-01_g4o_order_paired | NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_SORT (ERR204916) | work/4c/bbc93ea2d88fd93ee81c2f538807b4
+samtools cat 1/ERR204916.Aligned.out.bam | samtools sort \
+== results/2026-10-01_g4o_order_paired | NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:STAR_ALIGN (ERR188383) | work/5d/cb17e516215a12d8a5239cd6b3087e
+    --genomeDir star \
+== results/2026-10-01_g4o_order_paired | NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_INDEX (ERR188454) | work/03/96a7b0b09c36cc195f1b2e4b984566
+== results/2026-10-01_g4o_order_paired | NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_INDEX (ERR188428) | work/8f/63e9836b6cd1542015bc00a69aa868
+== results/2026-10-01_g4o_order_paired | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_PREP (ERR188428) | work/35/917e0f0fcf4bd22aedd7558f9e559f
+rmats.py \
+    --variable-read-length --allow-clipping -t paired --libType fr-unstranded \
+    --b1 ERR188428.prep.b1.txt \
+    --readLength 75 \
+    --tmp ERR188428_rmats_tmp \
+    --od ERR188428_rmats_prep
+cp ERR188428_rmats_tmp/*.txt ERR188428_read_outcomes_by_bam.txt
+cp ERR188428_rmats_tmp/*.rmats ERR188428.rmats
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g4o_order_paired | NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_INDEX (ERR204916) | work/45/3b7e5097d1e21f932006d09c147fb2
+== results/2026-10-01_g4o_order_paired | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_PREP (ERR188454) | work/96/e3b9ae0cf186a330360a979cc32f73
+rmats.py \
+    --variable-read-length --allow-clipping -t paired --libType fr-unstranded \
+    --b1 ERR188454.prep.b1.txt \
+    --readLength 75 \
+    --tmp ERR188454_rmats_tmp \
+    --od ERR188454_rmats_prep
+cp ERR188454_rmats_tmp/*.txt ERR188454_read_outcomes_by_bam.txt
+cp ERR188454_rmats_tmp/*.rmats ERR188454.rmats
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g4o_order_paired | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_PREP (ERR204916) | work/c2/6eff1b848467fc6885eb9ac1313aaf
+rmats.py \
+    --variable-read-length --allow-clipping -t paired --libType fr-unstranded \
+    --b1 ERR204916.prep.b1.txt \
+    --readLength 75 \
+    --tmp ERR204916_rmats_tmp \
+    --od ERR204916_rmats_prep
+cp ERR204916_rmats_tmp/*.txt ERR204916_read_outcomes_by_bam.txt
+cp ERR204916_rmats_tmp/*.rmats ERR204916.rmats
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g4o_order_paired | NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_SORT (ERR188383) | work/25/46ae322ae214f072c7383503644f88
+samtools cat 1/ERR188383.Aligned.out.bam | samtools sort \
+== results/2026-10-01_g4o_order_paired | NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_INDEX (ERR188383) | work/ba/9415a010ff16087c3511ef36015d55
+== results/2026-10-01_g4o_order_paired | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_PREP (ERR188383) | work/71/c3044262b8f3920046db7a84731d05
+rmats.py \
+    --variable-read-length --allow-clipping -t paired --libType fr-unstranded \
+    --b1 ERR188383.prep.b1.txt \
+    --readLength 75 \
+    --tmp ERR188383_rmats_tmp \
+    --od ERR188383_rmats_prep
+cp ERR188383_rmats_tmp/*.txt ERR188383_read_outcomes_by_bam.txt
+cp ERR188383_rmats_tmp/*.rmats ERR188383.rmats
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g4o_order_paired | NFCORE_RNASPLICE:RNASPLICE:RMATS:CREATE_BAMLIST (1) | work/60/71de1fea3787737d2ade5998483ff6
+echo ERR188428_sorted.bam ERR188383_sorted.bam | sed 's: :,:g' > GBR_bamlist.txt
+echo ERR204916_sorted.bam ERR188454_sorted.bam | sed 's: :,:g' > YRI_bamlist.txt
+== results/2026-10-01_g4o_order_paired | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_POST (GBR_vs_YRI) | work/82/330b27465cd932629107b402565e1a
+rmats.py \
+    --cstat 1.0E-4 --paired-stats \
+    --b1 GBR_bamlist.txt \
+    --b2 YRI_bamlist.txt \
+    --readLength 75 \
+    --tmp rmats_tmp \
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g5_bam | NFCORE_RNASPLICE:RNASPLICE:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_SORT (ERR188454) | work/e1/9f0ff84fda6fe2a64103530e34395a
+samtools cat 1/ERR188454_sorted.bam | samtools sort \
+== results/2026-10-01_g5_bam | NFCORE_RNASPLICE:RNASPLICE:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_SORT (ERR188383) | work/7d/d98ded8dd86c90a7e87a823030a597
+samtools cat 1/ERR188383_sorted.bam | samtools sort \
+== results/2026-10-01_g5_bam | NFCORE_RNASPLICE:RNASPLICE:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_SORT (ERR188428) | work/25/1a7cd200a9f9e5f0e737881b8e9466
+samtools cat 1/ERR188428_sorted.bam | samtools sort \
+== results/2026-10-01_g5_bam | NFCORE_RNASPLICE:RNASPLICE:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_SORT (ERR204916) | work/04/9d9ca38c310262e6287dfcb1ba3205
+samtools cat 1/ERR204916_sorted.bam | samtools sort \
+== results/2026-10-01_g5_bam | NFCORE_RNASPLICE:RNASPLICE:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_INDEX (ERR188383) | work/d5/c08e43136d3342d7ff4ea70c2c227a
+== results/2026-10-01_g5_bam | NFCORE_RNASPLICE:RNASPLICE:DEXSEQ_DEU:DEXSEQ_COUNT (ERR188454) | work/71/393ee0f622de642eddb273ed4b84e6
+dexseq_count.py DEXSeq.gff  -p yes -f bam ERR188454_sorted.bam -r pos ERR188454.clean.count.txt -a 10 -s reverse
+== results/2026-10-01_g5_bam | NFCORE_RNASPLICE:RNASPLICE:EDGER_DEU:SUBREAD_FEATURECOUNTS (ERR188383) | work/82/6e29736c0bc7a8d9be9adc7391895e
+featureCounts \
+    -F SAF -t exon -g gene_id -f -O -B -C \
+    -s 2 \
+    -o ERR188383.featureCounts.tsv \
+nxf_eval_cmd STDOUT STDERR bash -c "featureCounts -v 2>&1 | sed 's/featureCounts v//'"
+== results/2026-10-01_g5_bam | NFCORE_RNASPLICE:RNASPLICE:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_INDEX (ERR188454) | work/2f/8172ca6a8a478b2496c99a7be58a88
+== results/2026-10-01_g5_bam | NFCORE_RNASPLICE:RNASPLICE:EDGER_DEU:SUBREAD_FEATURECOUNTS (ERR188454) | work/cb/febebc3aee409cd4bdcb4cf9468c31
+featureCounts \
+    -F SAF -t exon -g gene_id -f -O -B -C \
+    -s 2 \
+    -o ERR188454.featureCounts.tsv \
+nxf_eval_cmd STDOUT STDERR bash -c "featureCounts -v 2>&1 | sed 's/featureCounts v//'"
+== results/2026-10-01_g5_bam | NFCORE_RNASPLICE:RNASPLICE:DEXSEQ_DEU:DEXSEQ_COUNT (ERR188383) | work/69/2d6e36006178e3c6e3c8ed47a3fc82
+dexseq_count.py DEXSeq.gff  -p yes -f bam ERR188383_sorted.bam -r pos ERR188383.clean.count.txt -a 10 -s reverse
+== results/2026-10-01_g5_bam | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_PREP (ERR188454) | work/99/91da5d67f37982bf3e02491d9699ed
+rmats.py \
+    --variable-read-length --allow-clipping -t paired --libType fr-firststrand \
+    --b1 ERR188454.prep.b1.txt \
+    --readLength 75 \
+    --tmp ERR188454_rmats_tmp \
+    --od ERR188454_rmats_prep
+cp ERR188454_rmats_tmp/*.txt ERR188454_read_outcomes_by_bam.txt
+cp ERR188454_rmats_tmp/*.rmats ERR188454.rmats
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g5_bam | NFCORE_RNASPLICE:RNASPLICE:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_INDEX (ERR204916) | work/b8/88e3cdeac9a72fcb41faf18253830a
+== results/2026-10-01_g5_bam | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_PREP (ERR188383) | work/61/47f6c4aa109237d2a5bef3a963507f
+rmats.py \
+    --variable-read-length --allow-clipping -t paired --libType fr-firststrand \
+    --b1 ERR188383.prep.b1.txt \
+    --readLength 75 \
+    --tmp ERR188383_rmats_tmp \
+    --od ERR188383_rmats_prep
+cp ERR188383_rmats_tmp/*.txt ERR188383_read_outcomes_by_bam.txt
+cp ERR188383_rmats_tmp/*.rmats ERR188383.rmats
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g5_bam | NFCORE_RNASPLICE:RNASPLICE:DEXSEQ_DEU:DEXSEQ_COUNT (ERR204916) | work/38/fd04bb3d303e6bb5295b85cbe89971
+dexseq_count.py DEXSeq.gff  -p yes -f bam ERR204916_sorted.bam -r pos ERR204916.clean.count.txt -a 10 -s reverse
+== results/2026-10-01_g5_bam | NFCORE_RNASPLICE:RNASPLICE:DEXSEQ_DEU:DEXSEQ_COUNT (ERR188428) | work/fe/ff9c88392a6afcbbacf8b3e1cbfe2d
+dexseq_count.py DEXSeq.gff  -p yes -f bam ERR188428_sorted.bam -r pos ERR188428.clean.count.txt -a 10 -s reverse
+== results/2026-10-01_g5_bam | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_PREP (ERR204916) | work/3c/ac25ab275162f2782a3d4e2a0c52c4
+rmats.py \
+    --variable-read-length --allow-clipping -t paired --libType fr-firststrand \
+    --b1 ERR204916.prep.b1.txt \
+    --readLength 75 \
+    --tmp ERR204916_rmats_tmp \
+    --od ERR204916_rmats_prep
+cp ERR204916_rmats_tmp/*.txt ERR204916_read_outcomes_by_bam.txt
+cp ERR204916_rmats_tmp/*.rmats ERR204916.rmats
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g5_bam | NFCORE_RNASPLICE:RNASPLICE:EDGER_DEU:SUBREAD_FEATURECOUNTS (ERR188428) | work/8e/1e436207c9804395c584dff55a3eca
+featureCounts \
+    -F SAF -t exon -g gene_id -f -O -B -C \
+    -s 2 \
+    -o ERR188428.featureCounts.tsv \
+nxf_eval_cmd STDOUT STDERR bash -c "featureCounts -v 2>&1 | sed 's/featureCounts v//'"
+== results/2026-10-01_g5_bam | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_PREP (ERR188428) | work/0f/1ced514816ab805e00207ab80172cd
+rmats.py \
+    --variable-read-length --allow-clipping -t paired --libType fr-firststrand \
+    --b1 ERR188428.prep.b1.txt \
+    --readLength 75 \
+    --tmp ERR188428_rmats_tmp \
+    --od ERR188428_rmats_prep
+cp ERR188428_rmats_tmp/*.txt ERR188428_read_outcomes_by_bam.txt
+cp ERR188428_rmats_tmp/*.rmats ERR188428.rmats
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g5_bam | NFCORE_RNASPLICE:RNASPLICE:EDGER_DEU:SUBREAD_FEATURECOUNTS (ERR204916) | work/28/af7c2a9af6c59819cf580cca64e7a6
+featureCounts \
+    -F SAF -t exon -g gene_id -f -O -B -C \
+    -s 2 \
+    -o ERR204916.featureCounts.tsv \
+nxf_eval_cmd STDOUT STDERR bash -c "featureCounts -v 2>&1 | sed 's/featureCounts v//'"
+== results/2026-10-01_g5_bam | NFCORE_RNASPLICE:RNASPLICE:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_INDEX (ERR188428) | work/6d/aaa4a4e8450f6135fab64d217ddd13
+== results/2026-10-01_g5_bam | NFCORE_RNASPLICE:RNASPLICE:RMATS:CREATE_BAMLIST (1) | work/51/316139fdee531203da2f05118fa523
+echo ERR188383_sorted.bam ERR188428_sorted.bam | sed 's: :,:g' > GBR_bamlist.txt
+echo ERR188454_sorted.bam ERR204916_sorted.bam | sed 's: :,:g' > YRI_bamlist.txt
+== results/2026-10-01_g5_bam | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_POST (GBR_vs_YRI) | work/ec/eb99a6114a5ac69c347833edc2022d
+rmats.py \
+    --b1 GBR_bamlist.txt \
+    --b2 YRI_bamlist.txt \
+    --readLength 75 \
+    --tmp rmats_tmp \
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g5b_bam_nocols | NFCORE_RNASPLICE:RNASPLICE:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_SORT (ERR204916) | work/2d/bfe35ef36082b63c17d007f87afab6
+samtools cat 1/ERR204916_sorted.bam | samtools sort \
+== results/2026-10-01_g5b_bam_nocols | NFCORE_RNASPLICE:RNASPLICE:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_SORT (ERR188454) | work/b3/dd99777334c7d7d7e9468ebcb62b42
+samtools cat 1/ERR188454_sorted.bam | samtools sort \
+== results/2026-10-01_g5b_bam_nocols | NFCORE_RNASPLICE:RNASPLICE:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_SORT (ERR188383) | work/3b/d3fd6dde17b80e3c34c44a9c5ecf8e
+samtools cat 1/ERR188383_sorted.bam | samtools sort \
+== results/2026-10-01_g5b_bam_nocols | NFCORE_RNASPLICE:RNASPLICE:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_SORT (ERR188428) | work/19/cf63f11dafe7f1465deffb7537d5c5
+samtools cat 1/ERR188428_sorted.bam | samtools sort \
+== results/2026-10-01_g5b_bam_nocols | NFCORE_RNASPLICE:RNASPLICE:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_INDEX (ERR204916) | work/ca/2d67ffce8166c4050f9b40bbbad3b1
+== results/2026-10-01_g5b_bam_nocols | NFCORE_RNASPLICE:RNASPLICE:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_INDEX (ERR188454) | work/7e/83a8039a1853d8913527dca8b85e58
+== results/2026-10-01_g5b_bam_nocols | NFCORE_RNASPLICE:RNASPLICE:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_INDEX (ERR188383) | work/f8/e75b352162df27a7c4e6fe86959351
+== results/2026-10-01_g5b_bam_nocols | NFCORE_RNASPLICE:RNASPLICE:DEXSEQ_DEU:DEXSEQ_COUNT (ERR204916) | work/69/ad41e866c9707436f082886f76e70b
+dexseq_count.py DEXSeq.gff  -p yes -f bam ERR204916_sorted.bam -r pos ERR204916.clean.count.txt -a 10 -s no
+== results/2026-10-01_g5b_bam_nocols | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_PREP (ERR188383) | work/e3/4bce1f9d89a0bcbc6cd28dcafbf4b8
+rmats.py \
+    --variable-read-length --allow-clipping -t paired --libType fr-unstranded \
+    --b1 ERR188383.prep.b1.txt \
+    --readLength 75 \
+    --tmp ERR188383_rmats_tmp \
+    --od ERR188383_rmats_prep
+cp ERR188383_rmats_tmp/*.txt ERR188383_read_outcomes_by_bam.txt
+cp ERR188383_rmats_tmp/*.rmats ERR188383.rmats
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g5b_bam_nocols | NFCORE_RNASPLICE:RNASPLICE:DEXSEQ_DEU:DEXSEQ_COUNT (ERR188454) | work/e8/c1660efc248348dab288bc3d08be73
+dexseq_count.py DEXSeq.gff  -p yes -f bam ERR188454_sorted.bam -r pos ERR188454.clean.count.txt -a 10 -s no
+== results/2026-10-01_g5b_bam_nocols | NFCORE_RNASPLICE:RNASPLICE:DEXSEQ_DEU:DEXSEQ_COUNT (ERR188383) | work/96/df7d611532a7a73e8d33636e22b8f7
+dexseq_count.py DEXSeq.gff  -p yes -f bam ERR188383_sorted.bam -r pos ERR188383.clean.count.txt -a 10 -s no
+== results/2026-10-01_g5b_bam_nocols | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_PREP (ERR204916) | work/9e/bdf44bf068d5868f615a9c37955b14
+rmats.py \
+    --variable-read-length --allow-clipping -t paired --libType fr-unstranded \
+    --b1 ERR204916.prep.b1.txt \
+    --readLength 75 \
+    --tmp ERR204916_rmats_tmp \
+    --od ERR204916_rmats_prep
+cp ERR204916_rmats_tmp/*.txt ERR204916_read_outcomes_by_bam.txt
+cp ERR204916_rmats_tmp/*.rmats ERR204916.rmats
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g5b_bam_nocols | NFCORE_RNASPLICE:RNASPLICE:EDGER_DEU:SUBREAD_FEATURECOUNTS (ERR204916) | work/21/61cbd5510f9c301e706acf6876445d
+featureCounts \
+    -F SAF -t exon -g gene_id -f -O -B -C \
+    -s 0 \
+    -o ERR204916.featureCounts.tsv \
+nxf_eval_cmd STDOUT STDERR bash -c "featureCounts -v 2>&1 | sed 's/featureCounts v//'"
+== results/2026-10-01_g5b_bam_nocols | NFCORE_RNASPLICE:RNASPLICE:EDGER_DEU:SUBREAD_FEATURECOUNTS (ERR188454) | work/93/fe6033ffd7e1c238f9dab77cd9b003
+featureCounts \
+    -F SAF -t exon -g gene_id -f -O -B -C \
+    -s 0 \
+    -o ERR188454.featureCounts.tsv \
+nxf_eval_cmd STDOUT STDERR bash -c "featureCounts -v 2>&1 | sed 's/featureCounts v//'"
+== results/2026-10-01_g5b_bam_nocols | NFCORE_RNASPLICE:RNASPLICE:EDGER_DEU:SUBREAD_FEATURECOUNTS (ERR188383) | work/41/78f2ef3417f6625fabc0fd72a4bfb3
+featureCounts \
+    -F SAF -t exon -g gene_id -f -O -B -C \
+    -s 0 \
+    -o ERR188383.featureCounts.tsv \
+nxf_eval_cmd STDOUT STDERR bash -c "featureCounts -v 2>&1 | sed 's/featureCounts v//'"
+== results/2026-10-01_g5b_bam_nocols | NFCORE_RNASPLICE:RNASPLICE:BAM_SORT_STATS_SAMTOOLS:SAMTOOLS_INDEX (ERR188428) | work/3b/86ed71e9bb5847044f0dec65972dd6
+== results/2026-10-01_g5b_bam_nocols | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_PREP (ERR188454) | work/5a/809a0961b5826394bc96ae662f7395
+rmats.py \
+    --variable-read-length --allow-clipping -t paired --libType fr-unstranded \
+    --b1 ERR188454.prep.b1.txt \
+    --readLength 75 \
+    --tmp ERR188454_rmats_tmp \
+    --od ERR188454_rmats_prep
+cp ERR188454_rmats_tmp/*.txt ERR188454_read_outcomes_by_bam.txt
+cp ERR188454_rmats_tmp/*.rmats ERR188454.rmats
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g5b_bam_nocols | NFCORE_RNASPLICE:RNASPLICE:EDGER_DEU:SUBREAD_FEATURECOUNTS (ERR188428) | work/f8/a1d9d88a8504ff99c334a21ee7e2e5
+featureCounts \
+    -F SAF -t exon -g gene_id -f -O -B -C \
+    -s 0 \
+    -o ERR188428.featureCounts.tsv \
+nxf_eval_cmd STDOUT STDERR bash -c "featureCounts -v 2>&1 | sed 's/featureCounts v//'"
+== results/2026-10-01_g5b_bam_nocols | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_PREP (ERR188428) | work/92/ddab86d219eba8cdf685bbaf10db12
+rmats.py \
+    --variable-read-length --allow-clipping -t paired --libType fr-unstranded \
+    --b1 ERR188428.prep.b1.txt \
+    --readLength 75 \
+    --tmp ERR188428_rmats_tmp \
+    --od ERR188428_rmats_prep
+cp ERR188428_rmats_tmp/*.txt ERR188428_read_outcomes_by_bam.txt
+cp ERR188428_rmats_tmp/*.rmats ERR188428.rmats
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
+== results/2026-10-01_g5b_bam_nocols | NFCORE_RNASPLICE:RNASPLICE:DEXSEQ_DEU:DEXSEQ_COUNT (ERR188428) | work/91/1405c674bbd909645d6e780bdd468d
+dexseq_count.py DEXSeq.gff  -p yes -f bam ERR188428_sorted.bam -r pos ERR188428.clean.count.txt -a 10 -s no
+== results/2026-10-01_g5b_bam_nocols | NFCORE_RNASPLICE:RNASPLICE:RMATS:CREATE_BAMLIST (1) | work/1b/2ecb877522aed6a5e89d0873e8e2b4
+echo ERR188383_sorted.bam ERR188428_sorted.bam | sed 's: :,:g' > GBR_bamlist.txt
+echo ERR188454_sorted.bam ERR204916_sorted.bam | sed 's: :,:g' > YRI_bamlist.txt
+== results/2026-10-01_g5b_bam_nocols | NFCORE_RNASPLICE:RNASPLICE:RMATS:RMATS_POST (GBR_vs_YRI) | work/d8/bb3559b73346979c0142f7269c90e8
+rmats.py \
+    --b1 GBR_bamlist.txt \
+    --b2 YRI_bamlist.txt \
+    --readLength 75 \
+    --tmp rmats_tmp \
+nxf_eval_cmd STDOUT STDERR bash -c "rmats.py --version | sed -e \"s/v//g\""
