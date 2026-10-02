@@ -47,7 +47,7 @@ cp -r bioinformatics-claude-skills/handoff ~/.claude/skills/
 - HPC cluster with SLURM scheduler
 - Singularity/Apptainer available as a module
 - Nextflow available via a conda environment (for the `nfcore-*` setup skills; `/ase-pipeline` does not use Nextflow)
-- Internet access from login node (for fetching Ensembl files and container images); `/ase-pipeline` downloads any missing biocontainer image in its prep job, which runs on a compute node
+- Internet access from login node (for fetching Ensembl files and container images); `/ase-pipeline` downloads any missing biocontainer image in its prep job, which runs on a compute node; `/nfcore-rnasplice-setup` needs internet on the compute nodes: its job downloads the pinned nf-core/rnasplice revision and the containers
 - R is not needed on the host: the analysis skills run R inside a Singularity container, and never on a login node
 
 ## Contributing

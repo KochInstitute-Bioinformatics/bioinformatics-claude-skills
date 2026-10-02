@@ -1,6 +1,6 @@
 #!/bin/bash
 # Usage: test_sample_names.sh <skill.md>
-# Runs the functions of the skill's block after "**Sample names and read pairs.**" (fastq_r2_name, fastq_sample_name,
+# Runs the functions of the skill's block after "**Sample names and read pairs.**" (fastq_r2_name, fastq_sample_name, fastq_layout, bam_sample_name,
 # sanitize_sample_name, sample_name_collisions, input_path_ok) on fixed cases, and checks every sanitised name against the
 # sample rule of the pinned samplesheet schemas (fixtures/schema_input.json and schema_input_genome_bam.json, copied from
 # nf-core/rnasplice 1b447239488097651d8eac44bca2c1556865eb0f): the pattern and the reserved-word list are read from the
@@ -25,7 +25,7 @@ schema_ok() { [[ $1 =~ $PAT_ERE ]] && ! echo "$RESERVED" | grep -qxF -- "$1"; }
 
 CODE=$(bash "$HERE/cut_block.sh" "$SKILL" "**Sample names and read pairs.**") || { echo "FAIL: sample-name block not found"; exit 1; }
 eval "$CODE"
-for fn in fastq_r2_name fastq_sample_name sanitize_sample_name sample_name_collisions input_path_ok; do
+for fn in fastq_r2_name fastq_sample_name fastq_layout bam_sample_name sanitize_sample_name sample_name_collisions input_path_ok; do
   declare -F "$fn" >/dev/null || { echo "FAIL: $fn is not defined by the block"; exit 1; }
 done
 
@@ -103,6 +103,34 @@ po "data/a b_R1.fastq.gz" stop
 po "my data/s.bam" stop
 po data/a,b_R1.fastq.gz stop
 po "$(printf 'data/a\tb.bam')" stop
+
+
+# 6. Pairing over a whole directory (fastq_layout): an R2 mate is never a sample; single-end = no R1 token with an existing R2
+lay() { # lay <dir name> <expected output, lines joined by ;> <files...>: creates the files, runs fastq_layout on all of them
+  local d="$TEST_TMP/lay_$1" want=$2 got f; shift 2; mkdir -p "$d"; for f in "$@"; do mkdir -p "$d/$(dirname "$f")" && : > "$d/$f"; done
+  got=$(cd "$d" && fastq_layout "$@" | tr '\n' ';' | sed 's/;$//')
+  [ "$got" = "$want" ] || { echo "FAIL: layout case $d: expected '$want', got '$got'"; fail=1; }; }
+lay upstream "paired ERR188383_chrX_1.fastq.gz ERR188383_chrX_2.fastq.gz;paired ERR188428_chrX_1.fastq.gz ERR188428_chrX_2.fastq.gz;LAYOUT paired" \
+  ERR188383_chrX_1.fastq.gz ERR188383_chrX_2.fastq.gz ERR188428_chrX_1.fastq.gz ERR188428_chrX_2.fastq.gz
+lay r2first "paired X_R1.fastq.gz X_R2.fastq.gz;LAYOUT paired" X_R2.fastq.gz X_R1.fastq.gz
+lay lanes "paired X_S1_L001_R1_001.fastq.gz X_S1_L001_R2_001.fastq.gz;paired X_S1_L002_R1_001.fastq.gz X_S1_L002_R2_001.fastq.gz;LAYOUT paired" \
+  X_S1_L001_R1_001.fastq.gz X_S1_L001_R2_001.fastq.gz X_S1_L002_R1_001.fastq.gz X_S1_L002_R2_001.fastq.gz
+lay single "single ctrl.fastq.gz;single ko.fq.gz;LAYOUT single" ctrl.fastq.gz ko.fq.gz
+lay se_r1 "single A_R1_001.fastq.gz;single B_R1_001.fastq.gz;LAYOUT single" A_R1_001.fastq.gz B_R1_001.fastq.gz
+lay mixed "paired X_R1.fastq.gz X_R2.fastq.gz;single ctrl.fastq.gz;LAYOUT mixed" X_R1.fastq.gz X_R2.fastq.gz ctrl.fastq.gz
+lay missing_r2 "paired X_1.fq.gz X_2.fq.gz;single Y_1.fq.gz;LAYOUT mixed" X_1.fq.gz X_2.fq.gz Y_1.fq.gz
+lay orphan_r2 "single Y_2.fq.gz;LAYOUT single" Y_2.fq.gz
+lay subdir "paired data/S_1.fastq.gz data/S_2.fastq.gz;LAYOUT paired" data/S_1.fastq.gz data/S_2.fastq.gz
+
+# 7. Sample names of genome BAMs (bam_sample_name): the longest known suffix goes, so no name ends in _sorted
+bn() { local got; got=$(bam_sample_name "$1"); [ "$got" = "$2" ] || { echo "FAIL: BAM name case $1: expected '$2', got '$got'"; fail=1; }; }
+bn star/ERR188383_chrX_sorted.bam ERR188383_chrX
+bn star_salmon/WT_1.markdup.sorted.bam WT_1
+bn star_salmon/WT_1.umi_dedup.sorted.bam WT_1
+bn star_salmon/WT_1.sorted.bam WT_1
+bn /abs/KO_2.bam KO_2
+bn a.sorted_sorted.bam a.sorted
+bn plain_sorted_x.bam plain_sorted_x
 
 forbidden_ran && fail=1
 [ $fail -eq 0 ] && echo "SAMPLE NAMES PASS" || exit 1

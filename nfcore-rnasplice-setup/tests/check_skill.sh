@@ -646,8 +646,11 @@ need "\`SALMON_QUANT_SALMON\` and \`SALMON_QUANT_STAR\`"
 need "It requests 8 CPUs, 36 GB and 8 h: the memory and time of the pipeline's own tested process label for Salmon quantification"
 # Task 8 review I2: no gate run applied the SALMON_QUANT.* selector (the gate config's .*:SALMON_QUANT matched nothing).
 need "The resources of every selector are judgement: they are not measured on real data."
-need "The first seven selectors were applied in this skill's verification run on the nf-core test data; the \`'.*:SALMON_QUANT.*'\` selector was only matched against the process names recorded there"
-need "so Salmon quantification ran with its label's 6 CPUs, 36 GB and 8 h) and is first applied in this skill's cluster acceptance run on the nf-core test data."
+# Task 9 U1: the SALMON_QUANT.* selector was applied in the cluster acceptance run (4 SALMON_QUANT_SALMON tasks at 8/36 GB/8 h).
+need "The first seven selectors were applied in this skill's verification run on the nf-core test data. The \`'.*:SALMON_QUANT.*'\` selector was applied in this skill's cluster acceptance run on the nf-core test data: its four SALMON_QUANT_SALMON tasks requested 8 CPUs, 36 GB and 8 h"
+need "no SALMON_QUANT_STAR task runs; the pattern covers both names."
+forbid "selector was only matched against the process names recorded there"
+forbid "is first applied in this skill's cluster acceptance run"
 forbid "checked on the nf-core test data of this skill's verification only"
 # Params file template
 BASEY=$(bash "$CUT" "$SKILL" "**Params file template.**" 2>/dev/null)
@@ -848,8 +851,9 @@ needr "## Where the results are"
 VM='\[(A/C|A/B|B|C|BAM|NO-BAM|fixed|from_sheet|none|pseudo_only|star_salmon_only|star_salmon_both|treatment|control|sheet|sorted_by_name|unordered|all_samples|per_contrast)\]|\[C: '
 ! grep -nE "$VM" "$SKILL" || { echo "FAIL: a plan variant marker is left in the skill (lines above)"; fail=1; }
 ! grep -nE "$VM" "$README" 2>/dev/null || { echo "FAIL: a plan variant marker is left in the README (lines above)"; fail=1; }
-grep -qE '^Cluster acceptance \(nf-core test data\): (PENDING|DONE \([0-9]{4}-[0-9]{2}-[0-9]{2}\))$' "$README" 2>/dev/null \
-  || { echo "FAIL: README must have the line 'Cluster acceptance (nf-core test data): PENDING' or '... DONE (YYYY-MM-DD)'"; fail=1; }
+# Task 9: acceptance DONE, as a whole line, and the PENDING line gone (as in ase-pipeline's checker).
+grep -qE '^Cluster acceptance \(nf-core test data\): DONE \(2026-[0-9-]+\)$' "$README" 2>/dev/null && ! grep -qF 'Cluster acceptance (nf-core test data): PENDING' "$README" 2>/dev/null \
+  || { echo "FAIL: README must have the whole line 'Cluster acceptance (nf-core test data): DONE (2026-MM-DD)' and no PENDING line"; fail=1; }
 # Correction 9: every path line of the Step 12 hand-off note is a row of the README table, with the same description.
 while IFS=$'\t' read -r p d; do
   needr "| \`$p\` | $d |"
@@ -924,7 +928,8 @@ needr "MISO itself is unmaintained Python 2 software"
 needr "there is no downstream report skill for the splicing tables yet (planned later)"
 needr "No Salmon-results or transcriptome-BAM input, and no iGenomes \`genome\` key"
 needr "Strandedness is asked, not detected"
-needr "they are first used in the cluster acceptance run"
+needr "they were first used in the cluster acceptance run (run (a) below)."
+forbidr "they are first used in the cluster acceptance run"
 for k in ignore_tx_version miso_genes miso_read_len fig_height fig_width isoformswitchanalyzer_alpha isoformswitchanalyzer_dIF; do
   needr "\`$k\`"
 done
@@ -961,8 +966,10 @@ needr "Every other process keeps the resources of the pipeline's own process lab
 needr "sets a process default of 2 CPUs, 8 GB and 4 h, raises the processes below with \`withName\` selectors"
 # I2: the SALMON_QUANT.* selector was never applied in a run.
 forbidr "they were checked on the nf-core test data only"
-needr "The first seven selectors were applied in the verification run on the nf-core test data; the \`SALMON_QUANT.*\` selector was only matched against the recorded process names"
-needr "and is first applied in the cluster acceptance run."
+needr "The first seven selectors were applied in the verification run on the nf-core test data; the \`SALMON_QUANT.*\` selector was applied in the cluster acceptance run on the same data: its SALMON_QUANT_SALMON tasks requested 8 CPUs, 36 GB and 8 h"
+needr "With this skill's route no SALMON_QUANT_STAR task runs; the pattern covers both names."
+forbidr "selector was only matched against the recorded process names"
+forbidr "is first applied in the cluster acceptance run"
 # I4: honesty statements (each deletion or inversion fails).
 needr "and nothing in this skill is validated on real data."
 forbidr "has been validated on real"
@@ -1011,4 +1018,24 @@ for spec in "| Selector | CPUs | Memory | Time |:$want_sel" "| Path | Content |:
   [ "$got" = "$w" ] || { echo "FAIL: README table '$h' has $got rows, expected $w"; fail=1; }
 done
 # --- end Task 8 review fixes
+# --- Task 9 fix round (D1-D4, U1, acceptance record)
+# D1: an R2 mate is never a sample; single-end only without an R1 partner (fastq_layout, tested by test_sample_names.sh).
+need "fastq_layout() {"
+need "that R2 file is its mate, never a sample of its own. Only a file that is neither such an R1 file nor the R2 mate of one is single-end"
+need "- **Rows:** one samplesheet row per \`paired\` or \`single\` line of \`fastq_layout\`"
+forbid "and whose R2 file exists → paired-end; otherwise single-end."
+# D2: BAM sample names lose .umi_dedup.sorted.bam, .markdup.sorted.bam, .sorted.bam, _sorted.bam or .bam (bam_sample_name).
+need "bam_sample_name() {"
+need "derive the sample names with \`bam_sample_name\` (block in Step 4a: it removes the longest of"
+# D3: identical file-name / title options collapse to one.
+need "When \`{SEQ_DATE}\` equals \`{TODAY_YYMMDD}\` (the input files have no date prefix), options 1 and 2 are the same: offer only 1. \`{TODAY_YYMMDD}_{WD_NAME}\` · 2. Custom prefix."
+need "When \`{SEQ_DATE}\` equals \`{TODAY_YYMMDD}\`, options 1 and 2 are the same: offer only 1. \`{TODAY_YYMMDD}_{WD_NAME}\` · 2. Custom."
+# D4: BAM path style as for FASTQ.
+need "**Path style:** if \`{BAM_DIR}\` is inside \`{CWD}\`, use paths relative to \`{CWD}\`; otherwise absolute paths (as for FASTQ input)."
+# Acceptance record (task-9-report.md numbers): three of them pinned, plus the not-exercised sentence.
+needr "job 11380326, wall time 11 min 49 s, 80/80 tasks COMPLETED"
+needr "job 11380459, wall time 6 min 16 s, 43/43 tasks COMPLETED"
+needr "the rMATS sign on 202/202 rows of SE.MATS.JC.txt and the SUPPA2 sign on 1098/1098 local and 1854/1854 isoform events"
+needr "- Not exercised: real data; the Ensembl download helper; a paired design; strandedness other than unstranded, and single-end input; a human- or mouse-size genome; the time and memory of any process on real data."
+# --- end Task 9 fix round
 [ $fail -eq 0 ] && echo "PASS" || exit 1

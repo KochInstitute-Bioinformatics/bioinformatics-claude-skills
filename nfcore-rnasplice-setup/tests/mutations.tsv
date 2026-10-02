@@ -394,10 +394,10 @@ T7f-nolog	check	skill	/^#SBATCH -o nf-core_rnasplice_{VERSION_TAG}\.%j\.log$/d	t
 T7f-logdir	check	skill	s/SLURM writes this log in the directory where `sbatch` was run/the log is in `{CWD}`/	missing required text: SLURM writes this log in the directory where `sbatch` was run
 T7f-nflog	check	skill	$s/$/\nAfter submitting, run `nextflow log` on the login node./	forbidden text present: nextflow log
 T7f-bulk	check	skill	s/ (import and Salmon index differ)//	missing required text: import and Salmon index differ
-T8-marker	check	readme	s/^Cluster acceptance (nf-core test data): /Cluster acceptance: /	README must have the line
+T8-marker	check	readme	s/^Cluster acceptance (nf-core test data): /Cluster acceptance: /	README must have the whole line
 T8-data	check	readme	s/No real biological data/Real data/	README missing required text: No real biological data
-T8-acc-indent	check	readme	s/^Cluster acceptance (nf-core test data): PENDING$/  Cluster acceptance (nf-core test data): PENDING/	README must have the line
-T8-acc-trail	check	readme	s/^Cluster acceptance (nf-core test data): PENDING$/& (see Task 9)/	README must have the line
+T8-acc-indent	check	readme	s/^Cluster acceptance (nf-core test data): DONE (2026-10-02)$/  &/	README must have the whole line
+T8-acc-trail	check	readme	s/^Cluster acceptance (nf-core test data): DONE (2026-10-02)$/& (see the runs below)/	README must have the whole line
 T8-vm-readme	check	readme	$s/$/\nBAM input: [from_sheet] strandedness from the sheet./	a plan variant marker is left in the README
 T8-vm-readme-c	check	readme	$s/$/\n[C: | `create_nextflow_env.sh` | env |]/	a plan variant marker is left in the README
 T8-vm-skill	check	skill	$s/$/\nGenome BAM input: [fixed] accepted only for some libraries./	a plan variant marker is left in the skill
@@ -448,7 +448,7 @@ T8-misowhy	check	readme	s/MISO itself is unmaintained Python 2 software/MISO is 
 T8-report	check	readme	s/there is no downstream report skill for the splicing tables yet (planned later)/see the report skill/	README missing required text: there is no downstream report skill
 T8-inputs	check	readme	s/No Salmon-results or transcriptome-BAM input, and no iGenomes `genome` key/All nf-core inputs/	README missing required text: No Salmon-results or transcriptome-BAM input
 T8-strand	check	readme	s/Strandedness is asked, not detected/Strandedness is detected/	README missing required text: Strandedness is asked, not detected
-T8-firstuse	check	readme	s/they are first used in the cluster acceptance run/they were tested/	README missing required text: they are first used in the cluster acceptance run
+T8-firstuse	check	readme	s/they were first used in the cluster acceptance run (run (a) below)\./they were tested./	README missing required text: they were first used in the cluster acceptance run (run (a) below).
 T8-keys	check	readme	s/`fig_width`, //	README missing required text: `fig_width`
 T8-edgerfn	check	readme	s/edgeR exon usage uses @EDGER_DEU_FUNCTION@ in this revision/edgeR exon usage uses diffSpliceDGE/	README missing required text: edgeR exon usage uses @EDGER_DEU_FUNCTION@ in this revision
 T8-ra-missing	check	runall	s/ test_sample_names.sh / /	tests/test_sample_names.sh is not named in run_all_tests.sh
@@ -461,11 +461,11 @@ T8-ra-empty	check	runall	1,$d	tests/run_all_tests.sh is missing or empty
 T8f-res-every	check	readme	s/sets a process default of 2 CPUs, 8 GB and 4 h, raises the processes below with `withName` selectors/gives every process 2 CPUs, 8 GB and 4 h, raises the processes below with `withName` selectors/	README has forbidden text: gives every process 2 CPUs, 8 GB and 4 h
 T8f-res-labels	check	readme	s/ Every other process keeps the resources of the pipeline's own process labels, which take precedence over that default: in the verification run they requested up to 12 CPUs, 64 GB and 16 h (the SUPPA2 diffSplice and cluster steps and `MAKE_TRANSCRIPTS_FASTA`)\.//	README missing required text: Every other process keeps the resources of the pipeline's own process labels
 T8f-res-max	check	readme	s/they requested up to 12 CPUs, 64 GB and 16 h/they requested up to 8 CPUs, 64 GB and 8 h/	README missing required text: Every other process keeps the resources of the pipeline's own process labels, which take precedence over that default: in the verification run they requested up to 12 CPUs, 64 GB and 16 h
-T8f-sq-readme	check	readme	s/The first seven selectors were applied in the verification run on the nf-core test data; the `SALMON_QUANT\.\*` selector was only matched against the recorded process names (the verification config's `\.\*:SALMON_QUANT` matched no process, so Salmon ran with its label's 6 CPUs, 36 GB and 8 h) and is first applied in the cluster acceptance run\. //	README missing required text: The first seven selectors were applied in the verification run
+T8f-sq-readme	check	readme	s/the `SALMON_QUANT\.\*` selector was applied in the cluster acceptance run on the same data: its SALMON_QUANT_SALMON tasks requested 8 CPUs, 36 GB and 8 h/the `SALMON_QUANT.*` selector was not applied/	README missing required text: The first seven selectors were applied in the verification run
 T8f-sq-checked	check	readme	s/; they are NOT measured on a real genome\./; they were checked on the nf-core test data only and are NOT measured on a real genome./	README has forbidden text: they were checked on the nf-core test data only
-T8f-sq-skill	check	skill	s/ The first seven selectors were applied in this skill's verification run on the nf-core test data; the `'\.\*:SALMON_QUANT\.\*'` selector was only matched against the process names recorded there (the verification config used `'\.\*:SALMON_QUANT'`, which matched no process, so Salmon quantification ran with its label's 6 CPUs, 36 GB and 8 h) and is first applied in this skill's cluster acceptance run on the nf-core test data\.//	missing required text: The first seven selectors were applied in this skill's verification run
+T8f-sq-skill	check	skill	s/its four SALMON_QUANT_SALMON tasks requested 8 CPUs, 36 GB and 8 h/its tasks ran/	missing required text: The first seven selectors were applied in this skill's verification run
 T8f-sq-skill-old	check	skill	s/The resources of every selector are judgement: they are not measured on real data\./The resources of every selector are judgement, checked on the nf-core test data of this skill's verification only: they are not measured on real data./	forbidden text present: checked on the nf-core test data of this skill's verification only
-T8f-sq-skill-first	check	skill	s/and is first applied in this skill's cluster acceptance run on the nf-core test data\./and was applied in the verification run./	missing required text: so Salmon quantification ran with its label's 6 CPUs, 36 GB and 8 h) and is first applied
+T8f-sq-skill-first	check	skill	s/no SALMON_QUANT_STAR task runs; the pattern covers both names\./SALMON_QUANT_STAR also runs./	missing required text: no SALMON_QUANT_STAR task runs; the pattern covers both names.
 T8f-realdata-del	check	readme	s/, and nothing in this skill is validated on real data\././	README missing required text: and nothing in this skill is validated on real data.
 T8f-realdata-add	check	readme	$s/$/\nThis skill has been validated on real RNA-seq data./	README has forbidden text: has been validated on real
 T8f-realdata-add2	check	readme	$s/$/\nThe settings were tested on real data./	README has forbidden text: tested on real data
@@ -523,3 +523,28 @@ T8f-rt-nogit	runtest	runall	s/^  \[ -x "\$RNASPLICE_TEST_GIT_DIR\/git" \] || .*$
 T8f-rt-skipmsg	runtest	runall	s/^  echo "== SKIPPED: \$FULL_TESTS (proof-tool self-test, about 30 minutes; run with --full)"$/  :/	output lacks the line: == SKIPPED: test_proof_tools.sh
 T8f-ra-runtest	check	runall	s/ test_run_all\.sh / /	run_all_tests.sh TESTS must run test_run_all.sh
 T8f-ra-gitline	check	runall	s/| sort -V | head -n1)" != 1\.8\.5/| sort -V | head -n1)" != 1.8.6/	must check for git 1.8.5 or newer
+T9-pending-add	check	readme	$s/$/\nCluster acceptance (nf-core test data): PENDING/	README must have the whole line
+T9-done-revert	check	readme	s/^Cluster acceptance (nf-core test data): DONE (2026-10-02)$/Cluster acceptance (nf-core test data): PENDING/	README must have the whole line
+T9-sq-skill-old	check	skill	$s/$/\nThe selector was only matched against the process names recorded there./	forbidden text present: selector was only matched against the process names recorded there
+T9-sq-skill-old2	check	skill	$s/$/\nIt is first applied in this skill's cluster acceptance run./	forbidden text present: is first applied in this skill's cluster acceptance run
+T9-sq-readme-old	check	readme	$s/$/\nThe Salmon selector is first applied in the cluster acceptance run./	README has forbidden text: is first applied in the cluster acceptance run
+T9-sq-readme-old2	check	readme	$s/$/\nThe Salmon selector was only matched against the recorded process names./	README has forbidden text: selector was only matched against the recorded process names
+T9-sq-readme-star	check	readme	s/ With this skill's route no SALMON_QUANT_STAR task runs; the pattern covers both names\.//	README missing required text: With this skill's route no SALMON_QUANT_STAR task runs
+T9-firstuse-old	check	readme	$s/$/\nThese keys: they are first used in the cluster acceptance run./	README has forbidden text: they are first used in the cluster acceptance run
+T9-layout-mate	names	skill	s/^    \[ -n "\${mate\[\$f\]:-}" \] && continue$/    :/	FAIL: layout case
+T9-layout-exist	names	skill	s/^    if r=\$(fastq_r2_name "\$f") && \[ -e "\$r" \]; then/    if r=$(fastq_r2_name "$f"); then/	FAIL: layout case
+T9-layout-mixed	names	skill	s/if \[ \$np -gt 0 \] && \[ \$ns -gt 0 \]; then echo "LAYOUT mixed"; elif/if false; then :; elif/	FAIL: layout case
+T9-layout-prose	check	skill	s/that R2 file is its mate, never a sample of its own\. //	missing required text: that R2 file is its mate, never a sample of its own.
+T9-layout-old	check	skill	s/(`fastq_layout` prints `LAYOUT mixed`)\./& A file with an R1 token and whose R2 file exists → paired-end; otherwise single-end./	forbidden text present: and whose R2 file exists → paired-end; otherwise single-end.
+T9-rows	check	skill	s/^- \*\*Rows:\*\* one samplesheet row per `paired` or `single` line of `fastq_layout`/- **Rows:** for each R1 file, `fastq_r2_name` gives its R2 file/	missing required text: - **Rows:** one samplesheet row per `paired` or `single` line of `fastq_layout`
+T9-layout-fn	check	skill	s/^fastq_layout() {$/fastq_pairs() {/	missing required text: fastq_layout() {
+T9-bam-sorted	names	skill	s/|_sorted)?/)?/	FAIL: BAM name case star/ERR188383_chrX_sorted.bam
+T9-bam-prose	check	skill	s/derive the sample names with `bam_sample_name` (block in Step 4a: it removes the longest of/derive the sample names by removing the longest of/	missing required text: derive the sample names with `bam_sample_name`
+T9-bam-fn	check	skill	s/^bam_sample_name() {$/bam_name() {/	missing required text: bam_sample_name() {
+T9-fn-one	check	skill	s/ When `{SEQ_DATE}` equals `{TODAY_YYMMDD}` (the input files have no date prefix), options 1 and 2 are the same: offer only 1\. `{TODAY_YYMMDD}_{WD_NAME}` · 2\. Custom prefix\.//	missing required text: When `{SEQ_DATE}` equals `{TODAY_YYMMDD}` (the input files have no date prefix)
+T9-mqc-one	check	skill	s/ When `{SEQ_DATE}` equals `{TODAY_YYMMDD}`, options 1 and 2 are the same: offer only 1\. `{TODAY_YYMMDD}_{WD_NAME}` · 2\. Custom\.$//	missing required text: When `{SEQ_DATE}` equals `{TODAY_YYMMDD}`, options 1 and 2 are the same
+T9-bampath	check	skill	s/ \*\*Path style:\*\* if `{BAM_DIR}` is inside `{CWD}`, use paths relative to `{CWD}`; otherwise absolute paths (as for FASTQ input)\.//	missing required text: **Path style:** if `{BAM_DIR}` is inside `{CWD}`
+T9-acc-a	check	readme	s/job 11380326, wall time 11 min 49 s, 80\/80 tasks COMPLETED/job 11380326, 80 tasks COMPLETED/	README missing required text: job 11380326, wall time 11 min 49 s, 80/80 tasks COMPLETED
+T9-acc-c	check	readme	s/43\/43 tasks COMPLETED/43 tasks COMPLETED/	README missing required text: job 11380459, wall time 6 min 16 s, 43/43 tasks COMPLETED
+T9-acc-signs	check	readme	s/1854\/1854 isoform events/1850\/1854 isoform events/	README missing required text: the rMATS sign on 202/202 rows of SE.MATS.JC.txt
+T9-acc-notex	check	readme	/^- Not exercised: real data;/d	README missing required text: - Not exercised: real data;
