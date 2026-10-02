@@ -237,7 +237,7 @@ need "1. overwrite · 2. choose another filename"
 forbid "rm -rf"
 case "$(gv RMATS_BAMLIST_ORDER)" in
   sheet) need "write the rows ordered by subject within each condition"
-         need "validate_rnasplice_sheets \"\$T/samplesheet.csv\" \"\$T/contrasts.csv\" {SOURCE} 1 \"\$T/pairs.csv\""
+         need "validate_rnasplice_sheets \"\$T/samplesheet.csv\" \"\$T/contrasts.csv\" \"\$src\" 1 \"\$T/pairs.csv\" || rc=1"
          need "the rows of one sample (technical replicates) stay next to each other" ;;
   sorted_by_name) need "propose names \`{SUBJECT}_{CONDITION}\`" ;;
   unordered) need "a paired rMATS test cannot be set up safely" ;;
@@ -246,5 +246,36 @@ need "Ask only when there are exactly two conditions with the same number of sam
 need "sets both \`rmats_paired_stats\` and SUPPA2's \`diffsplice_paired\` in Step 8"
 need "treatment = the later and control = the earlier one in \`{CONDITIONS}\`"
 # --- end Task 3
+
+# --- Task 3 review fixes
+# I1: the key Step 5 decisions
+need "Answer 1: \`{PAIRED_DESIGN}\` = \`false\`"
+need "this skill writes both \`false\` unless the user confirms pairing"
+need "otherwise set \`{PAIRED_DESIGN}\` = \`false\` without asking"
+need "validate_rnasplice_sheets \"\$T/samplesheet.csv\" \"\$T/contrasts.csv\" \"\$src\" 0 || rc=1"
+need "ask for an order with the reference first"
+need "validated there, and only then moved into \`{CWD}\`"
+# I2: shell variables and functions do not persist between Bash tool calls
+need "**Bash tool calls.** Shell variables and functions do not persist between Bash tool calls."
+need "**Writing the sheets.** Shell variables and functions do not persist between Bash tool calls, so the whole procedure is one Bash call"
+need "paste the whole block at the start of every Bash call that uses its functions"
+need "In one Bash call, define the function below and run it on every one of those files"
+need "In one Bash call, define this function and run \`bam_input_allowed {STRANDEDNESS} {LAYOUT}\`"
+need "install_rnasplice_sheets() {"
+need "install_rnasplice_sheets \"\$T\" {SOURCE} 0 {SAMPLESHEET_CSV} {CONTRASTS_CSV}"
+need "install_rnasplice_sheets \"\$T\" {SOURCE} 1 {SAMPLESHEET_CSV} {CONTRASTS_CSV} {SHEET_PREFIX}_pairs.csv"
+need "The scratch files and directory are removed on every path"
+forbid_re 'in the Bash tool' "'in the Bash tool' (a function defined in one Bash call cannot be used in another)"
+# $T (the scratch directory) may appear only inside fenced code blocks: a prose step that uses it runs in another call.
+t_outside=$(awk '/^```/ { inb = !inb; next } !inb && /\$T([^A-Za-z0-9_]|$)/ { print FNR }' "$SKILL" | tr '\n' ' ')
+[ -z "$t_outside" ] || { echo "FAIL: \$T used outside a code block (line $t_outside): shell variables do not persist between Bash tool calls"; fail=1; }
+# Minors
+need "start with a letter and are not R reserved words"
+need "tell the user the direction"
+[ "$(gv RMATS_B1_GROUP)" = treatment ] && need "a positive rMATS IncLevelDifference means more inclusion in the treatment"
+need "For BAM input, \`{SEQ_DATE}\` ="
+need "store the new name in \`{SAMPLESHEET_CSV}\` or \`{CONTRASTS_CSV}\`"
+need "A missing or empty input file stops the call"
+# --- end Task 3 review fixes
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1

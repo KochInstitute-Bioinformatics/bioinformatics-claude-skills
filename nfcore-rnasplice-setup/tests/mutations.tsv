@@ -84,7 +84,7 @@ T3-header	validate	skill	s/if ($0 != "contrast,treatment,control")/if (0)/	FAIL:
 T3-min	validate	skill	s/nsamp\[c\] < 2/nsamp[c] < 1/	FAIL: case one_sample_condition
 T3-strand	validate	skill	s/else if (st != strand) err/else if (0) err/	FAIL: case mixed_strandedness
 T3-paired	validate	skill	s/if (k != 2) err/if (0) err/	FAIL: case paired_three_conditions
-T3-rmdir	check	skill	s/remove the scratch directory with `rmdir "\$T"`/remove the scratch directory with `rm -rf "$T"`/	forbidden text present: rm -rf
+T3-rmdir	check	skill	s/^  rmdir "\$T" ||/  rm -rf "$T" ||/	forbidden text present: rm -rf
 T3-reserved	validate	skill	/is an R reserved word; the pipeline rejects it/d	FAIL: case reserved_word
 T3-duppair	validate	skill	s/if (($2, $3) in tc) err/if (0) err/	FAIL: case duplicate_pair
 T3-pairpos	validate	skill	s/subj\[s1\] != subj\[s2\]/0/	FAIL: case paired_order_mismatch
@@ -95,7 +95,7 @@ T3-pairunknown	validate	skill	s/if (!($1 in cond)) { err("pairs file names/if (0
 T3-pairhdr	validate	skill	s/if ($0 != "sample,subject")/if (0)/	FAIL: case paired_pairs_header
 T3-bamhdr	check	skill	s/bamhdr="@BAM_SHEET_HEADER@"/bamhdr="sample,condition,genome_bam"/	missing required text: bamhdr="@BAM_SHEET_HEADER@"
 T3-pairtext	check	skill	s/write the rows ordered by subject within each condition/write the rows/	missing required text: write the rows ordered by subject within each condition
-T3-paircall	check	skill	s/{SOURCE} 1 "\$T\/pairs\.csv"/{SOURCE} 1/	missing required text: validate_rnasplice_sheets "$T/samplesheet.csv" "$T/contrasts.csv" {SOURCE} 1 "$T/pairs.csv"
+T3-paircall	check	skill	s/"\$src" 1 "\$T\/pairs\.csv" || rc=1/"$src" 0 || rc=1/	missing required text: validate_rnasplice_sheets "$T/samplesheet.csv" "$T/contrasts.csv" "$src" 1 "$T/pairs.csv" || rc=1
 T3-adjtext	check	skill	s/; the rows of one sample (technical replicates) stay next to each other//	missing required text: the rows of one sample (technical replicates) stay next to each other
 T3-rmatsdef	check	skill	s/the pipeline default `diffsplice_paired: true` assumes/the pipeline default `rmats_paired_stats: true` assumes/	forbidden text present: `rmats_paired_stats: true` assumes
 T3-rmatsfalse	check	skill	s/`rmats_paired_stats` defaults to `false` at this revision/`rmats_paired_stats` defaults to `true`/	missing required text: `rmats_paired_stats` defaults to `false` at this revision
@@ -106,3 +106,37 @@ T3-min2text	check	skill	s/Every condition used in a contrast needs at least 2 sa
 T3-noedit	check	skill	s/ — never edit the validator — / /	missing required text: never edit the validator
 T3-overwrite	check	skill	s/1\. overwrite · 2\. choose another filename/overwrite it/	missing required text: 1. overwrite · 2. choose another filename
 T3-anchor-n	check	skill	$s/$/\n**Sheet validation.**/	anchor must appear exactly once: **Sheet validation.**
+T3f-ans1	check	skill	s/Answer 1: `{PAIRED_DESIGN}` = `false`/Answer 1: `{PAIRED_DESIGN}` = `true`/	missing required text: Answer 1: `{PAIRED_DESIGN}` = `false`
+T3f-both	check	skill	s/, so this skill writes both `false` unless the user confirms pairing//	missing required text: this skill writes both `false` unless the user confirms pairing
+T3f-otherwise	check	skill	s/; otherwise set `{PAIRED_DESIGN}` = `false` without asking//	missing required text: otherwise set `{PAIRED_DESIGN}` = `false` without asking
+T3f-unpaired	check	skill	s/"\$src" 0 || rc=1/"$src" 0 || :/	missing required text: validate_rnasplice_sheets "$T/samplesheet.csv" "$T/contrasts.csv" "$src" 0 || rc=1
+T3f-unpaired-run	validate	skill	s/"\$src" 0 || rc=1/"$src" 0 || :/	FAIL: case install_invalid
+T3f-reffirst	check	skill	s/ask for an order with the reference first/ask for any order/	missing required text: ask for an order with the reference first
+T3f-scratch	check	skill	s/Both sheets are written to a scratch directory first, validated there, and only then moved into `{CWD}`/Both sheets are written into `{CWD}`/	missing required text: validated there, and only then moved into `{CWD}`
+T3f-persist	check	skill	s/^\*\*Bash tool calls\.\*\* Shell variables and functions do not persist between Bash tool calls\. /**Bash tool calls.** /	missing required text: **Bash tool calls.** Shell variables and functions do not persist between Bash tool calls.
+T3f-paste	check	skill	s/paste the whole block at the start of every Bash call that uses its functions/define the functions once/	missing required text: paste the whole block at the start of every Bash call that uses its functions
+T3f-onecall	check	skill	s/so the whole procedure is one Bash call/so run the steps in separate calls/	missing required text: **Writing the sheets.** Shell variables and functions do not persist between Bash tool calls, so the whole procedure is one Bash call
+T3f-rseqc	check	skill	s/In one Bash call, define the function below and run it/Define the function below in the Bash tool and run it/	forbidden pattern present: 'in the Bash tool'
+T3f-bamrule	check	skill	s/In one Bash call, define this function and run/Define this function and run/	missing required text: In one Bash call, define this function and run `bam_input_allowed {STRANDEDNESS} {LAYOUT}`
+T3f-names	check	skill	s/Paste this block at the start of every Bash call that uses these functions and use them/Define these functions in the Bash tool and use them/	forbidden pattern present: 'in the Bash tool'
+T3f-Tprose	check	skill	s/^4\. On `WROTE`, show the files in full\./4. On `WROTE`, run `rmdir "$T"` and show the files in full./	used outside a code block
+T3f-call0	check	skill	s/^install_rnasplice_sheets "\$T" {SOURCE} 0 {SAMPLESHEET_CSV} {CONTRASTS_CSV}$/install_rnasplice_sheets "$T"/	missing required text: install_rnasplice_sheets "$T" {SOURCE} 0 {SAMPLESHEET_CSV} {CONTRASTS_CSV}
+T3f-call1	check	skill	s/^# install_rnasplice_sheets "\$T" {SOURCE} 1 .*$/# install_rnasplice_sheets "$T" {SOURCE} 1/	missing required text: install_rnasplice_sheets "$T" {SOURCE} 1 {SAMPLESHEET_CSV} {CONTRASTS_CSV} {SHEET_PREFIX}_pairs.csv
+T3f-installdef	validate	skill	s/^install_rnasplice_sheets() {/install_sheets_old() {/	FAIL: install_rnasplice_sheets is not defined by the block
+T3f-cleanup-run	validate	skill	/^  rmdir "\$T" || echo/d	FAIL: case install_ok: scratch directory left behind
+T3f-cleanup-err	validate	skill	s/^  rm -f "\$T\/samplesheet.csv" "\$T\/contrasts.csv" "\$T\/pairs.csv"$/  :/	FAIL: case install_invalid: scratch directory left behind
+T3f-cleanup-text	check	skill	s/The scratch files and directory are removed on every path/The scratch directory is removed on success/	missing required text: The scratch files and directory are removed on every path
+T3f-missing-run	validate	skill	s/\[ -s "\$p" \] ||/true ||/	FAIL: case install_missing_input
+T3f-missing-text	check	skill	s/A missing or empty input file stops the call/A missing input file is reported/	missing required text: A missing or empty input file stops the call
+T3f-target	validate	skill	s/''|\*\/\*) echo "ERROR: target name/''|..) echo "ERROR: target name/	FAIL: case install_bad_target
+T3f-pairname	validate	skill	/a paired design needs the pairs file name/d	FAIL: case install_paired_no_name
+T3f-condrw	validate	skill	/is an R reserved word; the R scripts of the pipeline/d	FAIL: case reserved_condition
+T3f-condtext	check	skill	s/start with a letter and are not R reserved words/start with a letter/	missing required text: start with a letter and are not R reserved words
+T3f-argsrc	validate	skill	/source must be fastq or genome_bam/d	FAIL: case bad_source
+T3f-argpaired	validate	skill	/(got '\$4':/d	FAIL: case bad_paired_flag
+T3f-hdrnoise	validate	skill	s/if (!hdrbad) for (c in used)/for (c in used)/	FAIL: case header_missing_no_size_noise
+T3f-lone	validate	skill	s/{ err("subject " u " has no sample in condition " cn\[j\]); lone = 1 }/{ lone = 0 }/	FAIL: case subject_unpartnered
+T3f-direction	check	skill	s/tell the user the direction/mention/	missing required text: tell the user the direction
+T3f-sign	check	skill	s/means more inclusion in the treatment/means more inclusion in the control/	missing required text: a positive rMATS IncLevelDifference means more inclusion in the treatment
+T3f-seqdate	check	skill	s/For BAM input, `{SEQ_DATE}` =/For BAM input the date/	missing required text: For BAM input, `{SEQ_DATE}` =
+T3f-newname	check	skill	s/store the new name in `{SAMPLESHEET_CSV}` or `{CONTRASTS_CSV}`/use another name/	missing required text: store the new name in `{SAMPLESHEET_CSV}` or `{CONTRASTS_CSV}`

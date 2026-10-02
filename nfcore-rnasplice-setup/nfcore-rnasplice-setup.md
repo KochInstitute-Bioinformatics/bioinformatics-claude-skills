@@ -13,6 +13,8 @@ Also derive:
 - `{TODAY_YYMMDD}` = today's date as `YYMMDD`
 - `{TODAY_ISO}` = today's date as `YYYY-MM-DD` (used for the output directory `results/{TODAY_ISO}_{WD_NAME}`)
 
+**Bash tool calls.** Shell variables and functions do not persist between Bash tool calls. When a step defines functions in a code block, paste the whole block at the start of every Bash call that uses its functions, in that same call. A value needed in a later call (a path, a result) is written out literally there (or kept as a placeholder such as `{CWD}`), never taken from a shell variable of an earlier call.
+
 ---
 
 ## Step 1 — Email address
@@ -73,7 +75,7 @@ Ask (numbered), mentioning what the scan found: "Which input do you want to star
 - **Rows:** for each R1 file, `fastq_r2_name` gives its R2 file; if an R2 is missing, warn and stop (one read type for all samples). Single-end rows leave `fastq_2` empty. Sample name before sanitisation = `fastq_sample_name`: the file name up to `_S\d+`, `_R1`/`_R2`, `_1.f`/`_2.f` or `_1_sequence`/`_2_sequence`; a single-end file without these tokens (for example `ctrl.fastq.gz`) only loses its `.fastq.gz`/`.fq.gz` extension. FASTQ files must end in `.fastq.gz` or `.fq.gz`; the pipeline accepts nothing else.
 - **Paths:** run `input_path_ok` on every path. A space, tab or comma stops the wizard with a clear message (the samplesheet schemas reject whitespace in file names, and a comma breaks the CSV): the user renames the files or makes symlinks without them.
 
-**Sample names and read pairs.** The pinned samplesheet schemas (FASTQ and genome BAM, recorded in this skill's verification) accept a sample name only if it matches `^(?!\.\.\d+)(?!\.$)[a-zA-Z.]([a-zA-Z0-9._]*)?$` and is not an R reserved word (`if`, `else`, `repeat`, `while`, `function`, `for`, `in`, `next`, `break`, `TRUE`, `FALSE`, `NULL`, `Inf`, `NaN`, `NA`, `NA_integer_`, `NA_real_`, `NA_complex_`, `NA_character_`): "Sample name must be a valid R identifier". Otherwise the pipeline rejects the samplesheet when the job starts. Sanitisation (always, before showing the user) therefore replaces `-`, spaces, `/`, `(`, `)`, `.` and every other character outside `A-Za-z0-9_` with `_`; if a name then does not start with a letter (a digit or `_`), prefix `S`; if it is an R reserved word, append `_S`. Define these functions in the Bash tool and use them for every file (light work on the login node); note every substitution in the preview.
+**Sample names and read pairs.** The pinned samplesheet schemas (FASTQ and genome BAM, recorded in this skill's verification) accept a sample name only if it matches `^(?!\.\.\d+)(?!\.$)[a-zA-Z.]([a-zA-Z0-9._]*)?$` and is not an R reserved word (`if`, `else`, `repeat`, `while`, `function`, `for`, `in`, `next`, `break`, `TRUE`, `FALSE`, `NULL`, `Inf`, `NaN`, `NA`, `NA_integer_`, `NA_real_`, `NA_complex_`, `NA_character_`): "Sample name must be a valid R identifier". Otherwise the pipeline rejects the samplesheet when the job starts. Sanitisation (always, before showing the user) therefore replaces `-`, spaces, `/`, `(`, `)`, `.` and every other character outside `A-Za-z0-9_` with `_`; if a name then does not start with a letter (a digit or `_`), prefix `S`; if it is an R reserved word, append `_S`. Paste this block at the start of every Bash call that uses these functions and use them for every file (light work on the login node); note every substitution in the preview.
 ```bash
 fastq_r2_name() {
   # usage: fastq_r2_name <R1 file>; prints the R2 file (same directory), or prints nothing and returns 1 when the name has no R1 token
@@ -132,7 +134,7 @@ The rows stay in memory: Step 5 adds the condition column (the samplesheet colum
 
 **Strandedness is asked, never guessed.** rnasplice has no `auto` strandedness, and rMATS needs one strandedness and one read type for all samples. Ask (numbered): "Which strandedness does the library have?" 1. unstranded · 2. forward · 3. reverse · 4. I don't know. Explain: *reverse* = read 1 comes from the strand opposite to the transcript (dUTP libraries such as Illumina TruSeq Stranded and NEBNext Ultra II Directional — the most common stranded libraries); *forward* = read 1 comes from the transcript strand; *unstranded* = no strand information (for example TruSeq non-stranded). A wrong value makes rMATS discard or misassign junction reads without any error. If the user answers 4, or has an nf-core/rnaseq output directory for the same samples, use the block below. Never continue with "I don't know". Store `{STRANDEDNESS}` (one value for every row).
 
-**Strandedness from an existing nf-core/rnaseq run.** Ask for that run's output directory (`{RNASEQ_OUTDIR}`) and count its RSeQC files with `find "{RNASEQ_OUTDIR}" -path "*/work" -prune -o -name "*.infer_experiment.txt" -print | wc -l`. Define the function below in the Bash tool and run it on every one of those files, not a subset (a loop over the same `find`; small text files, light work on the login node). Show a table file → result; with many files, show the count per result and list every file whose result differs from the others. The rule is nf-core/rnaseq's: forward if the forward fraction is at least 0.8, reverse if the reverse fraction is at least 0.8, unstranded if the two fractions differ by at most 0.1, otherwise unclear. A missing or unreadable file, a missing line, or a line that appears twice (reports concatenated into one file) gives unclear. No `*.infer_experiment.txt` file (for example a run with RSeQC skipped): tell the user, and ask the strandedness question again without a proposal; continue only with answer 1, 2 or 3.
+**Strandedness from an existing nf-core/rnaseq run.** Ask for that run's output directory (`{RNASEQ_OUTDIR}`) and count its RSeQC files with `find "{RNASEQ_OUTDIR}" -path "*/work" -prune -o -name "*.infer_experiment.txt" -print | wc -l`. In one Bash call, define the function below and run it on every one of those files, not a subset (a loop over the same `find`; small text files, light work on the login node). Show a table file → result; with many files, show the count per result and list every file whose result differs from the others. The rule is nf-core/rnaseq's: forward if the forward fraction is at least 0.8, reverse if the reverse fraction is at least 0.8, unstranded if the two fractions differ by at most 0.1, otherwise unclear. A missing or unreadable file, a missing line, or a line that appears twice (reports concatenated into one file) gives unclear. No `*.infer_experiment.txt` file (for example a run with RSeQC skipped): tell the user, and ask the strandedness question again without a proposal; continue only with answer 1, 2 or 3.
 ```bash
 infer_strandedness() {
   # usage: infer_strandedness <file.infer_experiment.txt>; prints forward, reverse, unstranded or unclear
@@ -156,9 +158,9 @@ infer_strandedness() {
 
 ### Step 4b — Genome BAM input
 
-Ask for the directory of the BAM files (for example the `star_salmon/` directory of an nf-core/rnaseq run) and store `{BAM_DIR}`. Genome BAMs must come from a splice-aware aligner (STAR, as in nf-core/rnaseq: `star_salmon/{sample}.markdup.sorted.bam`) and be aligned to the same FASTA and GTF that Step 7 gives the pipeline (same contig names). They need not be sorted or indexed: the pipeline re-sorts and indexes them itself (`samtools sort`, then `samtools index`), so no `.bai` file is needed; a splice-aware aligner is still required. Find them with `find "{BAM_DIR}" -path "*/work" -prune -o -name "*.bam" ! -name "*toTranscriptome*" -print`, derive sample names by removing `.markdup.sorted.bam`, `.umi_dedup.sorted.bam`, `.sorted.bam` or `.bam`, and use one BAM per sample (BAM rows are never merged). When several BAMs give the same name (an nf-core/rnaseq run can keep `X.sorted.bam` next to `X.markdup.sorted.bam`), prefer `.markdup.sorted.bam` (or `.umi_dedup.sorted.bam` in a UMI run), drop the others and tell the user which file was kept. Then apply `input_path_ok`, `sanitize_sample_name` and `sample_name_collisions` (block in Step 4a) as for FASTQ rows. Ask the strandedness question of Step 4a (with the nf-core/rnaseq block when the BAMs come from such a run) and the read type (numbered): 1. paired-end · 2. single-end; store `{STRANDEDNESS}` and `{LAYOUT}`. Single-end and `forward` BAM input were verified from the pipeline code only, not run. Then apply the BAM input rule.
+Ask for the directory of the BAM files (for example the `star_salmon/` directory of an nf-core/rnaseq run) and store `{BAM_DIR}`. For BAM input, `{SEQ_DATE}` = a leading 6-digit `YYMMDD` prefix shared by the BAM file names, else `{TODAY_YYMMDD}` (used for the file names in Step 5). Genome BAMs must come from a splice-aware aligner (STAR, as in nf-core/rnaseq: `star_salmon/{sample}.markdup.sorted.bam`) and be aligned to the same FASTA and GTF that Step 7 gives the pipeline (same contig names). They need not be sorted or indexed: the pipeline re-sorts and indexes them itself (`samtools sort`, then `samtools index`), so no `.bai` file is needed; a splice-aware aligner is still required. Find them with `find "{BAM_DIR}" -path "*/work" -prune -o -name "*.bam" ! -name "*toTranscriptome*" -print`, derive sample names by removing `.markdup.sorted.bam`, `.umi_dedup.sorted.bam`, `.sorted.bam` or `.bam`, and use one BAM per sample (BAM rows are never merged). When several BAMs give the same name (an nf-core/rnaseq run can keep `X.sorted.bam` next to `X.markdup.sorted.bam`), prefer `.markdup.sorted.bam` (or `.umi_dedup.sorted.bam` in a UMI run), drop the others and tell the user which file was kept. Then apply `input_path_ok`, `sanitize_sample_name` and `sample_name_collisions` (block in Step 4a) as for FASTQ rows. Ask the strandedness question of Step 4a (with the nf-core/rnaseq block when the BAMs come from such a run) and the read type (numbered): 1. paired-end · 2. single-end; store `{STRANDEDNESS}` and `{LAYOUT}`. Single-end and `forward` BAM input were verified from the pipeline code only, not run. Then apply the BAM input rule.
 
-**BAM input rule.** Define this function in the Bash tool and run `bam_input_allowed {STRANDEDNESS} {LAYOUT}`:
+**BAM input rule.** In one Bash call, define this function and run `bam_input_allowed {STRANDEDNESS} {LAYOUT}`:
 ```bash
 bam_input_allowed() {
   # usage: bam_input_allowed <unstranded|forward|reverse> <paired|single>
@@ -194,7 +196,7 @@ With BAM input only rMATS, DEXSeq exon usage and edgeR exon usage can run: DTU a
 
 ## Step 5 — Conditions, contrasts and the two sheets
 
-**Conditions.** Ask the user to describe the groups in plain language (for example "samples 1-3 are wild type, 4-6 are Rbpms2 knockout"), interpret it, and show a table sample → condition; ask "Is this correct?" until confirmed. Condition labels use letters, digits and `_` and start with a letter (suggest short labels such as `WT`, `KO`); rows of one sample (technical replicates) share its condition. Every condition used in a contrast needs at least 2 samples (distinct sample names), because rMATS, DEXSeq and edgeR estimate variability from replicates; if one has fewer, say so and stop until the design is changed. With only one condition there is nothing to compare: stop.
+**Conditions.** Ask the user to describe the groups in plain language (for example "samples 1-3 are wild type, 4-6 are Rbpms2 knockout"), interpret it, and show a table sample → condition; ask "Is this correct?" until confirmed. Condition labels use letters, digits and `_`, start with a letter and are not R reserved words such as `NA`, `TRUE`, `FALSE`, `in` (the pipeline's R scripts read the sheet with `read.csv`, and edgeR builds its contrasts from the labels; suggest short labels such as `WT`, `KO`); rows of one sample (technical replicates) share its condition. Every condition used in a contrast needs at least 2 samples (distinct sample names), because rMATS, DEXSeq and edgeR estimate variability from replicates; if one has fewer, say so and stop until the design is changed. With only one condition there is nothing to compare: stop.
 
 Then ask for the reference: with two conditions, "Which condition is the reference (control)?" (numbered); with more, ask for an order with the reference first. Store `{CONDITIONS}` = the labels in that order.
 
@@ -203,22 +205,26 @@ Then ask for the reference: with two conditions, "Which condition is the referen
 - Option 2: ask for lines "treatment vs control", one per contrast; names as above.
 
 Show the contrasts as a table (contrast, treatment, control). rMATS runs one prep/post pair per contrast; with more than 6 contrasts tell the user that the run takes correspondingly longer. DTU and SUPPA2 name their outputs `<treatment>-<control>` (not the contrast name), so the same treatment and control may appear in one contrast only.
+When showing the table, tell the user the direction: treatment = the later condition (in option 2, the condition named before "vs"), and a positive rMATS IncLevelDifference means more inclusion in the treatment.
 
 **Paired design.** Ask only when there are exactly two conditions with the same number of samples; otherwise set `{PAIRED_DESIGN}` = `false` without asking. Ask (numbered): "Are the samples paired (each sample of one condition has a partner from the same individual, litter or batch in the other)?" 1. No, the samples are independent (default) · 2. Yes, every sample has a partner. Explain: the pipeline default `diffsplice_paired: true` assumes a pairing (SUPPA2; `rmats_paired_stats` defaults to `false` at this revision); a paired test on independent samples gives wrong statistics, so this skill writes both `false` unless the user confirms pairing. Answer 1: `{PAIRED_DESIGN}` = `false`.
 Answer 2: rMATS pairs the i-th sample of one condition with the i-th sample of the other, in samplesheet order (verified for this revision). Ask for the partner of each sample as a subject label (letters, digits and `_`, for example `mouse1`), check that each subject has exactly one sample in each condition, and write the rows ordered by subject within each condition: sort the rows by condition (in `{CONDITIONS}` order), then by subject, so that the i-th sample of each condition belongs to the same subject; the rows of one sample (technical replicates) stay next to each other. Show the pairs as a table (subject, sample of each condition) and ask "Is this pairing correct?" until confirmed. The labels are written to a pairs file (header `sample,subject`, one row per sample) that the validator below checks position by position. `{PAIRED_DESIGN}` = `true`.
 `{PAIRED_DESIGN}` sets both `rmats_paired_stats` and SUPPA2's `diffsplice_paired` in Step 8.
 
-**File names** (numbered): 1. `{SEQ_DATE}_{WD_NAME}` · 2. `{TODAY_YYMMDD}_{WD_NAME}` · 3. Custom prefix. Store `{SHEET_PREFIX}`; `{SAMPLESHEET_CSV}` = `{SHEET_PREFIX}_samplesheet.csv` and `{CONTRASTS_CSV}` = `{SHEET_PREFIX}_contrasts.csv` (with a paired design also `{SHEET_PREFIX}_pairs.csv`, a record of the pairing that the pipeline does not read).
+**File names** (numbered; for BAM input `{SEQ_DATE}` comes from Step 4b): 1. `{SEQ_DATE}_{WD_NAME}` · 2. `{TODAY_YYMMDD}_{WD_NAME}` · 3. Custom prefix. Store `{SHEET_PREFIX}`; `{SAMPLESHEET_CSV}` = `{SHEET_PREFIX}_samplesheet.csv` and `{CONTRASTS_CSV}` = `{SHEET_PREFIX}_contrasts.csv` (with a paired design also `{SHEET_PREFIX}_pairs.csv`, a record of the pairing that the pipeline does not read).
 
-**Sheet validation.** Both sheets are written to a scratch directory first, validated there, and only then moved into `{CWD}`. Define this function in the Bash tool (awk only; light work on the login node):
+**Sheet validation.** Both sheets are written to a scratch directory first, validated there, and only then moved into `{CWD}`. The block below defines `validate_rnasplice_sheets` and `install_rnasplice_sheets` (awk and coreutils only; light work on the login node); it is pasted into the one Bash call of **Writing the sheets** below.
 ```bash
 validate_rnasplice_sheets() {
   # usage: validate_rnasplice_sheets <samplesheet.csv> <contrasts.csv> <fastq|genome_bam> <paired design: 0|1> [pairs.csv]
   # pairs.csv (header sample,subject) is required for a paired design: the i-th sample of each condition must share a subject
   # prints "SHEETS OK", or one "ERROR: ..." line per problem and returns 1
   [ -s "$1" ] && [ -s "$2" ] || { echo "ERROR: samplesheet or contrasts file missing or empty"; return 1; }
+  case "$3" in fastq|genome_bam) ;; *) echo "ERROR: source must be fastq or genome_bam (got '$3')"; return 1 ;; esac
+  case "$4" in 0|1) ;; *) echo "ERROR: paired design must be 0 or 1 (got '$4': 1 = paired design, 0 = not paired)"; return 1 ;; esac
   [ -z "${5:-}" ] || [ -s "$5" ] || { echo "ERROR: pairs file $5 missing or empty"; return 1; }
   awk -F',' -v src="$3" -v paired="$4" \
+      -v rw="^(if|else|repeat|while|function|for|in|next|break|TRUE|FALSE|NULL|Inf|NaN|NA|NA_integer_|NA_real_|NA_complex_|NA_character_)$" \
       -v fqhdr="sample,fastq_1,fastq_2,strandedness,condition" -v bamhdr="sample,condition,genome_bam,strandedness,single_end" '
     function err(m) { print "ERROR: " m; bad = 1 }
     FNR == 1 { file++ }
@@ -226,7 +232,7 @@ validate_rnasplice_sheets() {
     /"/ { err("file " file " line " FNR " contains a double quote; write plain comma-separated values"); next }
     file == 1 && FNR == 1 {
       want = (src == "fastq") ? fqhdr : bamhdr
-      if ($0 != want) err("samplesheet header is \"" $0 "\", expected \"" want "\"")
+      if ($0 != want) { err("samplesheet header is \"" $0 "\", expected \"" want "\""); hdrbad = 1 }
       ncol = split(want, h, ","); for (i = 1; i <= ncol; i++) col[h[i]] = i
       next
     }
@@ -235,8 +241,9 @@ validate_rnasplice_sheets() {
       if (NF != ncol) { err("samplesheet line " FNR " has " NF " fields, expected " ncol); next }
       s = $col["sample"]; c = $col["condition"]
       if (s !~ /^[A-Za-z][A-Za-z0-9_]*$/) err("sample name \"" s "\" (line " FNR "): letters, digits and _ only, starting with a letter")
-      else if (s ~ /^(if|else|repeat|while|function|for|in|next|break|TRUE|FALSE|NULL|Inf|NaN|NA|NA_integer_|NA_real_|NA_complex_|NA_character_)$/) err("sample name \"" s "\" is an R reserved word; the pipeline rejects it")
+      else if (s ~ rw) err("sample name \"" s "\" is an R reserved word; the pipeline rejects it")
       if (c !~ /^[A-Za-z][A-Za-z0-9_]*$/) err("condition \"" c "\" of " s ": letters, digits and _ only, starting with a letter")
+      else if (c ~ rw) err("condition \"" c "\" of " s " is an R reserved word; the R scripts of the pipeline would read it as a value")
       if (s in cond) {
         if (src != "fastq") err("sample " s " appears twice; a BAM samplesheet has one row per sample")
         else if (cond[s] != c) err("rows of sample " s " have different conditions (" cond[s] ", " c "); rows with one sample name are merged into one sample")
@@ -293,7 +300,7 @@ validate_rnasplice_sheets() {
     END {
       if (file < 2) err("contrasts file was not read")
       if (ncon == 0) err("contrasts file has no contrast rows")
-      for (c in used) if ((c in nsamp) && nsamp[c] < 2) err("condition " c " has " nsamp[c] " sample; each compared condition needs at least 2")
+      if (!hdrbad) for (c in used) if ((c in nsamp) && nsamp[c] < 2) err("condition " c " has " nsamp[c] " sample; each compared condition needs at least 2")
       if (paired == 1) {
         k = 0; for (c in conds) { k++; cn[k] = c; sz[k] = nsamp[c] }
         if (k != 2) err("a paired design needs exactly two conditions, found " k)
@@ -301,7 +308,9 @@ validate_rnasplice_sheets() {
         else if (file < 3) err("a paired design needs the pairs file (header sample,subject) as fifth argument")
         else {
           for (s in cond) if (!(s in subj)) err("sample " s " has no subject in the pairs file")
-          for (i = 1; i <= sz[1]; i++) {
+          for (s in subj) { has[cond[s], subj[s]] = 1; subjects[subj[s]] = 1 }
+          for (u in subjects) for (j = 1; j <= 2; j++) if (!((cn[j], u) in has)) { err("subject " u " has no sample in condition " cn[j]); lone = 1 }
+          if (!lone) for (i = 1; i <= sz[1]; i++) {
             s1 = ord[cn[1], i]; s2 = ord[cn[2], i]
             if ((s1 in subj) && (s2 in subj) && subj[s1] != subj[s2]) err("paired design: sample " i " of condition " cn[1] " is " s1 " (subject " subj[s1] ") but sample " i " of condition " cn[2] " is " s2 " (subject " subj[s2] "); sort the rows of each condition by subject")
           }
@@ -311,12 +320,63 @@ validate_rnasplice_sheets() {
       exit bad
     }' "$1" "$2" ${5:+"$5"}
 }
+install_rnasplice_sheets() {
+  # usage: install_rnasplice_sheets <scratch dir> <fastq|genome_bam> <paired design: 0|1> <samplesheet name> <contrasts name> [pairs name]
+  # Run in the directory {CWD}, in the same Bash call that wrote <scratch dir>/samplesheet.csv, contrasts.csv (and pairs.csv).
+  # Validates the sheets, checks that every input file exists (paths relative to the current directory; URLs are not checked),
+  # then moves the sheets into the current directory under the given names.
+  # The scratch files and directory are removed on every path (success or error), so nothing is left behind
+  # when the user stops after an error.
+  local T=$1 src=$2 paired=$3 rc=0 p
+  [ -d "$T" ] || { echo "ERROR: scratch directory '$T' not found"; return 1; }
+  case "$paired" in 0|1) ;; *) echo "ERROR: paired design must be 0 or 1 (got '$paired')"; rc=1 ;; esac
+  for p in "$4" "$5" ${6:+"$6"}; do case "$p" in ''|*/*) echo "ERROR: target name '$p' must be a plain file name in the current directory"; rc=1 ;; esac; done
+  [ "$paired" != 1 ] || [ -n "${6:-}" ] || { echo "ERROR: a paired design needs the pairs file name"; rc=1; }
+  if [ $rc -eq 0 ]; then
+    if [ "$paired" = 1 ]; then
+      validate_rnasplice_sheets "$T/samplesheet.csv" "$T/contrasts.csv" "$src" 1 "$T/pairs.csv" || rc=1
+    else
+      validate_rnasplice_sheets "$T/samplesheet.csv" "$T/contrasts.csv" "$src" 0 || rc=1
+    fi
+  fi
+  if [ $rc -eq 0 ]; then
+    while IFS= read -r p; do
+      [ -s "$p" ] || { echo "ERROR: input file $p is missing or empty: fix the path with the user (Step 4), then run the whole call again"; rc=1; }
+    done < <(awk -F',' '{ sub(/\r$/, "") } NR == 1 { for (i = 1; i <= NF; i++) if ($i ~ /^(fastq_1|fastq_2|genome_bam)$/) k[i] = 1; next }
+                        { for (i in k) if ($i != "" && $i !~ /:\/\//) print $i }' "$T/samplesheet.csv")
+  fi
+  if [ $rc -eq 0 ]; then
+    mv -f "$T/samplesheet.csv" "./$4" && mv -f "$T/contrasts.csv" "./$5" || rc=1
+    [ "$paired" != 1 ] || mv -f "$T/pairs.csv" "./$6" || rc=1
+  fi
+  rm -f "$T/samplesheet.csv" "$T/contrasts.csv" "$T/pairs.csv"
+  rmdir "$T" || echo "WARNING: scratch directory $T is not empty: remove its files by name, then rmdir it"
+  [ $rc -eq 0 ] && echo "WROTE $4 $5${6:+ $6}"
+  return $rc
+}
 ```
-Procedure:
-1. `T=$(mktemp -d)`; write `$T/samplesheet.csv` (header `sample,fastq_1,fastq_2,strandedness,condition` for FASTQ with `{STRANDEDNESS}` in every row, or `sample,condition,genome_bam,strandedness,single_end` for BAM; the sanitised names) and `$T/contrasts.csv` (header `contrast,treatment,control`). With a paired design, write the rows sorted as described under **Paired design** and also `$T/pairs.csv` (header `sample,subject`).
-2. Run `validate_rnasplice_sheets "$T/samplesheet.csv" "$T/contrasts.csv" {SOURCE} 0`, or, when `{PAIRED_DESIGN}` is `true`, `validate_rnasplice_sheets "$T/samplesheet.csv" "$T/contrasts.csv" {SOURCE} 1 "$T/pairs.csv"`. On `ERROR` lines, fix the cause with the user — never edit the validator — and repeat.
-3. Check that every FASTQ or BAM path in the sheet exists: `test -s` on each (relative paths from `{CWD}`).
-4. For each of `{SAMPLESHEET_CSV}`, `{CONTRASTS_CSV}` (and `{SHEET_PREFIX}_pairs.csv` with a paired design): if it already exists in `{CWD}`, ask (numbered): 1. overwrite · 2. choose another filename. Then move the files into `{CWD}` under their names and remove the scratch directory with `rmdir "$T"` (it is empty after the moves).
-5. Show the files in full.
+**Writing the sheets.** Shell variables and functions do not persist between Bash tool calls, so the whole procedure is one Bash call:
+1. Before that call, check which of `{SAMPLESHEET_CSV}`, `{CONTRASTS_CSV}` (and `{SHEET_PREFIX}_pairs.csv` with a paired design) already exist in `{CWD}` (`ls`). For each, ask (numbered): 1. overwrite · 2. choose another filename (store the new name in `{SAMPLESHEET_CSV}` or `{CONTRASTS_CSV}`, which later steps read; for the pairs file, replace `{SHEET_PREFIX}_pairs.csv` in the call).
+2. In one Bash call: paste the whole sheet-validation block above (both functions), then the block below with the rows filled in (samplesheet header `sample,fastq_1,fastq_2,strandedness,condition` for FASTQ with `{STRANDEDNESS}` in every row, or `sample,condition,genome_bam,strandedness,single_end` for BAM; the sanitised names; with a paired design the rows sorted as described under **Paired design**). Use the last line for an independent design, or replace it by the commented paired line (with the pairs file) when `{PAIRED_DESIGN}` is `true`.
+```bash
+cd "{CWD}" || exit 1
+T=$(mktemp -d) || exit 1
+cat > "$T/samplesheet.csv" <<'END_OF_SHEET'
+{SAMPLESHEET HEADER AND ROWS}
+END_OF_SHEET
+cat > "$T/contrasts.csv" <<'END_OF_SHEET'
+contrast,treatment,control
+{CONTRAST ROWS}
+END_OF_SHEET
+# paired design only:
+# cat > "$T/pairs.csv" <<'END_OF_SHEET'
+# sample,subject
+# {SAMPLE,SUBJECT ROWS}
+# END_OF_SHEET
+# install_rnasplice_sheets "$T" {SOURCE} 1 {SAMPLESHEET_CSV} {CONTRASTS_CSV} {SHEET_PREFIX}_pairs.csv
+install_rnasplice_sheets "$T" {SOURCE} 0 {SAMPLESHEET_CSV} {CONTRASTS_CSV}
+```
+3. On `ERROR` lines nothing was moved and the scratch directory is already removed. Fix the cause with the user — never edit the validator — and run the whole call again. A missing or empty input file stops the call the same way: correct the path in the rows (Step 4) or stop.
+4. On `WROTE`, show the files in full.
 
 Keep for Step 8: the number of distinct samples, the size of the smallest compared condition and, per contrast, the number of treatment and control samples.

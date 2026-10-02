@@ -58,6 +58,13 @@ good_fastq; sed -i '2a WT_1,a2_R1.fastq.gz,a2_R2.fastq.gz,reverse,WT' "$S"; good
 good_fastq; printf '%s\n' "HET_1,e_R1.fastq.gz,e_R2.fastq.gz,reverse,HET" "HET_2,f_R1.fastq.gz,f_R2.fastq.gz,reverse,HET" >> "$S"; good_con; bad paired_three_conditions fastq 1 'exactly two conditions'
 good_fastq; printf '%s\n' "KO_3,e_R1.fastq.gz,e_R2.fastq.gz,reverse,KO" >> "$S"; good_con; bad paired_unequal fastq 1 'same number of samples in both conditions'
 : > "$S"; good_con; bad empty_samplesheet fastq 0 'missing or empty'
+# Review fixes: reserved condition labels, argument checks, clearer messages
+good_fastq; sed -i 's/,KO$/,NA/' "$S"; printf '%s\n' "contrast,treatment,control" "NA_vs_WT,NA,WT" > "$C"; bad reserved_condition fastq 0 'condition "NA" of KO_1 is an R reserved word'
+good_fastq; good_con; bad bad_source FASTQ 0 'source must be fastq or genome_bam'
+good_fastq; good_con; bad bad_paired_flag fastq true 'paired design must be 0 or 1'
+good_fastq; sed -i '1d' "$S"; good_con; out=$(validate_rnasplice_sheets "$S" "$C" fastq 0)
+grep -qF 'samplesheet header is' <<< "$out" && ! grep -qF 'has 1 sample' <<< "$out" || { echo "FAIL: case header_missing_no_size_noise: got: $out"; fail=1; }
+good_fastq; good_con; pairs WT_1,m1 WT_2,m2 KO_1,m1 KO_2,m3; bad subject_unpartnered fastq 1 'subject m3 has no sample in condition WT' "$P"
 # genome-BAM sheets with the header recorded by the verification run
 BH=$(gv BAM_SHEET_HEADER)
 bam_rows() { awk -F',' -v h="$BH" 'BEGIN { n = split(h, c, ","); print h }
@@ -67,5 +74,26 @@ printf '%s\n' "WT_1,WT,a.bam" "WT_1,WT,b.bam" "KO_1,KO,c.bam" "KO_2,KO,d.bam" | 
 printf '%s\n' "WT_1,WT,a.cram" "WT_2,WT,b.bam" "KO_1,KO,c.bam" "KO_2,KO,d.bam" | bam_rows > "$S"; good_con; bad bam_not_bam genome_bam 0 'does not end in .bam'
 printf '%s\n' "WT_1,WT,a.bam" "WT_2,WT,b.bam" "KO_2,KO,d.bam" "KO_1,KO,c.bam" | bam_rows > "$S"; good_con; pairs WT_1,m1 WT_2,m2 KO_1,m1 KO_2,m2; bad bam_paired_order genome_bam 1 'sort the rows of each condition by subject' "$P"
 printf '%s\n' "WT_1,WT,a.bam" "WT_2,WT,b.bam" "KO_1,KO,c.bam" "KO_2,KO,d.bam" | bam_rows > "$S"; good_con; ok bam_paired genome_bam 1 "$P"
+# install_rnasplice_sheets (same block): validate, check the input files, move into the current directory, always remove the scratch dir
+W="$TEST_TMP/work"; mkdir -p "$W"; for f in a b c d; do echo x > "$W/${f}_R1.fastq.gz"; echo x > "$W/${f}_R2.fastq.gz"; done
+declare -F install_rnasplice_sheets >/dev/null || { echo "FAIL: install_rnasplice_sheets is not defined by the block"; fail=1; }
+# inst <case> <expected rc> <expected text> <arguments after the scratch dir>; installs copies of $S, $C (and $P when non-empty)
+inst() { local name=$1 want=$2 text=$3 d out rc; shift 3
+  d=$(mktemp -d "$TEST_TMP/scr.XXXXXX"); cp "$S" "$d/samplesheet.csv"; cp "$C" "$d/contrasts.csv"; [ -s "$P" ] && cp "$P" "$d/pairs.csv"
+  rm -f "$W/out_s.csv" "$W/out_c.csv" "$W/out_p.csv"
+  out=$(cd "$W" && install_rnasplice_sheets "$d" "$@"); rc=$?
+  [ ! -e "$d" ] || { echo "FAIL: case $name: scratch directory left behind"; fail=1; }
+  [ $rc -eq "$want" ] && grep -qF -- "$text" <<< "$out" || { echo "FAIL: case $name: expected rc $want and '$text', got rc $rc: $out"; fail=1; }; }
+good_fastq; good_con; : > "$P"; inst install_ok 0 "WROTE out_s.csv out_c.csv" fastq 0 out_s.csv out_c.csv
+cmp -s "$S" "$W/out_s.csv" && cmp -s "$C" "$W/out_c.csv" || { echo "FAIL: case install_ok: sheets not moved unchanged"; fail=1; }
+good_fastq; printf '%s\n' "contrast,treatment,control" "KO_vs_WT,K0,WT" > "$C"; inst install_invalid 1 'is not a value of the condition column' fastq 0 out_s.csv out_c.csv
+[ ! -e "$W/out_s.csv" ] && [ ! -e "$W/out_c.csv" ] || { echo "FAIL: case install_invalid: a sheet was moved although validation failed"; fail=1; }
+good_fastq; good_con; mv "$W/d_R2.fastq.gz" "$W/d_R2.keep"; inst install_missing_input 1 'input file d_R2.fastq.gz is missing or empty' fastq 0 out_s.csv out_c.csv; mv "$W/d_R2.keep" "$W/d_R2.fastq.gz"
+[ ! -e "$W/out_s.csv" ] || { echo "FAIL: case install_missing_input: a sheet was moved although an input file is missing"; fail=1; }
+good_fastq; good_con; pairs WT_1,m1 WT_2,m2 KO_1,m1 KO_2,m2; inst install_paired_ok 0 "WROTE out_s.csv out_c.csv out_p.csv" fastq 1 out_s.csv out_c.csv out_p.csv
+cmp -s "$P" "$W/out_p.csv" || { echo "FAIL: case install_paired_ok: pairs file not moved"; fail=1; }
+good_fastq; good_con; pairs WT_1,m1 WT_2,m2 KO_1,m2 KO_2,m1; inst install_paired_order 1 'sort the rows of each condition by subject' fastq 1 out_s.csv out_c.csv out_p.csv
+good_fastq; good_con; inst install_paired_no_name 1 'a paired design needs the pairs file name' fastq 1 out_s.csv out_c.csv
+good_fastq; good_con; : > "$P"; inst install_bad_target 1 'must be a plain file name' fastq 0 sub/out_s.csv out_c.csv
 forbidden_ran && fail=1
 [ $fail -eq 0 ] && echo "VALIDATE PASS" || exit 1
