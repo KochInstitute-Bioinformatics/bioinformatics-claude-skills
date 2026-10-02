@@ -44,7 +44,7 @@ gate_ok RMATS_BAMLIST_ORDER '^(sheet|sorted_by_name|unordered)$'
 gate_ok RMATS_B1_GROUP '^(treatment|control)$'
 gate_ok STAR_VERSION_GENOME '^[0-9]+\.[0-9]+\.[0-9]+[a-z]?$'
 gate_ok SALMON_INDEX_VERSION '^[0-9]+$'
-# SALMON_INDEX_VERSION stays a validated fixture value, but the skill no longer uses it: by controller ruling (Task 4 review I3)
+# SALMON_INDEX_VERSION stays a validated fixture value, but the skill no longer uses it: by design
 # the skill never reuses a Salmon index (the pipeline always builds its own from the GTF-derived transcripts).
 gate_ok DTU_FILTER_SCOPE '^(all_samples|per_contrast)$'
 gate_ok TEST_CONTRAST '^[A-Za-z][A-Za-z0-9_]*_vs_[A-Za-z][A-Za-z0-9_]*$'
@@ -182,7 +182,7 @@ need "FC_STRAND=\"$(gv BAM_FC_STRAND)\""
 need "1. Start from the FASTQ files instead (go to Step 4a)"
 need "DTU and SUPPA2 need Salmon quantification from reads"
 [ "$(gv BAM_RMATS_LIBTYPE)" = none ] || need "$(gv BAM_SHEET_HEADER)"
-# Controller ruling (b): a BAM sheet with strandedness/single_end columns carries the asked values in every row.
+# a BAM sheet with strandedness/single_end columns carries the asked values in every row.
 case "$(gv BAM_SHEET_HEADER)" in *,strandedness,single_end*)
   need "write \`{STRANDEDNESS}\` and \`true\` (single-end) or \`false\` in every row" ;; esac
 # Task 2 review fixes (I1-I3, minors)
@@ -265,8 +265,8 @@ need "paste the whole block at the start of every Bash call that uses its functi
 need "In one Bash call, define the function below and run it on every one of those files"
 need "In one Bash call, define this function and run \`bam_input_allowed {STRANDEDNESS} {LAYOUT}\`"
 need "install_rnasplice_sheets() {"
-need "install_rnasplice_sheets \"\$T\" {SOURCE} 0 {SAMPLESHEET_CSV} {CONTRASTS_CSV}"
-need "install_rnasplice_sheets \"\$T\" {SOURCE} 1 {SAMPLESHEET_CSV} {CONTRASTS_CSV} {SHEET_PREFIX}_pairs.csv"
+need "install_rnasplice_sheets \"\$T\" {SOURCE} 0 \"{SAMPLESHEET_CSV}\" \"{CONTRASTS_CSV}\""
+need "install_rnasplice_sheets \"\$T\" {SOURCE} 1 \"{SAMPLESHEET_CSV}\" \"{CONTRASTS_CSV}\" \"{SHEET_PREFIX}_pairs.csv\""
 need "The scratch files and directory are removed on every path"
 forbid_re 'in the Bash tool' "'in the Bash tool' (a function defined in one Bash call cannot be used in another)"
 # $T (the scratch directory) may appear only inside fenced code blocks: a prose step that uses it runs in another call.
@@ -298,7 +298,7 @@ need "1. Reuse (default) · 2. Let the pipeline build its own"
 need "\`gencode: false\` is written either way"
 need "download_genome_{REF_TAG}.sh"
 need "Never type a URL from memory"
-# Controller rulings: one Bash call per procedure; STAR index reuse only for the gate's index format; sjdbOverhang note;
+# Design: one Bash call per procedure; STAR index reuse only for the gate's index format; sjdbOverhang note;
 # the wizard never builds an index; pipeline-built indexes are not kept.
 need "only when \`versionGenome\` is \`$(gv STAR_VERSION_GENOME)\`"
 need "grep -E '^(versionGenome|sjdbOverhang)[[:space:]]' \"{STAR_DIR}/genomeParameters.txt\""
@@ -337,7 +337,7 @@ need "2. (numbered): 1. Ensembl release in the standard folder (default) · 2. C
 need "gene IDs with a version suffix (\`ENSG00000000003.15\`) indicate GENCODE, without one Ensembl"
 need "BAM input: ask \"What is the read length of the sequencing (for example 100 or 150)?\""
 forbid_re 'Ensembl release [0-9]+' "a hard-coded Ensembl release (read it at run time)"
-# I3 (controller ruling): no Salmon index reuse
+# no Salmon index reuse
 need "\`{SALMON_INDEX}\` is always empty: the pipeline always builds its own Salmon index from the transcripts it extracts from the GTF"
 need "lacks the GTF's non-coding transcripts, which would get no quantification (DTU, SUPPA2) without any error"
 need "(BAM input uses no index: skip this part; \`{STAR_INDEX}\` is empty.)"
@@ -423,8 +423,8 @@ defaults_equal() {
 defaults_equal "$MOD"
 # --- end Task 5
 
-# --- Task 5 additions (controller rulings b, c, e; fixtures of the pinned revision)
-# Ruling (e): every option key of every module group of the recorded schema is written exactly once (also for modules that are
+# --- Task 5 additions (fixtures of the pinned revision)
+# every option key of every module group of the recorded schema is written exactly once (also for modules that are
 # switched off), except keys without a default (config value null), which are never written. No key appears twice.
 mod_keys=$(awk '/^        "[A-Za-z_0-9]+": \{/ { g = $1; gsub(/[":{ ]/, "", g) }
   /^                "[A-Za-z_0-9]+": \{/ { k = $1; gsub(/[":{ ]/, "", k); print g "\t" k }' "$FIX/rnasplice_schema.json")
@@ -455,7 +455,7 @@ need "Options without a default value"
 # Leafcutter is the one module that is off in the pipeline's own config at this revision.
 [ "$(cfg_default leafcutter)" = false ] && need "the one exception at this revision is LeafCutter, which is off by default"
 forbid "the pipeline default is true for all of them"
-# Ruling (b): BAM input switches DTU and SUPPA2 off; no Salmon runs then (gate G5: zero Salmon tasks).
+# BAM input switches DTU and SUPPA2 off; no Salmon runs then (gate G5: zero Salmon tasks).
 need "With BAM input, options 2 and 5 are not offered (they need Salmon quantification from reads), and \`{RUN_SUPPA}\` and \`{RUN_DEXSEQ_DTU}\` are \`false\`."
 need "Set \`{RUN_RMATS}\`, \`{RUN_SUPPA}\`, \`{RUN_DEXSEQ_EXON}\`, \`{RUN_EDGER_EXON}\` and \`{RUN_DEXSEQ_DTU}\` to \`true\` for the chosen analyses and \`false\` for all others."
 need "At least one analysis must be chosen."
@@ -528,7 +528,7 @@ need "for event-level splicing questions (which exons or events change) use rMAT
 need "differential expression plus DTU on the Salmon output of an existing nf-core/rnaseq run stays in \`/bulk-rnaseq-pipeline\`"
 # --- end Task 5 review fixes
 
-# --- Task 6 (Steps 10-11), gate branch B, with the controller rulings that override the plan's Task 6 text:
+# --- Task 6 (Steps 10-11), gate branch B:
 # no `nextflow pull` (a pinned revision downloads on first use), no salmon_index, Salmon selector '.*:SALMON_QUANT.*',
 # no max_* params (HAS_MAX_PARAMS=no) but process.resourceLimits (HAS_RESOURCE_LIMITS=yes), no Nextflow environment helper.
 need "## Step 10 — MultiQC title, output directory, nextflow.config"
@@ -567,12 +567,12 @@ for l in 'module add miniconda3/v4 || { echo "ERROR: cannot load module minicond
          'export NXF_SINGULARITY_CACHEDIR="${NXF_SINGULARITY_CACHEDIR:-$HOME/.singularity/cache}"'; do
   printf '%s\n' "$SUB" | grep -qxF -- "$l" || { echo "FAIL: the submission script must contain the line: $l"; fail=1; }
 done
-# Ruling (a): no pull, and NXF_OFFLINE is neither set nor unset by the script (it may be set in ~/.bashrc; the first download works anyway).
+# no pull, and NXF_OFFLINE is neither set nor unset by the script (it may be set in ~/.bashrc; the first download works anyway).
 ! printf '%s\n' "$SUB" | grep -q 'NXF_OFFLINE' || { echo "FAIL: the submission script must not set or unset NXF_OFFLINE"; fail=1; }
 printf '%s\n' "$SUB" | grep -qxF "NF_MIN=\"$(gv NEXTFLOW_MIN)\"; NF_MAX_EXCL=\"$(gv NEXTFLOW_MAX_EXCL)\"" || { echo "FAIL: the submission script must carry the verified Nextflow range"; fail=1; }
 printf '%s\n' "$SUB" | grep -qxF '#SBATCH -n 2' && printf '%s\n' "$SUB" | grep -qxF '#SBATCH --mem=8G' && printf '%s\n' "$SUB" | grep -qxF '#SBATCH -p bcc' \
-  || { echo "FAIL: the head job must request -n 2, --mem=8G and -p bcc (approved by the user)"; fail=1; }
-# nextflow.config: the selector table (plan decision 17) checked against every process name of the verification runs and the
+  || { echo "FAIL: the head job must request -n 2, --mem=8G and -p bcc (the head job only coordinates the pipeline)"; fail=1; }
+# nextflow.config: the selector table checked against every process name of the verification runs and the
 # resources the reference run (G3) requested. A row gives '.*:ROW' when every real process name ending in a component that starts
 # with ROW ends in exactly ROW, and '.*:ROW.*' otherwise (Salmon: SALMON_QUANT_SALMON, SALMON_QUANT_STAR); rows that match no
 # process are left out. Nextflow matches withName regexes against the whole process name (grep -Ex here).
@@ -642,7 +642,7 @@ else
 fi
 [ "$(gv HAS_RESOURCE_LIMITS)" = yes ] && need "\`resourceLimits\` caps every task at 16 CPUs, 64 GB and 24 h"
 need "\`SALMON_QUANT_SALMON\` and \`SALMON_QUANT_STAR\`"
-# Task 6 review I3 (controller ruling): SALMON_QUANT = 8 CPU / 36 GB / 8h, the pipeline's own tested label values; not measured on real data.
+# SALMON_QUANT = 8 CPU / 36 GB / 8h, the pipeline's own tested label values; not measured on real data.
 need "It requests 8 CPUs, 36 GB and 8 h: the memory and time of the pipeline's own tested process label for Salmon quantification"
 # Task 8 review I2: no gate run applied the SALMON_QUANT.* selector (the gate config's .*:SALMON_QUANT matched nothing).
 need "The resources of every selector are judgement: they are not measured on real data."
@@ -754,7 +754,7 @@ need "Raw FASTQ/BAM files are read-only"
 need "Never pass pipeline parameters on the \`nextflow run\` line"
 need "Never run Nextflow, conda, Java, Python or R on the login node"
 [ "$(gv SALMON_ROUTE)" = star_salmon_both ] && need "use the \`star_salmon\` ones"
-# Controller overrides (Task 7 dispatch): cut-offs are the user's choice (Step 8 gives Akerberg et al. 2022 as an example only);
+# cut-offs are the user's choice (Step 8 gives Akerberg et al. 2022 as an example only);
 # DTU/SUPPA2 naming and the reversed DTU fold-change sign (gate_report.md, output tree); BAM input lists only the three STAR modules;
 # the wizard submits nothing itself and says how to follow the run; the pinned unreleased revision; test data only.
 forbid "Usual filters"
@@ -831,7 +831,7 @@ forbid "nextflow log"
 need "import and Salmon index differ"
 # --- end Task 7 review fixes
 
-# --- Task 8 (README, run_all_tests.sh), gate branch B, with the controller corrections that override the plan's Task 8 text
+# --- Task 8 (README, run_all_tests.sh), gate branch B
 # (no explicit pull, STAR-only index reuse, both paired-test defaults, corrected directions, resources, BAM verified from code,
 # unreleased pin, test runner with --full, validation on nf-core test data only, honest limitations).
 forbidr() { ! grep -qF -- "$1" "$README" 2>/dev/null || { echo "FAIL: README has forbidden text: $1"; fail=1; }; }
@@ -912,7 +912,8 @@ done
 # Correction 8: the test runner (default and --full), the git requirement.
 needr "bash tests/run_all_tests.sh --full"
 needr "RNASPLICE_TEST_GIT_DIR"
-needr "The default run takes 13 to 15 minutes (bash, awk and sed only) and skips the proof-tool self-test (\`test_proof_tools.sh\`, about 30 minutes)"
+needr "The default run takes about 17 minutes (bash, awk and sed only) and skips the proof-tool self-test (\`test_proof_tools.sh\`, 30 to 35 minutes)"
+needr "\`bash tests/run_all_tests.sh --full\` includes it (about 50 minutes in all)."
 forbidr "about 20 minutes"
 # Correction 9: what was verified: the gate date, every run directory of RUN_DIRS, nf-core test data only.
 needr "Verification gate ($(gv GATE_DATE))"
@@ -1038,4 +1039,38 @@ needr "job 11380459, wall time 6 min 16 s, 43/43 tasks COMPLETED"
 needr "the rMATS sign on 202/202 rows of SE.MATS.JC.txt and the SUPPA2 sign on 1098/1098 local and 1854/1854 isoform events"
 needr "- Not exercised: real data; the Ensembl download helper; a paired design; strandedness other than unstranded, and single-end input; a human- or mouse-size genome; the time and memory of any process on real data."
 # --- end Task 9 fix round
+# --- Final review fixes (I1, I3, M1, M2, M4, M6)
+# I1: custom prefix and custom file names: Step 10's character rule; install_rnasplice_sheets refuses a split or odd name.
+need "A custom prefix (and every custom file name of this step) may contain only letters, digits, \`.\`, \`_\` and \`-\`"
+need "2. choose another filename (letters, digits, \`.\`, \`_\` and \`-\` only, as for the custom prefix;"
+need "[ \$# -le 6 ] || { echo \"ERROR: \$# arguments, at most 6: a file name was split at a space"
+need "''|*/*|*[!A-Za-z0-9._-]*) echo \"ERROR: target name '\$p' must be a plain file name in the current directory (letters, digits, ., _ and - only)\""
+# I3: no tool that must run on a compute node is invoked in the wizard text outside the submission script (as for nextflow).
+for spec in 'conda (activate|create|install|run|env)( |$)' '(Rscript|R +(-e|--vanilla|-f|CMD))( |$)' 'STAR +--?[A-Za-z]' 'salmon +(index|quant|--?[A-Za-z])'; do
+  pat="(^|[^A-Za-z_])$spec"
+  n_all=$(grep -cE "$pat" "$SKILL"); n_sub=$(printf '%s\n' "$SUB" | grep -cE "$pat")
+  [ "$n_all" -eq "$n_sub" ] || { echo "FAIL: '$spec' is invoked outside the submission script ($n_all lines in the skill, $n_sub in the script); the wizard must never run it on the login node"; fail=1; }
+done
+# M1: rMATS prep runs per sample at this revision (gate trace: 4 prep tasks, 1 post task).
+need "At this revision rMATS prepares each sample once and runs one post step per contrast"
+forbid "rMATS runs one prep/post pair per contrast"
+# M2: the explicit fastq_layout call, unmatched patterns, subdirectories, bash 4.
+need "\`shopt -s nullglob; fastq_layout \"{FASTQ_DIR}\"/*.fastq.gz \"{FASTQ_DIR}\"/*.fq.gz\`"
+need "Only the files directly in \`{FASTQ_DIR}\` are used, not its subdirectories"
+need "it needs bash 4 or newer"
+need "is not a file (an unmatched pattern? call with shopt -s nullglob)"
+# M4: contig names.
+need "The FASTA and the GTF must use the same contig names"
+need "tell the user to compare the \`@SQ\` names of \`samtools view -H\` of one BAM with the FASTA headers and the first column of the GTF, on a compute node"
+needr "- FASTA, GTF and BAM contig names must match"
+# M6: executor throttles of the config template.
+printf '%s\n' "$CFG" | grep -qxF '            queueSize = 10' && printf '%s\n' "$CFG" | grep -qxF "            submitRateLimit = '10/1min'" \
+  || { echo "FAIL: the nextflow.config template must keep queueSize = 10 and submitRateLimit = '10/1min'"; fail=1; }
+# I2, M7: what the acceptance runs cover at the final skill.
+needr "The runs and the static gate below were made on the skill text of commit bcb63e9."
+needr "\`nextflow.config\` is byte-identical to the Step 10 template, and \`nf-core_rnasplice_dev-1b44723.sh\` and \`261002_{a,b,c}_params.yaml\` match the Step 11 templates (with the Step 8 block) line for line"
+needr "- Static gate (commit bcb63e9):"
+needr "its automatic sample names still ended in \`_sorted\` (made before Step 4b strips \`_sorted.bam\`; that fix is unit-tested, run (c) was not repeated)"
+needr "| bash 4 or newer |"
+# --- end Final review fixes
 [ $fail -eq 0 ] && echo "PASS" || exit 1

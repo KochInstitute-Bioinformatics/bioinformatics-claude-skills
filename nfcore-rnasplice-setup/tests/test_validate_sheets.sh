@@ -42,7 +42,7 @@ good_fastq; sed -i '2s/a_R1.fastq.gz/a_R1.fq/' "$S"; good_con; bad not_gz fastq 
 good_fastq; sed -i '2s/,a_R2.fastq.gz,/,"a_R2.fastq.gz",/' "$S"; good_con; bad quoted fastq 0 'contains a double quote'
 good_fastq; good_con; sed -i 's/$/\r/' "$S" "$C"; ok crlf fastq 0
 good_fastq; sed -i '1s/^sample,/Sample,/' "$S"; good_con; bad samplesheet_header fastq 0 'samplesheet header is'
-# Paired design (controller ruling d): a subject per sample; within each condition the i-th sample has the same subject.
+# Paired design: a subject per sample; within each condition the i-th sample has the same subject.
 good_fastq; good_con; pairs WT_1,m1 WT_2,m2 KO_1,m1 KO_2,m2; ok paired_two_by_two fastq 1 "$P"
 good_fastq; good_con; bad paired_no_pairs_file fastq 1 'a paired design needs the pairs file'
 good_fastq; good_con; pairs WT_1,m1 WT_2,m2 KO_1,m2 KO_2,m1; bad paired_order_mismatch fastq 1 'sort the rows of each condition by subject' "$P"
@@ -95,5 +95,11 @@ cmp -s "$P" "$W/out_p.csv" || { echo "FAIL: case install_paired_ok: pairs file n
 good_fastq; good_con; pairs WT_1,m1 WT_2,m2 KO_1,m2 KO_2,m1; inst install_paired_order 1 'sort the rows of each condition by subject' fastq 1 out_s.csv out_c.csv out_p.csv
 good_fastq; good_con; inst install_paired_no_name 1 'a paired design needs the pairs file name' fastq 1 out_s.csv out_c.csv
 good_fastq; good_con; : > "$P"; inst install_bad_target 1 'must be a plain file name' fastq 0 sub/out_s.csv out_c.csv
+# A custom prefix with a space ("KO vs WT"): quoted, the name check refuses it; unquoted, the split names exceed the argument
+# count. Either way nothing is moved and the scratch directory is removed.
+good_fastq; good_con; : > "$P"; inst install_space_quoted 1 'must be a plain file name in the current directory (letters, digits, ., _ and - only)' fastq 0 "KO vs WT_samplesheet.csv" "KO vs WT_contrasts.csv"
+good_fastq; good_con; : > "$P"; inst install_space_split 1 'arguments, at most 6: a file name was split at a space' fastq 0 KO vs WT_samplesheet.csv KO vs WT_contrasts.csv
+[ -z "$(ls -A "$W" | grep -v -e '_R[12]\.fastq\.gz$' -e '^scr\.')" ] || { echo "FAIL: case install_space: a file was moved: $(ls -A "$W")"; fail=1; }
+good_fastq; good_con; : > "$P"; inst install_quote 1 'letters, digits, ., _ and - only' fastq 0 "KO\"x_samplesheet.csv" out_c.csv
 forbidden_ran && fail=1
 [ $fail -eq 0 ] && echo "VALIDATE PASS" || exit 1

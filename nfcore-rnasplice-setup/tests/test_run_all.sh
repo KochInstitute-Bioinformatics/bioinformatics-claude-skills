@@ -6,7 +6,7 @@
 # Checks: the exact PASS lines and exit 0; a failing suite gives exit 1, "SOME TESTS FAILED" and no PASS line, and the later
 # suites still run; every test of TESTS runs once, in order, with the skill path, under env -i with PATH=[git dir:]/usr/bin:/bin;
 # --full runs FULL_TESTS (default does not, and says SKIPPED); the git version comparison (1.8.3.1, 1.8.4 stop; 1.8.5, 1.10.0,
-# 2.49.0 pass); RNASPLICE_TEST_GIT_DIR without git; the usage check; an unnamed tests/*.sh; the root README row checks.
+# 2.49.0 pass); RNASPLICE_TEST_GIT_DIR without git; the usage check; an unnamed tests/*.sh; the root README row and internet-clause checks.
 # CHECK_RUN_ALL (test hook of prove_mutations.sh, target runall) replaces the runner under test; default: tests/run_all_tests.sh.
 # Prints "RUN ALL PASS (<n>)" or exits 1.
 set -u
@@ -21,7 +21,8 @@ mkdir -p "$D/tests" "$FL" || exit 1
 cp "$RA" "$D/tests/run_all_tests.sh" || exit 1
 echo "fake skill" > "$D/nfcore-rnasplice-setup.md"
 ROW='| nf-core/rnasplice setup | `/nfcore-rnasplice-setup` | fake row |'
-printf '# fake root README\n\n%s\n' "$ROW" > "$F/README.md"
+INET='- Internet access ...; `/nfcore-rnasplice-setup` needs internet on the compute nodes: its job downloads the pinned nf-core/rnasplice revision and the containers'
+printf '# fake root README\n\n%s\n%s\n' "$ROW" "$INET" > "$F/README.md"
 lst() { sed -n "s/^$1=\"\\(.*\\)\"\$/\\1/p" "$D/tests/run_all_tests.sh"; }
 TESTS=$(lst TESTS); FULL=$(lst FULL_TESTS); NOT=$(lst NOT_TESTS)
 [ -n "$TESTS" ] && [ -n "$FULL" ] || { echo "FAIL: cannot read TESTS or FULL_TESTS from the runner"; exit 1; }
@@ -45,7 +46,7 @@ PASS_FULL="ALL TESTS PASS (full run, proof-tool self-test included)"
 want_list=$(echo $TESTS)
 
 # 1. all pass, default run
-runit 0 -- && { has "$PASS_DEFAULT"; has "== SKIPPED: $FULL (proof-tool self-test, about 30 minutes; run with --full)"
+runit 0 -- && { has "$PASS_DEFAULT"; has "== SKIPPED: $FULL (proof-tool self-test, 30 to 35 minutes; run with --full)"
   [ "$(ran)" = "$want_list" ] || { echo "FAIL: case $n: tests run: '$(ran)', expected every test of TESTS once, in order: '$want_list'"; bad=1; }
   awk -F'|' -v sk="$D/tests/../nfcore-rnasplice-setup.md" '$2 != sk || $3 != "/usr/bin:/bin" || $4 != "unset"' "$L" | grep -q . \
     && { echo "FAIL: case $n: a test got another argument, another PATH or the caller's environment (not env -i):"; awk -F'|' -v sk="$D/tests/../nfcore-rnasplice-setup.md" '$2 != sk || $3 != "/usr/bin:/bin" || $4 != "unset"' "$L" | head -3; bad=1; }; }
@@ -78,12 +79,14 @@ runit 1 -- --bogus && { has "usage: run_all_tests.sh [--full]"; [ -z "$(ran)" ] 
 printf '#!/bin/bash\n' > "$D/tests/test_unnamed_fake.sh"
 runit 1 -- && { has "FAIL: tests/test_unnamed_fake.sh is not named in run_all_tests.sh (TESTS, FULL_TESTS or NOT_TESTS)"; hasnot "ALL TESTS PASS"; }
 rm -f "$D/tests/test_unnamed_fake.sh"
-# 9. root README: row missing; row still marked in development
-printf '# fake root README\n' > "$F/README.md"
+# 9. root README: row missing; row still marked in development; the compute-node internet clause missing
+printf '# fake root README\n\n%s\n' "$INET" > "$F/README.md"
 runit 1 -- && { has "FAIL: root README row missing"; hasnot "ALL TESTS PASS"; }
-printf '# fake root README\n\n%s\n%s\n' "$ROW" "| x | y | (in development, not yet validated) z |" > "$F/README.md"
+printf '# fake root README\n\n%s\n%s\n%s\n' "$ROW" "$INET" "| x | y | (in development, not yet validated) z |" > "$F/README.md"
 runit 1 -- && { has "FAIL: root README row still marked in development"; hasnot "ALL TESTS PASS"; }
 printf '# fake root README\n\n%s\n' "$ROW" > "$F/README.md"
+runit 1 -- && { has "FAIL: root README Requirements must say that /nfcore-rnasplice-setup needs internet on the compute nodes"; hasnot "ALL TESTS PASS"; }
+printf '# fake root README\n\n%s\n%s\n' "$ROW" "$INET" > "$F/README.md"
 runit 0 -- && has "$PASS_DEFAULT"
 
 forbidden_ran && bad=1

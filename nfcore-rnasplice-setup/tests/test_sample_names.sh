@@ -122,6 +122,14 @@ lay missing_r2 "paired X_1.fq.gz X_2.fq.gz;single Y_1.fq.gz;LAYOUT mixed" X_1.fq
 lay orphan_r2 "single Y_2.fq.gz;LAYOUT single" Y_2.fq.gz
 lay subdir "paired data/S_1.fastq.gz data/S_2.fastq.gz;LAYOUT paired" data/S_1.fastq.gz data/S_2.fastq.gz
 
+# no file, or an unmatched pattern passed literally (no nullglob): an ERROR line, no bogus single row
+got=$(fastq_layout); [ "$got" = "ERROR: no FASTQ file given" ] || { echo "FAIL: layout case no file: got '$got'"; fail=1; }
+mkdir -p "$TEST_TMP/lay_glob"; : > "$TEST_TMP/lay_glob/A_1.fastq.gz"; : > "$TEST_TMP/lay_glob/A_2.fastq.gz"
+got=$(cd "$TEST_TMP/lay_glob" && fastq_layout A_1.fastq.gz A_2.fastq.gz '*.fq.gz'); rc=$?
+[ $rc -ne 0 ] && [ "$got" = "ERROR: *.fq.gz is not a file (an unmatched pattern? call with shopt -s nullglob)" ] || { echo "FAIL: layout case unmatched glob: rc $rc, got '$got'"; fail=1; }
+got=$(cd "$TEST_TMP/lay_glob" && shopt -s nullglob && fastq_layout ./*.fastq.gz ./*.fq.gz | tr '\n' ';')
+[ "$got" = "paired ./A_1.fastq.gz ./A_2.fastq.gz;LAYOUT paired;" ] || { echo "FAIL: layout case nullglob call: got '$got'"; fail=1; }
+
 # 7. Sample names of genome BAMs (bam_sample_name): the longest known suffix goes, so no name ends in _sorted
 bn() { local got; got=$(bam_sample_name "$1"); [ "$got" = "$2" ] || { echo "FAIL: BAM name case $1: expected '$2', got '$got'"; fail=1; }; }
 bn star/ERR188383_chrX_sorted.bam ERR188383_chrX

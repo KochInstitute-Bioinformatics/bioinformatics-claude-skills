@@ -120,15 +120,15 @@ T3f-rseqc	check	skill	s/In one Bash call, define the function below and run it/D
 T3f-bamrule	check	skill	s/In one Bash call, define this function and run/Define this function and run/	missing required text: In one Bash call, define this function and run `bam_input_allowed {STRANDEDNESS} {LAYOUT}`
 T3f-names	check	skill	s/Paste this block at the start of every Bash call that uses these functions and use them/Define these functions in the Bash tool and use them/	forbidden pattern present: 'in the Bash tool'
 T3f-Tprose	check	skill	s/^4\. On `WROTE`, show the files in full\./4. On `WROTE`, run `rmdir "$T"` and show the files in full./	used outside a code block
-T3f-call0	check	skill	s/^install_rnasplice_sheets "\$T" {SOURCE} 0 {SAMPLESHEET_CSV} {CONTRASTS_CSV}$/install_rnasplice_sheets "$T"/	missing required text: install_rnasplice_sheets "$T" {SOURCE} 0 {SAMPLESHEET_CSV} {CONTRASTS_CSV}
-T3f-call1	check	skill	s/^# install_rnasplice_sheets "\$T" {SOURCE} 1 .*$/# install_rnasplice_sheets "$T" {SOURCE} 1/	missing required text: install_rnasplice_sheets "$T" {SOURCE} 1 {SAMPLESHEET_CSV} {CONTRASTS_CSV} {SHEET_PREFIX}_pairs.csv
+T3f-call0	check	skill	s/^install_rnasplice_sheets "\$T" {SOURCE} 0 "{SAMPLESHEET_CSV}" "{CONTRASTS_CSV}"$/install_rnasplice_sheets "$T" {SOURCE} 0 {SAMPLESHEET_CSV} {CONTRASTS_CSV}/	missing required text: install_rnasplice_sheets "$T" {SOURCE} 0 "{SAMPLESHEET_CSV}" "{CONTRASTS_CSV}"
+T3f-call1	check	skill	s/^# install_rnasplice_sheets "\$T" {SOURCE} 1 .*$/# install_rnasplice_sheets "$T" {SOURCE} 1/	missing required text: install_rnasplice_sheets "$T" {SOURCE} 1 "{SAMPLESHEET_CSV}" "{CONTRASTS_CSV}" "{SHEET_PREFIX}_pairs.csv"
 T3f-installdef	validate	skill	s/^install_rnasplice_sheets() {/install_sheets_old() {/	FAIL: install_rnasplice_sheets is not defined by the block
 T3f-cleanup-run	validate	skill	/^  rmdir "\$T" || echo/d	FAIL: case install_ok: scratch directory left behind
 T3f-cleanup-err	validate	skill	s/^  rm -f "\$T\/samplesheet.csv" "\$T\/contrasts.csv" "\$T\/pairs.csv"$/  :/	FAIL: case install_invalid: scratch directory left behind
 T3f-cleanup-text	check	skill	s/The scratch files and directory are removed on every path/The scratch directory is removed on success/	missing required text: The scratch files and directory are removed on every path
 T3f-missing-run	validate	skill	s/\[ -s "\$p" \] ||/true ||/	FAIL: case install_missing_input
 T3f-missing-text	check	skill	s/A missing or empty input file stops the call/A missing input file is reported/	missing required text: A missing or empty input file stops the call
-T3f-target	validate	skill	s/''|\*\/\*) echo "ERROR: target name/''|..) echo "ERROR: target name/	FAIL: case install_bad_target
+T3f-target	validate	skill	s/''|\*\/\*|\*\[!A-Za-z0-9\._-\]\*) echo "ERROR: target name/''|..) echo "ERROR: target name/	FAIL: case install_bad_target
 T3f-pairname	validate	skill	/a paired design needs the pairs file name/d	FAIL: case install_paired_no_name
 T3f-condrw	validate	skill	/is an R reserved word; the R scripts of the pipeline/d	FAIL: case reserved_condition
 T3f-condtext	check	skill	s/start with a letter and are not R reserved words/start with a letter/	missing required text: start with a letter and are not R reserved words
@@ -437,7 +437,7 @@ T8-bump	check	readme	s/\*\*Bumping the pin\*\*/Updating/	README missing required
 T8-bump-fx	check	readme	s/the task command lines (`command_lines.txt`: /the task command lines (/	README missing required text: `command_lines.txt`
 T8-full	check	readme	s/bash tests\/run_all_tests.sh --full/bash tests\/test_proof_tools.sh/g	README missing required text: bash tests/run_all_tests.sh --full
 T8-gitdir	check	readme	s/RNASPLICE_TEST_GIT_DIR/GIT_DIR/g	README missing required text: RNASPLICE_TEST_GIT_DIR
-T8-skipnote	check	readme	s/and skips the proof-tool self-test/and runs everything/	README missing required text: The default run takes 13 to 15 minutes
+T8-skipnote	check	readme	s/and skips the proof-tool self-test/and runs everything/	README missing required text: The default run takes about 17 minutes
 T8-gatedate	check	readme	s/Verification gate (@GATE_DATE@)/Verification gate/	README missing required text: Verification gate (@GATE_DATE@)
 T8-tiny	check	readme	s/nf-core's tiny test dataset/a test dataset/	README missing required text: nf-core's tiny test dataset
 T8-readlen	check	readme	s/@TEST_READ_LENGTH@ bp reads/100 bp reads/	README missing required text: @TEST_READ_LENGTH@ bp reads
@@ -490,8 +490,8 @@ T8f-starindex	check	readme	s/ `star_index` (reuse of an existing STAR index) was
 T8f-bulk	check	readme	s/: run it in one place only\./: run it in both places./	README has forbidden text: run it in both places
 T8f-bulk-del	check	readme	s/: run it in one place only\./, with DESeq2./	README missing required text: ): run it in one place only.
 T8f-4h	check	readme	s/(a deliberate exception)\./(a deliberate exception); it needs no more than 4 h in practice./	README has forbidden text: no more than 4 h
-T8f-duration	check	readme	s/(`test_proof_tools.sh`, about 30 minutes)/(`test_proof_tools.sh`, about 20 minutes)/	README missing required text: The default run takes 13 to 15 minutes
-T8f-duration-del	check	readme	s/The default run takes 13 to 15 minutes (bash, awk and sed only) and skips/The default run skips/	README missing required text: The default run takes 13 to 15 minutes
+T8f-duration	check	readme	s/(`test_proof_tools.sh`, 30 to 35 minutes)/(`test_proof_tools.sh`, about 20 minutes)/	README missing required text: The default run takes about 17 minutes
+T8f-duration-del	check	readme	s/The default run takes about 17 minutes (bash, awk and sed only) and skips/The default run skips/	README missing required text: The default run takes about 17 minutes
 T8f-approved	check	readme	s/(a deliberate exception)/(approved by the user)/	README has forbidden text: approved by the user
 T8f-step6	check	readme	s/warns when read lengths differ, and stops by default when they differ between conditions |/warns when read lengths differ between conditions |/	README missing required text: warns when read lengths differ, and stops by default
 T8f-prefix	check	readme	s/^| `{SHEET_PREFIX}_contrasts\.csv` |/| `{prefix}_contrasts.csv` |/	README has forbidden text: {prefix}
@@ -520,7 +520,7 @@ T8f-rt-unnamed	runtest	runall	s/\*) echo "FAIL: tests\/\$b is not named in run_a
 T8f-rt-rootrow	runtest	runall	/FAIL: root README row missing/d	(runner args ''): exit 0, expected 1
 T8f-rt-rootdev	runtest	runall	/FAIL: root README row still marked in development/d	(runner args ''): exit 0, expected 1
 T8f-rt-nogit	runtest	runall	s/^  \[ -x "\$RNASPLICE_TEST_GIT_DIR\/git" \] || .*$/  :/	output lacks the line: ERROR: RNASPLICE_TEST_GIT_DIR=
-T8f-rt-skipmsg	runtest	runall	s/^  echo "== SKIPPED: \$FULL_TESTS (proof-tool self-test, about 30 minutes; run with --full)"$/  :/	output lacks the line: == SKIPPED: test_proof_tools.sh
+T8f-rt-skipmsg	runtest	runall	s/^  echo "== SKIPPED: \$FULL_TESTS (proof-tool self-test, 30 to 35 minutes; run with --full)"$/  :/	output lacks the line: == SKIPPED: test_proof_tools.sh
 T8f-ra-runtest	check	runall	s/ test_run_all\.sh / /	run_all_tests.sh TESTS must run test_run_all.sh
 T8f-ra-gitline	check	runall	s/| sort -V | head -n1)" != 1\.8\.5/| sort -V | head -n1)" != 1.8.6/	must check for git 1.8.5 or newer
 T9-pending-add	check	readme	$s/$/\nCluster acceptance (nf-core test data): PENDING/	README must have the whole line
@@ -548,3 +548,29 @@ T9-acc-a	check	readme	s/job 11380326, wall time 11 min 49 s, 80\/80 tasks COMPLE
 T9-acc-c	check	readme	s/43\/43 tasks COMPLETED/43 tasks COMPLETED/	README missing required text: job 11380459, wall time 6 min 16 s, 43/43 tasks COMPLETED
 T9-acc-signs	check	readme	s/1854\/1854 isoform events/1850\/1854 isoform events/	README missing required text: the rMATS sign on 202/202 rows of SE.MATS.JC.txt
 T9-acc-notex	check	readme	/^- Not exercised: real data;/d	README missing required text: - Not exercised: real data;
+F-prefix	check	skill	s/A custom prefix (and every custom file name of this step) may contain only/A custom prefix may contain any text, spaces allowed; it may contain/	missing required text: A custom prefix (and every custom file name of this step) may contain only
+F-otherfile	check	skill	s/2\. choose another filename (letters, digits, `\.`, `_` and `-` only, as for the custom prefix; /2. choose another filename (/	missing required text: 2. choose another filename (letters, digits
+F-inst-argc	validate	skill	s/^  \[ \$# -le 6 \] || .*$/  :/	FAIL: case install_space_split
+F-inst-chars	validate	skill	s/''|\*\/\*|\*\[!A-Za-z0-9\._-\]\*)/''|*\/*)/	FAIL: case install_space_quoted
+F-rprobe	check	skill	s/^\*\*Resuming a run\.\*\*/Then run `Rscript -e "library(DEXSeq)"` on the login node to check the R packages.\n\n&/	'(Rscript|R +(-e|--vanilla|-f|CMD))( |$)' is invoked outside the submission script (1 lines in the skill, 0 in the script)
+F-condaprobe	check	skill	s/^\*\*Resuming a run\.\*\*/First run `conda activate {CONDA_ENV}` here to make sure the environment exists.\n\n&/	'conda (activate|create|install|run|env)( |$)' is invoked outside the submission script (2 lines in the skill, 1 in the script)
+F-starprobe	check	skill	s/^\*\*Resuming a run\.\*\*/To check the index, run `STAR --version` on the login node.\n\n&/	'STAR +--?[A-Za-z]' is invoked outside the submission script
+F-salmonprobe	check	skill	s/^\*\*Resuming a run\.\*\*/To check the index, run `salmon index -h` on the login node.\n\n&/	'salmon +(index|quant|--?[A-Za-z])' is invoked outside the submission script
+F-m1	check	skill	s/At this revision rMATS prepares each sample once and runs one post step per contrast/rMATS runs one prep\/post pair per contrast/	forbidden text present: rMATS runs one prep/post pair per contrast
+F-m2-call	check	skill	s/`shopt -s nullglob; fastq_layout /`fastq_layout /	missing required text: `shopt -s nullglob; fastq_layout
+F-m2-subdir	check	skill	s/Only the files directly in `{FASTQ_DIR}` are used, not its subdirectories/All files are used/	missing required text: Only the files directly in `{FASTQ_DIR}` are used, not its subdirectories
+F-m2-bash	check	skill	s/ (block below; it needs bash 4 or newer, the cluster has 4\.2)/ (block below)/	missing required text: it needs bash 4 or newer
+F-m2-noargs	names	skill	s/^  \[ \$# -gt 0 \] || { echo "ERROR: no FASTQ file given"; return 1; }$/  :/	FAIL: layout case no file
+F-m2-notfile	names	skill	s/^  for f in "\$@"; do \[ -f "\$f" \] || .*$/  :/	FAIL: layout case unmatched glob
+F-m4-skill7	check	skill	s/The FASTA and the GTF must use the same contig names/The contig names do not matter/	missing required text: The FASTA and the GTF must use the same contig names
+F-m4-skill4b	check	skill	s/tell the user to compare the `@SQ` names/compare the names/	missing required text: tell the user to compare the `@SQ` names
+F-m4-readme	check	readme	s/^- FASTA, GTF and BAM contig names must match/- Contig names/	README missing required text: - FASTA, GTF and BAM contig names must match
+F-m6-queue	check	skill	s/^            queueSize = 10$/            queueSize = 500/	must keep queueSize = 10 and submitRateLimit
+F-m6-rate	check	skill	s/^            submitRateLimit = '10\/1min'$/            submitRateLimit = '100\/1min'/	must keep queueSize = 10 and submitRateLimit
+F-i2-commit	check	readme	s/ The runs and the static gate below were made on the skill text of commit bcb63e9\.//	README missing required text: The runs and the static gate below were made on the skill text of commit bcb63e9.
+F-i2-match	check	readme	s/`nextflow.config` is byte-identical to the Step 10 template, and/`nextflow.config` matches, and/	README missing required text: `nextflow.config` is byte-identical to the Step 10 template
+F-i2-gate	check	readme	s/^- Static gate (commit bcb63e9):/- Static gate:/	README missing required text: - Static gate (commit bcb63e9):
+F-m7	check	readme	s/ its automatic sample names still ended in `_sorted` (made before Step 4b strips `_sorted\.bam`; that fix is unit-tested, run (c) was not repeated);//	README missing required text: its automatic sample names still ended in `_sorted`
+F-bashrow	check	readme	/^| bash 4 or newer |/d	README missing required text: | bash 4 or newer |
+F-m3-runall	runtest	runall	/needs internet on the compute nodes: its job downloads/,+1d	(runner args ''): exit 0, expected 1
+F-fullduration	check	readme	s/ (about 50 minutes in all)\././	README missing required text: `bash tests/run_all_tests.sh --full` includes it (about 50 minutes in all).

@@ -1,9 +1,9 @@
 #!/bin/bash
 # Usage: run_all_tests.sh [--full]
 # Runs every static test of the skill, each under `env -i` with an explicit PATH; prints "ALL TESTS PASS ..." or exits 1.
-#   default  the suites in TESTS below (13 to 15 minutes, bash, awk and sed only); the proof-tool self-test is SKIPPED, and the
+#   default  the suites in TESTS below (about 17 minutes, bash, awk and sed only); the proof-tool self-test is SKIPPED, and the
 #            last line says so
-#   --full   also runs the proof-tool self-test (FULL_TESTS, about 30 minutes)
+#   --full   also runs the proof-tool self-test (FULL_TESTS, 30 to 35 minutes)
 # The proof-tool self-test needs git 1.8.5 or newer (git -C); /usr/bin/git on the cluster is 1.8.3. To use a newer git, set
 # RNASPLICE_TEST_GIT_DIR to the directory that holds it (for example the bin directory of a conda environment with git):
 #   RNASPLICE_TEST_GIT_DIR=$HOME/.conda/envs/git-new/bin bash tests/run_all_tests.sh --full
@@ -54,10 +54,12 @@ for t in $TESTS; do run "$t" "$SK"; done
 if [ $full -eq 1 ]; then
   for t in $FULL_TESTS; do run "$t"; done
 else
-  echo "== SKIPPED: $FULL_TESTS (proof-tool self-test, about 30 minutes; run with --full)"
+  echo "== SKIPPED: $FULL_TESTS (proof-tool self-test, 30 to 35 minutes; run with --full)"
 fi
 grep -qF '| nf-core/rnasplice setup | `/nfcore-rnasplice-setup` |' "$ROOT_README" || { echo "FAIL: root README row missing"; rc=1; }
 ! grep -qF '(in development, not yet validated)' "$ROOT_README" || { echo "FAIL: root README row still marked in development"; rc=1; }
+grep -qF '`/nfcore-rnasplice-setup` needs internet on the compute nodes: its job downloads the pinned nf-core/rnasplice revision and the containers' "$ROOT_README" \
+  || { echo "FAIL: root README Requirements must say that /nfcore-rnasplice-setup needs internet on the compute nodes"; rc=1; }
 [ $rc -eq 0 ] || { echo "SOME TESTS FAILED"; exit 1; }
 if [ $full -eq 1 ]; then
   echo "ALL TESTS PASS (full run, proof-tool self-test included)"
