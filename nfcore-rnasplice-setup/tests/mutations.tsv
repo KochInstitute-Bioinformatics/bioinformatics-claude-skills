@@ -35,8 +35,6 @@ T2-swap	strand	skill	s/if (f >= 0.8) print "forward"/if (f >= 0.8) print "revers
 T2-se	strand	skill	s/|explained by "\\+\\+,--"//	FAIL: case se_reverse
 T2-auto	check	skill	s/Strandedness is asked, never guessed\./Strandedness defaults to auto./	missing required text: Strandedness is asked, never guessed.
 T2-bam-lt	check	skill	s/RMATS_LIBTYPE="@BAM_RMATS_LIBTYPE@"/RMATS_LIBTYPE="fr-wrong"/	missing required text: RMATS_LIBTYPE="@BAM_RMATS_LIBTYPE@"
-T2-unclear	strand	skill	s/if (!nf || !nr) { print "unclear"; exit }//	FAIL: case one_line
-T2-unstr	strand	skill	s/f >= 0.3 && f <= 0.7/f >= 0.3 \&\& f <= 0.4/	FAIL: case pe_unstranded
 T2-bam-fs	bam	skill	s/from_sheet) echo "ALLOWED: /from_sheet) echo "REFUSED: /	FAIL: case unstranded/paired: expected ALLOWED
 T2-bam-inv	bam	skill	s/^    \*) echo "REFUSED: strandedness must be/    auto) lt=fr-unstranded; ds=no; fc=0 ;;\n&/	FAIL: case invalid_strandedness
 T2-bam-lay	bam	skill	s/case "\$2" in paired|single) ;;/case "$2" in paired|single|both) ;;/	FAIL: case invalid_layout
@@ -46,8 +44,38 @@ T2-forbid-to	check	skill	s/Strandedness is asked, never guessed\./& Never set st
 T2-forbid-yaml	check	skill	$s/$/\nstrandedness: auto/	forbidden text present: strandedness: auto
 T2-bamrows	check	skill	s/; write `{STRANDEDNESS}` and `true` (single-end) or `false` in every row/;/	missing required text: write `{STRANDEDNESS}` and `true` (single-end) or `false` in every row
 T2-idk	check	skill	s/Never continue with "I don't know"\. //	missing required text: Never continue with "I don't know"
-T2-digit	check	skill	s/; if a name then starts with a digit, prefix `S` (R renames/ (R renames/	missing required text: if a name then starts with a digit, prefix `S`
 T2-mixed	check	skill	s/rMATS needs one strandedness and one read type for all samples/rMATS prefers one read type/g	missing required text: rMATS needs one strandedness and one read type for all samples
 T2-bamhdr	check	skill	s/`@BAM_SHEET_HEADER@`/`sample,condition,genome_bam`/	missing required text: @BAM_SHEET_HEADER@
 T2-stub	strand	skill	s/^infer_strandedness() {$/&\n  nextflow -version > \/dev\/null 2>\&1/	FAIL: a forbidden command ran
 T2-stub-bam	bam	skill	s/^bam_input_allowed() {$/&\n  python3 -c 1 > \/dev\/null 2>\&1/	FORBIDDEN python3
+T2-unclear	strand	skill	s/if (nf != 1 || nr != 1) { print "unclear"; exit }//	FAIL: case one_line
+T2-unstr	strand	skill	s/d <= 0.1 + 1e-9/d <= 0.4/	FAIL: case pe_70_30
+T2-digit	check	skill	s/; if a name then does not start with a letter (a digit or `_`), prefix `S`//	missing required text: if a name then does not start with a letter (a digit or `_`), prefix `S`
+T2-rep	strand	skill	s/nf != 1 || nr != 1/!nf || !nr/	FAIL: case repeated
+T2-missing	strand	skill	/^  \[ -f "\$1" \] && \[ -r "\$1" \]/d	FAIL: case no_such_file
+T2-tol	strand	skill	s/d <= 0.1 + 1e-9/d <= 0.1/	FAIL: case pe_diff_010
+T2-refused	check	skill	/^- `REFUSED`:/d	missing required text: 1. Start from the FASTQ files instead (go to Step 4a)
+T2-defrev	check	skill	s/\*reverse\* = read 1 comes from the strand opposite to the transcript/*reverse* = read 1 comes from the transcript strand/	missing required text: *reverse* = read 1 comes from the strand opposite to the transcript
+T2-deffwd	check	skill	s/\*forward\* = read 1 comes from the transcript strand/*forward* = read 1 comes from the strand opposite to the transcript/	missing required text: *forward* = read 1 comes from the transcript strand
+T2-nocont	check	skill	/^- Any file gives `unclear`/d	missing required text: do not continue until they answer 1, 2 or 3
+T2-step8	check	skill	s/, so Step 8 switches them off//	missing required text: so Step 8 switches them off
+T2-mixstop	check	skill	s/, so if the directory mixes paired-end and single-end files, stop and ask which files to use//	missing required text: if the directory mixes paired-end and single-end files, stop
+T2-otherchar	check	skill	s/ and every other character outside `A-Za-z0-9_`//	missing required text: every other character outside `A-Za-z0-9_`
+T2-reserved	check	skill	s/; if it is an R reserved word, append `_S`//	missing required text: if it is an R reserved word, append `_S`
+T2-res-code	names	skill	s/|NA|NA_integer_|/|NA_integer_|/	FAIL: sanitise case 'NA'
+T2-lead	names	skill	s/case "\${s:0:1}" in \[A[A-Za-z]*\]) ;; \*) s="S\$s" ;; esac/case "${s:0:1}" in [0-9]) s="S$s" ;; esac/	FAIL: sanitise case '_x'
+T2-r1dot	names	skill	\#_R1\\\./\\1_R2\.#d	FAIL: r2 case ctrl1_R1.fastq.gz
+T2-namecut	names	skill	s/|_R\[12\]\[\._\]//	FAIL: name case ctrl1_R1.fastq.gz
+T2-collide	names	skill	s/(different samples?)/(lanes or technical replicates?)/	FAIL: collision case sanitisation
+T2-path	names	skill	s/\*\[\[:space:\]\]\*|\*,\*)/*,*)/	FAIL: path case
+T2-work	check	skill	s/-path "\*\/work" -prune -o //g	missing required text: -path "*/work" -prune
+T2-head	check	skill	s/-print | wc -l/-print | head -50/	forbidden pattern present: head on the RSeQC file list
+T2-norseqc	check	skill	s/No `\*\.infer_experiment\.txt` file/If no RSeQC file is found/	missing required text: No `*.infer_experiment.txt` file
+T2-dir	check	skill	s/store `{BAM_DIR}`/store `{DIR}`/	forbidden text present: {DIR}
+T2-sorted	check	skill	s/They need not be sorted or indexed: the pipeline re-sorts and indexes them itself/They must be sorted and indexed/	missing required text: the pipeline re-sorts and indexes them itself
+T2-coord	check	skill	s/ and be aligned to the same FASTA/, be coordinate-sorted, and be aligned to the same FASTA/	forbidden text present: be coordinate-sorted
+T2-markdup	check	skill	s/prefer `\.markdup\.sorted\.bam`/keep any/	missing required text: prefer `.markdup.sorted.bam`
+T2-r1text	check	skill	s/ `_R1\.`\/`_R2\.`,//	missing required text: `_R1.`/`_R2.`
+T2-ruletext	check	skill	s/unstranded if the two fractions differ by at most 0\.1/unstranded if both are between 0.3 and 0.7/	missing required text: unstranded if the two fractions differ by at most 0.1
+T2-pattern	check	skill	s/\[a-zA-Z.\](\[a-zA-Z0-9._\]\*)?\$`/[a-zA-Z0-9_]*$`/	missing required text: `^(?!
+T2-anchor-n	check	skill	$s/$/\n**Sample names and read pairs.**/	anchor must appear exactly once: **Sample names and read pairs.**

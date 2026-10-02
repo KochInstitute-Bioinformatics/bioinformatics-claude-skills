@@ -11,7 +11,7 @@ HERE=$(cd "$(dirname "$0")" && pwd); FIX="$HERE/fixtures"; CUT="$HERE/cut_block.
 README="$(dirname "$SKILL")/README.md"
 fail=0
 [ -s "$SKILL" ] || { echo "FAIL: skill file missing or empty: $SKILL"; exit 1; }
-for f in rnasplice_schema.json config_params.txt gate_values.tsv trace_process_names.txt output_tree.txt test_samplesheet.csv test_contrastsheet.csv; do
+for f in rnasplice_schema.json config_params.txt gate_values.tsv trace_process_names.txt output_tree.txt test_samplesheet.csv test_contrastsheet.csv schema_input.json schema_input_genome_bam.json; do
   [ -s "$FIX/$f" ] || { echo "cannot read fixture $FIX/$f"; exit 2; }
 done
 GATE_KEYS="GATE_OUTCOME PIPELINE_REVISION VERSION_TAG NEXTFLOW_TESTED NEXTFLOW_MIN NEXTFLOW_MAX_EXCL CONDA_ENV_TESTED HAS_MAX_PARAMS HAS_RESOURCE_LIMITS SALMON_ROUTE PSEUDO_OFF_LINE BAM_SHEET_HEADER BAM_RMATS_LIBTYPE BAM_RMATS_READTYPE BAM_DEXSEQ_STRAND BAM_FC_STRAND BAM_NEEDS_BAI RMATS_BAMLIST_ORDER RMATS_B1_GROUP STAR_VERSION_GENOME SALMON_INDEX_VERSION DTU_FILTER_SCOPE TEST_CONTRAST TEST_READ_LENGTH EDGER_DEU_FUNCTION"
@@ -163,7 +163,9 @@ forbid "strandedness to \`auto\`"
 forbid "strandedness: auto"
 need "Never continue with \"I don't know\""
 need "rMATS needs one strandedness and one read type for all samples"
-need "if a name then starts with a digit, prefix \`S\`"
+need "if a name then does not start with a letter (a digit or \`_\`), prefix \`S\`"
+need "if it is an R reserved word, append \`_S\`"
+need "every other character outside \`A-Za-z0-9_\`"
 need "1. the same sample (lanes or technical replicates; the pipeline merges their reads)"
 need "2. different samples — rename them"
 anchor_once "**Strandedness from an existing nf-core/rnaseq run.**"
@@ -174,12 +176,38 @@ need "RMATS_LIBTYPE=\"$(gv BAM_RMATS_LIBTYPE)\""
 need "RMATS_READTYPE=\"$(gv BAM_RMATS_READTYPE)\""
 need "DEXSEQ_STRAND=\"$(gv BAM_DEXSEQ_STRAND)\""
 need "FC_STRAND=\"$(gv BAM_FC_STRAND)\""
-need "Start from FASTQ"
+need "1. Start from the FASTQ files instead (go to Step 4a)"
 need "DTU and SUPPA2 need Salmon quantification from reads"
 [ "$(gv BAM_RMATS_LIBTYPE)" = none ] || need "$(gv BAM_SHEET_HEADER)"
 # Controller ruling (b): a BAM sheet with strandedness/single_end columns carries the asked values in every row.
 case "$(gv BAM_SHEET_HEADER)" in *,strandedness,single_end*)
   need "write \`{STRANDEDNESS}\` and \`true\` (single-end) or \`false\` in every row" ;; esac
+# Task 2 review fixes (I1-I3, minors)
+need "*reverse* = read 1 comes from the strand opposite to the transcript"
+need "*forward* = read 1 comes from the transcript strand"
+need "do not continue until they answer 1, 2 or 3"
+need "so Step 8 switches them off"
+need "if the directory mixes paired-end and single-end files, stop"
+need "\`_R1.\`/\`_R2.\`"
+need "unstranded if the two fractions differ by at most 0.1"
+need "No \`*.infer_experiment.txt\` file"
+forbid_re 'infer_experiment\.txt.*\|[[:space:]]*head' "head on the RSeQC file list (every file must be checked)"
+need "-path \"*/work\" -prune"
+need "\`{BAM_DIR}\`"
+forbid "{DIR}"
+need "the pipeline re-sorts and indexes them itself"
+forbid "be coordinate-sorted"
+need "prefer \`.markdup.sorted.bam\`"
+anchor_once "**Sample names and read pairs.**"
+need "fastq_r2_name() {"
+need "fastq_sample_name() {"
+need "sanitize_sample_name() {"
+need "sample_name_collisions() {"
+need "input_path_ok() {"
+# The sample rule of the pinned samplesheet schemas (FASTQ and genome BAM) is quoted in the skill.
+samp_pat=$(awk '/"sample": \{/ {f = 1} f && /"pattern"/ {sub(/^[ \t]*"pattern": "/, ""); sub(/",[ \t]*$/, ""); print; exit}' "$FIX/schema_input.json" | sed 's/\\\\/\\/g')
+[ -n "$samp_pat" ] || { echo "sample pattern extraction broken: fixtures/schema_input.json"; exit 2; }
+need "\`$samp_pat\`"
 # --- end Task 2
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1

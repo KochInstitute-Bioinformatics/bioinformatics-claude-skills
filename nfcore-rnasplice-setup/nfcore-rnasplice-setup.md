@@ -57,43 +57,95 @@ Set `{VERSION_TAG}` = `{VERSION}` when it is a release tag, or `dev-` followed b
 
 ## Step 4 — Input files and samplesheet rows
 
-**Scan the working directory first:**
+**Scan the working directory first** (directories with their file counts; Nextflow `work/` directories are skipped):
 ```bash
-find {CWD} \( -name "*.fastq.gz" -o -name "*.fq.gz" \) | head -50
-find {CWD} -name "*.bam" | head -20
+find "{CWD}" -path "*/work" -prune -o \( -name "*.fastq.gz" -o -name "*.fq.gz" \) -print | sed 's|/[^/]*$||' | sort | uniq -c
+find "{CWD}" -path "*/work" -prune -o -name "*.bam" -print | sed 's|/[^/]*$||' | sort | uniq -c
 ```
 Ask (numbered), mentioning what the scan found: "Which input do you want to start from?" 1. FASTQ files (default; the pipeline aligns them with STAR and quantifies them with Salmon) · 2. Genome BAM files from a splice-aware aligner (for example the STAR BAMs of an nf-core/rnaseq run). Store `{SOURCE}` = `fastq` or `genome_bam`.
 
 ### Step 4a — FASTQ input
 
 - FASTQ files found: list the unique directories and ask "I found FASTQ files in: `{FOUND_DIRS}`. Use this directory, or specify another?" Nothing found: ask for the full path. Store `{FASTQ_DIR}`.
-- **Paired-end detection:** filenames containing `_R1_`/`_R2_`, `_1.fastq.gz`/`_2.fastq.gz`, `_1.fq.gz`/`_2.fq.gz`, or `_1_sequence`/`_2_sequence` → paired-end; otherwise single-end. Store `{LAYOUT}` = `paired` or `single`. rMATS needs one strandedness and one read type for all samples (the pipeline stops with "Cannot run rMats with mixed single and paired end samples"), so if the directory mixes paired-end and single-end files, stop and ask which files to use.
+- **Paired-end detection:** a file whose name has an R1 token — `_R1_`/`_R2_`, `_R1.`/`_R2.`, `_1.fastq.gz`/`_2.fastq.gz`, `_1.fq.gz`/`_2.fq.gz`, or `_1_sequence`/`_2_sequence` — and whose R2 file exists → paired-end; otherwise single-end. Use `fastq_r2_name` (block below) on every file. Store `{LAYOUT}` = `paired` or `single`. rMATS needs one strandedness and one read type for all samples (the pipeline stops with "Cannot run rMats with mixed single and paired end samples"), so if the directory mixes paired-end and single-end files, stop and ask which files to use.
 - **Sequencing date:** a leading 6-digit `YYMMDD` filename prefix → `{SEQ_DATE}` (fall back to `{TODAY_YYMMDD}`).
 - **Path style:** if `{FASTQ_DIR}` is inside `{CWD}`, use paths relative to `{CWD}`; otherwise absolute paths.
-- **Rows:** find each R1 and pair it with its R2 by substituting `_R1_`→`_R2_`, `_1.`→`_2.` or `_1_sequence`→`_2_sequence`; if an R2 is missing, warn and stop (one read type for all samples). Single-end rows leave `fastq_2` empty. Sample name = filename up to `_S\d+`, `_R1`, `_1.f` or `_1_sequence`. FASTQ files must end in `.fastq.gz` or `.fq.gz`; the pipeline accepts nothing else.
+- **Rows:** for each R1 file, `fastq_r2_name` gives its R2 file; if an R2 is missing, warn and stop (one read type for all samples). Single-end rows leave `fastq_2` empty. Sample name before sanitisation = `fastq_sample_name`: the file name up to `_S\d+`, `_R1`/`_R2`, `_1.f`/`_2.f` or `_1_sequence`/`_2_sequence`; a single-end file without these tokens (for example `ctrl.fastq.gz`) only loses its `.fastq.gz`/`.fq.gz` extension. FASTQ files must end in `.fastq.gz` or `.fq.gz`; the pipeline accepts nothing else.
+- **Paths:** run `input_path_ok` on every path. A space, tab or comma stops the wizard with a clear message (the samplesheet schemas reject whitespace in file names, and a comma breaks the CSV): the user renames the files or makes symlinks without them.
 
-**Sample-name sanitisation (always, before showing the user):** replace `-`, spaces, `/`, `(`, `)` and every other character outside `A-Za-z0-9_` with `_`; if a name then starts with a digit, prefix `S` (R renames columns that start with a digit, which breaks the matching of sample names in the DEXSeq and edgeR steps). Note every substitution in the preview. Then check uniqueness. On a collision warn: "⚠️ Name collision '{NAME}': in nf-core/rnasplice, rows with the same sample name are one sample, and their reads are merged before alignment." and ask (numbered): 1. the same sample (lanes or technical replicates; the pipeline merges their reads) · 2. different samples — rename them (go to custom naming). Lane files (`X_S1_L001_R1_001`, `X_S1_L002_R1_001`) collide by design; option 1 is expected for them.
+**Sample names and read pairs.** The pinned samplesheet schemas (FASTQ and genome BAM, recorded in this skill's verification) accept a sample name only if it matches `^(?!\.\.\d+)(?!\.$)[a-zA-Z.]([a-zA-Z0-9._]*)?$` and is not an R reserved word (`if`, `else`, `repeat`, `while`, `function`, `for`, `in`, `next`, `break`, `TRUE`, `FALSE`, `NULL`, `Inf`, `NaN`, `NA`, `NA_integer_`, `NA_real_`, `NA_complex_`, `NA_character_`): "Sample name must be a valid R identifier". Otherwise the pipeline rejects the samplesheet when the job starts. Sanitisation (always, before showing the user) therefore replaces `-`, spaces, `/`, `(`, `)`, `.` and every other character outside `A-Za-z0-9_` with `_`; if a name then does not start with a letter (a digit or `_`), prefix `S`; if it is an R reserved word, append `_S`. Define these functions in the Bash tool and use them for every file (light work on the login node); note every substitution in the preview.
+```bash
+fastq_r2_name() {
+  # usage: fastq_r2_name <R1 file>; prints the R2 file (same directory), or prints nothing and returns 1 when the name has no R1 token
+  local dir="" b=$1 r
+  case "$1" in */*) dir=${1%/*}/; b=${1##*/} ;; esac
+  r=$(printf '%s\n' "$b" | sed -E -n \
+    -e 's/^(.*)_R1_/\1_R2_/p;t' \
+    -e 's/^(.*)_R1\./\1_R2./p;t' \
+    -e 's/^(.*)_1(\.f(ast)?q\.gz)$/\1_2\2/p;t' \
+    -e 's/^(.*)_1_sequence/\1_2_sequence/p')
+  [ -n "$r" ] || return 1
+  printf '%s%s\n' "$dir" "$r"
+}
+fastq_sample_name() {
+  # usage: fastq_sample_name <FASTQ file>; prints the sample name before sanitisation
+  printf '%s\n' "${1##*/}" | sed -E 's/(_S[0-9]+[._]|_R[12][._]|_[12]\.f(ast)?q\.gz$|_[12]_sequence|\.f(ast)?q\.gz$).*$//'
+}
+sanitize_sample_name() {
+  # usage: sanitize_sample_name <name>; prints a name that the pinned samplesheet schemas accept
+  local s
+  s=$(printf '%s' "$1" | LC_ALL=C sed 's/[^A-Za-z0-9_]/_/g')
+  case "${s:0:1}" in [ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz]) ;; *) s="S$s" ;; esac
+  case "$s" in
+    if|else|repeat|while|function|for|in|next|break|TRUE|FALSE|NULL|Inf|NaN|NA|NA_integer_|NA_real_|NA_complex_|NA_character_) s="${s}_S" ;;
+  esac
+  printf '%s\n' "$s"
+}
+sample_name_collisions() {
+  # usage: one name before sanitisation per row on stdin; prints one line per sanitised name used by more than one row
+  local raw
+  while IFS= read -r raw; do printf '%s\t%s\n' "$(sanitize_sample_name "$raw")" "$raw"; done | awk -F'\t' '
+    !($1 in n) { order[++m] = $1 }
+    { n[$1]++ }
+    !(($1, $2) in seen) { seen[$1, $2] = 1; k[$1]++; raws[$1] = (k[$1] == 1) ? $2 : raws[$1] ", " $2 }
+    END { for (i = 1; i <= m; i++) { s = order[i]; if (n[s] < 2) continue
+      if (k[s] == 1) print s ": same name before sanitisation (lanes or technical replicates?)"
+      else print s ": created by sanitisation from " raws[s] " (different samples?)" } }'
+}
+input_path_ok() {
+  # usage: input_path_ok <path>; prints STOP and returns 1 when the path has whitespace (the samplesheet schemas reject it) or a comma (it breaks the CSV)
+  case "$1" in
+    *[[:space:]]*|*,*) echo "STOP: '$1' contains a space, tab or comma, which the samplesheet cannot hold. Rename the file or make a symlink without them, and use that path."; return 1 ;;
+  esac
+  return 0
+}
+```
+Then run `sample_name_collisions` on the names before sanitisation (one line per row). For every line it prints, warn: "⚠️ Name collision '{NAME}': in nf-core/rnasplice, rows with the same sample name are one sample, and their reads are merged before alignment." Show the original file names of those rows and ask (numbered): 1. the same sample (lanes or technical replicates; the pipeline merges their reads) · 2. different samples — rename them (go to custom naming).
+- `same name before sanitisation`: lane files (`X_S1_L001_R1_001`, `X_S1_L002_R1_001`) collide by design; option 1 is expected for them.
+- `created by sanitisation` (for example `WT-1` and `WT_1`): the collision comes from the sanitisation, not from lanes. The original names differ, so option 2 is expected unless the user confirms they are one sample.
 
 **Review and naming — order is mandatory:**
 1. Show all rows as a table (sample, fastq_1, fastq_2).
-2. Ask (numbered): 1. Use auto-generated names · 2. Provide custom names. For custom names: show numbered auto names next to the filenames, ask for a plain-language description, build the mapping, show it as an auto → new table and ask "Does this mapping look correct?" Custom names follow the same rule (letters, digits and `_`, starting with a letter); duplicates only where the user chose option 1 above.
+2. Ask (numbered): 1. Use auto-generated names · 2. Provide custom names. For custom names: show numbered auto names next to the filenames, ask for a plain-language description, build the mapping, show it as an auto → new table and ask "Does this mapping look correct?" Custom names follow the same rule: `sanitize_sample_name` must return them unchanged (otherwise propose its result); duplicates only where the user chose option 1 above.
 
 The rows stay in memory: Step 5 adds the condition column (the samplesheet columns are `sample,fastq_1,fastq_2,strandedness,condition`) and writes the file.
 
 **Strandedness is asked, never guessed.** rnasplice has no `auto` strandedness, and rMATS needs one strandedness and one read type for all samples. Ask (numbered): "Which strandedness does the library have?" 1. unstranded · 2. forward · 3. reverse · 4. I don't know. Explain: *reverse* = read 1 comes from the strand opposite to the transcript (dUTP libraries such as Illumina TruSeq Stranded and NEBNext Ultra II Directional — the most common stranded libraries); *forward* = read 1 comes from the transcript strand; *unstranded* = no strand information (for example TruSeq non-stranded). A wrong value makes rMATS discard or misassign junction reads without any error. If the user answers 4, or has an nf-core/rnaseq output directory for the same samples, use the block below. Never continue with "I don't know". Store `{STRANDEDNESS}` (one value for every row).
 
-**Strandedness from an existing nf-core/rnaseq run.** Ask for that run's output directory (`{RNASEQ_OUTDIR}`), list its RSeQC files with `find {RNASEQ_OUTDIR} -name "*.infer_experiment.txt" | head -50`, define the function below in the Bash tool and run it on each file (small text files; light work on the login node). Show a table file → result.
+**Strandedness from an existing nf-core/rnaseq run.** Ask for that run's output directory (`{RNASEQ_OUTDIR}`) and count its RSeQC files with `find "{RNASEQ_OUTDIR}" -path "*/work" -prune -o -name "*.infer_experiment.txt" -print | wc -l`. Define the function below in the Bash tool and run it on every one of those files, not a subset (a loop over the same `find`; small text files, light work on the login node). Show a table file → result; with many files, show the count per result and list every file whose result differs from the others. The rule is nf-core/rnaseq's: forward if the forward fraction is at least 0.8, reverse if the reverse fraction is at least 0.8, unstranded if the two fractions differ by at most 0.1, otherwise unclear. A missing or unreadable file, a missing line, or a line that appears twice (reports concatenated into one file) gives unclear. No `*.infer_experiment.txt` file (for example a run with RSeQC skipped): tell the user, and ask the strandedness question again without a proposal; continue only with answer 1, 2 or 3.
 ```bash
 infer_strandedness() {
   # usage: infer_strandedness <file.infer_experiment.txt>; prints forward, reverse, unstranded or unclear
+  [ -f "$1" ] && [ -r "$1" ] || { echo "unclear"; return 0; }
   awk -F': ' '
-    /explained by "1\+\+,1--,2\+-,2-\+"|explained by "\+\+,--"/ { f = $2 + 0; nf = 1 }
-    /explained by "1\+-,1-\+,2\+\+,2--"|explained by "\+-,-\+"/ { r = $2 + 0; nr = 1 }
+    /explained by "1\+\+,1--,2\+-,2-\+"|explained by "\+\+,--"/ { f = $2 + 0; nf++ }
+    /explained by "1\+-,1-\+,2\+\+,2--"|explained by "\+-,-\+"/ { r = $2 + 0; nr++ }
     END {
-      if (!nf || !nr) { print "unclear"; exit }
+      if (nf != 1 || nr != 1) { print "unclear"; exit }
+      d = f - r; if (d < 0) d = -d
       if (f >= 0.8) print "forward"
       else if (r >= 0.8) print "reverse"
-      else if (f >= 0.3 && f <= 0.7 && r >= 0.3 && r <= 0.7) print "unstranded"
+      else if (d <= 0.1 + 1e-9) print "unstranded"
       else print "unclear"
     }' "$1"
 }
@@ -104,7 +156,7 @@ infer_strandedness() {
 
 ### Step 4b — Genome BAM input
 
-Genome BAMs must come from a splice-aware aligner (STAR, as in nf-core/rnaseq: `{RNASEQ_OUTDIR}/star_salmon/{sample}.markdup.sorted.bam`), be coordinate-sorted, and be aligned to the same FASTA and GTF that Step 7 gives the pipeline (same contig names). No `.bai` index is needed: the pipeline sorts and indexes the BAMs itself. Find them with `find {DIR} -name "*.bam" ! -name "*toTranscriptome*"`, derive sample names by removing `.markdup.sorted.bam`, `.sorted.bam` or `.bam`, apply the sanitisation rule of Step 4a, and use one BAM per sample (BAM rows are never merged). Ask the strandedness question of Step 4a (with the nf-core/rnaseq block when the BAMs come from such a run) and the read type (numbered): 1. paired-end · 2. single-end; store `{STRANDEDNESS}` and `{LAYOUT}`. Then apply the BAM input rule.
+Ask for the directory of the BAM files (for example the `star_salmon/` directory of an nf-core/rnaseq run) and store `{BAM_DIR}`. Genome BAMs must come from a splice-aware aligner (STAR, as in nf-core/rnaseq: `star_salmon/{sample}.markdup.sorted.bam`) and be aligned to the same FASTA and GTF that Step 7 gives the pipeline (same contig names). They need not be sorted or indexed: the pipeline re-sorts and indexes them itself (`samtools sort`, then `samtools index`), so no `.bai` file is needed; a splice-aware aligner is still required. Find them with `find "{BAM_DIR}" -path "*/work" -prune -o -name "*.bam" ! -name "*toTranscriptome*" -print`, derive sample names by removing `.markdup.sorted.bam`, `.umi_dedup.sorted.bam`, `.sorted.bam` or `.bam`, and use one BAM per sample (BAM rows are never merged). When several BAMs give the same name (an nf-core/rnaseq run can keep `X.sorted.bam` next to `X.markdup.sorted.bam`), prefer `.markdup.sorted.bam` (or `.umi_dedup.sorted.bam` in a UMI run), drop the others and tell the user which file was kept. Then apply `input_path_ok`, `sanitize_sample_name` and `sample_name_collisions` (block in Step 4a) as for FASTQ rows. Ask the strandedness question of Step 4a (with the nf-core/rnaseq block when the BAMs come from such a run) and the read type (numbered): 1. paired-end · 2. single-end; store `{STRANDEDNESS}` and `{LAYOUT}`. Single-end and `forward` BAM input were verified from the pipeline code only, not run. Then apply the BAM input rule.
 
 **BAM input rule.** Define this function in the Bash tool and run `bam_input_allowed {STRANDEDNESS} {LAYOUT}`:
 ```bash

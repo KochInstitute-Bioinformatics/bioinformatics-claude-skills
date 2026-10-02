@@ -4,7 +4,7 @@
 # its README (target: skill or readme); @KEY@ in the program and the text is replaced by the gate value KEY. A row passes when
 # the sed program changed the target, the runner exits non-zero, and the runner printed the expected text.
 # An @KEY@ that is not a non-empty gate value fails its row (it would otherwise become an empty string).
-# Runners: check strand bam validate readlen render submit helper (see runner() below).
+# Runners: check strand bam names validate readlen render submit helper (see runner() below).
 # Prints "MUTATIONS PASS (<n>)" or exits 1.
 set -u
 SKILL=${1:?usage: prove_mutations.sh <skill.md>}
@@ -18,7 +18,7 @@ gv() { awk -F'\t' -v k="$1" '$1 == k {print $2; exit}' "$HERE/fixtures/gate_valu
 subst() { local s=$1 k v; while [[ $s =~ @([A-Z_0-9]+)@ ]]; do k=${BASH_REMATCH[1]}; v=$(gv "$k")
   [ -n "$v" ] || { echo "unknown or empty gate key @$k@" >&2; return 1; }; s=${s//@$k@/$v}; done; printf '%s' "$s"; }
 runner() { case "$1" in
-  check) echo check_skill.sh ;; strand) echo test_strandedness.sh ;; bam) echo test_bam_policy.sh ;;
+  check) echo check_skill.sh ;; strand) echo test_strandedness.sh ;; bam) echo test_bam_policy.sh ;; names) echo test_sample_names.sh ;;
   validate) echo test_validate_sheets.sh ;; readlen) echo test_read_length.sh ;; render) echo test_render_params.sh ;;
   submit) echo dry_run_submit.sh ;; helper) echo dry_run_helpers.sh ;; *) echo "" ;; esac; }
 for r in $(awk -F'\t' '$1 !~ /^#/ && NF >= 5 {print $2}' "$HERE/mutations.tsv" | sort -u); do
