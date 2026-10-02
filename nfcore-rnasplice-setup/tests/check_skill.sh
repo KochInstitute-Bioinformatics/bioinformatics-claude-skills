@@ -152,4 +152,34 @@ case "$(gv GATE_OUTCOME)" in
 esac
 # --- end Task 1
 
+# --- Task 2 (Step 4)
+need "## Step 4 — Input files and samplesheet rows"
+need "sample,fastq_1,fastq_2,strandedness,condition"
+need "$(head -n1 "$FIX/test_samplesheet.csv" | tr -d '\r')"
+need "Strandedness is asked, never guessed."
+need "1. unstranded · 2. forward · 3. reverse · 4. I don't know"
+need "rnasplice has no \`auto\` strandedness"
+forbid "strandedness to \`auto\`"
+forbid "strandedness: auto"
+need "Never continue with \"I don't know\""
+need "rMATS needs one strandedness and one read type for all samples"
+need "if a name then starts with a digit, prefix \`S\`"
+need "1. the same sample (lanes or technical replicates; the pipeline merges their reads)"
+need "2. different samples — rename them"
+anchor_once "**Strandedness from an existing nf-core/rnaseq run.**"
+anchor_once "**BAM input rule.**"
+need "infer_strandedness() {"
+need "bam_input_allowed() {"
+need "RMATS_LIBTYPE=\"$(gv BAM_RMATS_LIBTYPE)\""
+need "RMATS_READTYPE=\"$(gv BAM_RMATS_READTYPE)\""
+need "DEXSEQ_STRAND=\"$(gv BAM_DEXSEQ_STRAND)\""
+need "FC_STRAND=\"$(gv BAM_FC_STRAND)\""
+need "Start from FASTQ"
+need "DTU and SUPPA2 need Salmon quantification from reads"
+[ "$(gv BAM_RMATS_LIBTYPE)" = none ] || need "$(gv BAM_SHEET_HEADER)"
+# Controller ruling (b): a BAM sheet with strandedness/single_end columns carries the asked values in every row.
+case "$(gv BAM_SHEET_HEADER)" in *,strandedness,single_end*)
+  need "write \`{STRANDEDNESS}\` and \`true\` (single-end) or \`false\` in every row" ;; esac
+# --- end Task 2
+
 [ $fail -eq 0 ] && echo "PASS" || exit 1

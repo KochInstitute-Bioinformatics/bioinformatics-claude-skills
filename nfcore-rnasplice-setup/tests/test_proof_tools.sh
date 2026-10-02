@@ -11,6 +11,8 @@ case "$T" in /tmp/tmp.??????????) ;; *) echo "unexpected temp dir: $T"; exit 1 ;
 R="$T/repo"; D="$R/nfcore-rnasplice-setup"; G=(git -C "$R" -c user.name=selftest -c user.email=selftest@invalid -c commit.gpgsign=false)
 mkdir -p "$D/tests/fixtures" "$T/tmpdir"
 cp "$HERE"/check_skill.sh "$HERE"/cut_block.sh "$HERE"/prove_red.sh "$HERE"/prove_mutations.sh "$HERE"/mutations.tsv "$D/tests/"
+# The runners named in mutations.tsv (prove_mutations.sh runs each on the unmutated skill first).
+cp "$HERE"/test_env.sh "$HERE"/test_strandedness.sh "$HERE"/test_bam_policy.sh "$D/tests/"
 cp "$HERE"/fixtures/* "$D/tests/fixtures/"
 git init -q "$R" || exit 1
 "${G[@]}" add -A && "${G[@]}" commit -q -m c0 || exit 1
