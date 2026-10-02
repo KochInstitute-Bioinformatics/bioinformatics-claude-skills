@@ -1,0 +1,8 @@
+# id	runner	target	sed program	expected text
+T1-flag	check	skill	s/^Extract `tag_name`/Extract --rmats_read_len `tag_name`/	--rmats_read_len is not an allowlisted tool flag
+T1-gh	check	skill	s/Always use `WebFetch`\./Always use `gh api`./	forbidden text present: gh api
+T1-yaml	check	skill	$s/$/\n```yaml\nbogus_param: 1\n```/	params key not in the recorded schema: bogus_param
+T1-group	check	skill	$s/$/\n```yaml\ninput_output_options: 1\n```/	params key not in the recorded schema: input_output_options
+T1-rev	check	skill	s/nf-core\/rnasplice @PIPELINE_REVISION@ with Nextflow/nf-core\/rnasplice 0.0.0 with Nextflow/	missing required text: verified against nf-core/rnasplice @PIPELINE_REVISION@ with Nextflow @NEXTFLOW_TESTED@
+T1-nfmin	check	skill	s/Nextflow @NEXTFLOW_MIN@ or newer/Nextflow 0.0.1 or newer/g	missing required text: Nextflow @NEXTFLOW_MIN@ or newer
+T1-guil	check	skill	s/^# nf-core\/rnasplice Pipeline Setup Skill$/&\n«X»/	forbidden text present: «
