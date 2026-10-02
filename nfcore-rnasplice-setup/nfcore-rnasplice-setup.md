@@ -380,3 +380,58 @@ install_rnasplice_sheets "$T" {SOURCE} 0 {SAMPLESHEET_CSV} {CONTRASTS_CSV}
 4. On `WROTE`, show the files in full.
 
 Keep for Step 8: the number of distinct samples, the size of the smallest compared condition and, per contrast, the number of treatment and control samples.
+
+---
+
+## Step 6 — Read length for rMATS
+
+rMATS needs the read length (`rmats_read_len`), and the pipeline default of 40 is wrong for almost all data, so the length is always set here and written to the params file. rnasplice has no other read-length setting (the STAR index it builds does not depend on it), and rMATS always runs with `--variable-read-length` and `--allow-clipping`, so trimmed reads of other lengths are still counted.
+
+**Read-length detection.** FASTQ input. In one Bash call, define this function, run it on the first FASTQ of up to 5 different samples, one file at a time (report per sample), then on all of them together (the value used). It reads only the first 1000 reads of each file, which is light work on the login node.
+```bash
+detect_read_length() {
+  # usage: detect_read_length <fastq.gz> ...
+  # prints "<length> <reads>": the most common read length among the first 1000 reads of each file (a tie goes to the longer length)
+  local f
+  for f in "$@"; do zcat -f "$f" | head -n 4000 | awk 'NR % 4 == 2 {print length($0)}'; done \
+    | sort -n | uniq -c | sort -k1,1nr -k2,2nr | head -1 | awk '{print $2, $1}'
+}
+```
+`{READ_LENGTH}` = the first number of the combined result. If the per-sample values differ, show them and say that `{READ_LENGTH}` is the most common length, which is what rMATS expects for variable read lengths. Tell the user: "Read length for rMATS: {READ_LENGTH} bp (`rmats_read_len: {READ_LENGTH}`)."
+
+BAM input: ask "What is the read length of the sequencing (for example 100 or 150)?" — an integer between 20 and 1000; store it as `{READ_LENGTH}`.
+
+---
+
+## Step 7 — Organism and genome files
+
+Ask, in this order:
+1. "What organism is this data from? (e.g. mouse, human)"
+2. (numbered): 1. Ensembl release in the standard folder (default) · 2. Custom reference — I already have a FASTA and GTF.
+3. The option-specific questions below. Ask the base directory only for option 1.
+
+- **Option 1 (Ensembl):** ask "What is the base directory where genome files and indexes are stored?" (`{genome_base}`). Folder convention, shared with `/nfcore-rnaseq-setup` so that FASTA, GTF and indexes are reused, never downloaded twice:
+  ```
+  {genome_base}/{organism}/{assembly}_ens{version}/
+  ├── {FASTA}.fa            ← primary assembly FASTA
+  ├── {GTF}.gtf             ← annotation GTF
+  └── index/
+      ├── star/             ← STAR index (as built by /nfcore-rnaseq-setup); reused only if compatible
+      └── salmon/           ← Salmon index (as built by /nfcore-rnaseq-setup); reused only if compatible
+  ```
+  Mouse: GRCm39, FASTA `Mus_musculus.GRCm39.dna.primary_assembly.fa`, GTF `Mus_musculus.GRCm39.{version}.gtf`, directory `{genome_base}/mouse/mm39_ens{version}/`. Human: GRCh38, FASTA `Homo_sapiens.GRCh38.dna.primary_assembly.fa`, GTF `Homo_sapiens.GRCh38.{version}.gtf`, directory `{genome_base}/human/hg38_ens{version}/`. Other organisms: option 2. Version: the highest existing `{assembly}_ens{N}` directory unless the user asks otherwise; if none exists, the latest Ensembl release from `https://ftp.ensembl.org/pub/current_README` (`WebFetch`). Store `{GENOME_DIR}`, `{FASTA_PATH}`, `{GTF_PATH}`, `{ORGANISM}`, `{ASSEMBLY}`, `{ENS_VERSION}` and `{REF_TAG}` = `{ASSEMBLY}_ens{ENS_VERSION}`.
+  If the FASTA or the GTF is missing: resolve both download URLs at run time with `WebFetch` on the Ensembl FTP listing of that release (`https://ftp.ensembl.org/pub/release-{version}/fasta/{species}/dna/` and `https://ftp.ensembl.org/pub/release-{version}/gtf/{species}/`), check each with a HEAD request (`curl -sI URL | head -1` must show 200), show them to the user, store `{ENSEMBL_FASTA_URL}` and `{ENSEMBL_GTF_URL}`, and generate `download_genome_{REF_TAG}.sh` (Step 11). Never type a URL from memory.
+- **Option 2 (Custom reference):** ask for the FASTA path and the GTF path; `{GENOME_DIR}` = the directory of the FASTA, `{REF_TAG}` = `custom_{WD_NAME}`; no download. The pipeline accepts `.fa`, `.fasta`, `.fna` and the same with `.gz`, and `.gtf` or `.gtf.gz`. Check that both files exist (`test -s`). Ask (numbered) whether STAR or Salmon indexes built from exactly this FASTA and GTF exist: 1. No (default) · 2. Yes — ask for their directories and apply the compatibility checks below.
+
+**GTF source.** `zcat -f {GTF_PATH} | grep -v "^#" | head -3`: gene IDs with a version suffix (`ENSG00000000003.15`) indicate GENCODE, without one Ensembl. Report it. `gencode: false` is written either way: the pipeline builds the transcript FASTA from the GTF itself, so it never receives a GENCODE-format transcript FASTA, the only case `gencode: true` is for.
+
+**Existing indexes — reused only when compatible; otherwise the pipeline builds its own.** (BAM input uses no index: skip this part; `{STAR_INDEX}` and `{SALMON_INDEX}` are empty.) The wizard never builds an index itself.
+- STAR (`{STAR_DIR}` = `{GENOME_DIR}/index/star` for option 1, or the directory the user gave): in one Bash call, check the files and read the two header lines (small text files, light work on the login node):
+  ```bash
+  for f in SA Genome sjdbList.out.tab genomeParameters.txt; do [ -s "{STAR_DIR}/$f" ] || echo "MISSING: $f"; done
+  grep -E '^(versionGenome|sjdbOverhang)[[:space:]]' "{STAR_DIR}/genomeParameters.txt"
+  ```
+  Any `MISSING` line: there is no usable index; let the pipeline build it. Otherwise offer reuse — (numbered) 1. Reuse (default) · 2. Let the pipeline build its own — only when `versionGenome` is `2.7.4a` (the index format of the STAR inside this pipeline revision); with any other value, say why and let the pipeline build it. If its `sjdbOverhang` is not 100 (the value the pipeline uses when it builds the index itself), warn before asking: "⚠️ This STAR index was built with sjdbOverhang {N}, not the pipeline's 100. STAR aligns with it, but the junction database is tuned for reads of {N}+1 bp (your reads: {READ_LENGTH} bp)." Reuse: `{STAR_INDEX}` = that directory; otherwise `{STAR_INDEX}` is empty.
+- Salmon (`{SALMON_DIR}` = `{GENOME_DIR}/index/salmon` for option 1; FASTQ input only): present when `versionInfo.json` exists; read it with `grep '"indexVersion"' "{SALMON_DIR}/versionInfo.json"` and offer reuse the same way only when its `"indexVersion"` is `5` (the index format of the Salmon inside this pipeline revision). Reuse: `{SALMON_INDEX}` = that directory; otherwise empty.
+
+When the pipeline builds the STAR index of a human or mouse genome, STAR_GENOMEGENERATE needs about 32 GB of memory and an hour or more; the `nextflow.config` of Step 10 gives it 64 GB and 8 h. Indexes built by the pipeline are not kept (`save_reference: false`), so a later run builds them again.

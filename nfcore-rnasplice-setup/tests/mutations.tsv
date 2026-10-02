@@ -140,3 +140,32 @@ T3f-direction	check	skill	s/tell the user the direction/mention/	missing require
 T3f-sign	check	skill	s/means more inclusion in the treatment/means more inclusion in the control/	missing required text: a positive rMATS IncLevelDifference means more inclusion in the treatment
 T3f-seqdate	check	skill	s/For BAM input, `{SEQ_DATE}` =/For BAM input the date/	missing required text: For BAM input, `{SEQ_DATE}` =
 T3f-newname	check	skill	s/store the new name in `{SAMPLESHEET_CSV}` or `{CONTRASTS_CSV}`/use another name/	missing required text: store the new name in `{SAMPLESHEET_CSV}` or `{CONTRASTS_CSV}`
+T4-tie	readlen	skill	s/sort -k1,1nr -k2,2nr/sort -k1,1nr -k2,2n/	FAIL: case tie
+T4-mode	readlen	skill	s/-k2,2nr | head -1 |/-k2,2nr | tail -1 |/	FAIL: case mixed
+T4-head	readlen	skill	s/head -n 4000 | awk/awk/	FAIL: case first1000
+T4-star	check	skill	s/@STAR_VERSION_GENOME@/9.9.9z/g	missing required text: @STAR_VERSION_GENOME@
+T4-salmon	check	skill	s/is `@SALMON_INDEX_VERSION@` (the index format/is `4` or newer (the index format/	missing required text: only when its `"indexVersion"` is `@SALMON_INDEX_VERSION@`
+T4-starcmp	check	skill	s/only when `versionGenome` is `@STAR_VERSION_GENOME@`/only when `versionGenome` is at least `2.7.0`/	missing required text: only when `versionGenome` is `@STAR_VERSION_GENOME@`
+T4-reusedef	check	skill	s/1\. Reuse (default) · 2\. Let the pipeline build its own/1. Let the pipeline build its own (default) · 2. Reuse/	missing required text: 1. Reuse (default) · 2. Let the pipeline build its own
+T4-sjdb	check	skill	s/If its `sjdbOverhang` is not 100 ([^)]*), warn before asking: "[^"]*"//	missing required text: If its `sjdbOverhang` is not 100
+T4-sjdbtext	check	skill	s/the junction database is tuned for reads of/it is fine for reads of/	missing required text: the junction database is tuned for reads of
+T4-stargrep	check	skill	s/grep -E '^(versionGenome|sjdbOverhang)\[\[:space:\]\]' "{STAR_DIR}\/genomeParameters.txt"/cat "{STAR_DIR}\/Log.out"/	missing required text: grep -E '^(versionGenome|sjdbOverhang)[[:space:]]' "{STAR_DIR}/genomeParameters.txt"
+T4-salmongrep	check	skill	s/grep '"indexVersion"' "{SALMON_DIR}\/versionInfo.json"/cat "{SALMON_DIR}\/info.json"/	missing required text: grep '"indexVersion"' "{SALMON_DIR}/versionInfo.json"
+T4-nobuild	check	skill	s/ The wizard never builds an index itself\./ If no index exists, build one with STAR before the run./	missing required text: The wizard never builds an index itself
+T4-saveref	check	skill	s/(`save_reference: false`)/(`save_reference: true` keeps them)/	missing required text: `save_reference: false`
+T4-bamidx	check	skill	s/(BAM input uses no index: skip this part; `{STAR_INDEX}` and `{SALMON_INDEX}` are empty\.)//	missing required text: (BAM input uses no index: skip this part;
+T4-salmonfq	check	skill	s/for option 1; FASTQ input only)/for option 1)/	missing required text: for option 1; FASTQ input only
+T4-onecall	check	skill	s/FASTQ input\. In one Bash call, define this function, run it/FASTQ input. Define this function, then run it/	missing required text: In one Bash call, define this function, run it on the first FASTQ
+T4-bashtool	check	skill	s/FASTQ input\. In one Bash call, define this function,/FASTQ input: define this function in the Bash tool, In one Bash call, define this function,/	forbidden pattern present: 'in the Bash tool'
+T4-default40	check	skill	s/the pipeline default of 40 is wrong for almost all data/the pipeline default of 40 is usually fine/	missing required text: the pipeline default of 40 is wrong for almost all data
+T4-flags	check	skill	s/rMATS always runs with `--variable-read-length` and `--allow-clipping`/rMATS runs with fixed-length reads/	missing required text: `--variable-read-length` and `--allow-clipping`
+T4-bamlen	check	skill	s/ — an integer between 20 and 1000;/;/	missing required text: an integer between 20 and 1000
+T4-askbase	check	skill	s/ Ask the base directory only for option 1\./ Ask the base directory./	missing required text: Ask the base directory only for option 1
+T4-folder	check	skill	s/^  {genome_base}\/{organism}\/{assembly}_ens{version}\/$/  {genome_base}\/{assembly}\//	missing required text: {genome_base}/{organism}/{assembly}_ens{version}/
+T4-custom	check	skill	s/`{REF_TAG}` = `custom_{WD_NAME}`/`{REF_TAG}` = `custom`/	missing required text: custom_{WD_NAME}
+T4-gencode	check	skill	s/`gencode: false` is written either way/write `gencode: true` for GENCODE/	missing required text: `gencode: false` is written either way
+T4-dlscript	check	skill	s/and generate `download_genome_{REF_TAG}.sh` (Step 11)/and download the files now/	missing required text: download_genome_{REF_TAG}.sh
+T4-memory	check	skill	s/ Never type a URL from memory\.//	missing required text: Never type a URL from memory
+T4-head200	check	skill	s/check each with a HEAD request (`curl -sI URL | head -1` must show 200), //	missing required text: check each with a HEAD request
+T4-anchor	check	skill	s/^\*\*Read-length detection\.\*\* FASTQ input\./&\n**Read-length detection.** again./	anchor must appear exactly once: **Read-length detection.**
+T4-fn	readlen	skill	s/^detect_read_length() {/read_length_of() {/	FAIL: detect_read_length is not defined by the block

@@ -278,4 +278,41 @@ need "store the new name in \`{SAMPLESHEET_CSV}\` or \`{CONTRASTS_CSV}\`"
 need "A missing or empty input file stops the call"
 # --- end Task 3 review fixes
 
+# --- Task 4 (Steps 6-7)
+need "## Step 6 — Read length for rMATS"
+anchor_once "**Read-length detection.**"
+need "detect_read_length() {"
+need "the pipeline default of 40 is wrong for almost all data"
+need "\`--variable-read-length\` and \`--allow-clipping\`"
+need "an integer between 20 and 1000"
+need "## Step 7 — Organism and genome files"
+need "{genome_base}/{organism}/{assembly}_ens{version}/"
+need "Ask the base directory only for option 1"
+need "custom_{WD_NAME}"
+need "versionGenome"
+need "$(gv STAR_VERSION_GENOME)"
+need "\"indexVersion\""
+# The bare gate value (a single digit) would match any text; pin the sentence that compares against it.
+need "only when its \`\"indexVersion\"\` is \`$(gv SALMON_INDEX_VERSION)\`"
+need "1. Reuse (default) · 2. Let the pipeline build its own"
+need "\`gencode: false\` is written either way"
+need "download_genome_{REF_TAG}.sh"
+need "Never type a URL from memory"
+# Controller rulings: one Bash call per procedure; index reuse only for the gate's index formats; sjdbOverhang warning;
+# the wizard never builds an index; pipeline-built indexes are not kept.
+need "In one Bash call, define this function, run it on the first FASTQ of up to 5 different samples"
+need "only when \`versionGenome\` is \`$(gv STAR_VERSION_GENOME)\`"
+need "grep -E '^(versionGenome|sjdbOverhang)[[:space:]]' \"{STAR_DIR}/genomeParameters.txt\""
+need "grep '\"indexVersion\"' \"{SALMON_DIR}/versionInfo.json\""
+[ "$(cfg_default rmats_read_len)" = 40 ] || { echo "config extraction broken: rmats_read_len default is not 40"; exit 2; }
+[ "$(cfg_default save_reference)" = false ] || { echo "config extraction broken: save_reference default is not false"; exit 2; }
+need "If its \`sjdbOverhang\` is not 100"
+need "the junction database is tuned for reads of"
+need "The wizard never builds an index itself"
+need "\`save_reference: false\`"
+need "(BAM input uses no index: skip this part; \`{STAR_INDEX}\` and \`{SALMON_INDEX}\` are empty.)"
+need "for option 1; FASTQ input only"
+need "check each with a HEAD request"
+# --- end Task 4
+
 [ $fail -eq 0 ] && echo "PASS" || exit 1
