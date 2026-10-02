@@ -1,0 +1,576 @@
+# id	runner	target	sed program	expected text
+T1-flag	check	skill	s/^Extract `tag_name`/Extract --rmats_read_len `tag_name`/	--rmats_read_len is not an allowlisted tool flag
+T1-gh	check	skill	s/Always use `WebFetch`\./Always use `gh api`./	forbidden text present: gh api
+T1-yaml	check	skill	$s/$/\n```yaml\nbogus_param: 1\n```/	params key not in the recorded schema: bogus_param
+T1-group	check	skill	$s/$/\n```yaml\ninput_output_options: 1\n```/	params key not in the recorded schema: input_output_options
+T1-rev	check	skill	s/nf-core\/rnasplice @PIPELINE_REVISION@ with Nextflow/nf-core\/rnasplice 0.0.0 with Nextflow/	missing required text: verified against nf-core/rnasplice @PIPELINE_REVISION@ with Nextflow @NEXTFLOW_TESTED@
+T1-nfmin	check	skill	s/Nextflow @NEXTFLOW_MIN@ or newer/Nextflow 0.0.1 or newer/g	missing required text: Nextflow @NEXTFLOW_MIN@ or newer
+T1-guil	check	skill	s/^# nf-core\/rnasplice Pipeline Setup Skill$/&\n«X»/	forbidden text present: «
+T1-latest	check	skill	s/^- Set `{VERSION}` = @PIPELINE_REVISION@ /- Set `{VERSION}` = {TAG} /	missing required text: - Set `{VERSION}` = @PIPELINE_REVISION@
+T1-default	check	skill	s/1\. Use the pinned commit (verified; default)/1. Use the pinned commit/	missing required text: 1. Use the pinned commit (verified; default)
+T1-branch	check	skill	s/; that is a commit of the development branch (`@VERSION_TAG@`)//	missing required text: that is a commit of the development branch (`@VERSION_TAG@`)
+T1-nfhere	check	skill	s/Do not run `nextflow` here/Run `nextflow -version` here/	missing required text: Do not run `nextflow` here
+T1-vtag	check	skill	s/^Set `{VERSION_TAG}` =/`{VERSION_TAG}` is/	missing required text: Set `{VERSION_TAG}`
+T1-url	check	skill	s#api.github.com/repos/nf-core/rnasplice/releases/latest#api.github.com/repos/nf-core/rnavar/releases/latest#	missing required text: api.github.com/repos/nf-core/rnasplice/releases/latest
+T1-schema	check	skill	s#raw.githubusercontent.com/nf-core/rnasplice/{TAG}/nextflow_schema.json#raw.githubusercontent.com/nf-core/rnasplice/master/nextflow_schema.json#	missing required text: raw.githubusercontent.com/nf-core/rnasplice/{TAG}/nextflow_schema.json
+T1-pointer	check	skill	s/ (the Step 8 module block and the Step 11 template)//	missing required text: (the Step 8 module block and the Step 11 template)
+T1-fetchfail	check	skill	/^- If the fetch fails/d	missing required text: - If the fetch fails
+T1-tag104	check	skill	/^- If `{TAG}` is 1\.0\.4:/d	missing required text: - If `{TAG}` is 1.0.4: tell the user that the pinned commit is used
+T1-warn	check	skill	s/, and warn the user that .*$/./	missing required text: were verified for the pinned commit only, not for release {TAG}
+T1-pwd	check	skill	s/run `pwd` to record/ask the user for/	missing required text: run `pwd` to record the current working directory
+T1-wdname	check	skill	/^- `{WD_NAME}` = /d	missing required text: `{WD_NAME}` = basename of `{CWD}`
+T1-today	check	skill	s/^- `{TODAY_ISO}` = today's date as `YYYY-MM-DD`.*$/- `{TODAY_ISO}` = today/	missing required text: `{TODAY_ISO}` = today's date as `YYYY-MM-DD`
+T1-yymmdd	check	skill	/^- `{TODAY_YYMMDD}` = /d	missing required text: `{TODAY_YYMMDD}` = today's date as `YYMMDD`
+T1-email	check	skill	s/Do \*\*not\*\* pre-suggest or pre-fill any email address\. //	missing required text: Do **not** pre-suggest or pre-fill any email address.
+T1-env	check	skill	s/Do \*\*not\*\* pre-suggest any environment name\. //	missing required text: Do **not** pre-suggest any environment name.
+T1-separate	check	skill	s/ — never combine Steps 1 and 2 in one message//	missing required text: never combine Steps 1 and 2 in one message
+T1-yml	check	skill	$s/$/\n```yml\nmax_cpus: 16\n```/	params key not in the recorded schema: max_cpus
+T1-yaml4	check	skill	$s/$/\n````YAML\nmax_memory: "64.GB"\n````/	params key not in the recorded schema: max_memory
+T1-nested	check	skill	$s/$/\n````markdown\n```yaml\nmax_time: "24.h"\n```\n````/	params key not in the recorded schema: max_time
+T1-ghcmd	check	skill	s/Always use `WebFetch`\./Always use `gh release view` or `WebFetch`./	forbidden pattern present: a gh command
+T1-marker	check	skill	s/^- If the fetch fails/[A\/C] - If the fetch fails/	forbidden pattern present: a plan variant marker
+T1-pull	check	skill	s/^Extract `tag_name`/Run `NXF_OFFLINE=false nextflow pull nf-core\/rnasplice` first. Extract `tag_name`/	forbidden text present: nextflow pull
+T2-thr	strand	skill	s/if (f >= 0.8) print "forward"/if (f >= 0.6) print "forward"/	FAIL: case pe_ambiguous
+T2-swap	strand	skill	s/if (f >= 0.8) print "forward"/if (f >= 0.8) print "reverse"/	FAIL: case pe_forward
+T2-se	strand	skill	s/|explained by "\\+\\+,--"//	FAIL: case se_reverse
+T2-auto	check	skill	s/Strandedness is asked, never guessed\./Strandedness defaults to auto./	missing required text: Strandedness is asked, never guessed.
+T2-bam-lt	check	skill	s/RMATS_LIBTYPE="@BAM_RMATS_LIBTYPE@"/RMATS_LIBTYPE="fr-wrong"/	missing required text: RMATS_LIBTYPE="@BAM_RMATS_LIBTYPE@"
+T2-bam-fs	bam	skill	s/from_sheet) echo "ALLOWED: /from_sheet) echo "REFUSED: /	FAIL: case unstranded/paired: expected ALLOWED
+T2-bam-inv	bam	skill	s/^    \*) echo "REFUSED: strandedness must be/    auto) lt=fr-unstranded; ds=no; fc=0 ;;\n&/	FAIL: case invalid_strandedness
+T2-bam-lay	bam	skill	s/case "\$2" in paired|single) ;;/case "$2" in paired|single|both) ;;/	FAIL: case invalid_layout
+T2-anchor-s	check	skill	$s/$/\n**Strandedness from an existing nf-core\/rnaseq run.**/	anchor must appear exactly once: **Strandedness from an existing nf-core/rnaseq run.**
+T2-anchor-b	check	skill	$s/$/\n**BAM input rule.**/	anchor must appear exactly once: **BAM input rule.**
+T2-forbid-to	check	skill	s/Strandedness is asked, never guessed\./& Never set strandedness to `auto`./	forbidden text present: strandedness to `auto`
+T2-forbid-yaml	check	skill	$s/$/\nstrandedness: auto/	forbidden text present: strandedness: auto
+T2-bamrows	check	skill	s/; write `{STRANDEDNESS}` and `true` (single-end) or `false` in every row/;/	missing required text: write `{STRANDEDNESS}` and `true` (single-end) or `false` in every row
+T2-idk	check	skill	s/Never continue with "I don't know"\. //	missing required text: Never continue with "I don't know"
+T2-mixed	check	skill	s/rMATS needs one strandedness and one read type for all samples/rMATS prefers one read type/g	missing required text: rMATS needs one strandedness and one read type for all samples
+T2-bamhdr	check	skill	s/`@BAM_SHEET_HEADER@`/`sample,condition,genome_bam`/	missing required text: The samplesheet header is `@BAM_SHEET_HEADER@`
+T2-stub	strand	skill	s/^infer_strandedness() {$/&\n  nextflow -version > \/dev\/null 2>\&1/	FAIL: a forbidden command ran
+T2-stub-bam	bam	skill	s/^bam_input_allowed() {$/&\n  python3 -c 1 > \/dev\/null 2>\&1/	FORBIDDEN python3
+T2-unclear	strand	skill	s/if (nf != 1 || nr != 1) { print "unclear"; exit }//	FAIL: case one_line
+T2-unstr	strand	skill	s/d <= 0.1 + 1e-9/d <= 0.4/	FAIL: case pe_70_30
+T2-digit	check	skill	s/; if a name then does not start with a letter (a digit or `_`), prefix `S`//	missing required text: if a name then does not start with a letter (a digit or `_`), prefix `S`
+T2-rep	strand	skill	s/nf != 1 || nr != 1/!nf || !nr/	FAIL: case repeated
+T2-missing	strand	skill	/^  \[ -f "\$1" \] && \[ -r "\$1" \]/d	FAIL: case no_such_file
+T2-tol	strand	skill	s/d <= 0.1 + 1e-9/d <= 0.1/	FAIL: case pe_diff_010
+T2-refused	check	skill	/^- `REFUSED`:/d	missing required text: 1. Start from the FASTQ files instead (go to Step 4a)
+T2-defrev	check	skill	s/\*reverse\* = read 1 comes from the strand opposite to the transcript/*reverse* = read 1 comes from the transcript strand/	missing required text: *reverse* = read 1 comes from the strand opposite to the transcript
+T2-deffwd	check	skill	s/\*forward\* = read 1 comes from the transcript strand/*forward* = read 1 comes from the strand opposite to the transcript/	missing required text: *forward* = read 1 comes from the transcript strand
+T2-nocont	check	skill	/^- Any file gives `unclear`/d	missing required text: do not continue until they answer 1, 2 or 3
+T2-step8	check	skill	s/, so Step 8 switches them off//	missing required text: so Step 8 switches them off
+T2-mixstop	check	skill	s/, so if the directory mixes paired-end and single-end files, stop and ask which files to use//	missing required text: if the directory mixes paired-end and single-end files, stop
+T2-otherchar	check	skill	s/ and every other character outside `A-Za-z0-9_`//	missing required text: every other character outside `A-Za-z0-9_`
+T2-reserved	check	skill	s/; if it is an R reserved word, append `_S`//	missing required text: if it is an R reserved word, append `_S`
+T2-res-code	names	skill	s/|NA|NA_integer_|/|NA_integer_|/	FAIL: sanitise case 'NA'
+T2-lead	names	skill	s/case "\${s:0:1}" in \[A[A-Za-z]*\]) ;; \*) s="S\$s" ;; esac/case "${s:0:1}" in [0-9]) s="S$s" ;; esac/	FAIL: sanitise case '_x'
+T2-r1dot	names	skill	\#_R1\\\./\\1_R2\.#d	FAIL: r2 case ctrl1_R1.fastq.gz
+T2-namecut	names	skill	s/|_R\[12\]\[\._\]//	FAIL: name case ctrl1_R1.fastq.gz
+T2-collide	names	skill	s/(different samples?)/(lanes or technical replicates?)/	FAIL: collision case sanitisation
+T2-path	names	skill	s/\*\[\[:space:\]\]\*|\*,\*)/*,*)/	FAIL: path case
+T2-work	check	skill	s/-path "\*\/work" -prune -o //g	missing required text: -path "*/work" -prune
+T2-head	check	skill	s/-print | wc -l/-print | head -50/	forbidden pattern present: head on the RSeQC file list
+T2-norseqc	check	skill	s/No `\*\.infer_experiment\.txt` file/If no RSeQC file is found/	missing required text: No `*.infer_experiment.txt` file
+T2-dir	check	skill	s/store `{BAM_DIR}`/store `{DIR}`/	forbidden text present: {DIR}
+T2-sorted	check	skill	s/They need not be sorted or indexed: the pipeline re-sorts and indexes them itself/They must be sorted and indexed/	missing required text: the pipeline re-sorts and indexes them itself
+T2-coord	check	skill	s/ and be aligned to the same FASTA/, be coordinate-sorted, and be aligned to the same FASTA/	forbidden text present: be coordinate-sorted
+T2-markdup	check	skill	s/prefer `\.markdup\.sorted\.bam`/keep any/	missing required text: prefer `.markdup.sorted.bam`
+T2-r1text	check	skill	s/ `_R1\.`\/`_R2\.`,//	missing required text: `_R1.`/`_R2.`
+T2-ruletext	check	skill	s/unstranded if the two fractions differ by at most 0\.1/unstranded if both are between 0.3 and 0.7/	missing required text: unstranded if the two fractions differ by at most 0.1
+T2-pattern	check	skill	s/\[a-zA-Z.\](\[a-zA-Z0-9._\]\*)?\$`/[a-zA-Z0-9_]*$`/	missing required text: `^(?!
+T2-anchor-n	check	skill	$s/$/\n**Sample names and read pairs.**/	anchor must appear exactly once: **Sample names and read pairs.**
+T3-label	validate	skill	/err("treatment /d	FAIL: case label_typo_treatment
+T3-header	validate	skill	s/if ($0 != "contrast,treatment,control")/if (0)/	FAIL: case contrasts_no_header
+T3-min	validate	skill	s/nsamp\[c\] < 2/nsamp[c] < 1/	FAIL: case one_sample_condition
+T3-strand	validate	skill	s/else if (st != strand) err/else if (0) err/	FAIL: case mixed_strandedness
+T3-paired	validate	skill	s/if (k != 2) err/if (0) err/	FAIL: case paired_three_conditions
+T3-rmdir	check	skill	s/^  rmdir "\$T" ||/  rm -rf "$T" ||/	forbidden text present: rm -rf
+T3-reserved	validate	skill	/is an R reserved word; the pipeline rejects it/d	FAIL: case reserved_word
+T3-duppair	validate	skill	s/if (($2, $3) in tc) err/if (0) err/	FAIL: case duplicate_pair
+T3-pairpos	validate	skill	s/subj\[s1\] != subj\[s2\]/0/	FAIL: case paired_order_mismatch
+T3-pairfile	validate	skill	s/else if (file < 3) err(/else if (0) err(/	FAIL: case paired_no_pairs_file
+T3-adjacent	validate	skill	s/else if (paired == 1 && s != last) err/else if (0) err/	FAIL: case paired_split_replicates
+T3-subjrep	validate	skill	s/== 2) err("subject "/== 3) err("subject "/	FAIL: case paired_subject_repeated
+T3-pairunknown	validate	skill	s/if (!($1 in cond)) { err("pairs file names/if (0) { err("pairs file names/	FAIL: case paired_unknown_sample
+T3-pairhdr	validate	skill	s/if ($0 != "sample,subject")/if (0)/	FAIL: case paired_pairs_header
+T3-bamhdr	check	skill	s/bamhdr="@BAM_SHEET_HEADER@"/bamhdr="sample,condition,genome_bam"/	missing required text: bamhdr="@BAM_SHEET_HEADER@"
+T3-pairtext	check	skill	s/write the rows ordered by subject within each condition/write the rows/	missing required text: write the rows ordered by subject within each condition
+T3-paircall	check	skill	s/"\$src" 1 "\$T\/pairs\.csv" || rc=1/"$src" 0 || rc=1/	missing required text: validate_rnasplice_sheets "$T/samplesheet.csv" "$T/contrasts.csv" "$src" 1 "$T/pairs.csv" || rc=1
+T3-adjtext	check	skill	s/; the rows of one sample (technical replicates) stay next to each other//	missing required text: the rows of one sample (technical replicates) stay next to each other
+T3-rmatsdef	check	skill	s/the pipeline default `diffsplice_paired: true` assumes/the pipeline default `rmats_paired_stats: true` assumes/	forbidden text present: `rmats_paired_stats: true` assumes
+T3-rmatsfalse	check	skill	s/`rmats_paired_stats` defaults to `false` at this revision/`rmats_paired_stats` defaults to `true`/	missing required text: `rmats_paired_stats` defaults to `false` at this revision
+T3-refsign	check	skill	s/treatment = the later and control = the earlier one/treatment = the earlier and control = the later one/	missing required text: treatment = the later and control = the earlier one in `{CONDITIONS}`
+T3-askonly	check	skill	s/Ask only when there are exactly two conditions with the same number of samples/Always ask/	missing required text: Ask only when there are exactly two conditions with the same number of samples
+T3-both	check	skill	s/sets both `rmats_paired_stats` and SUPPA2's `diffsplice_paired` in Step 8/sets `rmats_paired_stats` in Step 8/	missing required text: sets both `rmats_paired_stats` and SUPPA2's `diffsplice_paired` in Step 8
+T3-min2text	check	skill	s/Every condition used in a contrast needs at least 2 samples/Every condition needs samples/	missing required text: Every condition used in a contrast needs at least 2 samples
+T3-noedit	check	skill	s/ — never edit the validator — / /	missing required text: never edit the validator
+T3-overwrite	check	skill	s/1\. overwrite · 2\. choose another filename/overwrite it/	missing required text: 1. overwrite · 2. choose another filename
+T3-anchor-n	check	skill	$s/$/\n**Sheet validation.**/	anchor must appear exactly once: **Sheet validation.**
+T3f-ans1	check	skill	s/Answer 1: `{PAIRED_DESIGN}` = `false`/Answer 1: `{PAIRED_DESIGN}` = `true`/	missing required text: Answer 1: `{PAIRED_DESIGN}` = `false`
+T3f-both	check	skill	s/, so this skill writes both `false` unless the user confirms pairing//	missing required text: this skill writes both `false` unless the user confirms pairing
+T3f-otherwise	check	skill	s/; otherwise set `{PAIRED_DESIGN}` = `false` without asking//	missing required text: otherwise set `{PAIRED_DESIGN}` = `false` without asking
+T3f-unpaired	check	skill	s/"\$src" 0 || rc=1/"$src" 0 || :/	missing required text: validate_rnasplice_sheets "$T/samplesheet.csv" "$T/contrasts.csv" "$src" 0 || rc=1
+T3f-unpaired-run	validate	skill	s/"\$src" 0 || rc=1/"$src" 0 || :/	FAIL: case install_invalid
+T3f-reffirst	check	skill	s/ask for an order with the reference first/ask for any order/	missing required text: ask for an order with the reference first
+T3f-scratch	check	skill	s/Both sheets are written to a scratch directory first, validated there, and only then moved into `{CWD}`/Both sheets are written into `{CWD}`/	missing required text: validated there, and only then moved into `{CWD}`
+T3f-persist	check	skill	s/^\*\*Bash tool calls\.\*\* Shell variables and functions do not persist between Bash tool calls\. /**Bash tool calls.** /	missing required text: **Bash tool calls.** Shell variables and functions do not persist between Bash tool calls.
+T3f-paste	check	skill	s/paste the whole block at the start of every Bash call that uses its functions/define the functions once/	missing required text: paste the whole block at the start of every Bash call that uses its functions
+T3f-onecall	check	skill	s/so the whole procedure is one Bash call/so run the steps in separate calls/	missing required text: **Writing the sheets.** Shell variables and functions do not persist between Bash tool calls, so the whole procedure is one Bash call
+T3f-rseqc	check	skill	s/In one Bash call, define the function below and run it/Define the function below in the Bash tool and run it/	forbidden pattern present: 'in the Bash tool'
+T3f-bamrule	check	skill	s/In one Bash call, define this function and run/Define this function and run/	missing required text: In one Bash call, define this function and run `bam_input_allowed {STRANDEDNESS} {LAYOUT}`
+T3f-names	check	skill	s/Paste this block at the start of every Bash call that uses these functions and use them/Define these functions in the Bash tool and use them/	forbidden pattern present: 'in the Bash tool'
+T3f-Tprose	check	skill	s/^4\. On `WROTE`, show the files in full\./4. On `WROTE`, run `rmdir "$T"` and show the files in full./	used outside a code block
+T3f-call0	check	skill	s/^install_rnasplice_sheets "\$T" {SOURCE} 0 "{SAMPLESHEET_CSV}" "{CONTRASTS_CSV}"$/install_rnasplice_sheets "$T" {SOURCE} 0 {SAMPLESHEET_CSV} {CONTRASTS_CSV}/	missing required text: install_rnasplice_sheets "$T" {SOURCE} 0 "{SAMPLESHEET_CSV}" "{CONTRASTS_CSV}"
+T3f-call1	check	skill	s/^# install_rnasplice_sheets "\$T" {SOURCE} 1 .*$/# install_rnasplice_sheets "$T" {SOURCE} 1/	missing required text: install_rnasplice_sheets "$T" {SOURCE} 1 "{SAMPLESHEET_CSV}" "{CONTRASTS_CSV}" "{SHEET_PREFIX}_pairs.csv"
+T3f-installdef	validate	skill	s/^install_rnasplice_sheets() {/install_sheets_old() {/	FAIL: install_rnasplice_sheets is not defined by the block
+T3f-cleanup-run	validate	skill	/^  rmdir "\$T" || echo/d	FAIL: case install_ok: scratch directory left behind
+T3f-cleanup-err	validate	skill	s/^  rm -f "\$T\/samplesheet.csv" "\$T\/contrasts.csv" "\$T\/pairs.csv"$/  :/	FAIL: case install_invalid: scratch directory left behind
+T3f-cleanup-text	check	skill	s/The scratch files and directory are removed on every path/The scratch directory is removed on success/	missing required text: The scratch files and directory are removed on every path
+T3f-missing-run	validate	skill	s/\[ -s "\$p" \] ||/true ||/	FAIL: case install_missing_input
+T3f-missing-text	check	skill	s/A missing or empty input file stops the call/A missing input file is reported/	missing required text: A missing or empty input file stops the call
+T3f-target	validate	skill	s/''|\*\/\*|\*\[!A-Za-z0-9\._-\]\*) echo "ERROR: target name/''|..) echo "ERROR: target name/	FAIL: case install_bad_target
+T3f-pairname	validate	skill	/a paired design needs the pairs file name/d	FAIL: case install_paired_no_name
+T3f-condrw	validate	skill	/is an R reserved word; the R scripts of the pipeline/d	FAIL: case reserved_condition
+T3f-condtext	check	skill	s/start with a letter and are not R reserved words/start with a letter/	missing required text: start with a letter and are not R reserved words
+T3f-argsrc	validate	skill	/source must be fastq or genome_bam/d	FAIL: case bad_source
+T3f-argpaired	validate	skill	/(got '\$4':/d	FAIL: case bad_paired_flag
+T3f-hdrnoise	validate	skill	s/if (!hdrbad) for (c in used)/for (c in used)/	FAIL: case header_missing_no_size_noise
+T3f-lone	validate	skill	s/{ err("subject " u " has no sample in condition " cn\[j\]); lone = 1 }/{ lone = 0 }/	FAIL: case subject_unpartnered
+T3f-direction	check	skill	s/tell the user the direction/mention/	missing required text: tell the user the direction
+T3f-sign	check	skill	s/means more inclusion in the treatment/means more inclusion in the control/	missing required text: a positive rMATS IncLevelDifference means more inclusion in the treatment
+T3f-seqdate	check	skill	s/For BAM input, `{SEQ_DATE}` =/For BAM input the date/	missing required text: For BAM input, `{SEQ_DATE}` =
+T3f-newname	check	skill	s/store the new name in `{SAMPLESHEET_CSV}` or `{CONTRASTS_CSV}`/use another name/	missing required text: store the new name in `{SAMPLESHEET_CSV}` or `{CONTRASTS_CSV}`
+T4-tie	readlen	skill	s/sort -k1,1nr -k2,2nr/sort -k1,1nr -k2,2n/	FAIL: case tie
+T4-mode	readlen	skill	s/-k2,2nr | head -1 |/-k2,2nr | tail -1 |/	FAIL: case mixed
+T4-head	readlen	skill	s/head -n 4000 | awk/awk/	FAIL: case first1000
+T4-star	check	skill	s/@STAR_VERSION_GENOME@/9.9.9z/g	missing required text: @STAR_VERSION_GENOME@
+T4-starcmp	check	skill	s/only when `versionGenome` is `@STAR_VERSION_GENOME@`/only when `versionGenome` is at least `2.7.0`/	missing required text: only when `versionGenome` is `@STAR_VERSION_GENOME@`
+T4-reusedef	check	skill	s/1\. Reuse (default) · 2\. Let the pipeline build its own/1. Let the pipeline build its own (default) · 2. Reuse/	missing required text: 1. Reuse (default) · 2. Let the pipeline build its own
+T4-sjdbtext	check	skill	s/the junction database is tuned for reads of/it is fine for reads of/	missing required text: the junction database is tuned for reads of
+T4-stargrep	check	skill	s/grep -E '^(versionGenome|sjdbOverhang)\[\[:space:\]\]' "{STAR_DIR}\/genomeParameters.txt"/cat "{STAR_DIR}\/Log.out"/	missing required text: grep -E '^(versionGenome|sjdbOverhang)[[:space:]]' "{STAR_DIR}/genomeParameters.txt"
+T4-nobuild	check	skill	s/ The wizard never builds an index itself\./ If no index exists, build one with STAR before the run./	missing required text: The wizard never builds an index itself
+T4-saveref	check	skill	s/(`save_reference: false`)/(`save_reference: true` keeps them)/	missing required text: `save_reference: false`
+T4-default40	check	skill	s/the pipeline default of 40 is wrong for almost all data/the pipeline default of 40 is usually fine/	missing required text: the pipeline default of 40 is wrong for almost all data
+T4-bamlen	check	skill	s/ — an integer between 20 and 1000;/;/	missing required text: an integer between 20 and 1000
+T4-askbase	check	skill	s/ Ask the base directory only for option 1\./ Ask the base directory./	missing required text: Ask the base directory only for option 1
+T4-folder	check	skill	s/^  {genome_base}\/{organism}\/{assembly}_ens{version}\/$/  {genome_base}\/{assembly}\//	missing required text: {genome_base}/{organism}/{assembly}_ens{version}/
+T4-custom	check	skill	s/`{REF_TAG}` = `custom_{WD_NAME}`/`{REF_TAG}` = `custom`/	missing required text: custom_{WD_NAME}
+T4-gencode	check	skill	s/`gencode: false` is written either way/write `gencode: true` for GENCODE/	missing required text: `gencode: false` is written either way
+T4-dlscript	check	skill	s/and generate `download_genome_{REF_TAG}.sh` (Step 11)/and download the files now/	missing required text: and generate `download_genome_{REF_TAG}.sh` (Step 11)
+T4-memory	check	skill	s/ Never type a URL from memory\.//	missing required text: Never type a URL from memory
+T4-head200	check	skill	s/check each with a HEAD request (`curl -sI URL | head -1` must show 200), //	missing required text: check each with a HEAD request
+T4-anchor	check	skill	s/^\*\*Read-length detection\.\*\* FASTQ input\./&\n**Read-length detection.** again./	anchor must appear exactly once: **Read-length detection.**
+T4-fn	readlen	skill	s/^detect_read_length() {/read_length_of() {/	FAIL: detect_read_length is not defined by the block
+T4-sjdb	check	skill	s/If its `sjdbOverhang` is not 100 ([^)]*), add a note ([^)]*): "[^"]*"//	missing required text: If its `sjdbOverhang` is not 100
+T4-onecall	check	skill	s/In one Bash call, paste this block, then/Paste this block; in a later Bash call run/	missing required text: In one Bash call, paste this block, then the lines under **Running the read-length check** below.
+T4-bashtool	check	skill	s/FASTQ input\. Every row/FASTQ input: define the functions in the Bash tool. Every row/	forbidden pattern present: 'in the Bash tool'
+T4-flags	check	skill	s/and always runs with `--variable-read-length` and `--allow-clipping`/and runs with fixed-length reads/	missing required text: `--variable-read-length` and `--allow-clipping`
+T4f-readmeurl	check	skill	s#https://ftp.ensembl.org/pub/current/README#https://ftp.ensembl.org/pub/current_README#	forbidden text present: pub/current_README
+T4f-readmeline	check	skill	s/its line "Ensembl Release N Databases." gives N/read it/	missing required text: its line "Ensembl Release N Databases." gives N
+T4f-fallback	check	skill	s/use the highest `release-N\/` directory in the listing of `https:\/\/ftp.ensembl.org\/pub\/`/guess the release/	missing required text: use the highest `release-N/` directory in the listing
+T4f-m1	check	skill	s/with any other value, say why and let the pipeline build it/with any other value, reuse it anyway/	missing required text: with any other value, say why and let the pipeline build it
+T4f-m2	check	skill	s/Any `MISSING` line: there is no usable index; let the pipeline build it\./Any `MISSING` line: reuse it anyway./	missing required text: Any `MISSING` line: there is no usable index; let the pipeline build it.
+T4f-m3	check	skill	s/`{READ_LENGTH}` = the number on the `READ_LENGTH` line/`{READ_LENGTH}` = the first sample's value/	missing required text: `{READ_LENGTH}` = the number on the `READ_LENGTH` line
+T4f-m3fn	readlen	skill	s/l1=$(detect_read_length "${r1s\[@\]}")/l1=$(detect_read_length "${r1s[0]}")/	FAIL: case unconfounded: missing line 'READ_LENGTH 150'
+T4f-m4ok	readlen	skill	s/if (nl == 1) {/if (nl >= 1) {/	FAIL: case unconfounded: verdict 'OK '
+T4f-m4conf	readlen	skill	s/if (!((order\[i\], l) in has)) conf = 1/if (0) conf = 1/	FAIL: case confounded
+T4f-m4text	check	skill	/^- `CONFOUNDED`: warn loudly/d	missing required text: - `CONFOUNDED`: warn loudly
+T4f-m4warn	check	skill	/^- `WARNING`: warn loudly/d	missing required text: - `WARNING`: warn loudly
+T4f-m5	check	skill	s/the highest existing/the lowest existing/	missing required text: Version: the highest existing
+T4f-m6	check	skill	s/Mus_musculus\.GRCm39\.dna\.primary_assembly\.fa/Mus_musculus.GRCm39.dna.toplevel.fa/	missing required text: FASTA `Mus_musculus.GRCm39.dna.primary_assembly.fa`
+T4f-m7	check	skill	s/ Check that both files exist (`test -s`)\.//	missing required text: Check that both files exist (`test -s`).
+T4f-m8	check	skill	s/for f in SA SAindex Genome sjdbList\.out\.tab genomeParameters\.txt; do/for f in genomeParameters.txt; do/	missing required text: for f in SA SAindex Genome sjdbList.out.tab genomeParameters.txt; do
+T4f-saindex	check	skill	s/for f in SA SAindex Genome/for f in SA Genome/	missing required text: for f in SA SAindex Genome sjdbList.out.tab genomeParameters.txt; do
+T4f-m9	check	skill	s#`{GENOME_DIR}/index/star` for option 1#`{GENOME_DIR}/index/star_rnasplice` for option 1#	missing required text: (`{STAR_DIR}` = `{GENOME_DIR}/index/star` for option 1
+T4f-m10	check	skill	s/exists: 1\. No (default) · 2\. Yes/exists: 1. Yes (default) · 2. No/	missing required text: whether a STAR index built from exactly this FASTA and GTF exists: 1. No (default) · 2. Yes
+T4f-m11	check	skill	s/STAR_GENOMEGENERATE needs about 32 GB of memory and an hour or more; //	missing required text: STAR_GENOMEGENERATE needs about 32 GB of memory and an hour or more
+T4f-m12	check	skill	s/, show them to the user,/,/	missing required text: must show 200), show them to the user,
+T4f-m13	check	skill	s/1\. Ensembl release in the standard folder (default) · 2\. Custom reference/1. Custom reference (default) · 2. Ensembl release in the standard folder/	missing required text: 2. (numbered): 1. Ensembl release in the standard folder (default) · 2. Custom reference
+T4f-m14	check	skill	s#the latest Ensembl release from `https://ftp.ensembl.org/pub/current/README`#Ensembl release 110 (`https://ftp.ensembl.org/pub/current/README`)#	forbidden pattern present: a hard-coded Ensembl release
+T4f-m15	check	skill	s/indicate GENCODE, without one Ensembl/indicate Ensembl, without one GENCODE/	missing required text: gene IDs with a version suffix (`ENSG00000000003.15`) indicate GENCODE, without one Ensembl
+T4f-m16	check	skill	s/Human: GRCh38, FASTA `Homo_sapiens\.GRCh38/Human: GRCh37, FASTA `Homo_sapiens.GRCh37/	forbidden text present: GRCh37
+T4f-m17	check	skill	s/^BAM input: ask "What is the read length of the sequencing (for example 100 or 150)?"/BAM input: use 100 as the read length; optionally ask "What is the read length?"/	missing required text: BAM input: ask "What is the read length of the sequencing (for example 100 or 150)?"
+T4f-m18	check	skill	s/Every row of the samplesheet is checked: its R1 file/Up to 5 different samples (or just one) are checked: the R1 file/	missing required text: Every row of the samplesheet is checked
+T4f-upto5	check	skill	s/Every row of the samplesheet is checked: its R1 file/Every row of the samplesheet is checked (or up to 5 different samples): its R1 file/	forbidden text present: up to 5 different samples
+T4f-salmonalways	check	skill	s/`{SALMON_INDEX}` is always empty: /`{SALMON_INDEX}` = the existing index if any: /	missing required text: `{SALMON_INDEX}` is always empty
+T4f-salmonwhy	check	skill	s/lacks the GTF's non-coding transcripts, which would get no quantification (DTU, SUPPA2) without any error/is equivalent/	missing required text: lacks the GTF's non-coding transcripts
+T4f-salmonoffer	check	skill	s/^- Salmon: /- Salmon (`{SALMON_DIR}` = `{GENOME_DIR}\/index\/salmon`): reuse it when its `versionInfo.json` has `"indexVersion": 5`. /	forbidden text present: {SALMON_DIR}
+T4f-bamidx	check	skill	s/(BAM input uses no index: skip this part; `{STAR_INDEX}` is empty\.)//	missing required text: (BAM input uses no index: skip this part; `{STAR_INDEX}` is empty.)
+T4f-shared	check	skill	s/FASTA, GTF and the STAR index are reused/FASTA, GTF and indexes are reused/	missing required text: FASTA, GTF and the STAR index are reused
+T4f-tree	check	skill	s/not used: rnasplice always builds its own Salmon index/Salmon index; reused only if compatible/	missing required text: not used: rnasplice always builds its own Salmon index
+T4f-staror	check	skill	s/whether a STAR index built from exactly this FASTA and GTF exists/whether STAR or Salmon indexes built from exactly this FASTA and GTF exist/	forbidden text present: STAR or Salmon
+T4f-salmonres	check	skill	s/SALMON_INDEX: 6 CPUs, 36 GB and 8 h/SALMON_INDEX/	missing required text: SALMON_INDEX: 6 CPUs, 36 GB and 8 h
+T4f-salmontime	check	skill	s/likely takes more than an hour (not measured by this skill's verification)/takes a few minutes/	missing required text: likely takes more than an hour
+T4f-anchorrun	check	skill	s/^\*\*Running the read-length check\.\*\* After/&\n**Running the read-length check.** again./	anchor must appear exactly once: **Running the read-length check.**
+T4f-runcall	check	skill	s/After the block above, in the same Bash call/In a later Bash call/	missing required text: After the block above, in the same Bash call
+T4f-table	check	skill	s/Show the `SAMPLE` lines as a table grouped by condition/Show the `READ_LENGTH` line/	missing required text: Show the `SAMPLE` lines as a table grouped by condition
+T4f-bias	check	skill	s/their PSI values, and the differences between the conditions, are biased, and rMATS gives no error/this is fine/	missing required text: their PSI values, and the differences between the conditions, are biased
+T4f-stopdef	check	skill	s/1\. Stop here (default) — trim/1. Stop here — trim/	missing required text: 1. Stop here (default) — trim all reads to one common length
+T4f-r2	readlen	skill	s/if \[ -n "\$r2" \]; then l2=/if false; then l2=/	FAIL: case paired_r2
+T4f-crlf	readlen	skill	s/^    { sub(\/\\r\$\/, "") }$/    { }/	FAIL: case crlf: expected '75 20', got '76 20'
+T4f-bad	readlen	skill	s/END { if (bad || NR == 0 || NR % 4 != 0) print "BAD" }/END { }/	FAIL: case not_fastq
+T4f-noargs	readlen	skill	s/\[ \$# -gt 0 \] || { echo "ERROR: no FASTQ file given"; return 1; }/:/	FAIL: case no_args
+T4f-rcfail	readlen	skill	s/\[ \$rc -eq 0 \] || { echo "ERROR: read length not set: fix/[ 0 -eq 0 ] || { echo "ERROR: read length not set: fix/	FAIL: case report_error_empty.fastq.gz
+T4f-runcols	readlen	skill	s/print \$c\["sample"\] "\\t" \$c\["condition"\]/print $c["sample"] "\\t" $c["strandedness"]/	FAIL: case run_lines
+T4f-errtext	check	skill	s/never continue with an empty or guessed read length/continue with 100/	missing required text: never continue with an empty or guessed read length
+T4f-pipe	check	skill	s/A `gzip: stdout: Broken pipe` message is harmless/Stop on any gzip message/	missing required text: A `gzip: stdout: Broken pipe` message is harmless
+T4f-sjdbinfo	check	skill	s/add a note (information only; it is not a reason to rebuild/warn before asking (/	missing required text: add a note (information only; it is not a reason to rebuild
+T4f-miso	check	skill	s/No other read-length setting is used by the analyses this skill runs ([^)]*)\./rnasplice has no other read-length setting./	forbidden text present: rnasplice has no other read-length setting
+T4f-copy	check	skill	s/copies a given STAR index into its `work\/` directory before aligning/uses a given STAR index in place/	missing required text: copies a given STAR index into its `work/` directory before aligning
+T4f-unverified	check	skill	s/did not exercise the reuse path (unverified)/verified the reuse path/	missing required text: did not exercise the reuse path (unverified)
+T5-switch	check	skill	/^edger_exon: {RUN_EDGER_EXON}$/d	module switch edger_exon must be written exactly once
+T5-dup	check	skill	s/^suppa: {RUN_SUPPA}$/suppa: {RUN_SUPPA}\nsuppa: true/	module switch suppa must be written exactly once
+T5-sashimi	check	skill	s/^sashimi_plot: false$/sashimi_plot: true/	sashimi_plot must be written as false
+T5-readlen	check	skill	s/^rmats_read_len: {READ_LENGTH}$/rmats_read_len: 40/	module block must contain the line: rmats_read_len: {READ_LENGTH}
+T5-paired	check	skill	s/^rmats_paired_stats: {PAIRED_DESIGN}$/rmats_paired_stats: true/	module block must contain the line: rmats_paired_stats: {PAIRED_DESIGN}
+T5-suppa-paired	check	skill	s/^diffsplice_paired: {PAIRED_DESIGN}$/diffsplice_paired: true/	module block must contain the line: diffsplice_paired: {PAIRED_DESIGN}
+T5-dtu	check	skill	/^min_samps_feature_prop: /d	module block must contain the line: min_samps_feature_prop: {MIN_SAMPS_FEATURE}
+T5-default	check	skill	s/^n_dexseq_plot: 10$/n_dexseq_plot: 11/	key n_dexseq_plot = 11 differs from the pipeline config default
+T5-route	check	skill	/^pseudo_aligner: /d	Salmon route
+T5-aligner	check	skill	s/^aligner: "star"$/aligner: "star_salmon"/	Salmon route pseudo_only needs the line: aligner: "star"
+T5-anchor	check	skill	s/^\*\*Module and option keys (written to the params file)\.\*\*.*$/&\n**Module and option keys (written to the params file).**/	anchor must appear exactly once: **Module and option keys (written to the params file).**
+T5-isa	check	skill	s/^isoformswitchanalyzer: false$/isoformswitchanalyzer: true/	isoformswitchanalyzer is a parameter of this revision and must be written as false
+T5-leaf	check	skill	/^leafcutter: false$/d	leafcutter is a parameter of this revision and must be written as false
+T5-complete	check	skill	/^ignore_tx_version: true$/d	module option key missing from the module block or written more than once: ignore_tx_version
+T5-misoopt	check	skill	/^miso_read_len: 75$/d	module option key missing from the module block or written more than once: miso_read_len
+T5-null	check	skill	s/^ignore_tx_version: true$/ignore_tx_version: true\nsuppa_tpm: "tpm.txt"/	module option suppa_tpm has no default (null) and must not be written
+T5-dupkey	check	skill	s/^n_edger_plot: 10$/n_edger_plot: 10\nn_edger_plot: 10/	key written more than once in the module block: n_edger_plot
+T5-dIF	check	skill	s/^isoformswitchanalyzer_dIF: 0.1$/isoformswitchanalyzer_dIF: 0.2/	key isoformswitchanalyzer_dIF = 0.2 differs from the pipeline config default
+T5-salidx	check	skill	s/^pseudo_aligner: "salmon"$/pseudo_aligner: "salmon"\nsalmon_index: "idx"/	the module block must not write salmon_index
+T5-maxcpus	check	skill	s/^leafcutter: false$/leafcutter: false\nmax_cpus: 4/	the module block must not write max_cpus
+T5-genome	check	skill	s/^leafcutter: false$/leafcutter: false\ngenome: "GRCh38"/	the module block must not write genome
+T5-featprop	check	skill	s/^min_feature_prop: 0.1$/min_feature_prop: 0.05/	module block must contain the line: min_feature_prop: 0.1
+T5-novel	check	skill	s/^rmats_novel_splice_site: {RMATS_NOVEL}$/rmats_novel_splice_site: true/	module block must contain the line: rmats_novel_splice_site: {RMATS_NOVEL}
+T5-cutoff	check	skill	s/^rmats_splice_diff_cutoff: 0.0001$/rmats_splice_diff_cutoff: 0.1/	module block must contain the line: rmats_splice_diff_cutoff: 0.0001
+T5-genecount	check	skill	s/^min_samps_gene_expr: {MIN_SAMPS_GENE_EXPR}$/min_samps_gene_expr: 4/	module block must contain the line: min_samps_gene_expr: {MIN_SAMPS_GENE_EXPR}
+T5-quick	check	skill	s/^Trimming (Trim Galore)/Salmon always runs; it is quick. &/	forbidden text present: it is quick
+T5-669	check	skill	s/^Trimming (Trim Galore)/The schema (6\/0\/0) disagrees. &/	forbidden text present: schema (6/0/0)
+T5-alltrue	check	skill	s/^Trimming (Trim Galore)/The pipeline default is true for all of them; the pipeline default is true for all of them. &/	forbidden text present: the pipeline default is true for all of them
+T5-edgerfn	check	skill	s/(edgeR function in this revision: [^)]*)/(edgeR function in this revision: diffSplice)/	missing required text: (edgeR function in this revision: @EDGER_DEU_FUNCTION@)
+T5f-dtuadvice	check	skill	s/do not choose it here: it is the same analysis twice/choose it here as well: it is the same analysis twice/	missing required text: if it ran (or will run) there for these samples, do not choose it here
+T5f-genelabel	check	skill	s/^- `{MIN_SAMPS_GENE_EXPR}` = the number of samples/- `{MIN_SAMPS_FEATURE}` = the number of samples/	missing required text: - `{MIN_SAMPS_GENE_EXPR}` = the number of samples in the samplesheet
+T5f-rmatsask	check	skill	s/(asked only when rMATS is chosen; otherwise the values below are written unchanged)/(always asked)/	missing required text: **rMATS settings** (asked only when rMATS is chosen; otherwise the values below are written unchanged)
+T5f-suppafq	check	skill	s/with differential splicing between conditions\. FASTQ input only\./with differential splicing between conditions./	missing required text: with differential splicing between conditions. FASTQ input only.
+T5f-dtufq	check	skill	s/DEXSeq, stageR), from Salmon\. FASTQ input only\./DEXSeq, stageR), from Salmon./	missing required text: DEXSeq, stageR), from Salmon. FASTQ input only.
+T5f-qbool	check	skill	s/^aggregation: true$/aggregation: "true"/	key aggregation = "true" is not a yaml boolean
+T5f-qint	check	skill	s/^n_dexseq_plot: 10$/n_dexseq_plot: "10"/	key n_dexseq_plot = "10" is not a yaml integer
+T5f-qnum	check	skill	s/^isoformswitchanalyzer_alpha: 0.05$/isoformswitchanalyzer_alpha: "0.05"/	key isoformswitchanalyzer_alpha = "0.05" is not a yaml number
+T5f-bare	check	skill	s/^clusterevents_metric: "euclidean"$/clusterevents_metric: euclidean/	key clusterevents_metric = euclidean is not a yaml string
+T5f-baremiso	check	skill	s/^miso_genes: "\(.*\)"$/miso_genes: \1/	is not a yaml string
+T5f-akerberg	check	skill	s/As an example (not a standard), Akerberg et al\. 2022 kept/The required cut-offs, as Akerberg et al. 2022 kept/	missing required text: As an example (not a standard), Akerberg et al. 2022 kept rMATS events
+T5f-methods	check	skill	s/ (from the parts of the paper.s Methods that were accessible)//	missing required text: (from the parts of the paper's Methods that were accessible)
+T5f-usual	check	skill	s/^Trimming (Trim Galore)/The usual cut-offs are FDR < 0.05. &/	forbidden text present: usual cut-offs are
+T5f-dtuwhen	check	skill	s/Choose DTU here only to get it in the same pipeline run from the FASTQ files; //	missing required text: Choose DTU here only to get it in the same pipeline run from the FASTQ files
+T5f-event	check	skill	s/for event-level splicing questions (which exons or events change) use rMATS, and //	missing required text: for event-level splicing questions (which exons or events change) use rMATS
+T5f-bulk	check	skill	s/, and differential expression plus DTU on the Salmon output of an existing nf-core\/rnaseq run stays in `\/bulk-rnaseq-pipeline`\./. /	missing required text: differential expression plus DTU on the Salmon output of an existing nf-core/rnaseq run stays in `/bulk-rnaseq-pipeline`
+T6-flag	check	skill	s/-params-file {PARAMS_YAML}$/-params-file {PARAMS_YAML} --rmats_read_len 101/	launch line must be exactly
+T6-cont	check	skill	s/^nextflow run nf-core\/rnasplice -r {VERSION} -c nextflow.config -profile slurm,singularity -params-file {PARAMS_YAML}$/nextflow run nf-core\/rnasplice -r {VERSION} -c nextflow.config -profile slurm,singularity \\\n  --input x.csv -params-file {PARAMS_YAML}/	launch line must be exactly
+T6-last	check	skill	s/^\(nextflow run nf-core\/rnasplice .*{PARAMS_YAML}\)$/\1\necho "pipeline finished"/	the launch line must be the last command of the submission script
+T6-lmod	check	skill	s/^module add singularity\/3.10.4 || .*$/module add singularity\/3.10.4/	unguarded module load
+T6-confine	check	skill	$s/$/\nnextflow -version/	nextflow is invoked outside the submission script
+T6-pull	check	skill	s/^\(nextflow run nf-core\/rnasplice \)/nextflow pull nf-core\/rnasplice -r {VERSION}\n\1/	forbidden text present: nextflow pull
+T6-pullrun	submit	skill	s/^\(nextflow run nf-core\/rnasplice \)/nextflow pull nf-core\/rnasplice -r {VERSION}\n\1/	nextflow pull was called
+T6-offline	check	skill	s/^NF_MIN="/export NXF_OFFLINE=false\nNF_MIN="/	the submission script must not set or unset NXF_OFFLINE
+T6-condaline	check	skill	s/^conda activate {CONDA_ENV} || .*$/conda activate {CONDA_ENV} || exit 1/	the submission script must contain the line: conda activate {CONDA_ENV}
+T6-head	check	skill	s/^#SBATCH -t 48:00:00$/#SBATCH -t 4:00:00/	missing required text: #SBATCH -t 48:00:00
+T6-headn	check	skill	s/^#SBATCH -n 2$/#SBATCH -n 32/	the head job must request -n 2, --mem=8G and -p bcc
+T6-dep	check	skill	s/sbatch --dependency=afterok:\$jid /sbatch /	missing required text: sbatch --dependency=afterok:
+T6-sel	check	skill	s/withName: '\.\*:RMATS_POST' {/withName: '.*:RMATS_POSTX' {/	has no withName selector '.*:RMATS_POST'
+T6-selmiss	check	skill	/withName: '\.\*:STAR_ALIGN' {/,+4d	process STAR_ALIGN ran in the verification runs but has no withName selector '.*:STAR_ALIGN'
+T6-salsel	check	skill	s/withName: '\.\*:SALMON_QUANT\.\*' {/withName: '.*:SALMON_QUANT' {/	selector .*:SALMON_QUANT matches no process of the verification runs (75 names)
+T6-salmem	check	skill	/withName: '\.\*:SALMON_QUANT\.\*' {/,+2s/memory = '36 GB'/memory = '16 GB'/	selector .*:SALMON_QUANT.* requests 8 CPUs, 16 GB, 8h; the selector table says 8 36 GB 8h
+T6-double	check	skill	s/withName: '\.\*:DEXSEQ_DTU' {/withName: '.*:DEXSEQ_DTU.*' {\n            }\n            withName: '.*:DEXSEQ_DTU' {/	is matched by 2 withName selectors
+T6-res	check	skill	/withName: '\.\*:STAR_ALIGN' {/,+2s/memory = '48 GB'/memory = '32 GB'/	the verification run requested 8 CPUs, 48 GB, 8h for NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:STAR_ALIGN
+T6-default	check	skill	s/^            memory = '8 GB'$/            memory = '6 GB'/	the process default of the slurm profile must be 2 CPUs, 8 GB, 4h
+T6-over	check	skill	s/^trace    { enabled = true; overwrite = true;/trace    { enabled = true;/	overwrite = true must be set
+T6-fields	check	skill	s/,cpus,memory,time,realtime/,realtime/	trace fields must include the requested cpus, memory and time
+T6-rl	check	skill	/^    resourceLimits = /d	the resourceLimits line is missing
+T6-maxp	check	skill	s/^save_reference: false$/save_reference: false\nmax_cpus: 16/	max_cpus/max_memory/max_time are not parameters of this revision
+T6-salidx	check	skill	s/^star_index: "{STAR_INDEX}"$/star_index: "{STAR_INDEX}"\nsalmon_index: "{STAR_INDEX}"/	the params template must not write salmon_index
+T6-qtitle	check	skill	s/^multiqc_title: "{MULTIQC_TITLE}"$/multiqc_title: {MULTIQC_TITLE}/	the params template must contain the line: multiqc_title: "{MULTIQC_TITLE}"
+T6-qtitler	render	skill	s/^multiqc_title: "{MULTIQC_TITLE}"$/multiqc_title: {MULTIQC_TITLE}/	FAIL: case full: line missing: multiqc_title: "261001"
+T6-gencode	check	skill	s/^gencode: false$/gencode: "false"/	key gencode = "false" is not a yaml boolean
+T6-dupkey	check	skill	s/^{MODULE_PARAMS}$/aligner: "star"\n{MODULE_PARAMS}/	key written in both the params template and the module block: aligner
+T6-render	render	skill	s/^{MODULE_PARAMS}$/{MODULE_PARAMS}\noutdir: "x"/	FAIL: case full
+T6-nfmin	submit	skill	s/^NF_MIN="[^"]*"/NF_MIN="0.0.0"/	FAIL: case below_min
+T6-nfmax	submit	skill	s/NF_MAX_EXCL="none"/NF_MAX_EXCL="27.0.0"/	FAIL: case far_future
+T6-vercheck	submit	skill	/^ver_ge "\$NF_VER" "\$NF_MIN" ||/d	FAIL: case below_min
+T6-noread	submit	skill	/^\[ -n "\$NF_VER" \] ||/d	FAIL: case no_version
+T6-nfmissing	submit	skill	/^command -v nextflow /d	FAIL: case nextflow_missing
+T6-guard	submit	skill	s/^conda activate {CONDA_ENV} || .*$/conda activate {CONDA_ENV}/	FAIL: case conda_fails
+T6-order	submit	skill	/^module add singularity\/3.10.4 ||/d; s/^module add miniconda3\/v4 || /module add singularity\/3.10.4 || { exit 1; }\n&/	FAIL: case order
+T6-cachedir	submit	skill	/^export NXF_SINGULARITY_CACHEDIR=/d	FAIL: case cache_default
+T6-cachekeep	submit	skill	s/^export NXF_SINGULARITY_CACHEDIR=.*$/export NXF_SINGULARITY_CACHEDIR="$HOME\/.singularity\/cache"/	FAIL: case cache_preset
+T6-gzipt	helper	skill	/gzip -t "\$out.gz.part" 2>\/dev\/null ||/d	FAIL: case truncated_download
+T6-abs	helper	skill	/case "\$GENOME_DIR" in/d	FAIL: case relative_dir
+T6-wgetc	helper	skill	s/wget -c -O/wget -O/	wget was called without -c
+T6-gunzipc	helper	skill	s/gunzip -c "\$out.gz" > "\$out.part"/gunzip "$out.gz" > "$out.part"/	gunzip was called without -c
+T6-gunzipk	check	skill	s/gunzip -c "\$out.gz"/gunzip -k "$out.gz"/	gunzip -k is not available on CentOS 7
+T6-setu	check	skill	/^set -u$/d	the download helper must run with set -u
+T6-rm	check	skill	s/^  echo "ready: \$out"$/  rm -f "$out.gz"\n&/	the download helper must not remove files
+T6-nfrange	check	skill	s/NF_MIN="@NEXTFLOW_MIN@"/NF_MIN="1.0.0"/	the submission script must carry the verified Nextflow range
+T6-modline	check	skill	/^{MODULE_PARAMS}$/d	the params template must contain one {MODULE_PARAMS} line
+T6-saveref	check	skill	s/^save_reference: false$/save_reference: true/	key save_reference = true differs from the pipeline config default
+T6-hpart	check	skill	s/^#SBATCH -p bcc$/#SBATCH -p normal/	the download helper must be an sbatch script for partition bcc
+T6-wgetcs	check	skill	s/wget -c -O/wget -O/	the download helper must use wget -c and gunzip -c
+T6-envhelper	check	skill	$s/$/\nWrite create_nextflow_env_26.04.6.sh first./	forbidden text present: create_nextflow_env_
+T6-indexhelper	check	skill	$s/$/\nWrite build_star_index_x.sh first./	forbidden text present: build_star_index
+T6f-nocd	submit	skill	/^cd "{CWD}" || /d	FAIL: case tested
+T6f-cdroot	submit	skill	s/^cd "{CWD}" || /cd \/ || /	FAIL: case tested
+T6f-cdline	check	skill	/^cd "{CWD}" || /d	the submission script must contain the line: cd "{CWD}"
+T6f-cdfirst	check	skill	s/^cd "{CWD}" || /echo start\n&/	cd "{CWD}" must be the first command of the submission script
+T6f-cdtext	check	skill	s/: it changes to `{CWD}` first, so it works wherever it is submitted from,/,/	missing required text: it changes to `{CWD}` first, so it works wherever it is submitted from
+T6f-preflight	submit	skill	/^for f in nextflow.config /d	FAIL: case missing_T_params.yaml
+T6f-preorder	submit	skill	/^for f in nextflow.config /{h;d}; /^module add singularity\/3.10.4 || /G	the file check must come before the module lines
+T6f-preline	check	skill	s/^for f in nextflow.config {PARAMS_YAML} {SAMPLESHEET_CSV} {CONTRASTS_CSV}; do/for f in nextflow.config {PARAMS_YAML}; do/	the submission script must contain the line: for f in nextflow.config
+T6f-singcheck	submit	skill	/^command -v singularity /d	FAIL: case singularity_missing
+T6f-executor	check	skill	/^            executor = 'slurm'$/d	the nextflow.config template must contain the line:             executor = 'slurm'
+T6f-queue	check	skill	/^            queue = 'bcc'$/d	the nextflow.config template must contain the line:             queue = 'bcc'
+T6f-singoff	check	skill	s/^            enabled = true$/            enabled = false/	the nextflow.config template must contain the line:             enabled = true
+T6f-automount	check	skill	/^            autoMounts = true$/d	the nextflow.config template must contain the line:             autoMounts = true
+T6f-singscope	check	skill	s/^    singularity {$/    apptainer {/	the singularity profile must set enabled = true and autoMounts = true
+T6f-slurmscope	check	skill	s/^    slurm {$/    cluster {/	the slurm profile must set executor = 'slurm' and queue = 'bcc'
+T6f-mailtype	check	skill	0,/^#SBATCH --mail-type=END,FAIL$/{/^#SBATCH --mail-type=END,FAIL$/d}	the submission script must contain the line: #SBATCH --mail-type=END,FAIL
+T6f-mailtypeh	check	skill	0,/^#SBATCH --mail-type=END,FAIL$/!{/^#SBATCH --mail-type=END,FAIL$/d}	the download helper must contain the line: #SBATCH --mail-type=END,FAIL
+T6f-mailuser	check	skill	0,/^#SBATCH --mail-user={USER_EMAIL}$/{/^#SBATCH --mail-user={USER_EMAIL}$/d}	the submission script must contain the line: #SBATCH --mail-user={USER_EMAIL}
+T6f-mailuserh	check	skill	0,/^#SBATCH --mail-user={USER_EMAIL}$/!{/^#SBATCH --mail-user={USER_EMAIL}$/d}	the download helper must contain the line: #SBATCH --mail-user={USER_EMAIL}
+T6f-n1	check	skill	0,/^#SBATCH -N 1$/{/^#SBATCH -N 1$/d}	the submission script must contain the line: #SBATCH -N 1
+T6f-n1h	check	skill	0,/^#SBATCH -N 1$/!{/^#SBATCH -N 1$/d}	the download helper must contain the line: #SBATCH -N 1
+T6f-helpt	check	skill	s/^#SBATCH -t 4:00:00$/#SBATCH -t 1:00:00/	the download helper must contain the line: #SBATCH -t 4:00:00
+T6f-helpmem	check	skill	0,/^#SBATCH --mem=8G$/!{s/^#SBATCH --mem=8G$/#SBATCH --mem=4G/}	the download helper must contain the line: #SBATCH --mem=8G
+T6f-parsable	check	skill	s/sbatch --parsable download_genome/sbatch download_genome/	missing required text: jid=$(sbatch --parsable download_genome_{REF_TAG}.sh)
+T6f-mqc	check	skill	s/ · 2. `{TODAY_YYMMDD}_{WD_NAME}` · 3. Custom. Store `{MULTIQC_TITLE}`/ · 2. Custom. Store `{MULTIQC_TITLE}`/	missing required text: **MultiQC title** (numbered)
+T6f-out2	check	skill	s/· 2. `results\/{TODAY_ISO}_{SHEET_PREFIX}`/· 2. `{SHEET_PREFIX}`/	missing required text: · 2. `results/{TODAY_ISO}_{SHEET_PREFIX}`
+T6f-outq	check	skill	s/if it exists and is not empty, ask (numbered): 1. use it anyway/if it exists, use it anyway/	missing required text: if it exists and is not empty, ask (numbered)
+T6f-lscfg	check	skill	s/`ls "{CWD}\/nextflow.config"`/`ls nextflow.config`/	missing required text: Check for an existing config: `ls "{CWD}/nextflow.config"`.
+T6f-tosubmit	check	skill	s/^To submit:  sbatch /To submit:  bash /	missing required text: To submit:  sbatch nf-core_rnasplice_{VERSION_TAG}.sh
+T6f-showall	check	skill	s/Show every written file in full\. //	missing required text: Show every written file in full.
+T6f-chars	check	skill	s/may contain only letters, digits/may contain letters, digits/	missing required text: A custom title or output directory may contain only letters, digits
+T6f-charmsg	check	skill	s/contains a character the params file cannot hold/is unusual/	missing required text: contains a character the params file cannot hold
+T6f-label	check	skill	s/the memory and time of the pipeline's own tested process label for Salmon quantification/values chosen by this skill/	missing required text: It requests 8 CPUs, 36 GB and 8 h
+T6f-notmeasured	check	skill	s/: they are not measured on real data\./ and on real data./	missing required text: The resources of every selector are judgement
+T6f-retry	check	skill	s/Fixed `withName` resources do not grow when the pipeline retries a task: //	missing required text: Fixed `withName` resources do not grow when the pipeline retries a task
+T6f-anyproc	check	skill	s/raise that selector's `memory`/raise SALMON_QUANT's `memory`/	missing required text: raise that selector's `memory` or `time` in nextflow.config
+T6f-resanchor	check	skill	s/^\*\*Resuming a run\.\*\* //	anchor must appear exactly once: **Resuming a run.**
+T6f-resout	check	skill	$s/$/\nAdd -resume to the run line./	-resume appears outside the **Resuming a run.** paragraph
+T6f-resgen	check	skill	s/-params-file {PARAMS_YAML}$/-params-file {PARAMS_YAML} -resume/	the generated submission script must not carry -resume
+T6f-resopt	check	skill	s/; the wizard never writes it into the generated script\./; the wizard may add it./	missing required text: `-resume` is a Nextflow option, not a pipeline parameter
+T6f-movemsg	check	skill	s/could not be moved aside: rename it by hand, then/could not be moved aside;/	missing required text: could not be moved aside: rename it by hand
+T6f-reltarget	helper	skill	/case "\$out" in \/?\*) ;;/d	FAIL: case relative_target
+T6f-emptyguard	helper	skill	s/ && \[ -s "\$out.part" \]//	FAIL: case empty_download
+T7-path	check	skill	s/^Outputs under {OUTDIR}\/ :$/Outputs under {OUTDIR}\/ :\n  no_such_dir\/  bogus/	hand-off path no_such_dir/ not in the recorded output tree
+T7-few	check	skill	/^  [^ ]*SE\.MATS\.JC\.txt  /d;/^  multiqc\/  MultiQC report: /d	output paths (at least 6 expected)
+T7-lt	check	skill	s/^  multiqc\/  MultiQC report: /  multiqc\/  MultiQC report <title>: /	the hand-off note still contains a <...> placeholder
+T7-order	check	skill	s/^  salmon\/suppa\/  /  salmon\/suppa\/diffsplice\/  /	the hand-off note must list rMATS, SE.MATS.JC.txt, DEXSeq exon, edgeR exon, DTU, SUPPA2 and MultiQC in this order
+T7-anchor	check	skill	$s/$/\n**Hand-off note.**/	anchor must appear exactly once: **Hand-off note.**
+T7-usual	check	skill	$s/$/\nUsual filters: FDR < 0.05 and |IncLevelDifference| > 0.1./	forbidden text present: Usual filters
+T7-real	check	skill	$s/$/\nThese settings were validated on real data./	forbidden text present: validated on real data
+T7f-suppa-old	check	skill	s/SUPPA2 dPSI = mean PSI of the control minus mean PSI of the treatment, although/SUPPA2 dPSI is treatment minus control, although/	forbidden text present: SUPPA2 dPSI is treatment minus control
+T7f-suppa-oldwarn	check	skill	s/^⚠️ The sign is reversed relative to rMATS: /⚠️ The sign is reversed relative to rMATS and SUPPA2: /	forbidden text present: The sign is reversed relative to rMATS and SUPPA2
+T7f-suppa-inv	check	skill	s/SUPPA2 dPSI = mean PSI of the control minus mean PSI of the treatment/SUPPA2 dPSI = mean PSI of the treatment minus mean PSI of the control/	missing required text: SUPPA2 dPSI = mean PSI of the control minus mean PSI of the treatment
+T7f-suppa-pos	check	skill	s/a positive dPSI means more inclusion in the control/a positive dPSI means more inclusion in the treatment/	missing required text: a positive dPSI means more inclusion in the control
+T7f-warn-del	check	skill	s/^⚠️ The sign is reversed relative to rMATS: /The sign is reversed relative to rMATS: /	missing required text: ⚠️ The sign is reversed relative to rMATS: DTU fold changes
+T7f-warn-flip	check	skill	s/are positive when the control has more; rMATS/are positive when the treatment has more; rMATS/	missing required text: ⚠️ The sign is reversed relative to rMATS: DTU fold changes
+T7f-rmats-diff	check	skill	s/= inclusion level of the treatment group minus that of the control group/= inclusion level of the control group minus that of the treatment group/	missing required text: = inclusion level of the treatment group minus that of the control group
+T7f-rmats-pos	check	skill	s/positive values mean more inclusion in the treatment\./positive values mean more inclusion in the control./	missing required text: positive values mean more inclusion in the treatment.
+T7f-rmats-cols	check	skill	s/per treatment sample, in samplesheet order (the `_2` columns: the control samples)/per control sample, in samplesheet order (the `_2` columns: the treatment samples)/	missing required text: hold one comma-separated value per treatment sample
+T7f-dtu-pos	check	skill	s/a larger share of the transcript in the control/a larger share of the transcript in the treatment/	missing required text: so a positive value means a larger share of the transcript in the control
+T7f-dexexon	check	skill	s/(control relative to treatment, like DTU/(treatment relative to control, like DTU/	missing required text: the fold-change column is `log2fold_{CONTROL}_{TREATMENT}` (control relative to treatment, like DTU
+T7f-dexexon-pos	check	skill	s/more usage of the exon bin in the control/more usage of the exon bin in the treatment/	missing required text: so a positive value means more usage of the exon bin in the control
+T7f-edger	check	skill	s/`logFC` = treatment minus control/`logFC` = control minus treatment/	missing required text: `logFC` = treatment minus control
+T7f-edger-pos	check	skill	s/more usage of the exon in the treatment/more usage of the exon in the control/	missing required text: so a positive value means more usage of the exon in the treatment
+T7f-colnames	check	skill	$s/$/\nFor the exon-usage direction, read it from the column names./	forbidden text present: read it from the column names
+T7f-ph	check	skill	s/`{CONTRAST}` = its `contrast` column/`{CONTRAST}` = the contrast/	missing required text: `{CONTRAST}` = its `contrast` column
+T7f-multi	check	skill	s/print every line that contains one of them once per contrast/print the lines once/	missing required text: print every line that contains one of them once per contrast
+T7f-shell	check	skill	/^- Shell variables and functions do not persist between Bash tool calls: a procedure/d	missing required text: - Shell variables and functions do not persist between Bash tool calls: a procedure
+T7f-pull	check	skill	/^- Never pre-fetch the pipeline/d	missing required text: Never pre-fetch the pipeline
+T7f-testdata	check	skill	/^The output paths and sign conventions in this step were verified/d	missing required text: The output paths and sign conventions in this step were verified on nf-core's test data only
+T7f-webfetch	check	skill	s/If `{VERSION}` is not @PIPELINE_REVISION@, first confirm the directory names against the pipeline's `docs\/output.md` for `{VERSION}` with `WebFetch`; //	missing required text: first confirm the directory names against the pipeline's `docs/output.md`
+T7f-bam	check	skill	s/(and MultiQC): DTU and SUPPA2 are off\./(and MultiQC): DTU and SUPPA2 also run./	missing required text: (and MultiQC): DTU and SUPPA2 are off.
+T7f-jc	check	skill	s/a `\.MATS\.JC\.txt` table (junction-spanning reads only)/a `.MATS.JC.txt` table/	missing required text: a `.MATS.JC.txt` table (junction-spanning reads only)
+T7f-jcec	check	skill	s/ and a `\.MATS\.JCEC\.txt` table (junction and exon-body reads)\./ and a `.MATS.JCEC.txt` table./	missing required text: a `.MATS.JC.txt` table (junction-spanning reads only) and a `.MATS.JCEC.txt` table (junction and exon-body reads)
+T7f-sbatcho	check	skill	s/^#SBATCH -o nf-core_rnasplice_{VERSION_TAG}\.%j\.log$/#SBATCH -o rnasplice.%j.log/	missing required text: tail -f rnasplice.{JOBID}.log
+T7f-nolog	check	skill	/^#SBATCH -o nf-core_rnasplice_{VERSION_TAG}\.%j\.log$/d	the submission script has no #SBATCH -o line
+T7f-logdir	check	skill	s/SLURM writes this log in the directory where `sbatch` was run/the log is in `{CWD}`/	missing required text: SLURM writes this log in the directory where `sbatch` was run
+T7f-nflog	check	skill	$s/$/\nAfter submitting, run `nextflow log` on the login node./	forbidden text present: nextflow log
+T7f-bulk	check	skill	s/ (import and Salmon index differ)//	missing required text: import and Salmon index differ
+T8-marker	check	readme	s/^Cluster acceptance (nf-core test data): /Cluster acceptance: /	README must have the whole line
+T8-data	check	readme	s/No real biological data/Real data/	README missing required text: No real biological data
+T8-acc-indent	check	readme	s/^Cluster acceptance (nf-core test data): DONE (2026-10-02)$/  &/	README must have the whole line
+T8-acc-trail	check	readme	s/^Cluster acceptance (nf-core test data): DONE (2026-10-02)$/& (see the runs below)/	README must have the whole line
+T8-vm-readme	check	readme	$s/$/\nBAM input: [from_sheet] strandedness from the sheet./	a plan variant marker is left in the README
+T8-vm-readme-c	check	readme	$s/$/\n[C: | `create_nextflow_env.sh` | env |]/	a plan variant marker is left in the README
+T8-vm-skill	check	skill	$s/$/\nGenome BAM input: [fixed] accepted only for some libraries./	a plan variant marker is left in the skill
+T8-ho-desc	check	readme	s/| example: skipped exons, junction reads only |/| example: skipped exons |/	README missing required text: | `star/rmats/{CONTRAST}/SE.MATS.JC.txt` | example: skipped exons, junction reads only |
+T8-ho-row	check	readme	/^| `salmon\/suppa\/` |/d	README missing required text: | `salmon/suppa/` | SUPPA2 event and isoform PSI
+T8-ho-skill	check	skill	s/^  star\/edger\/  edgeR differential exon usage: /  star\/edger\/  edgeR exon usage: /	README missing required text: | `star/edger/` | edgeR exon usage: contrast_
+T8-pull	check	readme	$s/$/\nThe job runs `nextflow pull` first./	README has forbidden text: nextflow pull
+T8-offline	check	readme	$s/$/\nThe script sets NXF_OFFLINE=false for the pull./	README has forbidden text: NXF_OFFLINE=false
+T8-internet	check	readme	s/| Internet on compute nodes | The job downloads the pinned revision of the pipeline from GitHub and the containers/| Internet on compute nodes | The job pulls the pipeline (nextflow pull) and the containers/	README missing required text: | Internet on compute nodes | The job downloads the pinned revision
+T8-nfmin	check	readme	s/| Nextflow @NEXTFLOW_MIN@ or newer |/| Nextflow 24.04 or newer |/	README missing required text: | Nextflow @NEXTFLOW_MIN@ or newer |
+T8-salmon	check	readme	s/the Salmon index is always built by the pipeline, never reused |/compatible STAR\/Salmon indexes reused |/	README missing required text: An existing STAR index is reused only when compatible
+T8-salmon-old	check	readme	$s/$/\nStep 7: compatible STAR\/Salmon indexes reused./	README has forbidden text: compatible STAR/Salmon indexes reused
+T8-starver	check	readme	s/(`versionGenome @STAR_VERSION_GENOME@`); the Salmon/(`versionGenome 2.7.11b`); the Salmon/	README missing required text: An existing STAR index is reused only when compatible (`versionGenome @STAR_VERSION_GENOME@`)
+T8-paired-def	check	readme	s/`rmats_paired_stats` defaults to `false` and SUPPA2's `diffsplice_paired` to `true`/`rmats_paired_stats` and SUPPA2's `diffsplice_paired` default to `true`/	README missing required text: At this revision `rmats_paired_stats` defaults to `false`
+T8-paired-rule	check	readme	s/which is asked only with exactly two conditions of equal size/which is always asked/	README missing required text: which is asked only with exactly two conditions of equal size
+T8-rmats-sign	check	readme	s/`b1` = the treatment samples | more inclusion in the treatment |/`b1` = the treatment samples | more inclusion in the control |/	README missing required text: | rMATS | `IncLevelDifference`
+T8-suppa-sign	check	readme	s/| SUPPA2 | dPSI = mean PSI of the control − mean PSI of the treatment/| SUPPA2 | dPSI = mean PSI of the treatment − mean PSI of the control/	README missing required text: | SUPPA2 | dPSI = mean PSI of the control
+T8-suppa-dir	check	readme	s/_dPSI` | more inclusion in the control |/_dPSI` | more inclusion in the treatment |/	README missing required text: | SUPPA2 | dPSI = mean PSI of the control
+T8-suppa-match	check	readme	$s/$/\nSUPPA2 matches rMATS: positive = more inclusion in the treatment./	README has forbidden text: SUPPA2 matches rMATS
+T8-dtu-sign	check	readme	s/| a larger share of the transcript in the control |/| a larger share of the transcript in the treatment |/	README missing required text: | DEXSeq DTU |
+T8-dexon-sign	check	readme	s/| more usage of the exon bin in the control |/| more usage of the exon bin in the treatment |/	README missing required text: | DEXSeq exon usage |
+T8-edger-sign	check	readme	s/| `logFC` = treatment − control | more usage of the exon in the treatment |/| `logFC` = control − treatment | more usage of the exon in the control |/	README missing required text: | edgeR exon usage |
+T8-edger-code	check	readme	s/| pinned code only, not checked numerically |/| verification run (values) |/	README missing required text: | edgeR exon usage |
+T8-res-row	check	readme	s/^| `SALMON_QUANT\.\*` | 8 | 36 GB | 8h |$/| `SALMON_QUANT.*` | 6 | 36 GB | 8h |/	README missing required text: | `SALMON_QUANT.*` | 8 | 36 GB | 8h |
+T8-res-skill	check	skill	/withName: '\.\*:RMATS_POST'/,/}/s/time = '16h'/time = '24h'/	README missing required text: | `RMATS_POST` | 8 | 32 GB | 24h |
+T8-res-limits	check	readme	s/caps every task at 16 CPUs, 64 GB and 24 h/caps every task at 32 CPUs, 64 GB and 24 h/	README missing required text: caps every task at 16 CPUs, 64 GB and 24 h
+T8-headjob	check	readme	s/(`-n 2 --mem=8G -t 48:00:00`)/(`-n 2 --mem=8G -t 4:00:00`)/	README missing required text: (`-n 2 --mem=8G -t 48:00:00`)
+T8-headjob-skill	check	skill	s/^#SBATCH -t 48:00:00$/#SBATCH -t 72:00:00/	README missing required text: (`-n 2 --mem=8G -t 72:00:00`)
+T8-approved	check	readme	s/ (a deliberate exception)//	README missing required text: so it asks for more than the 4 h that this repository's skills use by default (a deliberate exception)
+T8-measured	check	readme	s/are NOT measured on a real genome/are measured/	README missing required text: are NOT measured on a real genome
+T8-bamsheet	check	readme	s/written to the BAM samplesheet (`@BAM_SHEET_HEADER@`)/written to the BAM samplesheet (`sample,condition,genome_bam`)/	README missing required text: strandedness and read type are written to the BAM samplesheet (`@BAM_SHEET_HEADER@`)
+T8-bamcode	check	readme	s/were verified from the pipeline code only, not by a run/were verified/	README missing required text: single-end BAM input and `forward` strandedness were verified from the pipeline code only
+T8-dev	check	readme	s/is a development commit (`@VERSION_TAG@`), not a release/is a release/	README missing required text: is a development commit (`@VERSION_TAG@`), not a release
+T8-104	check	readme	s/Release 1.0.4 does not launch under Nextflow/Release 1.0.4 may not launch under Nextflow/	README missing required text: Release 1.0.4 does not launch under Nextflow @NEXTFLOW_TESTED@
+T8-pr291	check	readme	s/upstream PR #291/an upstream pull request/	README missing required text: upstream PR #291
+T8-bump	check	readme	s/\*\*Bumping the pin\*\*/Updating/	README missing required text: **Bumping the pin**
+T8-bump-fx	check	readme	s/the task command lines (`command_lines.txt`: /the task command lines (/	README missing required text: `command_lines.txt`
+T8-full	check	readme	s/bash tests\/run_all_tests.sh --full/bash tests\/test_proof_tools.sh/g	README missing required text: bash tests/run_all_tests.sh --full
+T8-gitdir	check	readme	s/RNASPLICE_TEST_GIT_DIR/GIT_DIR/g	README missing required text: RNASPLICE_TEST_GIT_DIR
+T8-skipnote	check	readme	s/and skips the proof-tool self-test/and runs everything/	README missing required text: The default run takes about 17 minutes
+T8-gatedate	check	readme	s/Verification gate (@GATE_DATE@)/Verification gate/	README missing required text: Verification gate (@GATE_DATE@)
+T8-tiny	check	readme	s/nf-core's tiny test dataset/a test dataset/	README missing required text: nf-core's tiny test dataset
+T8-readlen	check	readme	s/@TEST_READ_LENGTH@ bp reads/100 bp reads/	README missing required text: @TEST_READ_LENGTH@ bp reads
+T8-rundir	check	readme	s/`2026-10-01_g5b_bam_nocols`/G5b/	README missing required text: `2026-10-01_g5b_bam_nocols`
+T8-runroot	check	readme	s/in `\/net\/bmc-lab3\/data\/bcc\/yannvrb\/rnasplice_gate\/results\/`/in the gate directory/	README missing required text: `/net/bmc-lab3/data/bcc/yannvrb/rnasplice_gate/results/`
+T8-miso	check	readme	s/MISO (dropped: see Key design points)/MISO/	README missing required text: MISO (dropped: see Key design points)
+T8-misowhy	check	readme	s/MISO itself is unmaintained Python 2 software/MISO is slow/	README missing required text: MISO itself is unmaintained Python 2 software
+T8-report	check	readme	s/there is no downstream report skill for the splicing tables yet (planned later)/see the report skill/	README missing required text: there is no downstream report skill
+T8-inputs	check	readme	s/No Salmon-results or transcriptome-BAM input, and no iGenomes `genome` key/All nf-core inputs/	README missing required text: No Salmon-results or transcriptome-BAM input
+T8-strand	check	readme	s/Strandedness is asked, not detected/Strandedness is detected/	README missing required text: Strandedness is asked, not detected
+T8-firstuse	check	readme	s/they were first used in the cluster acceptance run (run (a) below)\./they were tested./	README missing required text: they were first used in the cluster acceptance run (run (a) below).
+T8-keys	check	readme	s/`fig_width`, //	README missing required text: `fig_width`
+T8-edgerfn	check	readme	s/edgeR exon usage uses @EDGER_DEU_FUNCTION@ in this revision/edgeR exon usage uses diffSpliceDGE/	README missing required text: edgeR exon usage uses @EDGER_DEU_FUNCTION@ in this revision
+T8-ra-missing	check	runall	s/ test_sample_names.sh / /	tests/test_sample_names.sh is not named in run_all_tests.sh
+T8-ra-full	check	runall	s/^FULL_TESTS="test_proof_tools.sh"$/FULL_TESTS=""/	FULL_TESTS must be test_proof_tools.sh
+T8-ra-hide	check	runall	s/^NOT_TESTS="\(.*\)"$/NOT_TESTS="\1 test_bam_policy.sh"/	NOT_TESTS must be exactly the helpers
+T8-ra-envi	check	runall	s/env -i HOME="\${HOME:-\/nonexistent}" PATH="\$P" \/bin\/bash --noprofile --norc "\$HERE\/\$1"/bash "$HERE\/$1"/	must run every test under env -i with an explicit PATH
+T8-ra-skip	check	runall	s/test_proof_tools.sh was SKIPPED/the proof tools did not run/	must say when the proof-tool self-test was skipped
+T8-ra-git	check	runall	s/1\.8\.5/1.8.3/g	must check for git 1.8.5 or newer
+T8-ra-empty	check	runall	1,$d	tests/run_all_tests.sh is missing or empty
+T8f-res-every	check	readme	s/sets a process default of 2 CPUs, 8 GB and 4 h, raises the processes below with `withName` selectors/gives every process 2 CPUs, 8 GB and 4 h, raises the processes below with `withName` selectors/	README has forbidden text: gives every process 2 CPUs, 8 GB and 4 h
+T8f-res-labels	check	readme	s/ Every other process keeps the resources of the pipeline's own process labels, which take precedence over that default: in the verification run they requested up to 12 CPUs, 64 GB and 16 h (the SUPPA2 diffSplice and cluster steps and `MAKE_TRANSCRIPTS_FASTA`)\.//	README missing required text: Every other process keeps the resources of the pipeline's own process labels
+T8f-res-max	check	readme	s/they requested up to 12 CPUs, 64 GB and 16 h/they requested up to 8 CPUs, 64 GB and 8 h/	README missing required text: Every other process keeps the resources of the pipeline's own process labels, which take precedence over that default: in the verification run they requested up to 12 CPUs, 64 GB and 16 h
+T8f-sq-readme	check	readme	s/the `SALMON_QUANT\.\*` selector was applied in the cluster acceptance run on the same data: its SALMON_QUANT_SALMON tasks requested 8 CPUs, 36 GB and 8 h/the `SALMON_QUANT.*` selector was not applied/	README missing required text: The first seven selectors were applied in the verification run
+T8f-sq-checked	check	readme	s/; they are NOT measured on a real genome\./; they were checked on the nf-core test data only and are NOT measured on a real genome./	README has forbidden text: they were checked on the nf-core test data only
+T8f-sq-skill	check	skill	s/its four SALMON_QUANT_SALMON tasks requested 8 CPUs, 36 GB and 8 h/its tasks ran/	missing required text: The first seven selectors were applied in this skill's verification run
+T8f-sq-skill-old	check	skill	s/The resources of every selector are judgement: they are not measured on real data\./The resources of every selector are judgement, checked on the nf-core test data of this skill's verification only: they are not measured on real data./	forbidden text present: checked on the nf-core test data of this skill's verification only
+T8f-sq-skill-first	check	skill	s/no SALMON_QUANT_STAR task runs; the pattern covers both names\./SALMON_QUANT_STAR also runs./	missing required text: no SALMON_QUANT_STAR task runs; the pattern covers both names.
+T8f-realdata-del	check	readme	s/, and nothing in this skill is validated on real data\././	README missing required text: and nothing in this skill is validated on real data.
+T8f-realdata-add	check	readme	$s/$/\nThis skill has been validated on real RNA-seq data./	README has forbidden text: has been validated on real
+T8f-realdata-add2	check	readme	$s/$/\nThe settings were tested on real data./	README has forbidden text: tested on real data
+T8f-salmontime	check	readme	s/likely takes more than an hour to build (unverified)\./takes a few minutes to build./	README missing required text: A decoy-aware Salmon index of a human or mouse genome likely takes more than an hour to build (unverified).
+T8f-salmontime-unv	check	readme	s/likely takes more than an hour to build (unverified)\./likely takes more than an hour to build./	README missing required text: A decoy-aware Salmon index of a human or mouse genome likely takes more than an hour to build (unverified).
+T8f-intro-pin	check	readme	s/, an unreleased development commit of the pipeline, not a release (see/, the current release (see/	README missing required text: an unreleased development commit of the pipeline, not a release
+T8f-intro-release	check	readme	$s/$/\nIt uses the current release of nf-core\/rnasplice./	README has forbidden text: the current release
+T8f-suppa-tc	check	readme	$s/$/\nNote: SUPPA2 dPSI = mean PSI of the treatment − mean PSI of the control./	README has forbidden text: mean PSI of the treatment − mean PSI of the control
+T8f-suppa-tc-ascii	check	readme	$s/$/\nNote: SUPPA2 dPSI = mean PSI of the treatment - mean PSI of the control./	README has forbidden text: mean PSI of the treatment - mean PSI of the control
+T8f-src-rmats	check	readme	s/| more inclusion in the treatment | verification run (bamlists and values) |/| more inclusion in the treatment | assumed |/	README missing required text: | rMATS | `IncLevelDifference` = mean(`IncLevel1`) − mean(`IncLevel2`); `b1` = the treatment samples | more inclusion in the treatment | verification run (bamlists and values) |
+T8f-src-suppa	check	readme	s/| more inclusion in the control | verification run (every event, values) and pinned code |/| more inclusion in the control | column name |/	README missing required text: | more inclusion in the control | verification run (every event, values) and pinned code |
+T8f-src-dtu	check	readme	s/(header plus checked rows: all 217 non-NA rows) and pinned code |$/(column name) |/	README missing required text: | DEXSeq DTU |
+T8f-src-dtu-n	check	readme	s/all 217 non-NA rows/all 200 non-NA rows/	README missing required text: | DEXSeq DTU |
+T8f-src-dex	check	readme	s/(header plus checked rows: all 7420 non-NA rows) and pinned code |$/(column name) and pinned code |/	README missing required text: | DEXSeq exon usage |
+T8f-hang	check	readme	s/until it was killed by hand (the retry then finished in 2 s); cause not verified\./; cause: a known rMATS bug./	README missing required text: until it was killed by hand (the retry then finished in 2 s); cause not verified.
+T8f-onecontrast	check	readme	/^- One contrast was run with the skill's settings/d	README missing required text: - One contrast was run with the skill's settings
+T8f-salmonruns	check	readme	/^- With FASTQ input, Salmon (index and quantification) always runs/d	README missing required text: - With FASTQ input, Salmon (index and quantification) always runs
+T8f-salmonruns-dp	check	readme	s/ With FASTQ input, Salmon (index build and quantification) runs even in an rMATS-only run, because `pseudo_aligner` has no off value at this revision\.//	README missing required text: With FASTQ input, Salmon (index build and quantification) runs even in an rMATS-only run
+T8f-sefastq	check	readme	s/; single-end FASTQ input was not run either\./\./	README missing required text: (the gate ran paired-end samples only
+T8f-gateran	check	readme	s/(the gate ran paired-end samples only: `unstranded` and `reverse`, from FASTQ and from genome BAM)/(the gate ran paired-end samples)/	README missing required text: (the gate ran paired-end samples only
+T8f-starindex	check	readme	s/ `star_index` (reuse of an existing STAR index) was not run either\.//	README missing required text: `star_index` (reuse of an existing STAR index) was not run either.
+T8f-bulk	check	readme	s/: run it in one place only\./: run it in both places./	README has forbidden text: run it in both places
+T8f-bulk-del	check	readme	s/: run it in one place only\./, with DESeq2./	README missing required text: ): run it in one place only.
+T8f-4h	check	readme	s/(a deliberate exception)\./(a deliberate exception); it needs no more than 4 h in practice./	README has forbidden text: no more than 4 h
+T8f-duration	check	readme	s/(`test_proof_tools.sh`, 30 to 35 minutes)/(`test_proof_tools.sh`, about 20 minutes)/	README missing required text: The default run takes about 17 minutes
+T8f-duration-del	check	readme	s/The default run takes about 17 minutes (bash, awk and sed only) and skips/The default run skips/	README missing required text: The default run takes about 17 minutes
+T8f-approved	check	readme	s/(a deliberate exception)/(approved by the user)/	README has forbidden text: approved by the user
+T8f-step6	check	readme	s/warns when read lengths differ, and stops by default when they differ between conditions |/warns when read lengths differ between conditions |/	README missing required text: warns when read lengths differ, and stops by default
+T8f-prefix	check	readme	s/^| `{SHEET_PREFIX}_contrasts\.csv` |/| `{prefix}_contrasts.csv` |/	README has forbidden text: {prefix}
+T8f-prefix-def	check	readme	s/; `{SHEET_PREFIX}` is the file prefix chosen in Step 5 ([^)]*)\././	README missing required text: `{SHEET_PREFIX}` is the file prefix chosen in Step 5
+T8f-rundirs	check	readme	s/ (on the author's cluster account; these run directories are not distributed, and the recorded evidence is in `tests\/fixtures\/`)//	README missing required text: (on the author's cluster account
+T8f-options	check	readme	s/every option key that has a non-null pipeline default, at that default/every option of every module at the pipeline default/	README has forbidden text: every option of every module
+T8f-pr291	check	readme	s/which ported the rMATS subworkflow to the nf-core structure/which touched the rMATS subworkflow/	README missing required text: which ported the rMATS subworkflow to the nf-core structure
+T8f-runtestdoc	check	readme	s/a test of the test runner itself on a fake tree (`test_run_all\.sh`: failures propagate, every listed test runs, the git version check), //	README missing required text: a test of the test runner itself on a fake tree
+T8f-rows-res	check	readme	s/^| `SALMON_QUANT\.\*` | 8 | 36 GB | 8h |$/&\n| `SUPPA_DIFFSPLICE` | 2 | 8 GB | 1h |/	README table '| Selector | CPUs | Memory | Time |' has 9 rows, expected 8
+T8f-rows-path	check	readme	s/^| `multiqc\/` |.*$/&\n| `salmon\/rmats\/` | rMATS on Salmon |/	README table '| Path | Content |' has 8 rows, expected 7
+T8f-rows-dir	check	readme	s/^| edgeR exon usage | .*$/&\n| SUPPA2 isoforms | dPSI | more in the treatment | assumed |/	README table '| Output | Column | Positive value means | Source |' has 6 rows, expected 5
+T8f-rows-file	check	readme	s/^| `nextflow\.config` | .*$/&\n| `create_env.sh` | conda environment |/	README table '| File | Description |' has 8 rows, expected 7
+T8f-rows-step	check	readme	s/^| 12 | Summary and hand-off | .*$/&\n| 13 | Results report | Generated |/	README table '| Step | Topic | Asked or detected |' has 14 rows, expected 13
+T8f-rt-rc	runtest	runall	s/|| { echo "FAIL: \$1"; rc=1; }; }/|| echo "FAIL: $1"; }/	(runner args ''): exit 0, expected 1
+T8f-rt-exit	runtest	runall	s/{ echo "SOME TESTS FAILED"; exit 1; }/echo "SOME TESTS FAILED"/	(runner args ''): exit 0, expected 1
+T8f-rt-onetest	runtest	runall	s/^for t in \$TESTS; do run/for t in check_skill.sh; do run/	expected every test of TESTS once, in order
+T8f-rt-full	runtest	runall	s/^  for t in \$FULL_TESTS; do run "\$t"; done$/  :/	--full ran
+T8f-rt-gitfalse	runtest	runall	s/^  if \[ -z "\$gver" \] || .*; then$/  if false; then/	git_1.8.3.1): exit 0, expected 1
+T8f-rt-gittrue	runtest	runall	s/^  if \[ -z "\$gver" \] || .*; then$/  if true; then/	git_2.49.0): exit 1, expected 0
+T8f-rt-gittext	runtest	runall	s/| sort -V | head -n1)" != 1\.8\.5/| sort | head -n1)" != 1.8.5/	git_1.10.0): exit 1, expected 0
+T8f-rt-sk	runtest	runall	s/SK="\$HERE\/\.\.\/nfcore-rnasplice-setup\.md"/SK=\/dev\/null/	a test got another argument, another PATH or the caller's environment
+T8f-rt-envi	runtest	runall	s/env -i HOME="\${HOME:-\/nonexistent}" PATH="\$P" \/bin\/bash --noprofile --norc "\$HERE\/\$1"/PATH="$P" \/bin\/bash --noprofile --norc "$HERE\/$1"/	a test got another argument, another PATH or the caller's environment
+T8f-rt-gitpath	runtest	runall	s/^  P="\$RNASPLICE_TEST_GIT_DIR:\$P"$/  P="$P:$RNASPLICE_TEST_GIT_DIR"/	git_2.49.0): exit 1, expected 0
+T8f-rt-usage	runtest	runall	s/^  \*) echo "usage: run_all_tests.sh \[--full\]"; exit 1 ;;$/  *) ;;/	(runner args '--bogus'): exit 0, expected 1
+T8f-rt-unnamed	runtest	runall	s/\*) echo "FAIL: tests\/\$b is not named in run_all_tests.sh (TESTS, FULL_TESTS or NOT_TESTS)"; rc=1 ;; esac$/*) ;; esac/	(runner args ''): exit 0, expected 1
+T8f-rt-rootrow	runtest	runall	/FAIL: root README row missing/d	(runner args ''): exit 0, expected 1
+T8f-rt-rootdev	runtest	runall	/FAIL: root README row still marked in development/d	(runner args ''): exit 0, expected 1
+T8f-rt-nogit	runtest	runall	s/^  \[ -x "\$RNASPLICE_TEST_GIT_DIR\/git" \] || .*$/  :/	output lacks the line: ERROR: RNASPLICE_TEST_GIT_DIR=
+T8f-rt-skipmsg	runtest	runall	s/^  echo "== SKIPPED: \$FULL_TESTS (proof-tool self-test, 30 to 35 minutes; run with --full)"$/  :/	output lacks the line: == SKIPPED: test_proof_tools.sh
+T8f-ra-runtest	check	runall	s/ test_run_all\.sh / /	run_all_tests.sh TESTS must run test_run_all.sh
+T8f-ra-gitline	check	runall	s/| sort -V | head -n1)" != 1\.8\.5/| sort -V | head -n1)" != 1.8.6/	must check for git 1.8.5 or newer
+T9-pending-add	check	readme	$s/$/\nCluster acceptance (nf-core test data): PENDING/	README must have the whole line
+T9-done-revert	check	readme	s/^Cluster acceptance (nf-core test data): DONE (2026-10-02)$/Cluster acceptance (nf-core test data): PENDING/	README must have the whole line
+T9-sq-skill-old	check	skill	$s/$/\nThe selector was only matched against the process names recorded there./	forbidden text present: selector was only matched against the process names recorded there
+T9-sq-skill-old2	check	skill	$s/$/\nIt is first applied in this skill's cluster acceptance run./	forbidden text present: is first applied in this skill's cluster acceptance run
+T9-sq-readme-old	check	readme	$s/$/\nThe Salmon selector is first applied in the cluster acceptance run./	README has forbidden text: is first applied in the cluster acceptance run
+T9-sq-readme-old2	check	readme	$s/$/\nThe Salmon selector was only matched against the recorded process names./	README has forbidden text: selector was only matched against the recorded process names
+T9-sq-readme-star	check	readme	s/ With this skill's route no SALMON_QUANT_STAR task runs; the pattern covers both names\.//	README missing required text: With this skill's route no SALMON_QUANT_STAR task runs
+T9-firstuse-old	check	readme	$s/$/\nThese keys: they are first used in the cluster acceptance run./	README has forbidden text: they are first used in the cluster acceptance run
+T9-layout-mate	names	skill	s/^    \[ -n "\${mate\[\$f\]:-}" \] && continue$/    :/	FAIL: layout case
+T9-layout-exist	names	skill	s/^    if r=\$(fastq_r2_name "\$f") && \[ -e "\$r" \]; then/    if r=$(fastq_r2_name "$f"); then/	FAIL: layout case
+T9-layout-mixed	names	skill	s/if \[ \$np -gt 0 \] && \[ \$ns -gt 0 \]; then echo "LAYOUT mixed"; elif/if false; then :; elif/	FAIL: layout case
+T9-layout-prose	check	skill	s/that R2 file is its mate, never a sample of its own\. //	missing required text: that R2 file is its mate, never a sample of its own.
+T9-layout-old	check	skill	s/(`fastq_layout` prints `LAYOUT mixed`)\./& A file with an R1 token and whose R2 file exists → paired-end; otherwise single-end./	forbidden text present: and whose R2 file exists → paired-end; otherwise single-end.
+T9-rows	check	skill	s/^- \*\*Rows:\*\* one samplesheet row per `paired` or `single` line of `fastq_layout`/- **Rows:** for each R1 file, `fastq_r2_name` gives its R2 file/	missing required text: - **Rows:** one samplesheet row per `paired` or `single` line of `fastq_layout`
+T9-layout-fn	check	skill	s/^fastq_layout() {$/fastq_pairs() {/	missing required text: fastq_layout() {
+T9-bam-sorted	names	skill	s/|_sorted)?/)?/	FAIL: BAM name case star/ERR188383_chrX_sorted.bam
+T9-bam-prose	check	skill	s/derive the sample names with `bam_sample_name` (block in Step 4a: it removes the longest of/derive the sample names by removing the longest of/	missing required text: derive the sample names with `bam_sample_name`
+T9-bam-fn	check	skill	s/^bam_sample_name() {$/bam_name() {/	missing required text: bam_sample_name() {
+T9-fn-one	check	skill	s/ When `{SEQ_DATE}` equals `{TODAY_YYMMDD}` (the input files have no date prefix), options 1 and 2 are the same: offer only 1\. `{TODAY_YYMMDD}_{WD_NAME}` · 2\. Custom prefix\.//	missing required text: When `{SEQ_DATE}` equals `{TODAY_YYMMDD}` (the input files have no date prefix)
+T9-mqc-one	check	skill	s/ When `{SEQ_DATE}` equals `{TODAY_YYMMDD}`, options 1 and 2 are the same: offer only 1\. `{TODAY_YYMMDD}_{WD_NAME}` · 2\. Custom\.$//	missing required text: When `{SEQ_DATE}` equals `{TODAY_YYMMDD}`, options 1 and 2 are the same
+T9-bampath	check	skill	s/ \*\*Path style:\*\* if `{BAM_DIR}` is inside `{CWD}`, use paths relative to `{CWD}`; otherwise absolute paths (as for FASTQ input)\.//	missing required text: **Path style:** if `{BAM_DIR}` is inside `{CWD}`
+T9-acc-a	check	readme	s/job 11380326, wall time 11 min 49 s, 80\/80 tasks COMPLETED/job 11380326, 80 tasks COMPLETED/	README missing required text: job 11380326, wall time 11 min 49 s, 80/80 tasks COMPLETED
+T9-acc-c	check	readme	s/43\/43 tasks COMPLETED/43 tasks COMPLETED/	README missing required text: job 11380459, wall time 6 min 16 s, 43/43 tasks COMPLETED
+T9-acc-signs	check	readme	s/1854\/1854 isoform events/1850\/1854 isoform events/	README missing required text: the rMATS sign on 202/202 rows of SE.MATS.JC.txt
+T9-acc-notex	check	readme	/^- Not exercised: real data;/d	README missing required text: - Not exercised: real data;
+F-prefix	check	skill	s/A custom prefix (and every custom file name of this step) may contain only/A custom prefix may contain any text, spaces allowed; it may contain/	missing required text: A custom prefix (and every custom file name of this step) may contain only
+F-otherfile	check	skill	s/2\. choose another filename (letters, digits, `\.`, `_` and `-` only, as for the custom prefix; /2. choose another filename (/	missing required text: 2. choose another filename (letters, digits
+F-inst-argc	validate	skill	s/^  \[ \$# -le 6 \] || .*$/  :/	FAIL: case install_space_split
+F-inst-chars	validate	skill	s/''|\*\/\*|\*\[!A-Za-z0-9\._-\]\*)/''|*\/*)/	FAIL: case install_space_quoted
+F-rprobe	check	skill	s/^\*\*Resuming a run\.\*\*/Then run `Rscript -e "library(DEXSeq)"` on the login node to check the R packages.\n\n&/	'(Rscript|R +(-e|--vanilla|-f|CMD))( |$)' is invoked outside the submission script (1 lines in the skill, 0 in the script)
+F-condaprobe	check	skill	s/^\*\*Resuming a run\.\*\*/First run `conda activate {CONDA_ENV}` here to make sure the environment exists.\n\n&/	'conda (activate|create|install|run|env)( |$)' is invoked outside the submission script (2 lines in the skill, 1 in the script)
+F-starprobe	check	skill	s/^\*\*Resuming a run\.\*\*/To check the index, run `STAR --version` on the login node.\n\n&/	'STAR +--?[A-Za-z]' is invoked outside the submission script
+F-salmonprobe	check	skill	s/^\*\*Resuming a run\.\*\*/To check the index, run `salmon index -h` on the login node.\n\n&/	'salmon +(index|quant|--?[A-Za-z])' is invoked outside the submission script
+F-m1	check	skill	s/At this revision rMATS prepares each sample once and runs one post step per contrast/rMATS runs one prep\/post pair per contrast/	forbidden text present: rMATS runs one prep/post pair per contrast
+F-m2-call	check	skill	s/`shopt -s nullglob; fastq_layout /`fastq_layout /	missing required text: `shopt -s nullglob; fastq_layout
+F-m2-subdir	check	skill	s/Only the files directly in `{FASTQ_DIR}` are used, not its subdirectories/All files are used/	missing required text: Only the files directly in `{FASTQ_DIR}` are used, not its subdirectories
+F-m2-bash	check	skill	s/ (block below; it needs bash 4 or newer, the cluster has 4\.2)/ (block below)/	missing required text: it needs bash 4 or newer
+F-m2-noargs	names	skill	s/^  \[ \$# -gt 0 \] || { echo "ERROR: no FASTQ file given"; return 1; }$/  :/	FAIL: layout case no file
+F-m2-notfile	names	skill	s/^  for f in "\$@"; do \[ -f "\$f" \] || .*$/  :/	FAIL: layout case unmatched glob
+F-m4-skill7	check	skill	s/The FASTA and the GTF must use the same contig names/The contig names do not matter/	missing required text: The FASTA and the GTF must use the same contig names
+F-m4-skill4b	check	skill	s/tell the user to compare the `@SQ` names/compare the names/	missing required text: tell the user to compare the `@SQ` names
+F-m4-readme	check	readme	s/^- FASTA, GTF and BAM contig names must match/- Contig names/	README missing required text: - FASTA, GTF and BAM contig names must match
+F-m6-queue	check	skill	s/^            queueSize = 10$/            queueSize = 500/	must keep queueSize = 10 and submitRateLimit
+F-m6-rate	check	skill	s/^            submitRateLimit = '10\/1min'$/            submitRateLimit = '100\/1min'/	must keep queueSize = 10 and submitRateLimit
+F-i2-commit	check	readme	s/ The runs and the static gate below were made on the skill text of commit bcb63e9\.//	README missing required text: The runs and the static gate below were made on the skill text of commit bcb63e9.
+F-i2-match	check	readme	s/`nextflow.config` is byte-identical to the Step 10 template, and/`nextflow.config` matches, and/	README missing required text: `nextflow.config` is byte-identical to the Step 10 template
+F-i2-gate	check	readme	s/^- Static gate (commit bcb63e9):/- Static gate:/	README missing required text: - Static gate (commit bcb63e9):
+F-m7	check	readme	s/ its automatic sample names still ended in `_sorted` (made before Step 4b strips `_sorted\.bam`; that fix is unit-tested, run (c) was not repeated);//	README missing required text: its automatic sample names still ended in `_sorted`
+F-bashrow	check	readme	/^| bash 4 or newer |/d	README missing required text: | bash 4 or newer |
+F-m3-runall	runtest	runall	/needs internet on the compute nodes: its job downloads/,+1d	(runner args ''): exit 0, expected 1
+F-fullduration	check	readme	s/ (about 50 minutes in all)\././	README missing required text: `bash tests/run_all_tests.sh --full` includes it (about 50 minutes in all).
