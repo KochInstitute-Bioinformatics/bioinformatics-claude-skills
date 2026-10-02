@@ -278,7 +278,7 @@ T6-dep	check	skill	s/sbatch --dependency=afterok:\$jid /sbatch /	missing require
 T6-sel	check	skill	s/withName: '\.\*:RMATS_POST' {/withName: '.*:RMATS_POSTX' {/	has no withName selector '.*:RMATS_POST'
 T6-selmiss	check	skill	/withName: '\.\*:STAR_ALIGN' {/,+4d	process STAR_ALIGN ran in the verification runs but has no withName selector '.*:STAR_ALIGN'
 T6-salsel	check	skill	s/withName: '\.\*:SALMON_QUANT\.\*' {/withName: '.*:SALMON_QUANT' {/	selector .*:SALMON_QUANT matches no process of the verification runs (75 names)
-T6-salmem	check	skill	/withName: '\.\*:SALMON_QUANT\.\*' {/,+2s/memory = '16 GB'/memory = '36 GB'/	selector .*:SALMON_QUANT.* requests 8 CPUs, 36 GB, 4h; the selector table says
+T6-salmem	check	skill	/withName: '\.\*:SALMON_QUANT\.\*' {/,+2s/memory = '36 GB'/memory = '16 GB'/	selector .*:SALMON_QUANT.* requests 8 CPUs, 16 GB, 8h; the selector table says 8 36 GB 8h
 T6-double	check	skill	s/withName: '\.\*:DEXSEQ_DTU' {/withName: '.*:DEXSEQ_DTU.*' {\n            }\n            withName: '.*:DEXSEQ_DTU' {/	is matched by 2 withName selectors
 T6-res	check	skill	/withName: '\.\*:STAR_ALIGN' {/,+2s/memory = '48 GB'/memory = '32 GB'/	the verification run requested 8 CPUs, 48 GB, 8h for NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:STAR_ALIGN
 T6-default	check	skill	s/^            memory = '8 GB'$/            memory = '6 GB'/	the process default of the slurm profile must be 2 CPUs, 8 GB, 4h
@@ -315,3 +315,46 @@ T6-hpart	check	skill	s/^#SBATCH -p bcc$/#SBATCH -p normal/	the download helper m
 T6-wgetcs	check	skill	s/wget -c -O/wget -O/	the download helper must use wget -c and gunzip -c
 T6-envhelper	check	skill	$s/$/\nWrite create_nextflow_env_26.04.6.sh first./	forbidden text present: create_nextflow_env_
 T6-indexhelper	check	skill	$s/$/\nWrite build_star_index_x.sh first./	forbidden text present: build_star_index
+T6f-nocd	submit	skill	/^cd "{CWD}" || /d	FAIL: case tested
+T6f-cdroot	submit	skill	s/^cd "{CWD}" || /cd \/ || /	FAIL: case tested
+T6f-cdline	check	skill	/^cd "{CWD}" || /d	the submission script must contain the line: cd "{CWD}"
+T6f-cdfirst	check	skill	s/^cd "{CWD}" || /echo start\n&/	cd "{CWD}" must be the first command of the submission script
+T6f-cdtext	check	skill	s/: it changes to `{CWD}` first, so it works wherever it is submitted from,/,/	missing required text: it changes to `{CWD}` first, so it works wherever it is submitted from
+T6f-preflight	submit	skill	/^for f in nextflow.config /d	FAIL: case missing_T_params.yaml
+T6f-preorder	submit	skill	/^for f in nextflow.config /{h;d}; /^module add singularity\/3.10.4 || /G	the file check must come before the module lines
+T6f-preline	check	skill	s/^for f in nextflow.config {PARAMS_YAML} {SAMPLESHEET_CSV} {CONTRASTS_CSV}; do/for f in nextflow.config {PARAMS_YAML}; do/	the submission script must contain the line: for f in nextflow.config
+T6f-singcheck	submit	skill	/^command -v singularity /d	FAIL: case singularity_missing
+T6f-executor	check	skill	/^            executor = 'slurm'$/d	the nextflow.config template must contain the line:             executor = 'slurm'
+T6f-queue	check	skill	/^            queue = 'bcc'$/d	the nextflow.config template must contain the line:             queue = 'bcc'
+T6f-singoff	check	skill	s/^            enabled = true$/            enabled = false/	the nextflow.config template must contain the line:             enabled = true
+T6f-automount	check	skill	/^            autoMounts = true$/d	the nextflow.config template must contain the line:             autoMounts = true
+T6f-singscope	check	skill	s/^    singularity {$/    apptainer {/	the singularity profile must set enabled = true and autoMounts = true
+T6f-slurmscope	check	skill	s/^    slurm {$/    cluster {/	the slurm profile must set executor = 'slurm' and queue = 'bcc'
+T6f-mailtype	check	skill	0,/^#SBATCH --mail-type=END,FAIL$/{/^#SBATCH --mail-type=END,FAIL$/d}	the submission script must contain the line: #SBATCH --mail-type=END,FAIL
+T6f-mailtypeh	check	skill	0,/^#SBATCH --mail-type=END,FAIL$/!{/^#SBATCH --mail-type=END,FAIL$/d}	the download helper must contain the line: #SBATCH --mail-type=END,FAIL
+T6f-mailuser	check	skill	0,/^#SBATCH --mail-user={USER_EMAIL}$/{/^#SBATCH --mail-user={USER_EMAIL}$/d}	the submission script must contain the line: #SBATCH --mail-user={USER_EMAIL}
+T6f-mailuserh	check	skill	0,/^#SBATCH --mail-user={USER_EMAIL}$/!{/^#SBATCH --mail-user={USER_EMAIL}$/d}	the download helper must contain the line: #SBATCH --mail-user={USER_EMAIL}
+T6f-n1	check	skill	0,/^#SBATCH -N 1$/{/^#SBATCH -N 1$/d}	the submission script must contain the line: #SBATCH -N 1
+T6f-n1h	check	skill	0,/^#SBATCH -N 1$/!{/^#SBATCH -N 1$/d}	the download helper must contain the line: #SBATCH -N 1
+T6f-helpt	check	skill	s/^#SBATCH -t 4:00:00$/#SBATCH -t 1:00:00/	the download helper must contain the line: #SBATCH -t 4:00:00
+T6f-helpmem	check	skill	0,/^#SBATCH --mem=8G$/!{s/^#SBATCH --mem=8G$/#SBATCH --mem=4G/}	the download helper must contain the line: #SBATCH --mem=8G
+T6f-parsable	check	skill	s/sbatch --parsable download_genome/sbatch download_genome/	missing required text: jid=$(sbatch --parsable download_genome_{REF_TAG}.sh)
+T6f-mqc	check	skill	s/ · 2. `{TODAY_YYMMDD}_{WD_NAME}` · 3. Custom. Store `{MULTIQC_TITLE}`/ · 2. Custom. Store `{MULTIQC_TITLE}`/	missing required text: **MultiQC title** (numbered)
+T6f-out2	check	skill	s/· 2. `results\/{TODAY_ISO}_{SHEET_PREFIX}`/· 2. `{SHEET_PREFIX}`/	missing required text: · 2. `results/{TODAY_ISO}_{SHEET_PREFIX}`
+T6f-outq	check	skill	s/if it exists and is not empty, ask (numbered): 1. use it anyway/if it exists, use it anyway/	missing required text: if it exists and is not empty, ask (numbered)
+T6f-lscfg	check	skill	s/`ls "{CWD}\/nextflow.config"`/`ls nextflow.config`/	missing required text: Check for an existing config: `ls "{CWD}/nextflow.config"`.
+T6f-tosubmit	check	skill	s/^To submit:  sbatch /To submit:  bash /	missing required text: To submit:  sbatch nf-core_rnasplice_{VERSION_TAG}.sh
+T6f-showall	check	skill	s/Show every written file in full\. //	missing required text: Show every written file in full.
+T6f-chars	check	skill	s/may contain only letters, digits/may contain letters, digits/	missing required text: A custom title or output directory may contain only letters, digits
+T6f-charmsg	check	skill	s/contains a character the params file cannot hold/is unusual/	missing required text: contains a character the params file cannot hold
+T6f-label	check	skill	s/the memory and time of the pipeline's own tested process label for Salmon quantification/values chosen by this skill/	missing required text: It requests 8 CPUs, 36 GB and 8 h
+T6f-notmeasured	check	skill	s/: they are not measured on real data\./ and on real data./	missing required text: The resources of every selector are judgement
+T6f-retry	check	skill	s/Fixed `withName` resources do not grow when the pipeline retries a task: //	missing required text: Fixed `withName` resources do not grow when the pipeline retries a task
+T6f-anyproc	check	skill	s/raise that selector's `memory`/raise SALMON_QUANT's `memory`/	missing required text: raise that selector's `memory` or `time` in nextflow.config
+T6f-resanchor	check	skill	s/^\*\*Resuming a run\.\*\* //	anchor must appear exactly once: **Resuming a run.**
+T6f-resout	check	skill	$s/$/\nAdd -resume to the run line./	-resume appears outside the **Resuming a run.** paragraph
+T6f-resgen	check	skill	s/-params-file {PARAMS_YAML}$/-params-file {PARAMS_YAML} -resume/	the generated submission script must not carry -resume
+T6f-resopt	check	skill	s/; the wizard never writes it into the generated script\./; the wizard may add it./	missing required text: `-resume` is a Nextflow option, not a pipeline parameter
+T6f-movemsg	check	skill	s/could not be moved aside: rename it by hand, then/could not be moved aside;/	missing required text: could not be moved aside: rename it by hand
+T6f-reltarget	helper	skill	/case "\$out" in \/?\*) ;;/d	FAIL: case relative_target
+T6f-emptyguard	helper	skill	s/ && \[ -s "\$out.part" \]//	FAIL: case empty_download

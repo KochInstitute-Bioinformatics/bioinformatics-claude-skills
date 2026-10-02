@@ -22,6 +22,7 @@ mode=$(awk -v u="$url" '$1 == u {print $2}' "$STUB_STATE/wget_mode" 2>/dev/null)
 case "$url" in
   *.fa.gz) printf '>1\nACGTACGT\n' ;;
   *.gtf.gz) printf '1\ttest\texon\t1\t8\t.\t+\t.\tgene_id "G1";\n' ;;
+  *empty.gz) : ;;
 esac | gzip -c > "$out"
 if [ "$mode" = truncated ]; then head -c 10 "$out" > "$out.t" && mv "$out.t" "$out"; fi
 exit 0
@@ -35,8 +36,8 @@ done
 [ -z "$(env | grep '^BASH_FUNC_')" ] || { echo "exported shell functions in the test environment"; exit 1; }
 bash "$HERE/cut_block.sh" "$SKILL" "**Genome download helper.**" > "$TEST_TMP/helper.tmpl" || { echo "FAIL: download helper block not found"; exit 1; }
 G="$TEST_TMP/genome"; FU=https://example.invalid/genome.fa.gz; GU=https://example.invalid/genes.gtf.gz
-mk_helper() { # mk_helper <GENOME_DIR as written into the script>
-  sed -e "s#{GENOME_DIR}#$1#g; s#{FASTA_PATH}#$G/genome.fa#g; s#{GTF_PATH}#$G/genes.gtf#g" \
+mk_helper() { # mk_helper <GENOME_DIR as written into the script> [FASTA_PATH as written into the script]
+  sed -e "s#{GENOME_DIR}#$1#g; s#{FASTA_PATH}#${2:-$G/genome.fa}#g; s#{GTF_PATH}#$G/genes.gtf#g" \
       -e "s#{ENSEMBL_FASTA_URL}#$FU#g; s#{ENSEMBL_GTF_URL}#$GU#g; s#{USER_EMAIL}#test@example.org#g; s#{REF_TAG}#test#g" \
       "$TEST_TMP/helper.tmpl" > "$TEST_TMP/helper.sh"
   ! grep -nE '(^|[^$])\{[A-Z_]+\}' "$TEST_TMP/helper.sh" || { echo "FAIL: placeholder left in the helper"; exit 1; }
@@ -66,6 +67,12 @@ rm -f "$G/genes.gtf" "$G/genes.gtf.gz" "$G/genes.gtf.gz.invalid"; echo "$GU fail
 rm -f "$STUB_STATE/wget_mode"
 mk_helper genome_rel; runh; rc=$?
 { [ $rc -ne 0 ] && grep -q 'must be an absolute path' "$TEST_TMP/out" && [ "$(nwget)" -eq 0 ] && [ ! -e "$TEST_TMP/genome_rel" ]; } || { echo "FAIL: case relative_dir"; fail=1; }
+mk_helper "$G" genome_rel.fa; runh; rc=$?
+{ [ $rc -ne 0 ] && grep -q "the target must be an absolute path" "$TEST_TMP/out" && [ "$(nwget)" -eq 0 ] && [ ! -e "$TEST_TMP/genome_rel.fa" ]; } || { echo "FAIL: case relative_target"; cat "$TEST_TMP/out"; fail=1; }
+sed -e "s#{GENOME_DIR}#$G#g; s#{FASTA_PATH}#$G/empty#g; s#{GTF_PATH}#$G/genes.gtf#g; s#{ENSEMBL_FASTA_URL}#https://example.invalid/empty.gz#g" \
+    -e "s#{ENSEMBL_GTF_URL}#$GU#g; s#{USER_EMAIL}#test@example.org#g; s#{REF_TAG}#test#g" "$TEST_TMP/helper.tmpl" > "$TEST_TMP/helper.sh"
+runh; rc=$?
+{ [ $rc -ne 0 ] && grep -q "decompression failed" "$TEST_TMP/out" && [ ! -e "$G/empty" ]; } || { echo "FAIL: case empty_download"; cat "$TEST_TMP/out"; fail=1; }
 [ -s "$G/sentinel" ] || { echo "FAIL: a file the helper did not create was removed"; fail=1; }
 forbidden_ran && fail=1
 [ $fail -eq 0 ] && echo "DRY RUN HELPERS PASS" || exit 1

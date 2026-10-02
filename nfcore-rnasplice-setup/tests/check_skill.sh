@@ -584,7 +584,7 @@ RMATS_POST	8	32 GB	16h
 DEXSEQ_COUNT	2	8 GB	8h
 DEXSEQ_EXON	8	32 GB	8h
 DEXSEQ_DTU	8	32 GB	8h
-SALMON_QUANT	8	16 GB	4h"
+SALMON_QUANT	8	36 GB	8h"
 NAMES="$FIX/trace_process_names.txt"; OBS="$FIX/trace_resources_g3.tsv"
 [ "$(wc -l < "$NAMES")" -eq 75 ] || { echo "fixture trace_process_names.txt must hold the 75 process names of the verification runs"; exit 2; }
 # selector<TAB>cpus<TAB>memory<TAB>time for each withName block of the template
@@ -641,7 +641,9 @@ else
 fi
 [ "$(gv HAS_RESOURCE_LIMITS)" = yes ] && need "\`resourceLimits\` caps every task at 16 CPUs, 64 GB and 24 h"
 need "\`SALMON_QUANT_SALMON\` and \`SALMON_QUANT_STAR\`"
-need "below the 36 GB and 8 h that the pipeline's own process label requests"
+# Task 6 review I3 (controller ruling): SALMON_QUANT = 8 CPU / 36 GB / 8h, the pipeline's own tested label values; not measured on real data.
+need "It requests 8 CPUs, 36 GB and 8 h: the memory and time of the pipeline's own tested process label for Salmon quantification"
+need "The resources of every selector are judgement, checked on the nf-core test data of this skill's verification only: they are not measured on real data."
 # Params file template
 BASEY=$(bash "$CUT" "$SKILL" "**Params file template.**" 2>/dev/null)
 [ "$(printf '%s\n' "$BASEY" | grep -cx '{MODULE_PARAMS}')" -eq 1 ] || { echo "FAIL: the params template must contain one {MODULE_PARAMS} line"; fail=1; }
@@ -671,4 +673,51 @@ need "and generate \`download_genome_{REF_TAG}.sh\` (Step 11)"
 forbid "create_nextflow_env_"
 forbid "build_star_index"
 # --- end Task 6
+
+# --- Task 6 review fixes
+# I1: the job changes to {CWD} first (every path it uses is relative to {CWD}), then checks its files before anything else.
+for l in 'cd "{CWD}" || { echo "ERROR: cannot change to {CWD}" >&2; exit 1; }' \
+         'for f in nextflow.config {PARAMS_YAML} {SAMPLESHEET_CSV} {CONTRASTS_CSV}; do [ -s "$f" ] || { echo "ERROR: $f is missing or empty in {CWD}" >&2; exit 1; }; done'; do
+  printf '%s\n' "$SUB" | grep -qxF -- "$l" || { echo "FAIL: the submission script must contain the line: $l"; fail=1; }
+done
+[ "$(printf '%s\n' "$SUB" | grep -v '^#' | grep -v '^[ \t]*$' | head -n 1)" = 'cd "{CWD}" || { echo "ERROR: cannot change to {CWD}" >&2; exit 1; }' ] \
+  || { echo "FAIL: cd \"{CWD}\" must be the first command of the submission script"; fail=1; }
+need "it changes to \`{CWD}\` first, so it works wherever it is submitted from"
+# I2: executor, queue, Singularity, mail and node lines of the config and both scripts; --parsable in the dependency line.
+for l in "            executor = 'slurm'" "            queue = 'bcc'" "            enabled = true" "            autoMounts = true"; do
+  printf '%s\n' "$CFG" | grep -qxF -- "$l" || { echo "FAIL: the nextflow.config template must contain the line: $l"; fail=1; }
+done
+printf '%s\n' "$CFG" | awk '/^    singularity \{$/ {s = 1} s && /^            enabled = true$/ {e = 1} s && /^            autoMounts = true$/ {a = 1} s && /^    \}$/ {exit} END {exit !(e && a)}' \
+  || { echo "FAIL: the singularity profile must set enabled = true and autoMounts = true"; fail=1; }
+printf '%s\n' "$CFG" | awk '/^    slurm \{$/ {s = 1} s && /^            executor = .slurm.$/ {e = 1} s && /^            queue = .bcc.$/ {q = 1} s && /^    \}$/ {exit} END {exit !(e && q)}' \
+  || { echo "FAIL: the slurm profile must set executor = 'slurm' and queue = 'bcc'"; fail=1; }
+for l in '#SBATCH -N 1' '#SBATCH --mail-type=END,FAIL' '#SBATCH --mail-user={USER_EMAIL}'; do
+  printf '%s\n' "$SUB" | grep -qxF -- "$l" || { echo "FAIL: the submission script must contain the line: $l"; fail=1; }
+  printf '%s\n' "$HELP" | grep -qxF -- "$l" || { echo "FAIL: the download helper must contain the line: $l"; fail=1; }
+done
+for l in '#SBATCH -n 2' '#SBATCH --mem=8G' '#SBATCH -t 4:00:00'; do
+  printf '%s\n' "$HELP" | grep -qxF -- "$l" || { echo "FAIL: the download helper must contain the line: $l"; fail=1; }
+done
+need "jid=\$(sbatch --parsable download_genome_{REF_TAG}.sh) && sbatch --dependency=afterok:\$jid nf-core_rnasplice_{VERSION_TAG}.sh"
+# M2: wizard text of Steps 10-11
+need "**MultiQC title** (numbered): 1. \`{SEQ_DATE}_{WD_NAME}\` · 2. \`{TODAY_YYMMDD}_{WD_NAME}\` · 3. Custom. Store \`{MULTIQC_TITLE}\`."
+need "· 2. \`results/{TODAY_ISO}_{SHEET_PREFIX}\` · 3. Custom. Store \`{OUTDIR}\`."
+need "if it exists and is not empty, ask (numbered): 1. use it anyway (the pipeline adds to it and may overwrite files) · 2. choose another."
+need "Check for an existing config: \`ls \"{CWD}/nextflow.config\"\`."
+need "To submit:  sbatch nf-core_rnasplice_{VERSION_TAG}.sh"
+need "Show every written file in full."
+# M3: custom title and directory characters (a double quote or backslash would break the double-quoted YAML value)
+need "A custom title or output directory may contain only letters, digits, \`.\`, \`_\`, \`-\` and (in the directory) \`/\`"
+need "contains a character the params file cannot hold"
+# M5, M6: fixed resources do not grow on retry; -resume only in the documented procedure, never in the generated script
+need "Fixed \`withName\` resources do not grow when the pipeline retries a task"
+need "raise that selector's \`memory\` or \`time\` in nextflow.config (up to the \`resourceLimits\` caps) and resubmit as described under **Resuming a run**"
+anchor_once "**Resuming a run.**"
+need "\`-resume\` is a Nextflow option, not a pipeline parameter; the wizard never writes it into the generated script."
+resume_out=$(grep -n -- '-resume' "$SKILL" | grep -v '^[0-9]*:\*\*Resuming a run\.\*\*' | cut -d: -f1 | tr '\n' ' ')
+[ -z "$resume_out" ] || { echo "FAIL: -resume appears outside the **Resuming a run.** paragraph (line $resume_out)"; fail=1; }
+! printf '%s\n' "$SUB" | grep -q -- '-resume' || { echo "FAIL: the generated submission script must not carry -resume"; fail=1; }
+# M8: the helper reports the move of an invalid download only when the move succeeded
+need "could not be moved aside: rename it by hand, then run the helper again"
+# --- end Task 6 review fixes
 [ $fail -eq 0 ] && echo "PASS" || exit 1

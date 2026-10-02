@@ -627,6 +627,7 @@ Trimming (Trim Galore) and QC use the pipeline defaults; this skill does not cha
 
 **MultiQC title** (numbered): 1. `{SEQ_DATE}_{WD_NAME}` · 2. `{TODAY_YYMMDD}_{WD_NAME}` · 3. Custom. Store `{MULTIQC_TITLE}`.
 **Output directory** (numbered): 1. `results/{TODAY_ISO}_{WD_NAME}` (default) · 2. `results/{TODAY_ISO}_{SHEET_PREFIX}` · 3. Custom. Store `{OUTDIR}`. Check it with `cd "{CWD}" && ls -A "{OUTDIR}"` (a relative `{OUTDIR}` is relative to `{CWD}`, where the job starts); if it exists and is not empty, ask (numbered): 1. use it anyway (the pipeline adds to it and may overwrite files) · 2. choose another.
+A custom title or output directory may contain only letters, digits, `.`, `_`, `-` and (in the directory) `/`: a double quote or a backslash would break its double-quoted value in the params file, and a space breaks the shell lines. For any other character, tell the user "⚠️ `{VALUE}` contains a character the params file cannot hold; use only letters, digits, `.`, `_`, `-` (and `/` in the directory)." and ask again.
 
 Check for an existing config: `ls "{CWD}/nextflow.config"`. If it exists, do not overwrite it: tell the user which selectors matter for rnasplice (the `withName` lines and the `resourceLimits` line below) so they can compare. If it does not exist, write it from the template.
 
@@ -679,8 +680,8 @@ profiles {
             }
             withName: '.*:SALMON_QUANT.*' {
                 cpus = 8
-                memory = '16 GB'
-                time = '4h'
+                memory = '36 GB'
+                time = '8h'
             }
         }
         executor {
@@ -707,7 +708,7 @@ trace    { enabled = true; overwrite = true; file = "${params.outdir}/pipeline_i
 dag      { enabled = true; overwrite = true; file = "${params.outdir}/pipeline_info/pipeline_dag.svg"        }
 ```
 
-The selectors (`'.*:NAME'`, matching the process whatever its workflow prefix) use the process names of this skill's verification runs of nf-core/rnasplice dev-1b44723; every other process keeps the resources of the pipeline's own process labels. The Salmon selector ends in `.*` because the pipeline names its Salmon quantification processes `SALMON_QUANT_SALMON` and `SALMON_QUANT_STAR`; `'.*:SALMON_QUANT'` matched neither in the verification run. It gives Salmon quantification 8 CPUs, 16 GB and 4 h, below the 36 GB and 8 h that the pipeline's own process label requests; if a SALMON_QUANT task fails with exit status 137 or 140 (memory or time limit; the decoy-aware Salmon index of a human or mouse genome is large), raise its `memory` to `'36 GB'` and its `time` to `'8h'` and submit again. After the first real run, compare the selectors with `{OUTDIR}/pipeline_info/execution_trace.txt`, whose `cpus`, `memory` and `time` columns show what each task requested. `resourceLimits` caps every task at 16 CPUs, 64 GB and 24 h; this revision has no `max_cpus`, `max_memory` or `max_time` parameters (Step 8), so the caps live only here. `overwrite = true` on the four report files lets a run that failed early be started again.
+The selectors (`'.*:NAME'`, matching the process whatever its workflow prefix) use the process names of this skill's verification runs of nf-core/rnasplice dev-1b44723; every other process keeps the resources of the pipeline's own process labels. The Salmon selector ends in `.*` because the pipeline names its Salmon quantification processes `SALMON_QUANT_SALMON` and `SALMON_QUANT_STAR`; `'.*:SALMON_QUANT'` matched neither in the verification run. It requests 8 CPUs, 36 GB and 8 h: the memory and time of the pipeline's own tested process label for Salmon quantification (the label gives 6 CPUs; the decoy-aware Salmon index of a human or mouse genome is large). The resources of every selector are judgement, checked on the nf-core test data of this skill's verification only: they are not measured on real data. Fixed `withName` resources do not grow when the pipeline retries a task: if a task of a process with a selector fails with exit status 137 or 140 (memory or time limit), raise that selector's `memory` or `time` in nextflow.config (up to the `resourceLimits` caps) and resubmit as described under **Resuming a run** (Step 11). After the first real run, compare the selectors with `{OUTDIR}/pipeline_info/execution_trace.txt`, whose `cpus`, `memory` and `time` columns show what each task requested. `resourceLimits` caps every task at 16 CPUs, 64 GB and 24 h; this revision has no `max_cpus`, `max_memory` or `max_time` parameters (Step 8), so the caps live only here. `overwrite = true` on the four report files lets a run that failed early be started again.
 
 ---
 
@@ -745,6 +746,9 @@ Typing rules: paths and strings are double-quoted; numbers and booleans are bare
 #SBATCH --mail-user={USER_EMAIL}
 #SBATCH -o nf-core_rnasplice_{VERSION_TAG}.%j.log
 
+cd "{CWD}" || { echo "ERROR: cannot change to {CWD}" >&2; exit 1; }
+for f in nextflow.config {PARAMS_YAML} {SAMPLESHEET_CSV} {CONTRASTS_CSV}; do [ -s "$f" ] || { echo "ERROR: $f is missing or empty in {CWD}" >&2; exit 1; }; done
+
 module add miniconda3/v4 || { echo "ERROR: cannot load module miniconda3/v4" >&2; exit 1; }
 source /home/software/conda/miniconda3/bin/condainit || { echo "ERROR: cannot source condainit" >&2; exit 1; }
 conda activate {CONDA_ENV} || { echo "ERROR: cannot activate conda environment {CONDA_ENV}" >&2; exit 1; }
@@ -769,7 +773,9 @@ echo "Nextflow $NF_VER (verified with 26.04.6)"
 
 nextflow run nf-core/rnasplice -r {VERSION} -c nextflow.config -profile slurm,singularity -params-file {PARAMS_YAML}
 ```
-The head job only coordinates the pipeline (2 CPUs, 8 GB) but must outlive every task, hence 48 h. The module and conda lines are the ones that worked in every job of this skill's verification, each stopping the job when it fails (under Lmod a failed `module add` silently breaks the later ones). Nextflow 26.04.0 or newer is required and there is no upper bound; the job reads the version from `nextflow -version` on the compute node and stops with a clear message before the pipeline starts when it is too old. The script fetches nothing itself: Nextflow downloads the pinned revision from GitHub the first time a job runs it, also when `~/.bashrc` sets `NXF_OFFLINE=TRUE` (verified for this revision; the compute nodes have internet access), and the Singularity images go into `NXF_SINGULARITY_CACHEDIR`.
+The head job only coordinates the pipeline (2 CPUs, 8 GB) but must outlive every task, hence 48 h. Every path the job uses (nextflow.config, the params file, the sheets, the output directory) is relative to `{CWD}`: it changes to `{CWD}` first, so it works wherever it is submitted from, and stops with a clear message when one of its files is missing or empty. The module and conda lines are the ones that worked in every job of this skill's verification, each stopping the job when it fails (under Lmod a failed `module add` silently breaks the later ones). Nextflow 26.04.0 or newer is required and there is no upper bound; the job reads the version from `nextflow -version` on the compute node and stops with a clear message before the pipeline starts when it is too old. The script fetches nothing itself: Nextflow downloads the pinned revision from GitHub the first time a job runs it, also when `~/.bashrc` sets `NXF_OFFLINE=TRUE` (verified for this revision; the compute nodes have internet access), and the Singularity images go into `NXF_SINGULARITY_CACHEDIR`.
+
+**Resuming a run.** If the head job stops at its 48 h limit (SLURM state TIMEOUT), or after you raised the resources of a selector in nextflow.config, add ` -resume` by hand at the end of the `nextflow run` line of `nf-core_rnasplice_{VERSION_TAG}.sh` and submit it again: Nextflow reuses the finished tasks from `work/` in `{CWD}`. `-resume` is a Nextflow option, not a pipeline parameter; the wizard never writes it into the generated script.
 
 **Genome download helper.** Only when Step 7 found a missing Ensembl FASTA or GTF: write `download_genome_{REF_TAG}.sh` in `{CWD}` (URLs verified in this session, Step 7). It runs on a compute node, keeps the `.gz` files next to the decompressed ones, can be re-run safely (an interrupted download resumes), and removes no file; a download that is not a valid gzip file is moved aside as `.gz.invalid`:
 ```bash
@@ -792,7 +798,7 @@ fetch() {  # fetch <url of a .gz file> <decompressed target path>
   if [ -s "$out" ]; then echo "present: $out"; return 0; fi
   if ! { [ -s "$out.gz" ] && gzip -t "$out.gz" 2>/dev/null; }; then
     wget -c -O "$out.gz.part" "$url" || { echo "ERROR: download failed for $url (partial file kept for resuming: $out.gz.part); run the helper again" >&2; exit 1; }
-    gzip -t "$out.gz.part" 2>/dev/null || { mv -f "$out.gz.part" "$out.gz.invalid"; echo "ERROR: $url is not a valid gzip file (moved to $out.gz.invalid); run the helper again" >&2; exit 1; }
+    gzip -t "$out.gz.part" 2>/dev/null || { if mv -f "$out.gz.part" "$out.gz.invalid"; then echo "ERROR: $url is not a valid gzip file (moved to $out.gz.invalid); run the helper again" >&2; else echo "ERROR: $url is not a valid gzip file, and $out.gz.part could not be moved aside: rename it by hand, then run the helper again" >&2; fi; exit 1; }
     mv -f "$out.gz.part" "$out.gz" || { echo "ERROR: cannot move $out.gz.part to $out.gz" >&2; exit 1; }
   fi
   gunzip -c "$out.gz" > "$out.part" && [ -s "$out.part" ] && mv -f "$out.part" "$out" \
