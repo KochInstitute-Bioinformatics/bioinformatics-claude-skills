@@ -144,8 +144,14 @@ Reference run G3; `output_tree.txt` has 473 entries. Top level: `fastqc/ genome/
 - NAMING FACT: DTU and SUPPA2 files are named `<treatment>-<control>` (here `GBR-YRI`), NOT the `contrast` column (`GBR_vs_YRI`). rMATS, DEXSeq DEU and edgeR use the contrast name.
 - Sign conventions read from the outputs:
   - rMATS `IncLevelDifference = mean(IncLevel1) - mean(IncLevel2)` with b1 = treatment. Row 1 of SE.MATS.JC: mean(0.771, 1.0) - 1.0 = -0.115. Positive = more inclusion in treatment.
-  - SUPPA dPSI header: `local_GBR-local_YRI_dPSI`, i.e. treatment - control.
+  - SUPPA dPSI: CORRECTED AFTER THE TASK 7 REVIEW (2026-10-02). The header `local_GBR-local_YRI_dPSI` (isoforms: `transcript_GBR-transcript_YRI_dPSI`) reads treatment - control, but the values are mean(PSI control) - mean(PSI treatment). Evidence (G3, results/2026-10-01_g3_typed/salmon/suppa/diffsplice/, dpsi vs psivec, awk):
+    - event `ENSG00000001497;SE:X:64744930-64748140:64748249-64749092:-`: GBR (treatment) 0.977, 0.668, mean 0.823; YRI (control) 0.968, 0.986, mean 0.977; dPSI +0.154 = YRI - GBR.
+    - every non-NaN event agrees: per_local_event 1098/1098 and per_isoform 1854/1854 have dPSI = mean(YRI) - mean(GBR), and none has a nonzero dPSI = mean(GBR) - mean(YRI).
+    - code: subworkflows/local/suppa/main.nf:176-182 at 1b44723 passes psi1/tpm1 = treatment and psi2/tpm2 = control; SUPPA diffSplice reports cond2 - cond1 under a `cond1-cond2_dPSI` header.
+    - So SUPPA2 dPSI has the same direction as the DTU fold change (positive = more in the control) and the opposite direction to rMATS IncLevelDifference. The original line ("header ..., i.e. treatment - control") inferred the sign from the header alone. Rule: the gate infers no sign from a header alone; every sign is checked on the values or the code.
   - DTU DEXSeq column: `log2fold_YRI_GBR`, i.e. control over treatment. This is the reverse direction; the downstream note must say so.
+  - DEXSeq exon usage (added after the Task 7 review, header + code): star/dexseq_exon/results/DEXSeqResults.GBR_vs_YRI.csv has the column `log2fold_YRI_GBR`, and bin/run_dexseq_exon.R:34-41 at 1b44723 sets `factor(condition, levels = contrast)` with contrast = (treatment, control), so the treatment is the reference level: control over treatment, the same direction as DTU.
+  - edgeR exon usage (added after the Task 7 review, code only, not checked numerically): the header of star/edger/contrast_GBR_vs_YRI.usage.exon.csv is `Geneid,Chr,Start,End,Strand,Length,logFC,exon.F,P.Value,FDR` (no direction in the name), and modules/local/edger/exon/templates/run_edger_exon.R:228-230 at 1b44723 builds `makeContrasts(paste(treatment, control, sep = "-"))` for diffSpliceDGE: logFC = treatment - control (exon usage relative to its gene).
 - `genome/index/` exists but is empty with `save_reference: false`. With `save_reference: true` (G3s) it holds `genome/index/star/` (1.7 GB on chrX), `genome/index/salmon/` (760 MB), `genome/genome.transcripts.fa`, `genome/genes_chrX.tx2gene.tsv` and `genome/rsem/`.
 
 ## Strandedness and read type

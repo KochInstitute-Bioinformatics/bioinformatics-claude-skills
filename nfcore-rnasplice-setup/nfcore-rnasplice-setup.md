@@ -827,13 +827,15 @@ jid=$(sbatch --parsable download_genome_{REF_TAG}.sh) && sbatch --dependency=aft
 
 Show the user what was written as a table (file, purpose): the samplesheet, the contrasts sheet, the pairs file (paired design only), the params file, `nextflow.config` if it was written, the submission script and the genome download helper if one was written. Then repeat how to submit (Step 11, in that order). The wizard does not start the pipeline itself: the user submits the script with `sbatch` from `{CWD}`, and everything runs on compute nodes. Tell the user how to follow the run:
 - `squeue -u $USER` lists the head job and, once the pipeline runs, the tasks it submits to SLURM.
-- `tail -f nf-core_rnasplice_{VERSION_TAG}.{JOBID}.log` (in `{CWD}`; `{JOBID}` is the number `sbatch` printed) shows the Nextflow progress and, on failure, the failed process.
+- `tail -f nf-core_rnasplice_{VERSION_TAG}.{JOBID}.log` shows the Nextflow progress and, on failure, the failed process. The name comes from the `#SBATCH -o` line of the submission script (`{JOBID}` is the number `sbatch` printed); SLURM writes this log in the directory where `sbatch` was run, which is `{CWD}` when the user submits from there as in Step 11.
 - SLURM emails `{USER_EMAIL}` when the head job ends or fails.
 - A task that failed on memory or time: raise its selector in nextflow.config (Step 10) and resubmit as described under **Resuming a run** (Step 11).
 
 **Pipeline revision.** When `{VERSION}` is 1b447239488097651d8eac44bca2c1556865eb0f, tell the user that this is an unreleased development commit of nf-core/rnasplice (`dev-1b44723`), pinned by this skill because it is the revision its verification ran on; any other revision (a later commit or a release) needs this skill's verification gate to be run again before the settings and the output paths below can be relied on (see the README).
 
-Then print the hand-off note, keeping only the lines of the analyses that are switched on (`true` in the Step 8 table) and the MultiQC line, with one rMATS line per contrast (`{CONTRAST}` = the contrast name). With BAM input the note has only the rMATS, DEXSeq exon usage and edgeR exon usage lines (and MultiQC): DTU and SUPPA2 are off. If `{VERSION}` is not 1b447239488097651d8eac44bca2c1556865eb0f, first confirm the directory names against the pipeline's `docs/output.md` for `{VERSION}` with `WebFetch`; for 1b447239488097651d8eac44bca2c1556865eb0f they come from this skill's verification run.
+Then print the hand-off note, keeping only the lines of the analyses that are switched on (`true` in the Step 8 table) and the MultiQC line. With BAM input the note has only the rMATS, DEXSeq exon usage and edgeR exon usage lines (and MultiQC): DTU and SUPPA2 are off. If `{VERSION}` is not 1b447239488097651d8eac44bca2c1556865eb0f, first confirm the directory names against the pipeline's `docs/output.md` for `{VERSION}` with `WebFetch`; for 1b447239488097651d8eac44bca2c1556865eb0f they come from this skill's verification run.
+
+**Placeholders of the note.** For each row of `{CONTRASTS_CSV}`: `{CONTRAST}` = its `contrast` column, `{TREATMENT}` and `{CONTROL}` = its `treatment` and `control` columns. Fill them in; with several contrasts, print every line that contains one of them once per contrast (the two rMATS lines and the DEXSeq, edgeR, DTU and SUPPA2 lines), keeping the lines of one analysis together; the MultiQC line appears once.
 
 **Hand-off note.**
 ```text
@@ -850,9 +852,13 @@ With a paired design (`rmats_paired_stats: true`) the rMATS directory is `star/r
 
 **Reading the rMATS tables.** Each event type (SE, A5SS, A3SS, MXE, RI) has a `.MATS.JC.txt` table (junction-spanning reads only) and a `.MATS.JCEC.txt` table (junction and exon-body reads). `IncLevelDifference` = mean(`IncLevel1`) - mean(`IncLevel2`) = inclusion level of the treatment group minus that of the control group (in this pipeline the treatment samples are rMATS's `b1`); positive values mean more inclusion in the treatment. `IncLevel1`, `IJC_SAMPLE_1` and `SJC_SAMPLE_1` hold one comma-separated value per treatment sample, in samplesheet order (the `_2` columns: the control samples); the test columns are `PValue` and `FDR`. This skill sets no cut-offs: choose your own. As an example, Step 8 lists what Akerberg et al. 2022 used (FDR, |IncLevelDifference| and the number of uncalled replicates, from the accessible parts of its Methods).
 
-**Reading the DTU and SUPPA2 tables.** DTU and SUPPA2 files are named `{TREATMENT}-{CONTROL}` (for example `KO-WT`), not after the contrast name, and are under `salmon/`. SUPPA2 dPSI is treatment minus control (for local events the column is `local_{TREATMENT}-local_{CONTROL}_dPSI`). ⚠️ The sign is reversed relative to rMATS and SUPPA2 in the DTU tables: the fold-change column is `log2fold_{CONTROL}_{TREATMENT}` (control over treatment), so a positive value means a larger share of the transcript in the control. The direction of the DEXSeq and edgeR exon-usage fold changes was not recorded by this skill's verification: read it from the column names of their tables.
+**Reading the DTU and SUPPA2 tables.** DTU and SUPPA2 files are named `{TREATMENT}-{CONTROL}` (for example `KO-WT`), not after the contrast name, and are under `salmon/`. SUPPA2 dPSI = mean PSI of the control minus mean PSI of the treatment, although the column header reads `local_{TREATMENT}-local_{CONTROL}_dPSI` (isoforms: `transcript_{TREATMENT}-transcript_{CONTROL}_dPSI`); this was checked on every event of this skill's verification run, so a positive dPSI means more inclusion in the control. In the DTU tables the fold-change column is `log2fold_{CONTROL}_{TREATMENT}` (control over treatment), so a positive value means a larger share of the transcript in the control.
 
-The output paths and sign conventions in this step were verified on nf-core's test data only (this skill's verification run of the pinned revision), not on a real data set.
+**Reading the exon-usage tables.** DEXSeq exon usage (`DEXSeqResults.{CONTRAST}.csv`): the fold-change column is `log2fold_{CONTROL}_{TREATMENT}` (control relative to treatment, like DTU; column name seen in the verification run, and the pinned `run_dexseq_exon.R` makes the treatment the reference level), so a positive value means more usage of the exon bin in the control. edgeR exon usage (`contrast_{CONTRAST}.usage.exon.csv`): `logFC` = treatment minus control (exon usage relative to its gene; from the pinned `run_edger_exon.R`, which builds the contrast as treatment-control; not checked numerically), so a positive value means more usage of the exon in the treatment.
+
+⚠️ The sign is reversed relative to rMATS: DTU fold changes, SUPPA2 dPSI and DEXSeq exon fold changes are positive when the control has more; rMATS `IncLevelDifference` and edgeR `logFC` are positive when the treatment has more.
+
+The output paths and sign conventions in this step were verified on nf-core's test data only (this skill's verification run of the pinned revision; the edgeR direction from the pinned code), not on a real data set.
 
 **Which output answers which question.** Only the analyses that were switched on have outputs.
 
@@ -863,7 +869,7 @@ The output paths and sign conventions in this step were verified on nf-core's te
 | Which transcripts of a gene change their share of the gene's expression? | DEXSeq DTU (stageR-confirmed); SUPPA2 isoform PSI |
 
 **rnasplice or `/bulk-rnaseq-pipeline`?**
-- Gene-level differential expression, GSEA and transcript usage on the Salmon output of an nf-core/rnaseq run: `/bulk-rnaseq-pipeline`. Its optional DTU module is the same workflow (DRIMSeq filter → DEXSeq → stageR) as the DEXSeq DTU of rnasplice; do not run both on the same samples.
+- Gene-level differential expression, GSEA and transcript usage on the Salmon output of an nf-core/rnaseq run: `/bulk-rnaseq-pipeline`. Its optional DTU module runs the same steps (DRIMSeq filter → DEXSeq → stageR) as the DEXSeq DTU of rnasplice, on the nf-core/rnaseq Salmon quantification (import and Salmon index differ); do not run both on the same samples.
 - Which exons or splice events change (cassette exons, alternative 5'/3' splice sites, retained introns, mutually exclusive exons), for example after knocking out a splicing factor: this pipeline with rMATS (optionally SUPPA2); usage of exon bins: DEXSeq or edgeR exon usage.
 - This skill does not analyse the results; a report for the rMATS tables is a separate, later skill.
 
@@ -873,7 +879,9 @@ The output paths and sign conventions in this step were verified on nf-core's te
 
 - **`gh` CLI is not available on this HPC cluster.** Use `WebFetch` for all GitHub API calls.
 - **Always present finite-choice questions as numbered lists.** Use open questions only for free values: the email, the conda environment, paths, the organism, the plain-language description of the groups, subject labels, custom names and the read length of BAM input.
-- Never run Nextflow, conda, Java, Python or R on the login node. The wizard runs only light commands there (`find`, `ls`, `test`, `zcat | head`, `grep`, `awk`, `mktemp`, `mv`); all pipeline work goes through `sbatch`, and the user submits it.
+- Never run Nextflow, conda, Java, Python or R on the login node. The wizard runs only light commands there (for example `pwd`, `find`, `ls`, `test`, `zcat | head`, `grep`, `awk`, `wc`, `cut`, `mktemp`, `mv`); all pipeline work goes through `sbatch`, and the user submits it.
+- Shell variables and functions do not persist between Bash tool calls: a procedure defines and calls its functions, and creates, uses and removes its scratch files, in one Bash call (Step 0).
+- Never pre-fetch the pipeline (no Nextflow `pull` command, on the login node or in a script): Nextflow downloads the pinned revision the first time the job runs it (Step 11).
 - Raw FASTQ/BAM files are read-only; never modify them.
 - Never pass pipeline parameters on the `nextflow run` line; every parameter is in the params file.
 - Every module switch is written explicitly; `sashimi_plot`, `isoformswitchanalyzer` and `leafcutter` are always `false` and are not offered.

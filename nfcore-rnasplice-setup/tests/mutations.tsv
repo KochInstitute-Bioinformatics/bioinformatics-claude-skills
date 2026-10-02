@@ -365,3 +365,32 @@ T7-order	check	skill	s/^  salmon\/suppa\/  /  salmon\/suppa\/diffsplice\/  /	the
 T7-anchor	check	skill	$s/$/\n**Hand-off note.**/	anchor must appear exactly once: **Hand-off note.**
 T7-usual	check	skill	$s/$/\nUsual filters: FDR < 0.05 and |IncLevelDifference| > 0.1./	forbidden text present: Usual filters
 T7-real	check	skill	$s/$/\nThese settings were validated on real data./	forbidden text present: validated on real data
+T7f-suppa-old	check	skill	s/SUPPA2 dPSI = mean PSI of the control minus mean PSI of the treatment, although/SUPPA2 dPSI is treatment minus control, although/	forbidden text present: SUPPA2 dPSI is treatment minus control
+T7f-suppa-oldwarn	check	skill	s/^⚠️ The sign is reversed relative to rMATS: /⚠️ The sign is reversed relative to rMATS and SUPPA2: /	forbidden text present: The sign is reversed relative to rMATS and SUPPA2
+T7f-suppa-inv	check	skill	s/SUPPA2 dPSI = mean PSI of the control minus mean PSI of the treatment/SUPPA2 dPSI = mean PSI of the treatment minus mean PSI of the control/	missing required text: SUPPA2 dPSI = mean PSI of the control minus mean PSI of the treatment
+T7f-suppa-pos	check	skill	s/a positive dPSI means more inclusion in the control/a positive dPSI means more inclusion in the treatment/	missing required text: a positive dPSI means more inclusion in the control
+T7f-warn-del	check	skill	s/^⚠️ The sign is reversed relative to rMATS: /The sign is reversed relative to rMATS: /	missing required text: ⚠️ The sign is reversed relative to rMATS: DTU fold changes
+T7f-warn-flip	check	skill	s/are positive when the control has more; rMATS/are positive when the treatment has more; rMATS/	missing required text: ⚠️ The sign is reversed relative to rMATS: DTU fold changes
+T7f-rmats-diff	check	skill	s/= inclusion level of the treatment group minus that of the control group/= inclusion level of the control group minus that of the treatment group/	missing required text: = inclusion level of the treatment group minus that of the control group
+T7f-rmats-pos	check	skill	s/positive values mean more inclusion in the treatment\./positive values mean more inclusion in the control./	missing required text: positive values mean more inclusion in the treatment.
+T7f-rmats-cols	check	skill	s/per treatment sample, in samplesheet order (the `_2` columns: the control samples)/per control sample, in samplesheet order (the `_2` columns: the treatment samples)/	missing required text: hold one comma-separated value per treatment sample
+T7f-dtu-pos	check	skill	s/a larger share of the transcript in the control/a larger share of the transcript in the treatment/	missing required text: so a positive value means a larger share of the transcript in the control
+T7f-dexexon	check	skill	s/(control relative to treatment, like DTU/(treatment relative to control, like DTU/	missing required text: the fold-change column is `log2fold_{CONTROL}_{TREATMENT}` (control relative to treatment, like DTU
+T7f-dexexon-pos	check	skill	s/more usage of the exon bin in the control/more usage of the exon bin in the treatment/	missing required text: so a positive value means more usage of the exon bin in the control
+T7f-edger	check	skill	s/`logFC` = treatment minus control/`logFC` = control minus treatment/	missing required text: `logFC` = treatment minus control
+T7f-edger-pos	check	skill	s/more usage of the exon in the treatment/more usage of the exon in the control/	missing required text: so a positive value means more usage of the exon in the treatment
+T7f-colnames	check	skill	$s/$/\nFor the exon-usage direction, read it from the column names./	forbidden text present: read it from the column names
+T7f-ph	check	skill	s/`{CONTRAST}` = its `contrast` column/`{CONTRAST}` = the contrast/	missing required text: `{CONTRAST}` = its `contrast` column
+T7f-multi	check	skill	s/print every line that contains one of them once per contrast/print the lines once/	missing required text: print every line that contains one of them once per contrast
+T7f-shell	check	skill	/^- Shell variables and functions do not persist between Bash tool calls: a procedure/d	missing required text: - Shell variables and functions do not persist between Bash tool calls: a procedure
+T7f-pull	check	skill	/^- Never pre-fetch the pipeline/d	missing required text: Never pre-fetch the pipeline
+T7f-testdata	check	skill	/^The output paths and sign conventions in this step were verified/d	missing required text: The output paths and sign conventions in this step were verified on nf-core's test data only
+T7f-webfetch	check	skill	s/If `{VERSION}` is not @PIPELINE_REVISION@, first confirm the directory names against the pipeline's `docs\/output.md` for `{VERSION}` with `WebFetch`; //	missing required text: first confirm the directory names against the pipeline's `docs/output.md`
+T7f-bam	check	skill	s/(and MultiQC): DTU and SUPPA2 are off\./(and MultiQC): DTU and SUPPA2 also run./	missing required text: (and MultiQC): DTU and SUPPA2 are off.
+T7f-jc	check	skill	s/a `\.MATS\.JC\.txt` table (junction-spanning reads only)/a `.MATS.JC.txt` table/	missing required text: a `.MATS.JC.txt` table (junction-spanning reads only)
+T7f-jcec	check	skill	s/ and a `\.MATS\.JCEC\.txt` table (junction and exon-body reads)\./ and a `.MATS.JCEC.txt` table./	missing required text: a `.MATS.JC.txt` table (junction-spanning reads only) and a `.MATS.JCEC.txt` table (junction and exon-body reads)
+T7f-sbatcho	check	skill	s/^#SBATCH -o nf-core_rnasplice_{VERSION_TAG}\.%j\.log$/#SBATCH -o rnasplice.%j.log/	missing required text: tail -f rnasplice.{JOBID}.log
+T7f-nolog	check	skill	/^#SBATCH -o nf-core_rnasplice_{VERSION_TAG}\.%j\.log$/d	the submission script has no #SBATCH -o line
+T7f-logdir	check	skill	s/SLURM writes this log in the directory where `sbatch` was run/the log is in `{CWD}`/	missing required text: SLURM writes this log in the directory where `sbatch` was run
+T7f-nflog	check	skill	$s/$/\nAfter submitting, run `nextflow log` on the login node./	forbidden text present: nextflow log
+T7f-bulk	check	skill	s/ (import and Salmon index differ)//	missing required text: import and Salmon index differ

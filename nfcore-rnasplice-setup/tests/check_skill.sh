@@ -755,7 +755,7 @@ need "This skill sets no cut-offs: choose your own"
 need "\`IncLevelDifference\` = mean(\`IncLevel1\`) - mean(\`IncLevel2\`)"
 need "DTU and SUPPA2 files are named \`{TREATMENT}-{CONTROL}\` (for example \`KO-WT\`), not after the contrast name"
 need "the fold-change column is \`log2fold_{CONTROL}_{TREATMENT}\` (control over treatment)"
-need "The sign is reversed relative to rMATS and SUPPA2"
+# (Task 7 review C1: the need on "The sign is reversed relative to rMATS and SUPPA2" was wrong and is now forbidden below.)
 need "With BAM input the note has only the rMATS, DEXSeq exon usage and edgeR exon usage lines"
 need "With a paired design (\`rmats_paired_stats: true\`) the rMATS directory is \`star/rmats/{CONTRAST}_paired/\`"
 need "The wizard does not start the pipeline itself"
@@ -771,4 +771,55 @@ ho_paths=$(printf '%s\n' "$HO" | sed -n 's/^  \([^ ]\{1,\}\)  .*$/\1/p' | tr '\n
 [ "$ho_paths" = "star/rmats/{CONTRAST}/ star/rmats/{CONTRAST}/SE.MATS.JC.txt star/dexseq_exon/results/ star/edger/ salmon/dexseq_dtu/results/ salmon/suppa/ multiqc/ " ] \
   || { echo "FAIL: the hand-off note must list rMATS, SE.MATS.JC.txt, DEXSeq exon, edgeR exon, DTU, SUPPA2 and MultiQC in this order (found: $ho_paths)"; fail=1; }
 # --- end Task 7
+
+# --- Task 7 review fixes
+# C1: SUPPA2 dPSI = mean(control) - mean(treatment) although the header reads treatment-control (gate_report.md, corrected after
+# the Task 7 review: 1098/1098 local and 1854/1854 isoform events of G3). Same direction as DTU, opposite to rMATS.
+forbid "The sign is reversed relative to rMATS and SUPPA2"
+forbid "SUPPA2 dPSI is treatment minus control"
+need "SUPPA2 dPSI = mean PSI of the control minus mean PSI of the treatment, although the column header reads \`local_{TREATMENT}-local_{CONTROL}_dPSI\`"
+need "a positive dPSI means more inclusion in the control"
+need "⚠️ The sign is reversed relative to rMATS: DTU fold changes, SUPPA2 dPSI and DEXSeq exon fold changes are positive when the control has more; rMATS \`IncLevelDifference\` and edgeR \`logFC\` are positive when the treatment has more."
+# I1: every plain-language sign clause is pinned (each flip fails).
+case "$(gv RMATS_B1_GROUP)" in
+  treatment)
+    need "= inclusion level of the treatment group minus that of the control group (in this pipeline"
+    need "positive values mean more inclusion in the treatment."
+    need "hold one comma-separated value per treatment sample, in samplesheet order (the \`_2\` columns: the control samples)" ;;
+  control)
+    need "= inclusion level of the control group minus that of the treatment group (this pipeline"
+    need "positive values mean more inclusion in the control, so flip the sign to read it as treatment minus control" ;;
+esac
+need "so a positive value means a larger share of the transcript in the control"
+# I2: exon-usage directions (gate_report.md: DEXSeq exon from header + run_dexseq_exon.R; edgeR from run_edger_exon.R, code only).
+forbid "read it from the column names"
+need "the fold-change column is \`log2fold_{CONTROL}_{TREATMENT}\` (control relative to treatment, like DTU"
+need "so a positive value means more usage of the exon bin in the control"
+need "\`logFC\` = treatment minus control (exon usage relative to its gene; from the pinned \`run_edger_exon.R\`"
+need "so a positive value means more usage of the exon in the treatment"
+# M1: placeholders of the hand-off note and several contrasts.
+need "\`{CONTRAST}\` = its \`contrast\` column, \`{TREATMENT}\` and \`{CONTROL}\` = its \`treatment\` and \`control\` columns"
+need "print every line that contains one of them once per contrast"
+# M2: standing rules in the Notes.
+need "- Shell variables and functions do not persist between Bash tool calls: a procedure defines and calls its functions"
+need "Never pre-fetch the pipeline (no Nextflow \`pull\` command"
+# M3, M4, M8, M9: weak sentences pinned.
+need "The output paths and sign conventions in this step were verified on nf-core's test data only"
+need "first confirm the directory names against the pipeline's \`docs/output.md\` for \`{VERSION}\` with \`WebFetch\`"
+need "(and MultiQC): DTU and SUPPA2 are off."
+need "a \`.MATS.JC.txt\` table (junction-spanning reads only) and a \`.MATS.JCEC.txt\` table (junction and exon-body reads)"
+# M5: the tail line follows the #SBATCH -o line of the submission script; the log lands where sbatch ran.
+slog=$(printf '%s\n' "$SUB" | sed -n 's/^#SBATCH -o \(.*\)$/\1/p')
+jobid_ph='{JOBID}'
+if [ -n "$slog" ]; then
+  need "tail -f ${slog//%j/$jobid_ph}"
+else
+  echo "FAIL: the submission script has no #SBATCH -o line"; fail=1
+fi
+need "SLURM writes this log in the directory where \`sbatch\` was run"
+# M6: no Nextflow command for the login node in the wizard text.
+forbid "nextflow log"
+# M7: the bulk DTU module runs the same steps on other inputs.
+need "import and Salmon index differ"
+# --- end Task 7 review fixes
 [ $fail -eq 0 ] && echo "PASS" || exit 1
