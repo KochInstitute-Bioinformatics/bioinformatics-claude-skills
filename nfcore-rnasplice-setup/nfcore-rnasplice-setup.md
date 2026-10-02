@@ -820,3 +820,69 @@ If the genome download helper was written, the pipeline must wait for it; submit
 ```bash
 jid=$(sbatch --parsable download_genome_{REF_TAG}.sh) && sbatch --dependency=afterok:$jid nf-core_rnasplice_{VERSION_TAG}.sh
 ```
+
+---
+
+## Step 12 — Summary and hand-off
+
+Show the user what was written as a table (file, purpose): the samplesheet, the contrasts sheet, the pairs file (paired design only), the params file, `nextflow.config` if it was written, the submission script and the genome download helper if one was written. Then repeat how to submit (Step 11, in that order). The wizard does not start the pipeline itself: the user submits the script with `sbatch` from `{CWD}`, and everything runs on compute nodes. Tell the user how to follow the run:
+- `squeue -u $USER` lists the head job and, once the pipeline runs, the tasks it submits to SLURM.
+- `tail -f nf-core_rnasplice_{VERSION_TAG}.{JOBID}.log` (in `{CWD}`; `{JOBID}` is the number `sbatch` printed) shows the Nextflow progress and, on failure, the failed process.
+- SLURM emails `{USER_EMAIL}` when the head job ends or fails.
+- A task that failed on memory or time: raise its selector in nextflow.config (Step 10) and resubmit as described under **Resuming a run** (Step 11).
+
+**Pipeline revision.** When `{VERSION}` is 1b447239488097651d8eac44bca2c1556865eb0f, tell the user that this is an unreleased development commit of nf-core/rnasplice (`dev-1b44723`), pinned by this skill because it is the revision its verification ran on; any other revision (a later commit or a release) needs this skill's verification gate to be run again before the settings and the output paths below can be relied on (see the README).
+
+Then print the hand-off note, keeping only the lines of the analyses that are switched on (`true` in the Step 8 table) and the MultiQC line, with one rMATS line per contrast (`{CONTRAST}` = the contrast name). With BAM input the note has only the rMATS, DEXSeq exon usage and edgeR exon usage lines (and MultiQC): DTU and SUPPA2 are off. If `{VERSION}` is not 1b447239488097651d8eac44bca2c1556865eb0f, first confirm the directory names against the pipeline's `docs/output.md` for `{VERSION}` with `WebFetch`; for 1b447239488097651d8eac44bca2c1556865eb0f they come from this skill's verification run.
+
+**Hand-off note.**
+```text
+Outputs under {OUTDIR}/ :
+  star/rmats/{CONTRAST}/  rMATS, one directory per contrast: for each event type (SE, A5SS, A3SS, MXE, RI) a .MATS.JC.txt and a .MATS.JCEC.txt table
+  star/rmats/{CONTRAST}/SE.MATS.JC.txt  example: skipped exons, junction reads only
+  star/dexseq_exon/results/  DEXSeq differential exon usage: DEXSeqResults.{CONTRAST}.csv and perGeneQValue.{CONTRAST}.csv
+  star/edger/  edgeR differential exon usage: contrast_{CONTRAST}.usage.exon.csv, .usage.gene.csv and .usage.simes.csv
+  salmon/dexseq_dtu/results/  DEXSeq differential transcript usage with stageR: dexseq/DEXSeqResults.{TREATMENT}-{CONTROL}.tsv and stager/getAdjustedPValues.{TREATMENT}-{CONTROL}.tsv
+  salmon/suppa/  SUPPA2 event and isoform PSI; differential splicing in diffsplice/per_local_event/local_{TREATMENT}-{CONTROL}.dpsi and diffsplice/per_isoform/transcript_{TREATMENT}-{CONTROL}.dpsi
+  multiqc/  MultiQC report: {MULTIQC_TITLE}_multiqc_report.html
+```
+With a paired design (`rmats_paired_stats: true`) the rMATS directory is `star/rmats/{CONTRAST}_paired/` (seen in this skill's verification runs); write that path instead. `pipeline_info/` holds the execution report, the timeline and the trace (requested and used resources per task). `star/` also keeps a sorted copy of every BAM file (disk use).
+
+**Reading the rMATS tables.** Each event type (SE, A5SS, A3SS, MXE, RI) has a `.MATS.JC.txt` table (junction-spanning reads only) and a `.MATS.JCEC.txt` table (junction and exon-body reads). `IncLevelDifference` = mean(`IncLevel1`) - mean(`IncLevel2`) = inclusion level of the treatment group minus that of the control group (in this pipeline the treatment samples are rMATS's `b1`); positive values mean more inclusion in the treatment. `IncLevel1`, `IJC_SAMPLE_1` and `SJC_SAMPLE_1` hold one comma-separated value per treatment sample, in samplesheet order (the `_2` columns: the control samples); the test columns are `PValue` and `FDR`. This skill sets no cut-offs: choose your own. As an example, Step 8 lists what Akerberg et al. 2022 used (FDR, |IncLevelDifference| and the number of uncalled replicates, from the accessible parts of its Methods).
+
+**Reading the DTU and SUPPA2 tables.** DTU and SUPPA2 files are named `{TREATMENT}-{CONTROL}` (for example `KO-WT`), not after the contrast name, and are under `salmon/`. SUPPA2 dPSI is treatment minus control (for local events the column is `local_{TREATMENT}-local_{CONTROL}_dPSI`). ⚠️ The sign is reversed relative to rMATS and SUPPA2 in the DTU tables: the fold-change column is `log2fold_{CONTROL}_{TREATMENT}` (control over treatment), so a positive value means a larger share of the transcript in the control. The direction of the DEXSeq and edgeR exon-usage fold changes was not recorded by this skill's verification: read it from the column names of their tables.
+
+The output paths and sign conventions in this step were verified on nf-core's test data only (this skill's verification run of the pinned revision), not on a real data set.
+
+**Which output answers which question.** Only the analyses that were switched on have outputs.
+
+| Question | Output |
+|---|---|
+| Which splice events (cassette exons, alternative 5'/3' splice sites, mutually exclusive exons, retained introns) change between conditions? | rMATS (from junction reads); SUPPA2 local events (from transcript abundance) |
+| Which parts (exon bins) of a gene are used more or less? | DEXSeq and edgeR exon usage |
+| Which transcripts of a gene change their share of the gene's expression? | DEXSeq DTU (stageR-confirmed); SUPPA2 isoform PSI |
+
+**rnasplice or `/bulk-rnaseq-pipeline`?**
+- Gene-level differential expression, GSEA and transcript usage on the Salmon output of an nf-core/rnaseq run: `/bulk-rnaseq-pipeline`. Its optional DTU module is the same workflow (DRIMSeq filter → DEXSeq → stageR) as the DEXSeq DTU of rnasplice; do not run both on the same samples.
+- Which exons or splice events change (cassette exons, alternative 5'/3' splice sites, retained introns, mutually exclusive exons), for example after knocking out a splicing factor: this pipeline with rMATS (optionally SUPPA2); usage of exon bins: DEXSeq or edgeR exon usage.
+- This skill does not analyse the results; a report for the rMATS tables is a separate, later skill.
+
+---
+
+## Notes for the assistant
+
+- **`gh` CLI is not available on this HPC cluster.** Use `WebFetch` for all GitHub API calls.
+- **Always present finite-choice questions as numbered lists.** Use open questions only for free values: the email, the conda environment, paths, the organism, the plain-language description of the groups, subject labels, custom names and the read length of BAM input.
+- Never run Nextflow, conda, Java, Python or R on the login node. The wizard runs only light commands there (`find`, `ls`, `test`, `zcat | head`, `grep`, `awk`, `mktemp`, `mv`); all pipeline work goes through `sbatch`, and the user submits it.
+- Raw FASTQ/BAM files are read-only; never modify them.
+- Never pass pipeline parameters on the `nextflow run` line; every parameter is in the params file.
+- Every module switch is written explicitly; `sashimi_plot`, `isoformswitchanalyzer` and `leafcutter` are always `false` and are not offered.
+- Strandedness is asked, never guessed; one value for all samples. BAM samplesheets carry `strandedness` and `single_end` in every row.
+- `rmats_read_len` is always written (detected for FASTQ, asked for BAM).
+- `rmats_paired_stats` and `diffsplice_paired` are `true` only for a confirmed paired design.
+- Never write `salmon_index`, `max_cpus`, `max_memory` or `max_time`: the pipeline builds its own Salmon index, and resource caps live in `nextflow.config`.
+- Both sheets are validated with `validate_rnasplice_sheets` before they are written; the validator is never changed to make a sheet pass.
+- Never overwrite an existing `nextflow.config`; ask before overwriting any other file.
+- Never embed a download URL that was not verified in this session.
+- Every `module add` in a generated script is guarded (`|| { ...; exit 1; }`): under Lmod a failed `module add` silently breaks every later one.
+- This skill is pinned to nf-core/rnasplice dev-1b44723 and was verified on nf-core's test data only; do not present its settings or outputs as tested on real data.

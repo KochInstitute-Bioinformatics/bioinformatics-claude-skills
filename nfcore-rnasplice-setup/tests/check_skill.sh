@@ -720,4 +720,55 @@ resume_out=$(grep -n -- '-resume' "$SKILL" | grep -v '^[0-9]*:\*\*Resuming a run
 # M8: the helper reports the move of an invalid download only when the move succeeded
 need "could not be moved aside: rename it by hand, then run the helper again"
 # --- end Task 6 review fixes
+
+# --- Task 7 (Step 12, Notes)
+need "## Step 12 — Summary and hand-off"
+anchor_once "**Hand-off note.**"
+HO=$(bash "$CUT" "$SKILL" "**Hand-off note.**" 2>/dev/null)
+n=0
+while IFS= read -r p; do
+  n=$((n + 1)); q=${p//\{CONTRAST\}/$(gv TEST_CONTRAST)}; q=${q%/}
+  grep -qxF -- "./$q" "$FIX/output_tree.txt" || { echo "FAIL: hand-off path $p not in the recorded output tree"; fail=1; }
+done < <(printf '%s\n' "$HO" | sed -n 's/^  \([^ ]\{1,\}\)  .*$/\1/p')
+[ "$n" -ge 6 ] || { echo "FAIL: the hand-off note lists $n output paths (at least 6 expected)"; fail=1; }
+! printf '%s\n' "$HO" | grep -q '<' || { echo "FAIL: the hand-off note still contains a <...> placeholder"; fail=1; }
+need ".MATS.JC.txt"
+need ".MATS.JCEC.txt"
+case "$(gv RMATS_B1_GROUP)" in
+  treatment) need "the treatment samples are rMATS's \`b1\`" ;;
+  control) need "this pipeline passes the control samples as rMATS's \`b1\`" ;;
+esac
+need "**rnasplice or \`/bulk-rnaseq-pipeline\`?**"
+need "do not run both on the same samples"
+need "This skill does not analyse the results"
+need "## Notes for the assistant"
+need "Raw FASTQ/BAM files are read-only"
+need "Never pass pipeline parameters on the \`nextflow run\` line"
+need "Never run Nextflow, conda, Java, Python or R on the login node"
+[ "$(gv SALMON_ROUTE)" = star_salmon_both ] && need "use the \`star_salmon\` ones"
+# Controller overrides (Task 7 dispatch): cut-offs are the user's choice (Step 8 gives Akerberg et al. 2022 as an example only);
+# DTU/SUPPA2 naming and the reversed DTU fold-change sign (gate_report.md, output tree); BAM input lists only the three STAR modules;
+# the wizard submits nothing itself and says how to follow the run; the pinned unreleased revision; test data only.
+forbid "Usual filters"
+forbid "validated on real data"
+need "This skill sets no cut-offs: choose your own"
+need "\`IncLevelDifference\` = mean(\`IncLevel1\`) - mean(\`IncLevel2\`)"
+need "DTU and SUPPA2 files are named \`{TREATMENT}-{CONTROL}\` (for example \`KO-WT\`), not after the contrast name"
+need "the fold-change column is \`log2fold_{CONTROL}_{TREATMENT}\` (control over treatment)"
+need "The sign is reversed relative to rMATS and SUPPA2"
+need "With BAM input the note has only the rMATS, DEXSeq exon usage and edgeR exon usage lines"
+need "With a paired design (\`rmats_paired_stats: true\`) the rMATS directory is \`star/rmats/{CONTRAST}_paired/\`"
+need "The wizard does not start the pipeline itself"
+need "squeue -u \$USER"
+need "tail -f nf-core_rnasplice_{VERSION_TAG}.{JOBID}.log"
+need "verified on nf-core's test data only"
+if [ "$(gv GATE_OUTCOME)" = B ]; then
+  need "is an unreleased development commit of nf-core/rnasplice (\`$(gv VERSION_TAG)\`), pinned by this skill"
+  need "needs this skill's verification gate to be run again"
+fi
+# The hand-off note lists one line per analysis, in this order, plus MultiQC (directory names from output_tree.txt).
+ho_paths=$(printf '%s\n' "$HO" | sed -n 's/^  \([^ ]\{1,\}\)  .*$/\1/p' | tr '\n' ' ')
+[ "$ho_paths" = "star/rmats/{CONTRAST}/ star/rmats/{CONTRAST}/SE.MATS.JC.txt star/dexseq_exon/results/ star/edger/ salmon/dexseq_dtu/results/ salmon/suppa/ multiqc/ " ] \
+  || { echo "FAIL: the hand-off note must list rMATS, SE.MATS.JC.txt, DEXSeq exon, edgeR exon, DTU, SUPPA2 and MultiQC in this order (found: $ho_paths)"; fail=1; }
+# --- end Task 7
 [ $fail -eq 0 ] && echo "PASS" || exit 1

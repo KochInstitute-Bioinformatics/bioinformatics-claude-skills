@@ -358,3 +358,10 @@ T6f-resopt	check	skill	s/; the wizard never writes it into the generated script\
 T6f-movemsg	check	skill	s/could not be moved aside: rename it by hand, then/could not be moved aside;/	missing required text: could not be moved aside: rename it by hand
 T6f-reltarget	helper	skill	/case "\$out" in \/?\*) ;;/d	FAIL: case relative_target
 T6f-emptyguard	helper	skill	s/ && \[ -s "\$out.part" \]//	FAIL: case empty_download
+T7-path	check	skill	s/^Outputs under {OUTDIR}\/ :$/Outputs under {OUTDIR}\/ :\n  no_such_dir\/  bogus/	hand-off path no_such_dir/ not in the recorded output tree
+T7-few	check	skill	/^  [^ ]*SE\.MATS\.JC\.txt  /d;/^  multiqc\/  MultiQC report: /d	output paths (at least 6 expected)
+T7-lt	check	skill	s/^  multiqc\/  MultiQC report: /  multiqc\/  MultiQC report <title>: /	the hand-off note still contains a <...> placeholder
+T7-order	check	skill	s/^  salmon\/suppa\/  /  salmon\/suppa\/diffsplice\/  /	the hand-off note must list rMATS, SE.MATS.JC.txt, DEXSeq exon, edgeR exon, DTU, SUPPA2 and MultiQC in this order
+T7-anchor	check	skill	$s/$/\n**Hand-off note.**/	anchor must appear exactly once: **Hand-off note.**
+T7-usual	check	skill	$s/$/\nUsual filters: FDR < 0.05 and |IncLevelDifference| > 0.1./	forbidden text present: Usual filters
+T7-real	check	skill	$s/$/\nThese settings were validated on real data./	forbidden text present: validated on real data
