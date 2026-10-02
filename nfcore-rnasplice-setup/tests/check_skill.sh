@@ -210,4 +210,41 @@ samp_pat=$(awk '/"sample": \{/ {f = 1} f && /"pattern"/ {sub(/^[ \t]*"pattern": 
 need "\`$samp_pat\`"
 # --- end Task 2
 
+# --- Task 3 (Step 5)
+need "## Step 5 — Conditions, contrasts and the two sheets"
+need "contrast,treatment,control"
+need "$(head -n1 "$FIX/test_contrastsheet.csv" | tr -d '\r')"
+need "{treatment}_vs_{control}"
+need "1. All pairwise comparisons · 2. Only the comparisons I list"
+need "1. No, the samples are independent (default) · 2. Yes, every sample has a partner"
+# The paired-test defaults come from the recorded config (at the gate rmats_paired_stats = false, diffsplice_paired = true).
+cfg_default() { echo "$config_kv" | awk -F'\t' -v k="$1" '$1 == k {print $2; exit}'; }
+[ -n "$(cfg_default rmats_paired_stats)" ] && [ -n "$(cfg_default diffsplice_paired)" ] || { echo "config extraction broken: rmats_paired_stats or diffsplice_paired missing"; exit 2; }
+[ "$(cfg_default diffsplice_paired)" = true ] && need "the pipeline default \`diffsplice_paired: true\` assumes a pairing"
+[ "$(cfg_default rmats_paired_stats)" = true ] && need "the pipeline default \`rmats_paired_stats: true\` assumes a pairing"
+need "\`rmats_paired_stats\` defaults to \`$(cfg_default rmats_paired_stats)\` at this revision"
+[ "$(cfg_default rmats_paired_stats)" = true ] || forbid "\`rmats_paired_stats: true\` assumes"
+need "Every condition used in a contrast needs at least 2 samples"
+anchor_once "**Sheet validation.**"
+need "validate_rnasplice_sheets() {"
+need "bamhdr=\"$(gv BAM_SHEET_HEADER)\""
+# Step 5 repeats the BAM header (validator, procedure): pin the Step 4b sentence itself so T2-bamhdr still bites.
+[ "$(gv BAM_RMATS_LIBTYPE)" = none ] || need "The samplesheet header is \`$(gv BAM_SHEET_HEADER)\`"
+need "{SHEET_PREFIX}_samplesheet.csv"
+need "{SHEET_PREFIX}_contrasts.csv"
+need "never edit the validator"
+need "1. overwrite · 2. choose another filename"
+forbid "rm -rf"
+case "$(gv RMATS_BAMLIST_ORDER)" in
+  sheet) need "write the rows ordered by subject within each condition"
+         need "validate_rnasplice_sheets \"\$T/samplesheet.csv\" \"\$T/contrasts.csv\" {SOURCE} 1 \"\$T/pairs.csv\""
+         need "the rows of one sample (technical replicates) stay next to each other" ;;
+  sorted_by_name) need "propose names \`{SUBJECT}_{CONDITION}\`" ;;
+  unordered) need "a paired rMATS test cannot be set up safely" ;;
+esac
+need "Ask only when there are exactly two conditions with the same number of samples"
+need "sets both \`rmats_paired_stats\` and SUPPA2's \`diffsplice_paired\` in Step 8"
+need "treatment = the later and control = the earlier one in \`{CONDITIONS}\`"
+# --- end Task 3
+
 [ $fail -eq 0 ] && echo "PASS" || exit 1

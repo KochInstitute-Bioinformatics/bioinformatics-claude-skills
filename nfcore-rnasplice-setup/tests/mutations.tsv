@@ -45,7 +45,7 @@ T2-forbid-yaml	check	skill	$s/$/\nstrandedness: auto/	forbidden text present: st
 T2-bamrows	check	skill	s/; write `{STRANDEDNESS}` and `true` (single-end) or `false` in every row/;/	missing required text: write `{STRANDEDNESS}` and `true` (single-end) or `false` in every row
 T2-idk	check	skill	s/Never continue with "I don't know"\. //	missing required text: Never continue with "I don't know"
 T2-mixed	check	skill	s/rMATS needs one strandedness and one read type for all samples/rMATS prefers one read type/g	missing required text: rMATS needs one strandedness and one read type for all samples
-T2-bamhdr	check	skill	s/`@BAM_SHEET_HEADER@`/`sample,condition,genome_bam`/	missing required text: @BAM_SHEET_HEADER@
+T2-bamhdr	check	skill	s/`@BAM_SHEET_HEADER@`/`sample,condition,genome_bam`/	missing required text: The samplesheet header is `@BAM_SHEET_HEADER@`
 T2-stub	strand	skill	s/^infer_strandedness() {$/&\n  nextflow -version > \/dev\/null 2>\&1/	FAIL: a forbidden command ran
 T2-stub-bam	bam	skill	s/^bam_input_allowed() {$/&\n  python3 -c 1 > \/dev\/null 2>\&1/	FORBIDDEN python3
 T2-unclear	strand	skill	s/if (nf != 1 || nr != 1) { print "unclear"; exit }//	FAIL: case one_line
@@ -79,3 +79,30 @@ T2-r1text	check	skill	s/ `_R1\.`\/`_R2\.`,//	missing required text: `_R1.`/`_R2.
 T2-ruletext	check	skill	s/unstranded if the two fractions differ by at most 0\.1/unstranded if both are between 0.3 and 0.7/	missing required text: unstranded if the two fractions differ by at most 0.1
 T2-pattern	check	skill	s/\[a-zA-Z.\](\[a-zA-Z0-9._\]\*)?\$`/[a-zA-Z0-9_]*$`/	missing required text: `^(?!
 T2-anchor-n	check	skill	$s/$/\n**Sample names and read pairs.**/	anchor must appear exactly once: **Sample names and read pairs.**
+T3-label	validate	skill	/err("treatment /d	FAIL: case label_typo_treatment
+T3-header	validate	skill	s/if ($0 != "contrast,treatment,control")/if (0)/	FAIL: case contrasts_no_header
+T3-min	validate	skill	s/nsamp\[c\] < 2/nsamp[c] < 1/	FAIL: case one_sample_condition
+T3-strand	validate	skill	s/else if (st != strand) err/else if (0) err/	FAIL: case mixed_strandedness
+T3-paired	validate	skill	s/if (k != 2) err/if (0) err/	FAIL: case paired_three_conditions
+T3-rmdir	check	skill	s/remove the scratch directory with `rmdir "\$T"`/remove the scratch directory with `rm -rf "$T"`/	forbidden text present: rm -rf
+T3-reserved	validate	skill	/is an R reserved word; the pipeline rejects it/d	FAIL: case reserved_word
+T3-duppair	validate	skill	s/if (($2, $3) in tc) err/if (0) err/	FAIL: case duplicate_pair
+T3-pairpos	validate	skill	s/subj\[s1\] != subj\[s2\]/0/	FAIL: case paired_order_mismatch
+T3-pairfile	validate	skill	s/else if (file < 3) err(/else if (0) err(/	FAIL: case paired_no_pairs_file
+T3-adjacent	validate	skill	s/else if (paired == 1 && s != last) err/else if (0) err/	FAIL: case paired_split_replicates
+T3-subjrep	validate	skill	s/== 2) err("subject "/== 3) err("subject "/	FAIL: case paired_subject_repeated
+T3-pairunknown	validate	skill	s/if (!($1 in cond)) { err("pairs file names/if (0) { err("pairs file names/	FAIL: case paired_unknown_sample
+T3-pairhdr	validate	skill	s/if ($0 != "sample,subject")/if (0)/	FAIL: case paired_pairs_header
+T3-bamhdr	check	skill	s/bamhdr="@BAM_SHEET_HEADER@"/bamhdr="sample,condition,genome_bam"/	missing required text: bamhdr="@BAM_SHEET_HEADER@"
+T3-pairtext	check	skill	s/write the rows ordered by subject within each condition/write the rows/	missing required text: write the rows ordered by subject within each condition
+T3-paircall	check	skill	s/{SOURCE} 1 "\$T\/pairs\.csv"/{SOURCE} 1/	missing required text: validate_rnasplice_sheets "$T/samplesheet.csv" "$T/contrasts.csv" {SOURCE} 1 "$T/pairs.csv"
+T3-adjtext	check	skill	s/; the rows of one sample (technical replicates) stay next to each other//	missing required text: the rows of one sample (technical replicates) stay next to each other
+T3-rmatsdef	check	skill	s/the pipeline default `diffsplice_paired: true` assumes/the pipeline default `rmats_paired_stats: true` assumes/	forbidden text present: `rmats_paired_stats: true` assumes
+T3-rmatsfalse	check	skill	s/`rmats_paired_stats` defaults to `false` at this revision/`rmats_paired_stats` defaults to `true`/	missing required text: `rmats_paired_stats` defaults to `false` at this revision
+T3-refsign	check	skill	s/treatment = the later and control = the earlier one/treatment = the earlier and control = the later one/	missing required text: treatment = the later and control = the earlier one in `{CONDITIONS}`
+T3-askonly	check	skill	s/Ask only when there are exactly two conditions with the same number of samples/Always ask/	missing required text: Ask only when there are exactly two conditions with the same number of samples
+T3-both	check	skill	s/sets both `rmats_paired_stats` and SUPPA2's `diffsplice_paired` in Step 8/sets `rmats_paired_stats` in Step 8/	missing required text: sets both `rmats_paired_stats` and SUPPA2's `diffsplice_paired` in Step 8
+T3-min2text	check	skill	s/Every condition used in a contrast needs at least 2 samples/Every condition needs samples/	missing required text: Every condition used in a contrast needs at least 2 samples
+T3-noedit	check	skill	s/ — never edit the validator — / /	missing required text: never edit the validator
+T3-overwrite	check	skill	s/1\. overwrite · 2\. choose another filename/overwrite it/	missing required text: 1. overwrite · 2. choose another filename
+T3-anchor-n	check	skill	$s/$/\n**Sheet validation.**/	anchor must appear exactly once: **Sheet validation.**

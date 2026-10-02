@@ -189,3 +189,134 @@ bam_input_allowed() {
 - `REFUSED`: with this revision the rule refuses only a strandedness or read type outside the values above, never a library type (the BAM samplesheet carries both). Show the message and ask the question again with the allowed values; if the user cannot answer, ask (numbered): 1. Start from the FASTQ files instead (go to Step 4a) · 2. Stop here.
 
 With BAM input only rMATS, DEXSeq exon usage and edgeR exon usage can run: DTU and SUPPA2 need Salmon quantification from reads, so Step 8 switches them off. The read length is asked in Step 6.
+
+---
+
+## Step 5 — Conditions, contrasts and the two sheets
+
+**Conditions.** Ask the user to describe the groups in plain language (for example "samples 1-3 are wild type, 4-6 are Rbpms2 knockout"), interpret it, and show a table sample → condition; ask "Is this correct?" until confirmed. Condition labels use letters, digits and `_` and start with a letter (suggest short labels such as `WT`, `KO`); rows of one sample (technical replicates) share its condition. Every condition used in a contrast needs at least 2 samples (distinct sample names), because rMATS, DEXSeq and edgeR estimate variability from replicates; if one has fewer, say so and stop until the design is changed. With only one condition there is nothing to compare: stop.
+
+Then ask for the reference: with two conditions, "Which condition is the reference (control)?" (numbered); with more, ask for an order with the reference first. Store `{CONDITIONS}` = the labels in that order.
+
+**Contrasts.** Ask (numbered): 1. All pairwise comparisons · 2. Only the comparisons I list.
+- Option 1: for every pair of conditions, treatment = the later and control = the earlier one in `{CONDITIONS}`; contrast name `{treatment}_vs_{control}`. With two conditions this is one contrast.
+- Option 2: ask for lines "treatment vs control", one per contrast; names as above.
+
+Show the contrasts as a table (contrast, treatment, control). rMATS runs one prep/post pair per contrast; with more than 6 contrasts tell the user that the run takes correspondingly longer. DTU and SUPPA2 name their outputs `<treatment>-<control>` (not the contrast name), so the same treatment and control may appear in one contrast only.
+
+**Paired design.** Ask only when there are exactly two conditions with the same number of samples; otherwise set `{PAIRED_DESIGN}` = `false` without asking. Ask (numbered): "Are the samples paired (each sample of one condition has a partner from the same individual, litter or batch in the other)?" 1. No, the samples are independent (default) · 2. Yes, every sample has a partner. Explain: the pipeline default `diffsplice_paired: true` assumes a pairing (SUPPA2; `rmats_paired_stats` defaults to `false` at this revision); a paired test on independent samples gives wrong statistics, so this skill writes both `false` unless the user confirms pairing. Answer 1: `{PAIRED_DESIGN}` = `false`.
+Answer 2: rMATS pairs the i-th sample of one condition with the i-th sample of the other, in samplesheet order (verified for this revision). Ask for the partner of each sample as a subject label (letters, digits and `_`, for example `mouse1`), check that each subject has exactly one sample in each condition, and write the rows ordered by subject within each condition: sort the rows by condition (in `{CONDITIONS}` order), then by subject, so that the i-th sample of each condition belongs to the same subject; the rows of one sample (technical replicates) stay next to each other. Show the pairs as a table (subject, sample of each condition) and ask "Is this pairing correct?" until confirmed. The labels are written to a pairs file (header `sample,subject`, one row per sample) that the validator below checks position by position. `{PAIRED_DESIGN}` = `true`.
+`{PAIRED_DESIGN}` sets both `rmats_paired_stats` and SUPPA2's `diffsplice_paired` in Step 8.
+
+**File names** (numbered): 1. `{SEQ_DATE}_{WD_NAME}` · 2. `{TODAY_YYMMDD}_{WD_NAME}` · 3. Custom prefix. Store `{SHEET_PREFIX}`; `{SAMPLESHEET_CSV}` = `{SHEET_PREFIX}_samplesheet.csv` and `{CONTRASTS_CSV}` = `{SHEET_PREFIX}_contrasts.csv` (with a paired design also `{SHEET_PREFIX}_pairs.csv`, a record of the pairing that the pipeline does not read).
+
+**Sheet validation.** Both sheets are written to a scratch directory first, validated there, and only then moved into `{CWD}`. Define this function in the Bash tool (awk only; light work on the login node):
+```bash
+validate_rnasplice_sheets() {
+  # usage: validate_rnasplice_sheets <samplesheet.csv> <contrasts.csv> <fastq|genome_bam> <paired design: 0|1> [pairs.csv]
+  # pairs.csv (header sample,subject) is required for a paired design: the i-th sample of each condition must share a subject
+  # prints "SHEETS OK", or one "ERROR: ..." line per problem and returns 1
+  [ -s "$1" ] && [ -s "$2" ] || { echo "ERROR: samplesheet or contrasts file missing or empty"; return 1; }
+  [ -z "${5:-}" ] || [ -s "$5" ] || { echo "ERROR: pairs file $5 missing or empty"; return 1; }
+  awk -F',' -v src="$3" -v paired="$4" \
+      -v fqhdr="sample,fastq_1,fastq_2,strandedness,condition" -v bamhdr="sample,condition,genome_bam,strandedness,single_end" '
+    function err(m) { print "ERROR: " m; bad = 1 }
+    FNR == 1 { file++ }
+    { sub(/\r$/, "") }
+    /"/ { err("file " file " line " FNR " contains a double quote; write plain comma-separated values"); next }
+    file == 1 && FNR == 1 {
+      want = (src == "fastq") ? fqhdr : bamhdr
+      if ($0 != want) err("samplesheet header is \"" $0 "\", expected \"" want "\"")
+      ncol = split(want, h, ","); for (i = 1; i <= ncol; i++) col[h[i]] = i
+      next
+    }
+    file == 1 && $0 == "" { next }
+    file == 1 {
+      if (NF != ncol) { err("samplesheet line " FNR " has " NF " fields, expected " ncol); next }
+      s = $col["sample"]; c = $col["condition"]
+      if (s !~ /^[A-Za-z][A-Za-z0-9_]*$/) err("sample name \"" s "\" (line " FNR "): letters, digits and _ only, starting with a letter")
+      else if (s ~ /^(if|else|repeat|while|function|for|in|next|break|TRUE|FALSE|NULL|Inf|NaN|NA|NA_integer_|NA_real_|NA_complex_|NA_character_)$/) err("sample name \"" s "\" is an R reserved word; the pipeline rejects it")
+      if (c !~ /^[A-Za-z][A-Za-z0-9_]*$/) err("condition \"" c "\" of " s ": letters, digits and _ only, starting with a letter")
+      if (s in cond) {
+        if (src != "fastq") err("sample " s " appears twice; a BAM samplesheet has one row per sample")
+        else if (cond[s] != c) err("rows of sample " s " have different conditions (" cond[s] ", " c "); rows with one sample name are merged into one sample")
+        else if (paired == 1 && s != last) err("rows of sample " s " are not next to each other; in a paired design keep the rows of one sample together")
+      } else { nsamp[c]++; ord[c, nsamp[c]] = s }
+      cond[s] = c; conds[c] = 1; last = s
+      if (src == "fastq") {
+        if ($col["fastq_1"] !~ /\.f(ast)?q\.gz$/) err("fastq_1 of " s " does not end in .fastq.gz or .fq.gz")
+        if ($col["fastq_2"] != "" && $col["fastq_2"] !~ /\.f(ast)?q\.gz$/) err("fastq_2 of " s " does not end in .fastq.gz or .fq.gz")
+        lay = ($col["fastq_2"] == "") ? "single-end" : "paired-end"
+      } else {
+        if ($col["genome_bam"] !~ /\.bam$/) err("genome_bam of " s " does not end in .bam")
+        lay = "n/a"
+        if ("single_end" in col) {
+          if ($col["single_end"] !~ /^(true|false)$/) err("single_end of " s " must be true or false")
+          lay = ($col["single_end"] == "true") ? "single-end" : "paired-end"
+        }
+      }
+      if (lay != "n/a") { if (layout == "") layout = lay; else if (lay != layout) err("mixed single-end and paired-end samples (" s "); rMATS needs one read type for all samples") }
+      if ("strandedness" in col) {
+        st = $col["strandedness"]
+        if (st !~ /^(unstranded|forward|reverse)$/) err("strandedness \"" st "\" of " s ": use unstranded, forward or reverse")
+        else if (strand == "") strand = st; else if (st != strand) err("mixed strandedness (" strand ", " st "); rMATS needs one strandedness for all samples")
+      }
+      next
+    }
+    file == 2 && FNR == 1 { if ($0 != "contrast,treatment,control") err("contrasts header is \"" $0 "\", expected \"contrast,treatment,control\""); next }
+    file == 2 && $0 == "" { next }
+    file == 2 {
+      if (NF != 3) { err("contrasts line " FNR " has " NF " fields, expected 3"); next }
+      ncon++
+      if ($1 !~ /^[A-Za-z][A-Za-z0-9_-]*$/) err("contrast name \"" $1 "\": letters, digits, _ and - only, starting with a letter")
+      if ($1 in seen) err("contrast name " $1 " is used twice"); seen[$1] = 1
+      if (!($2 in conds)) err("treatment \"" $2 "\" of contrast " $1 " is not a value of the condition column")
+      if (!($3 in conds)) err("control \"" $3 "\" of contrast " $1 " is not a value of the condition column")
+      if ($2 == $3) err("contrast " $1 " compares " $2 " with itself")
+      if (($2, $3) in tc) err("contrasts " tc[$2, $3] " and " $1 " both compare " $2 " with " $3 "; DTU and SUPPA2 name their outputs <treatment>-<control>, so one would overwrite the other")
+      else tc[$2, $3] = $1
+      used[$2] = 1; used[$3] = 1
+      next
+    }
+    file == 3 && paired != 1 { next }
+    file == 3 && FNR == 1 { if ($0 != "sample,subject") err("pairs header is \"" $0 "\", expected \"sample,subject\""); next }
+    file == 3 && $0 == "" { next }
+    file == 3 {
+      if (NF != 2) { err("pairs line " FNR " has " NF " fields, expected 2"); next }
+      if (!($1 in cond)) { err("pairs file names sample " $1 ", which is not in the samplesheet"); next }
+      if ($1 in subj) { err("sample " $1 " appears twice in the pairs file"); next }
+      if ($2 !~ /^[A-Za-z0-9][A-Za-z0-9_]*$/) err("subject \"" $2 "\" of " $1 ": letters, digits and _ only")
+      subj[$1] = $2
+      if (++per[cond[$1], $2] == 2) err("subject " $2 " has 2 samples in condition " cond[$1] "; each subject needs exactly one sample per condition")
+      next
+    }
+    END {
+      if (file < 2) err("contrasts file was not read")
+      if (ncon == 0) err("contrasts file has no contrast rows")
+      for (c in used) if ((c in nsamp) && nsamp[c] < 2) err("condition " c " has " nsamp[c] " sample; each compared condition needs at least 2")
+      if (paired == 1) {
+        k = 0; for (c in conds) { k++; cn[k] = c; sz[k] = nsamp[c] }
+        if (k != 2) err("a paired design needs exactly two conditions, found " k)
+        else if (sz[1] != sz[2]) err("a paired design needs the same number of samples in both conditions (" sz[1] ", " sz[2] ")")
+        else if (file < 3) err("a paired design needs the pairs file (header sample,subject) as fifth argument")
+        else {
+          for (s in cond) if (!(s in subj)) err("sample " s " has no subject in the pairs file")
+          for (i = 1; i <= sz[1]; i++) {
+            s1 = ord[cn[1], i]; s2 = ord[cn[2], i]
+            if ((s1 in subj) && (s2 in subj) && subj[s1] != subj[s2]) err("paired design: sample " i " of condition " cn[1] " is " s1 " (subject " subj[s1] ") but sample " i " of condition " cn[2] " is " s2 " (subject " subj[s2] "); sort the rows of each condition by subject")
+          }
+        }
+      }
+      if (!bad) print "SHEETS OK"
+      exit bad
+    }' "$1" "$2" ${5:+"$5"}
+}
+```
+Procedure:
+1. `T=$(mktemp -d)`; write `$T/samplesheet.csv` (header `sample,fastq_1,fastq_2,strandedness,condition` for FASTQ with `{STRANDEDNESS}` in every row, or `sample,condition,genome_bam,strandedness,single_end` for BAM; the sanitised names) and `$T/contrasts.csv` (header `contrast,treatment,control`). With a paired design, write the rows sorted as described under **Paired design** and also `$T/pairs.csv` (header `sample,subject`).
+2. Run `validate_rnasplice_sheets "$T/samplesheet.csv" "$T/contrasts.csv" {SOURCE} 0`, or, when `{PAIRED_DESIGN}` is `true`, `validate_rnasplice_sheets "$T/samplesheet.csv" "$T/contrasts.csv" {SOURCE} 1 "$T/pairs.csv"`. On `ERROR` lines, fix the cause with the user — never edit the validator — and repeat.
+3. Check that every FASTQ or BAM path in the sheet exists: `test -s` on each (relative paths from `{CWD}`).
+4. For each of `{SAMPLESHEET_CSV}`, `{CONTRASTS_CSV}` (and `{SHEET_PREFIX}_pairs.csv` with a paired design): if it already exists in `{CWD}`, ask (numbered): 1. overwrite · 2. choose another filename. Then move the files into `{CWD}` under their names and remove the scratch directory with `rmdir "$T"` (it is empty after the moves).
+5. Show the files in full.
+
+Keep for Step 8: the number of distinct samples, the size of the smallest compared condition and, per contrast, the number of treatment and control samples.
