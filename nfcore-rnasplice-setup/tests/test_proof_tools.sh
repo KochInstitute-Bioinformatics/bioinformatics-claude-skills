@@ -14,7 +14,7 @@ mkdir -p "$D/tests/fixtures" "$T/tmpdir"
 cp "$HERE"/check_skill.sh "$HERE"/cut_block.sh "$HERE"/prove_red.sh "$HERE"/prove_mutations.sh "$HERE"/mutations.tsv "$HERE"/run_all_tests.sh "$D/tests/"
 # The runners named in mutations.tsv (prove_mutations.sh runs each on the unmutated skill first).
 cp "$HERE"/test_env.sh "$HERE"/test_strandedness.sh "$HERE"/test_bam_policy.sh "$HERE"/test_sample_names.sh "$HERE"/test_validate_sheets.sh "$HERE"/test_read_length.sh \
-   "$HERE"/render_params.sh "$HERE"/test_render_params.sh "$HERE"/dry_run_submit.sh "$HERE"/dry_run_helpers.sh "$D/tests/"
+   "$HERE"/render_params.sh "$HERE"/test_render_params.sh "$HERE"/dry_run_submit.sh "$HERE"/dry_run_helpers.sh "$HERE"/test_run_all.sh "$D/tests/"
 cp "$HERE"/fixtures/* "$D/tests/fixtures/"
 git init -q "$R" || exit 1
 "${G[@]}" add -A && "${G[@]}" commit -q -m c0 || exit 1

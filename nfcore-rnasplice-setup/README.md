@@ -38,7 +38,7 @@ Then invoke it in Claude Code with `/nfcore-rnasplice-setup`.
 | 3 | Pipeline version | Pinned: nf-core/rnasplice 1b447239488097651d8eac44bca2c1556865eb0f. The latest release is looked up (GitHub API); a release newer than 1.0.4 is offered only when its schema has every key the skill writes, and is not verified by this skill |
 | 4 | Input and samplesheet rows | FASTQ (files found, paired-end detected, names sanitised to valid R identifiers, name collisions flagged) or genome BAM; strandedness asked (or read from the RSeQC results of an nf-core/rnaseq run of the same samples) |
 | 5 | Conditions, contrasts, paired design | Asked; both sheets validated in a scratch directory before they are written |
-| 6 | Read length for rMATS | Detected from the first 1000 reads of every FASTQ file (asked for BAM input); warns when read lengths differ between conditions |
+| 6 | Read length for rMATS | Detected from the first 1000 reads of every FASTQ file (asked for BAM input); warns when read lengths differ, and stops by default when they differ between conditions |
 | 7 | Organism and genome | Ensembl release in the shared genome folder (missing FASTA/GTF: a download helper) or a custom FASTA/GTF. An existing STAR index is reused only when compatible (`versionGenome 2.7.4a`); the Salmon index is always built by the pipeline, never reused |
 | 8 | Analyses and their settings | Asked: rMATS (default), SUPPA2, DEXSeq exon usage, edgeR exon usage, DEXSeq DTU; every module switch is written |
 | 9 | Trimming and QC | Pipeline defaults (nothing asked) |
@@ -48,7 +48,7 @@ Then invoke it in Claude Code with `/nfcore-rnasplice-setup`.
 
 ### Key design points
 
-- **Every analysis switch is explicit.** In the pipeline's own configuration every analysis module except LeafCutter is on, so a switch left out of the params file runs that module anyway. The params file always contains all of them, and every option of every module at the pipeline default (except the settings below).
+- **Every analysis switch is explicit.** In the pipeline's own configuration every analysis module except LeafCutter is on, so a switch left out of the params file runs that module anyway. The params file always contains all of them, and every option key that has a non-null pipeline default, at that default (except the settings below).
 - **MISO is not used** (`sashimi_plot: false`): in this pipeline MISO only draws sashimi plots for a short gene list (by default three human Ensembl IDs), it is no genome-wide splicing test, and MISO itself is unmaintained Python 2 software. For sashimi plots, use rmats2sashimiplot or ggsashimi on the BAM files afterwards. IsoformSwitchAnalyzeR and LeafCutter are written `false` and not offered.
 - **Strandedness is asked**, never guessed (rnasplice has no `auto`), one value for all samples (rMATS needs it); the wizard can read the RSeQC `infer_experiment.txt` files of an nf-core/rnaseq run of the same samples, with nf-core/rnaseq's rule.
 - **`rmats_read_len` is always set** from the reads (the pipeline default of 40 is wrong for almost all data).
@@ -60,7 +60,7 @@ Then invoke it in Claude Code with `/nfcore-rnasplice-setup`.
 
 ### Resources
 
-The `nextflow.config` that the skill writes (only if none exists) gives every process 2 CPUs, 8 GB and 4 h, raises these processes, and caps every task at 16 CPUs, 64 GB and 24 h (`resourceLimits`):
+The `nextflow.config` that the skill writes (only if none exists) sets a process default of 2 CPUs, 8 GB and 4 h, raises the processes below with `withName` selectors, and caps every task at 16 CPUs, 64 GB and 24 h (`resourceLimits`). Every other process keeps the resources of the pipeline's own process labels, which take precedence over that default: in the verification run they requested up to 12 CPUs, 64 GB and 16 h (the SUPPA2 diffSplice and cluster steps and `MAKE_TRANSCRIPTS_FASTA`).
 
 | Selector | CPUs | Memory | Time |
 |----------|------|--------|------|
@@ -73,18 +73,20 @@ The `nextflow.config` that the skill writes (only if none exists) gives every pr
 | `DEXSEQ_DTU` | 8 | 32 GB | 8h |
 | `SALMON_QUANT.*` | 8 | 36 GB | 8h |
 
-These values are judgement and, for `SALMON_QUANT`, the memory and time of the pipeline's own tested process label; they were checked on the nf-core test data only and are NOT measured on a real genome. Compare them with `pipeline_info/execution_trace.txt` after the first real run. The head job requests 2 CPUs, 8 GB and 48 h (`-n 2 --mem=8G -t 48:00:00`): it only coordinates the pipeline but must outlive every task, so it asks for more time than the usual 4 h default (approved by the user). The genome download helper requests 2 CPUs, 8 GB and 4 h.
+These values are judgement and, for `SALMON_QUANT`, the memory and time of the pipeline's own tested process label; they are NOT measured on a real genome. The first seven selectors were applied in the verification run on the nf-core test data; the `SALMON_QUANT.*` selector was only matched against the recorded process names (the verification config's `.*:SALMON_QUANT` matched no process, so Salmon ran with its label's 6 CPUs, 36 GB and 8 h) and is first applied in the cluster acceptance run. Compare them with `pipeline_info/execution_trace.txt` after the first real run. The head job requests 2 CPUs, 8 GB and 48 h (`-n 2 --mem=8G -t 48:00:00`): it only coordinates the pipeline but must outlive every task, so it asks for more than the 4 h that this repository's skills use by default (a deliberate exception). The genome download helper requests 2 CPUs, 8 GB and 4 h.
 
 ---
 
 ## Output files
 
+All files are written in the working directory; `{SHEET_PREFIX}` is the file prefix chosen in Step 5 (for example `{SEQ_DATE}_{WD_NAME}`: the sequencing date and the name of the working directory).
+
 | File | Description |
 |------|-------------|
-| `{prefix}_samplesheet.csv` | Samplesheet (`sample,fastq_1,fastq_2,strandedness,condition`, or `sample,condition,genome_bam,strandedness,single_end` for genome BAM) |
-| `{prefix}_contrasts.csv` | Contrasts (`contrast,treatment,control`) |
-| `{prefix}_pairs.csv` | Paired design only: `sample,subject`, a record of the pairing (the pipeline does not read it) |
-| `{prefix}_params.yaml` | Every pipeline parameter of the run, passed with `-params-file` |
+| `{SHEET_PREFIX}_samplesheet.csv` | Samplesheet (`sample,fastq_1,fastq_2,strandedness,condition`, or `sample,condition,genome_bam,strandedness,single_end` for genome BAM) |
+| `{SHEET_PREFIX}_contrasts.csv` | Contrasts (`contrast,treatment,control`) |
+| `{SHEET_PREFIX}_pairs.csv` | Paired design only: `sample,subject`, a record of the pairing (the pipeline does not read it) |
+| `{SHEET_PREFIX}_params.yaml` | Every pipeline parameter of the run, passed with `-params-file` |
 | `nextflow.config` | SLURM + Singularity profiles with process selectors (written only if absent) |
 | `nf-core_rnasplice_dev-1b44723.sh` | Pipeline submission script (changes to the project directory, checks its files and the Nextflow version, runs the pipeline) |
 | `download_genome_{REF_TAG}.sh` | Ensembl FASTA/GTF download (only if missing; URLs verified in the session) |
@@ -111,8 +113,8 @@ With a paired design the rMATS directory is `star/rmats/{CONTRAST}_paired/`. DTU
 |--------|--------|----------------------|--------|
 | rMATS | `IncLevelDifference` = mean(`IncLevel1`) − mean(`IncLevel2`); `b1` = the treatment samples | more inclusion in the treatment | verification run (bamlists and values) |
 | SUPPA2 | dPSI = mean PSI of the control − mean PSI of the treatment, although the header reads `local_{TREATMENT}-local_{CONTROL}_dPSI` | more inclusion in the control | verification run (every event, values) and pinned code |
-| DEXSeq DTU | `log2fold_{CONTROL}_{TREATMENT}` | a larger share of the transcript in the control | verification run (column name) |
-| DEXSeq exon usage | `log2fold_{CONTROL}_{TREATMENT}` | more usage of the exon bin in the control | verification run (column name) and pinned code |
+| DEXSeq DTU | `log2fold_{CONTROL}_{TREATMENT}` | a larger share of the transcript in the control | verification run (header plus checked rows: all 217 non-NA rows) and pinned code |
+| DEXSeq exon usage | `log2fold_{CONTROL}_{TREATMENT}` | more usage of the exon bin in the control | verification run (header plus checked rows: all 7420 non-NA rows) and pinned code |
 | edgeR exon usage | `logFC` = treatment − control | more usage of the exon in the treatment | pinned code only, not checked numerically |
 
 ---
@@ -132,8 +134,8 @@ The job downloads the pinned pipeline revision the first time it runs it (also w
 
 ## Validation status
 
-- Static tests: `bash tests/run_all_tests.sh` runs, each under `env -i` with an explicit PATH: the checker (every parameter against the recorded schema of nf-core/rnasplice 1b447239488097651d8eac44bca2c1556865eb0f, module switches, defaults against the recorded pipeline configuration, process selectors against the processes of the verification runs, the launch line, guarded module loads, this README), the tests that run the skill's own code blocks (sample names, sheet validation, strandedness from RSeQC, BAM rule, read length, params rendering), the stub dry runs of the submission script and the download helper, and the mutation proofs of every structural check. The default run skips the proof-tool self-test (`test_proof_tools.sh`, about 20 minutes) and says so; `bash tests/run_all_tests.sh --full` includes it. The self-test needs git 1.8.5 or newer (`/usr/bin/git` on the cluster is 1.8.3): set `RNASPLICE_TEST_GIT_DIR` to the directory of a newer git (for example `RNASPLICE_TEST_GIT_DIR=$HOME/.conda/envs/git-new/bin bash tests/run_all_tests.sh --full`).
-- Verification gate (2026-10-01): nf-core/rnasplice 1b447239488097651d8eac44bca2c1556865eb0f with Nextflow 26.04.6 on the cluster, on nf-core's tiny test dataset: 4 paired-end human chrX samples (about 30 MB of FASTQ, 75 bp reads, two conditions). Runs, in `/net/bmc-lab3/data/bcc/yannvrb/rnasplice_gate/results/`:
+- Static tests: `bash tests/run_all_tests.sh` runs, each under `env -i` with an explicit PATH: the checker (every parameter against the recorded schema of nf-core/rnasplice 1b447239488097651d8eac44bca2c1556865eb0f, module switches, defaults against the recorded pipeline configuration, process selectors against the processes of the verification runs, the launch line, guarded module loads, this README), the tests that run the skill's own code blocks (sample names, sheet validation, strandedness from RSeQC, BAM rule, read length, params rendering), the stub dry runs of the submission script and the download helper, a test of the test runner itself on a fake tree (`test_run_all.sh`: failures propagate, every listed test runs, the git version check), and the mutation proofs of every structural check. The default run takes 13 to 15 minutes (bash, awk and sed only) and skips the proof-tool self-test (`test_proof_tools.sh`, about 30 minutes), and says so; `bash tests/run_all_tests.sh --full` includes it. The self-test needs git 1.8.5 or newer (`/usr/bin/git` on the cluster is 1.8.3): set `RNASPLICE_TEST_GIT_DIR` to the directory of a newer git (for example `RNASPLICE_TEST_GIT_DIR=$HOME/.conda/envs/git-new/bin bash tests/run_all_tests.sh --full`).
+- Verification gate (2026-10-01): nf-core/rnasplice 1b447239488097651d8eac44bca2c1556865eb0f with Nextflow 26.04.6 on the cluster, on nf-core's tiny test dataset: 4 paired-end human chrX samples (about 30 MB of FASTQ, 75 bp reads, two conditions). Runs, in `/net/bmc-lab3/data/bcc/yannvrb/rnasplice_gate/results/` (on the author's cluster account; these run directories are not distributed, and the recorded evidence is in `tests/fixtures/`):
   - `2026-10-01_g2a_dev`: the pipeline's own test profile;
   - `2026-10-01_g3_typed`: a fully typed params file with all modules (the reference run);
   - `2026-10-01_g4_rmats_reverse`: rMATS only, `reverse` strandedness;
@@ -152,10 +154,10 @@ Cluster acceptance (nf-core test data): PENDING
 
 ## Known limitations
 
-- **Unreleased pin.** nf-core/rnasplice 1b447239488097651d8eac44bca2c1556865eb0f is a development commit (`dev-1b44723`), not a release. Release 1.0.4 does not launch under Nextflow 26.04.6 (config parse error on `def check_max`, seen at the verification gate), so it was not used. The pinned commit is the merge of upstream PR #291 (2026-09-24), which rewrote the rMATS subworkflow: young code, a risk. (Gate observation, for a later choice of pin: release 1.0.4 on Nextflow 24.04.4 completed the test profile, but one rMATS 4.1.2 task hung for 43 minutes in that run; cause not verified.)
+- **Unreleased pin.** nf-core/rnasplice 1b447239488097651d8eac44bca2c1556865eb0f is a development commit (`dev-1b44723`), not a release. Release 1.0.4 does not launch under Nextflow 26.04.6 (config parse error on `def check_max`, seen at the verification gate), so it was not used. The pinned commit is the merge of upstream PR #291 (2026-09-24), which ported the rMATS subworkflow to the nf-core structure (a rewrite of the subworkflow; evidence in `tests/fixtures/gate_report.md`): young code, a risk. (Gate observation, for a later choice of pin: release 1.0.4 on Nextflow 24.04.4 completed the test profile, but one rMATS 4.1.2 task hung for 43 minutes until it was killed by hand (the retry then finished in 2 s); cause not verified.)
 - **Bumping the pin** (a newer commit or a release) means running the verification gate again before relying on the skill: the test profile and the gate runs above on the cluster; record the schema (`rnasplice_schema.json`, `schema_input*.json`), the pipeline's `params {}` block (`config_params.txt`), the process names and requested resources (`trace_process_names.txt`, `trace_resources_g3.tsv`), the output tree (`output_tree.txt`), the task command lines (`command_lines.txt`: strandedness, read type, bamlist order) and the container URLs (`verified_urls.txt`); set every key of `gate_values.tsv` (the checker validates each against its allowed values) and update `gate_report.md`; check every sign on the values or the code, never from a header alone; then update the skill until `tests/run_all_tests.sh --full` passes.
 - **Option keys not yet run with the skill's values:** `ignore_tx_version`, `miso_genes`, `miso_read_len`, `fig_height`, `fig_width`, `isoformswitchanalyzer_alpha` and `isoformswitchanalyzer_dIF` are in the params file (at the pipeline defaults) but were not in the gate's typed run; they are first used in the cluster acceptance run. `star_index` (reuse of an existing STAR index) was not run either.
-- **Single-end input and `forward` strandedness:** single-end BAM input and `forward` strandedness were verified from the pipeline code only, not by a run (the gate ran paired-end samples, with `reverse` and with the BAM columns left out); single-end FASTQ input likewise.
+- **Single-end input and `forward` strandedness:** single-end BAM input and `forward` strandedness were verified from the pipeline code only, not by a run (the gate ran paired-end samples only: `unstranded` and `reverse`, from FASTQ and from genome BAM); single-end FASTQ input was not run either.
 - One contrast was run with the skill's settings; several contrasts only in the pipeline's own test profile.
 - Strandedness is asked, not detected (except from the RSeQC results of an existing nf-core/rnaseq run); rMATS needs one strandedness and one read type for all samples.
 - Paired designs need exactly two conditions of equal size.

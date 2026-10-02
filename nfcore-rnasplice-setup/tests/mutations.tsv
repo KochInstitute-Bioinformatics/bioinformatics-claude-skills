@@ -426,7 +426,7 @@ T8-res-skill	check	skill	/withName: '\.\*:RMATS_POST'/,/}/s/time = '16h'/time = 
 T8-res-limits	check	readme	s/caps every task at 16 CPUs, 64 GB and 24 h/caps every task at 32 CPUs, 64 GB and 24 h/	README missing required text: caps every task at 16 CPUs, 64 GB and 24 h
 T8-headjob	check	readme	s/(`-n 2 --mem=8G -t 48:00:00`)/(`-n 2 --mem=8G -t 4:00:00`)/	README missing required text: (`-n 2 --mem=8G -t 48:00:00`)
 T8-headjob-skill	check	skill	s/^#SBATCH -t 48:00:00$/#SBATCH -t 72:00:00/	README missing required text: (`-n 2 --mem=8G -t 72:00:00`)
-T8-approved	check	readme	s/ (approved by the user)//	README missing required text: (approved by the user)
+T8-approved	check	readme	s/ (a deliberate exception)//	README missing required text: so it asks for more than the 4 h that this repository's skills use by default (a deliberate exception)
 T8-measured	check	readme	s/are NOT measured on a real genome/are measured/	README missing required text: are NOT measured on a real genome
 T8-bamsheet	check	readme	s/written to the BAM samplesheet (`@BAM_SHEET_HEADER@`)/written to the BAM samplesheet (`sample,condition,genome_bam`)/	README missing required text: strandedness and read type are written to the BAM samplesheet (`@BAM_SHEET_HEADER@`)
 T8-bamcode	check	readme	s/were verified from the pipeline code only, not by a run/were verified/	README missing required text: single-end BAM input and `forward` strandedness were verified from the pipeline code only
@@ -437,7 +437,7 @@ T8-bump	check	readme	s/\*\*Bumping the pin\*\*/Updating/	README missing required
 T8-bump-fx	check	readme	s/the task command lines (`command_lines.txt`: /the task command lines (/	README missing required text: `command_lines.txt`
 T8-full	check	readme	s/bash tests\/run_all_tests.sh --full/bash tests\/test_proof_tools.sh/g	README missing required text: bash tests/run_all_tests.sh --full
 T8-gitdir	check	readme	s/RNASPLICE_TEST_GIT_DIR/GIT_DIR/g	README missing required text: RNASPLICE_TEST_GIT_DIR
-T8-skipnote	check	readme	s/The default run skips the proof-tool self-test/The default run runs everything/	README missing required text: The default run skips the proof-tool self-test
+T8-skipnote	check	readme	s/and skips the proof-tool self-test/and runs everything/	README missing required text: The default run takes 13 to 15 minutes
 T8-gatedate	check	readme	s/Verification gate (@GATE_DATE@)/Verification gate/	README missing required text: Verification gate (@GATE_DATE@)
 T8-tiny	check	readme	s/nf-core's tiny test dataset/a test dataset/	README missing required text: nf-core's tiny test dataset
 T8-readlen	check	readme	s/@TEST_READ_LENGTH@ bp reads/100 bp reads/	README missing required text: @TEST_READ_LENGTH@ bp reads
@@ -458,3 +458,68 @@ T8-ra-envi	check	runall	s/env -i HOME="\${HOME:-\/nonexistent}" PATH="\$P" \/bin
 T8-ra-skip	check	runall	s/test_proof_tools.sh was SKIPPED/the proof tools did not run/	must say when the proof-tool self-test was skipped
 T8-ra-git	check	runall	s/1\.8\.5/1.8.3/g	must check for git 1.8.5 or newer
 T8-ra-empty	check	runall	1,$d	tests/run_all_tests.sh is missing or empty
+T8f-res-every	check	readme	s/sets a process default of 2 CPUs, 8 GB and 4 h, raises the processes below with `withName` selectors/gives every process 2 CPUs, 8 GB and 4 h, raises the processes below with `withName` selectors/	README has forbidden text: gives every process 2 CPUs, 8 GB and 4 h
+T8f-res-labels	check	readme	s/ Every other process keeps the resources of the pipeline's own process labels, which take precedence over that default: in the verification run they requested up to 12 CPUs, 64 GB and 16 h (the SUPPA2 diffSplice and cluster steps and `MAKE_TRANSCRIPTS_FASTA`)\.//	README missing required text: Every other process keeps the resources of the pipeline's own process labels
+T8f-res-max	check	readme	s/they requested up to 12 CPUs, 64 GB and 16 h/they requested up to 8 CPUs, 64 GB and 8 h/	README missing required text: Every other process keeps the resources of the pipeline's own process labels, which take precedence over that default: in the verification run they requested up to 12 CPUs, 64 GB and 16 h
+T8f-sq-readme	check	readme	s/The first seven selectors were applied in the verification run on the nf-core test data; the `SALMON_QUANT\.\*` selector was only matched against the recorded process names (the verification config's `\.\*:SALMON_QUANT` matched no process, so Salmon ran with its label's 6 CPUs, 36 GB and 8 h) and is first applied in the cluster acceptance run\. //	README missing required text: The first seven selectors were applied in the verification run
+T8f-sq-checked	check	readme	s/; they are NOT measured on a real genome\./; they were checked on the nf-core test data only and are NOT measured on a real genome./	README has forbidden text: they were checked on the nf-core test data only
+T8f-sq-skill	check	skill	s/ The first seven selectors were applied in this skill's verification run on the nf-core test data; the `'\.\*:SALMON_QUANT\.\*'` selector was only matched against the process names recorded there (the verification config used `'\.\*:SALMON_QUANT'`, which matched no process, so Salmon quantification ran with its label's 6 CPUs, 36 GB and 8 h) and is first applied in this skill's cluster acceptance run on the nf-core test data\.//	missing required text: The first seven selectors were applied in this skill's verification run
+T8f-sq-skill-old	check	skill	s/The resources of every selector are judgement: they are not measured on real data\./The resources of every selector are judgement, checked on the nf-core test data of this skill's verification only: they are not measured on real data./	forbidden text present: checked on the nf-core test data of this skill's verification only
+T8f-sq-skill-first	check	skill	s/and is first applied in this skill's cluster acceptance run on the nf-core test data\./and was applied in the verification run./	missing required text: so Salmon quantification ran with its label's 6 CPUs, 36 GB and 8 h) and is first applied
+T8f-realdata-del	check	readme	s/, and nothing in this skill is validated on real data\././	README missing required text: and nothing in this skill is validated on real data.
+T8f-realdata-add	check	readme	$s/$/\nThis skill has been validated on real RNA-seq data./	README has forbidden text: has been validated on real
+T8f-realdata-add2	check	readme	$s/$/\nThe settings were tested on real data./	README has forbidden text: tested on real data
+T8f-salmontime	check	readme	s/likely takes more than an hour to build (unverified)\./takes a few minutes to build./	README missing required text: A decoy-aware Salmon index of a human or mouse genome likely takes more than an hour to build (unverified).
+T8f-salmontime-unv	check	readme	s/likely takes more than an hour to build (unverified)\./likely takes more than an hour to build./	README missing required text: A decoy-aware Salmon index of a human or mouse genome likely takes more than an hour to build (unverified).
+T8f-intro-pin	check	readme	s/, an unreleased development commit of the pipeline, not a release (see/, the current release (see/	README missing required text: an unreleased development commit of the pipeline, not a release
+T8f-intro-release	check	readme	$s/$/\nIt uses the current release of nf-core\/rnasplice./	README has forbidden text: the current release
+T8f-suppa-tc	check	readme	$s/$/\nNote: SUPPA2 dPSI = mean PSI of the treatment − mean PSI of the control./	README has forbidden text: mean PSI of the treatment − mean PSI of the control
+T8f-suppa-tc-ascii	check	readme	$s/$/\nNote: SUPPA2 dPSI = mean PSI of the treatment - mean PSI of the control./	README has forbidden text: mean PSI of the treatment - mean PSI of the control
+T8f-src-rmats	check	readme	s/| more inclusion in the treatment | verification run (bamlists and values) |/| more inclusion in the treatment | assumed |/	README missing required text: | rMATS | `IncLevelDifference` = mean(`IncLevel1`) − mean(`IncLevel2`); `b1` = the treatment samples | more inclusion in the treatment | verification run (bamlists and values) |
+T8f-src-suppa	check	readme	s/| more inclusion in the control | verification run (every event, values) and pinned code |/| more inclusion in the control | column name |/	README missing required text: | more inclusion in the control | verification run (every event, values) and pinned code |
+T8f-src-dtu	check	readme	s/(header plus checked rows: all 217 non-NA rows) and pinned code |$/(column name) |/	README missing required text: | DEXSeq DTU |
+T8f-src-dtu-n	check	readme	s/all 217 non-NA rows/all 200 non-NA rows/	README missing required text: | DEXSeq DTU |
+T8f-src-dex	check	readme	s/(header plus checked rows: all 7420 non-NA rows) and pinned code |$/(column name) and pinned code |/	README missing required text: | DEXSeq exon usage |
+T8f-hang	check	readme	s/until it was killed by hand (the retry then finished in 2 s); cause not verified\./; cause: a known rMATS bug./	README missing required text: until it was killed by hand (the retry then finished in 2 s); cause not verified.
+T8f-onecontrast	check	readme	/^- One contrast was run with the skill's settings/d	README missing required text: - One contrast was run with the skill's settings
+T8f-salmonruns	check	readme	/^- With FASTQ input, Salmon (index and quantification) always runs/d	README missing required text: - With FASTQ input, Salmon (index and quantification) always runs
+T8f-salmonruns-dp	check	readme	s/ With FASTQ input, Salmon (index build and quantification) runs even in an rMATS-only run, because `pseudo_aligner` has no off value at this revision\.//	README missing required text: With FASTQ input, Salmon (index build and quantification) runs even in an rMATS-only run
+T8f-sefastq	check	readme	s/; single-end FASTQ input was not run either\./\./	README missing required text: (the gate ran paired-end samples only
+T8f-gateran	check	readme	s/(the gate ran paired-end samples only: `unstranded` and `reverse`, from FASTQ and from genome BAM)/(the gate ran paired-end samples)/	README missing required text: (the gate ran paired-end samples only
+T8f-starindex	check	readme	s/ `star_index` (reuse of an existing STAR index) was not run either\.//	README missing required text: `star_index` (reuse of an existing STAR index) was not run either.
+T8f-bulk	check	readme	s/: run it in one place only\./: run it in both places./	README has forbidden text: run it in both places
+T8f-bulk-del	check	readme	s/: run it in one place only\./, with DESeq2./	README missing required text: ): run it in one place only.
+T8f-4h	check	readme	s/(a deliberate exception)\./(a deliberate exception); it needs no more than 4 h in practice./	README has forbidden text: no more than 4 h
+T8f-duration	check	readme	s/(`test_proof_tools.sh`, about 30 minutes)/(`test_proof_tools.sh`, about 20 minutes)/	README missing required text: The default run takes 13 to 15 minutes
+T8f-duration-del	check	readme	s/The default run takes 13 to 15 minutes (bash, awk and sed only) and skips/The default run skips/	README missing required text: The default run takes 13 to 15 minutes
+T8f-approved	check	readme	s/(a deliberate exception)/(approved by the user)/	README has forbidden text: approved by the user
+T8f-step6	check	readme	s/warns when read lengths differ, and stops by default when they differ between conditions |/warns when read lengths differ between conditions |/	README missing required text: warns when read lengths differ, and stops by default
+T8f-prefix	check	readme	s/^| `{SHEET_PREFIX}_contrasts\.csv` |/| `{prefix}_contrasts.csv` |/	README has forbidden text: {prefix}
+T8f-prefix-def	check	readme	s/; `{SHEET_PREFIX}` is the file prefix chosen in Step 5 ([^)]*)\././	README missing required text: `{SHEET_PREFIX}` is the file prefix chosen in Step 5
+T8f-rundirs	check	readme	s/ (on the author's cluster account; these run directories are not distributed, and the recorded evidence is in `tests\/fixtures\/`)//	README missing required text: (on the author's cluster account
+T8f-options	check	readme	s/every option key that has a non-null pipeline default, at that default/every option of every module at the pipeline default/	README has forbidden text: every option of every module
+T8f-pr291	check	readme	s/which ported the rMATS subworkflow to the nf-core structure/which touched the rMATS subworkflow/	README missing required text: which ported the rMATS subworkflow to the nf-core structure
+T8f-runtestdoc	check	readme	s/a test of the test runner itself on a fake tree (`test_run_all\.sh`: failures propagate, every listed test runs, the git version check), //	README missing required text: a test of the test runner itself on a fake tree
+T8f-rows-res	check	readme	s/^| `SALMON_QUANT\.\*` | 8 | 36 GB | 8h |$/&\n| `SUPPA_DIFFSPLICE` | 2 | 8 GB | 1h |/	README table '| Selector | CPUs | Memory | Time |' has 9 rows, expected 8
+T8f-rows-path	check	readme	s/^| `multiqc\/` |.*$/&\n| `salmon\/rmats\/` | rMATS on Salmon |/	README table '| Path | Content |' has 8 rows, expected 7
+T8f-rows-dir	check	readme	s/^| edgeR exon usage | .*$/&\n| SUPPA2 isoforms | dPSI | more in the treatment | assumed |/	README table '| Output | Column | Positive value means | Source |' has 6 rows, expected 5
+T8f-rows-file	check	readme	s/^| `nextflow\.config` | .*$/&\n| `create_env.sh` | conda environment |/	README table '| File | Description |' has 8 rows, expected 7
+T8f-rows-step	check	readme	s/^| 12 | Summary and hand-off | .*$/&\n| 13 | Results report | Generated |/	README table '| Step | Topic | Asked or detected |' has 14 rows, expected 13
+T8f-rt-rc	runtest	runall	s/|| { echo "FAIL: \$1"; rc=1; }; }/|| echo "FAIL: $1"; }/	(runner args ''): exit 0, expected 1
+T8f-rt-exit	runtest	runall	s/{ echo "SOME TESTS FAILED"; exit 1; }/echo "SOME TESTS FAILED"/	(runner args ''): exit 0, expected 1
+T8f-rt-onetest	runtest	runall	s/^for t in \$TESTS; do run/for t in check_skill.sh; do run/	expected every test of TESTS once, in order
+T8f-rt-full	runtest	runall	s/^  for t in \$FULL_TESTS; do run "\$t"; done$/  :/	--full ran
+T8f-rt-gitfalse	runtest	runall	s/^  if \[ -z "\$gver" \] || .*; then$/  if false; then/	git_1.8.3.1): exit 0, expected 1
+T8f-rt-gittrue	runtest	runall	s/^  if \[ -z "\$gver" \] || .*; then$/  if true; then/	git_2.49.0): exit 1, expected 0
+T8f-rt-gittext	runtest	runall	s/| sort -V | head -n1)" != 1\.8\.5/| sort | head -n1)" != 1.8.5/	git_1.10.0): exit 1, expected 0
+T8f-rt-sk	runtest	runall	s/SK="\$HERE\/\.\.\/nfcore-rnasplice-setup\.md"/SK=\/dev\/null/	a test got another argument, another PATH or the caller's environment
+T8f-rt-envi	runtest	runall	s/env -i HOME="\${HOME:-\/nonexistent}" PATH="\$P" \/bin\/bash --noprofile --norc "\$HERE\/\$1"/PATH="$P" \/bin\/bash --noprofile --norc "$HERE\/$1"/	a test got another argument, another PATH or the caller's environment
+T8f-rt-gitpath	runtest	runall	s/^  P="\$RNASPLICE_TEST_GIT_DIR:\$P"$/  P="$P:$RNASPLICE_TEST_GIT_DIR"/	git_2.49.0): exit 1, expected 0
+T8f-rt-usage	runtest	runall	s/^  \*) echo "usage: run_all_tests.sh \[--full\]"; exit 1 ;;$/  *) ;;/	(runner args '--bogus'): exit 0, expected 1
+T8f-rt-unnamed	runtest	runall	s/\*) echo "FAIL: tests\/\$b is not named in run_all_tests.sh (TESTS, FULL_TESTS or NOT_TESTS)"; rc=1 ;; esac$/*) ;; esac/	(runner args ''): exit 0, expected 1
+T8f-rt-rootrow	runtest	runall	/FAIL: root README row missing/d	(runner args ''): exit 0, expected 1
+T8f-rt-rootdev	runtest	runall	/FAIL: root README row still marked in development/d	(runner args ''): exit 0, expected 1
+T8f-rt-nogit	runtest	runall	s/^  \[ -x "\$RNASPLICE_TEST_GIT_DIR\/git" \] || .*$/  :/	output lacks the line: ERROR: RNASPLICE_TEST_GIT_DIR=
+T8f-rt-skipmsg	runtest	runall	s/^  echo "== SKIPPED: \$FULL_TESTS (proof-tool self-test, about 30 minutes; run with --full)"$/  :/	output lacks the line: == SKIPPED: test_proof_tools.sh
+T8f-ra-runtest	check	runall	s/ test_run_all\.sh / /	run_all_tests.sh TESTS must run test_run_all.sh
+T8f-ra-gitline	check	runall	s/| sort -V | head -n1)" != 1\.8\.5/| sort -V | head -n1)" != 1.8.6/	must check for git 1.8.5 or newer

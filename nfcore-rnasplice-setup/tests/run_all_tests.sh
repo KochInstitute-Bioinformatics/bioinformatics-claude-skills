@@ -1,16 +1,20 @@
 #!/bin/bash
 # Usage: run_all_tests.sh [--full]
 # Runs every static test of the skill, each under `env -i` with an explicit PATH; prints "ALL TESTS PASS ..." or exits 1.
-#   default  the fast suites (TESTS below); the proof-tool self-test is SKIPPED, and the last line says so
-#   --full   also runs the proof-tool self-test (FULL_TESTS, about 20 minutes)
+#   default  the suites in TESTS below (13 to 15 minutes, bash, awk and sed only); the proof-tool self-test is SKIPPED, and the
+#            last line says so
+#   --full   also runs the proof-tool self-test (FULL_TESTS, about 30 minutes)
 # The proof-tool self-test needs git 1.8.5 or newer (git -C); /usr/bin/git on the cluster is 1.8.3. To use a newer git, set
 # RNASPLICE_TEST_GIT_DIR to the directory that holds it (for example the bin directory of a conda environment with git):
 #   RNASPLICE_TEST_GIT_DIR=$HOME/.conda/envs/git-new/bin bash tests/run_all_tests.sh --full
 # That directory is put first on the PATH of every test; nothing else is taken from the caller's environment except HOME.
 # Every *.sh file in tests/ must be named in exactly one list below (TESTS, FULL_TESTS or NOT_TESTS); check_skill.sh and
 # this script both check it, so a new test cannot be left out silently.
+# test_run_all.sh tests this script on a fake tree (exit codes, PASS lines, every test run, the git version comparison).
+# CHECK_RUN_ALL (read by check_skill.sh and test_run_all.sh, not by this script) is a test hook of prove_mutations.sh only: it
+# points them at a mutated copy of this file.
 set -u
-TESTS="check_skill.sh test_strandedness.sh test_bam_policy.sh test_sample_names.sh test_validate_sheets.sh test_read_length.sh test_render_params.sh dry_run_submit.sh dry_run_helpers.sh prove_mutations.sh"
+TESTS="check_skill.sh test_strandedness.sh test_bam_policy.sh test_sample_names.sh test_validate_sheets.sh test_read_length.sh test_render_params.sh dry_run_submit.sh dry_run_helpers.sh test_run_all.sh prove_mutations.sh"
 FULL_TESTS="test_proof_tools.sh"
 NOT_TESTS="cut_block.sh test_env.sh render_params.sh prove_red.sh run_all_tests.sh"
 HERE=$(cd "$(dirname "$0")" && pwd); SK="$HERE/../nfcore-rnasplice-setup.md"; ROOT_README="$HERE/../../README.md"
@@ -50,7 +54,7 @@ for t in $TESTS; do run "$t" "$SK"; done
 if [ $full -eq 1 ]; then
   for t in $FULL_TESTS; do run "$t"; done
 else
-  echo "== SKIPPED: $FULL_TESTS (proof-tool self-test, about 20 minutes; run with --full)"
+  echo "== SKIPPED: $FULL_TESTS (proof-tool self-test, about 30 minutes; run with --full)"
 fi
 grep -qF '| nf-core/rnasplice setup | `/nfcore-rnasplice-setup` |' "$ROOT_README" || { echo "FAIL: root README row missing"; rc=1; }
 ! grep -qF '(in development, not yet validated)' "$ROOT_README" || { echo "FAIL: root README row still marked in development"; rc=1; }

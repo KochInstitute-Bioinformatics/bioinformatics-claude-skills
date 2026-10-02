@@ -2,6 +2,7 @@
 # Static checks for nfcore-rnasplice-setup.md. Usage: check_skill.sh <skill.md>
 # Uses only the recorded fixtures of the gated pipeline revision (tests/fixtures/); no network, no python.
 # The README checked is the README.md next to the skill file. CHECK_LIST_NEEDS=1 also prints "NEED <line> <text>" per need.
+# CHECK_RUN_ALL=<file> checks that file instead of tests/run_all_tests.sh: a test hook of prove_mutations.sh (target runall) only.
 # Exit codes: 0 PASS, 1 a check failed, 2 a fixture is missing or invalid (gate values are validated against their allowed sets).
 # Call need/needr at top level (also inside a loop, `case` or `||`), never from inside a helper function: BASH_LINENO[0]
 # would then be the line inside the helper, and prove_red.sh could not map the need to an added checker line.
@@ -643,7 +644,11 @@ fi
 need "\`SALMON_QUANT_SALMON\` and \`SALMON_QUANT_STAR\`"
 # Task 6 review I3 (controller ruling): SALMON_QUANT = 8 CPU / 36 GB / 8h, the pipeline's own tested label values; not measured on real data.
 need "It requests 8 CPUs, 36 GB and 8 h: the memory and time of the pipeline's own tested process label for Salmon quantification"
-need "The resources of every selector are judgement, checked on the nf-core test data of this skill's verification only: they are not measured on real data."
+# Task 8 review I2: no gate run applied the SALMON_QUANT.* selector (the gate config's .*:SALMON_QUANT matched nothing).
+need "The resources of every selector are judgement: they are not measured on real data."
+need "The first seven selectors were applied in this skill's verification run on the nf-core test data; the \`'.*:SALMON_QUANT.*'\` selector was only matched against the process names recorded there"
+need "so Salmon quantification ran with its label's 6 CPUs, 36 GB and 8 h) and is first applied in this skill's cluster acceptance run on the nf-core test data."
+forbid "checked on the nf-core test data of this skill's verification only"
 # Params file template
 BASEY=$(bash "$CUT" "$SKILL" "**Params file template.**" 2>/dev/null)
 [ "$(printf '%s\n' "$BASEY" | grep -cx '{MODULE_PARAMS}')" -eq 1 ] || { echo "FAIL: the params template must contain one {MODULE_PARAMS} line"; fail=1; }
@@ -886,7 +891,8 @@ rl=$(printf '%s\n' "$CFG" | sed -n "s/^ *resourceLimits = \[ cpus: \([0-9]*\), m
 needr "caps every task at ${rl:-UNPARSED resourceLimits}"
 hj_n=$(printf '%s\n' "$SUB" | sed -n 's/^#SBATCH -n //p'); hj_m=$(printf '%s\n' "$SUB" | sed -n 's/^#SBATCH --mem=//p'); hj_t=$(printf '%s\n' "$SUB" | sed -n 's/^#SBATCH -t //p')
 needr "(\`-n $hj_n --mem=$hj_m -t $hj_t\`)"
-needr "(approved by the user)"
+needr "so it asks for more than the 4 h that this repository's skills use by default (a deliberate exception)"
+forbidr "approved by the user"
 needr "are NOT measured on a real genome"
 # Correction 6: genome-BAM input; single-end and forward verified from code only.
 needr "strandedness and read type are written to the BAM samplesheet (\`$(gv BAM_SHEET_HEADER)\`)"
@@ -902,7 +908,8 @@ done
 # Correction 8: the test runner (default and --full), the git requirement.
 needr "bash tests/run_all_tests.sh --full"
 needr "RNASPLICE_TEST_GIT_DIR"
-needr "The default run skips the proof-tool self-test"
+needr "The default run takes 13 to 15 minutes (bash, awk and sed only) and skips the proof-tool self-test (\`test_proof_tools.sh\`, about 30 minutes)"
+forbidr "about 20 minutes"
 # Correction 9: what was verified: the gate date, every run directory of RUN_DIRS, nf-core test data only.
 needr "Verification gate ($(gv GATE_DATE))"
 needr "nf-core's tiny test dataset"
@@ -937,9 +944,71 @@ if [ -s "$RUN_ALL" ]; then
   grep -qF 'env -i HOME="${HOME:-/nonexistent}" PATH="$P" /bin/bash --noprofile --norc "$HERE/$1"' "$RUN_ALL" \
     || { echo "FAIL: run_all_tests.sh must run every test under env -i with an explicit PATH"; fail=1; }
   grep -qF 'test_proof_tools.sh was SKIPPED' "$RUN_ALL" || { echo "FAIL: run_all_tests.sh must say when the proof-tool self-test was skipped"; fail=1; }
-  grep -qF '1.8.5' "$RUN_ALL" || { echo "FAIL: run_all_tests.sh must check for git 1.8.5 or newer before the proof-tool self-test"; fail=1; }
+  # Task 8 review I3: the version comparison itself (its behaviour is tested by test_run_all.sh on a fake tree).
+  grep -qF "1.8.5 | sort -V | head -n1)\" != 1.8.5 ]; then" "$RUN_ALL" || { echo "FAIL: run_all_tests.sh must check for git 1.8.5 or newer before the proof-tool self-test"; fail=1; }
+  case " $ra_tests " in *" test_run_all.sh "*) ;; *) echo "FAIL: run_all_tests.sh TESTS must run test_run_all.sh (the test of the runner itself)"; fail=1 ;; esac
 else
   echo "FAIL: tests/run_all_tests.sh is missing or empty"; fail=1
 fi
 # --- end Task 8
+
+# --- Task 8 review fixes (I1, I2, I4, minors)
+# I1: the pipeline's labels take precedence over the process default; the maximum they requested comes from the gate trace.
+forbidr "gives every process 2 CPUs, 8 GB and 4 h"
+tr_max=$(awk -F'\t' '{ c = $2 + 0; m = $3; sub(/ GB$/, "", m); t = $4; sub(/h$/, "", t)
+  if (c > mc) mc = c; if (m + 0 > mm) mm = m + 0; if (t + 0 > mt) mt = t + 0 } END { print mc " CPUs, " mm " GB and " mt " h" }' "$FIX/trace_resources_g3.tsv")
+needr "Every other process keeps the resources of the pipeline's own process labels, which take precedence over that default: in the verification run they requested up to $tr_max"
+needr "sets a process default of 2 CPUs, 8 GB and 4 h, raises the processes below with \`withName\` selectors"
+# I2: the SALMON_QUANT.* selector was never applied in a run.
+forbidr "they were checked on the nf-core test data only"
+needr "The first seven selectors were applied in the verification run on the nf-core test data; the \`SALMON_QUANT.*\` selector was only matched against the recorded process names"
+needr "and is first applied in the cluster acceptance run."
+# I4: honesty statements (each deletion or inversion fails).
+needr "and nothing in this skill is validated on real data."
+forbidr "has been validated on real"
+forbidr "validated on real RNA-seq data"
+forbidr "tested on real data"
+needr "A decoy-aware Salmon index of a human or mouse genome likely takes more than an hour to build (unverified)."
+needr "an unreleased development commit of the pipeline, not a release"
+forbidr "the current release"
+forbidr "mean PSI of the treatment − mean PSI of the control"
+forbidr "mean PSI of the treatment - mean PSI of the control"
+needr "| rMATS | \`IncLevelDifference\` = mean(\`IncLevel1\`) − mean(\`IncLevel2\`); \`b1\` = the treatment samples | more inclusion in the treatment | verification run (bamlists and values) |"
+needr "| more inclusion in the control | verification run (every event, values) and pinned code |"
+# M3: the DTU and DEXSeq exon directions were checked on every non-NA row (counts recorded in gate_report.md).
+n_dtu=$(sed -n 's/^.*all \([0-9][0-9]*\) non-NA rows have sign(log2fold_YRI_GBR) = sign(YRI - GBR) of the fitted columns.*$/\1/p' "$FIX/gate_report.md")
+n_dex=$(sed -n 's/^.*DEXSeq exon usage values .*all \([0-9][0-9]*\) non-NA rows have sign(log2fold_YRI_GBR) = sign(YRI - GBR)\.$/\1/p' "$FIX/gate_report.md")
+[ -n "$n_dtu" ] && [ -n "$n_dex" ] || { echo "FAIL: gate_report.md must record the DTU and DEXSeq exon sign checks (all N non-NA rows)"; fail=1; }
+needr "| DEXSeq DTU | \`log2fold_{CONTROL}_{TREATMENT}\` | a larger share of the transcript in the control | verification run (header plus checked rows: all ${n_dtu:-N} non-NA rows) and pinned code |"
+needr "| DEXSeq exon usage | \`log2fold_{CONTROL}_{TREATMENT}\` | more usage of the exon bin in the control | verification run (header plus checked rows: all ${n_dex:-N} non-NA rows) and pinned code |"
+grep -qF "Merge pull request #291" "$FIX/gate_report.md" || { echo "FAIL: gate_report.md must record the evidence of upstream PR #291"; fail=1; }
+needr "until it was killed by hand (the retry then finished in 2 s); cause not verified."
+needr "- One contrast was run with the skill's settings; several contrasts only in the pipeline's own test profile."
+needr "- With FASTQ input, Salmon (index and quantification) always runs, also when neither DTU nor SUPPA2 is chosen."
+needr "With FASTQ input, Salmon (index build and quantification) runs even in an rMATS-only run"
+needr "(the gate ran paired-end samples only: \`unstranded\` and \`reverse\`, from FASTQ and from genome BAM); single-end FASTQ input was not run either."
+needr "\`star_index\` (reuse of an existing STAR index) was not run either."
+needr "): run it in one place only."
+forbidr "run it in both places"
+forbidr "no more than 4 h"
+# Minors: Step 6 stop, prefix, run directories, option keys, PR #291 wording, the runner test.
+needr "warns when read lengths differ, and stops by default when they differ between conditions |"
+forbidr "{prefix}"
+needr "\`{SHEET_PREFIX}\` is the file prefix chosen in Step 5"
+needr "(on the author's cluster account; these run directories are not distributed, and the recorded evidence is in \`tests/fixtures/\`)"
+needr "every option key that has a non-null pipeline default"
+forbidr "every option of every module"
+needr "which ported the rMATS subworkflow to the nf-core structure"
+needr "a test of the test runner itself on a fake tree (\`test_run_all.sh\`"
+# M8: no row may be added to the README tables: each has exactly the rows the skill defines.
+tbl_rows() { awk -v h="$1" 'index($0, h) == 1 { f = 1; getline; next } f && /^\|/ { n++; next } f { exit } END { print n + 0 }' "$README" 2>/dev/null; }
+want_sel=$(printf '%s\n' "$CFG" | grep -c "withName:")
+want_ho=$(printf '%s\n' "$HO" | grep -c '^  [^ ]\{1,\}  ')
+want_steps=$(grep -cE '^## Step [0-9]+ ' "$SKILL")
+for spec in "| Selector | CPUs | Memory | Time |:$want_sel" "| Path | Content |:$want_ho" "| Output | Column | Positive value means | Source |:5" \
+            "| File | Description |:7" "| Step | Topic | Asked or detected |:$want_steps"; do
+  h=${spec%:*}; w=${spec##*:}; got=$(tbl_rows "$h")
+  [ "$got" = "$w" ] || { echo "FAIL: README table '$h' has $got rows, expected $w"; fail=1; }
+done
+# --- end Task 8 review fixes
 [ $fail -eq 0 ] && echo "PASS" || exit 1
