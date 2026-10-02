@@ -10,14 +10,16 @@ trap 'case "$T" in /tmp/tmp.??????????) rm -rf -- "$T" ;; esac' EXIT
 case "$T" in /tmp/tmp.??????????) ;; *) echo "unexpected temp dir: $T"; exit 1 ;; esac
 R="$T/repo"; D="$R/nfcore-rnasplice-setup"; G=(git -C "$R" -c user.name=selftest -c user.email=selftest@invalid -c commit.gpgsign=false)
 mkdir -p "$D/tests/fixtures" "$T/tmpdir"
-cp "$HERE"/check_skill.sh "$HERE"/cut_block.sh "$HERE"/prove_red.sh "$HERE"/prove_mutations.sh "$HERE"/mutations.tsv "$D/tests/"
+# run_all_tests.sh: the checker checks that it names every script of tests/.
+cp "$HERE"/check_skill.sh "$HERE"/cut_block.sh "$HERE"/prove_red.sh "$HERE"/prove_mutations.sh "$HERE"/mutations.tsv "$HERE"/run_all_tests.sh "$D/tests/"
 # The runners named in mutations.tsv (prove_mutations.sh runs each on the unmutated skill first).
 cp "$HERE"/test_env.sh "$HERE"/test_strandedness.sh "$HERE"/test_bam_policy.sh "$HERE"/test_sample_names.sh "$HERE"/test_validate_sheets.sh "$HERE"/test_read_length.sh \
    "$HERE"/render_params.sh "$HERE"/test_render_params.sh "$HERE"/dry_run_submit.sh "$HERE"/dry_run_helpers.sh "$D/tests/"
 cp "$HERE"/fixtures/* "$D/tests/fixtures/"
 git init -q "$R" || exit 1
 "${G[@]}" add -A && "${G[@]}" commit -q -m c0 || exit 1
-cp "$SRC/nfcore-rnasplice-setup.md" "$D/"
+# The checker also checks the README next to the skill.
+cp "$SRC/nfcore-rnasplice-setup.md" "$SRC/README.md" "$D/"
 "${G[@]}" add -A && "${G[@]}" commit -q -m c1 || exit 1
 C0=$("${G[@]}" rev-parse HEAD~1); C1=$("${G[@]}" rev-parse HEAD)
 GV="$D/tests/fixtures/gate_values.tsv"; cp "$GV" "$T/gv.orig"; cp "$D/tests/check_skill.sh" "$T/check.orig"
@@ -43,6 +45,11 @@ for kv in "GATE_OUTCOME=X" "GATE_OUTCOME=STOP" "NEXTFLOW_MAX_EXCL=None" "NEXTFLO
   setgv "${kv%%=*}" "${kv#*=}"; expect 2 "gate value ${kv%%=*}=" check
 done
 cp "$T/gv.orig" "$GV"
+expect 0 "PASS" check
+# A new script in tests/ that run_all_tests.sh does not name fails the checker (a mutation row cannot add a file).
+printf '#!/bin/bash\necho selftest\n' > "$D/tests/test_selftest_unnamed.sh"
+expect 1 "FAIL: tests/test_selftest_unnamed.sh is not named in run_all_tests.sh" check
+rm -f "$D/tests/test_selftest_unnamed.sh"
 expect 0 "PASS" check
 
 # 2. prove_red.sh: a bad base is refused; a base without the skill passes; no added needs pass.

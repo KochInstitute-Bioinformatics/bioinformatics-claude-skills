@@ -1,7 +1,8 @@
 #!/bin/bash
 # Usage: prove_mutations.sh <skill.md>
-# Each row of mutations.tsv (id<TAB>runner<TAB>target<TAB>sed program<TAB>expected text) is applied to a copy of the skill and
-# its README (target: skill or readme); @KEY@ in the program and the text is replaced by the gate value KEY. A row passes when
+# Each row of mutations.tsv (id<TAB>runner<TAB>target<TAB>sed program<TAB>expected text) is applied to a copy of the skill, its
+# README and tests/run_all_tests.sh (target: skill, readme or runall; the runner sees the copy of run_all_tests.sh through
+# CHECK_RUN_ALL); @KEY@ in the program and the text is replaced by the gate value KEY. A row passes when
 # the sed program changed the target, the runner exits non-zero, and the runner printed the expected text.
 # An @KEY@ that is not a non-empty gate value fails its row (it would otherwise become an empty string).
 # Runners: check strand bam names validate readlen render submit helper (see runner() below).
@@ -11,7 +12,7 @@ SKILL=${1:?usage: prove_mutations.sh <skill.md>}
 case "$SKILL" in /*) ;; *) SKILL="$PWD/$SKILL" ;; esac
 HERE=$(cd "$(dirname "$0")" && pwd); README="$(dirname "$SKILL")/README.md"
 T=$(mktemp -d /tmp/tmp.XXXXXXXXXX) || exit 1
-trap 'rm -f "$T/nfcore-rnasplice-setup.md" "$T/README.md" "$T/out"; rmdir "$T"' EXIT
+trap 'rm -f "$T/nfcore-rnasplice-setup.md" "$T/README.md" "$T/run_all_tests.sh" "$T/out"; rmdir "$T"' EXIT
 case "$T" in /tmp/tmp.??????????) ;; *) echo "unexpected temp dir: $T"; exit 1 ;; esac
 gv() { awk -F'\t' -v k="$1" '$1 == k {print $2; exit}' "$HERE/fixtures/gate_values.tsv"; }
 # subst: replace every @KEY@ by its gate value; an unknown or empty KEY is an error (return 1, message on stderr).
@@ -30,15 +31,17 @@ while IFS=$'\t' read -r id run target prog expect; do
   case "$id" in ''|'#'*) continue ;; esac
   n=$((n + 1)); prog=$(subst "$prog") && expect=$(subst "$expect") || { echo "MUTATION $id: unknown gate key"; bad=1; continue; }
   cp "$SKILL" "$T/nfcore-rnasplice-setup.md"; cp "$README" "$T/README.md" 2>/dev/null || : > "$T/README.md"
+  cp "$HERE/run_all_tests.sh" "$T/run_all_tests.sh" 2>/dev/null || : > "$T/run_all_tests.sh"
   case "$target" in
     skill) f="$T/nfcore-rnasplice-setup.md"; orig=$SKILL ;;
     readme) f="$T/README.md"; orig=$README ;;
+    runall) f="$T/run_all_tests.sh"; orig="$HERE/run_all_tests.sh" ;;
     *) echo "MUTATION $id: bad target $target"; bad=1; continue ;;
   esac
   sed -i -e "$prog" "$f" || { echo "MUTATION $id: sed error"; bad=1; continue; }
   if cmp -s "$orig" "$f"; then echo "MUTATION $id: the sed program changed nothing"; bad=1; continue; fi
   s=$(runner "$run")
-  if bash "$HERE/$s" "$T/nfcore-rnasplice-setup.md" > "$T/out" 2>&1; then echo "MUTATION $id: $s passed (it must fail)"; bad=1; continue; fi
+  if CHECK_RUN_ALL="$T/run_all_tests.sh" bash "$HERE/$s" "$T/nfcore-rnasplice-setup.md" > "$T/out" 2>&1; then echo "MUTATION $id: $s passed (it must fail)"; bad=1; continue; fi
   grep -qF -- "$expect" "$T/out" || { echo "MUTATION $id: $s failed without printing '$expect':"; tail -20 "$T/out"; bad=1; }
 done < "$HERE/mutations.tsv"
 [ $bad -eq 0 ] && echo "MUTATIONS PASS ($n)" || exit 1

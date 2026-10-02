@@ -822,4 +822,124 @@ forbid "nextflow log"
 # M7: the bulk DTU module runs the same steps on other inputs.
 need "import and Salmon index differ"
 # --- end Task 7 review fixes
+
+# --- Task 8 (README, run_all_tests.sh), gate branch B, with the controller corrections that override the plan's Task 8 text
+# (no explicit pull, STAR-only index reuse, both paired-test defaults, corrected directions, resources, BAM verified from code,
+# unreleased pin, test runner with --full, validation on nf-core test data only, honest limitations).
+forbidr() { ! grep -qF -- "$1" "$README" 2>/dev/null || { echo "FAIL: README has forbidden text: $1"; fail=1; }; }
+needr "# \`/nfcore-rnasplice-setup\` — nf-core/rnasplice Differential Splicing Setup Skill"
+needr "cp nfcore-rnasplice-setup.md ~/.claude/commands/"
+needr "## Validation status"
+needr "nf-core/rnasplice $(gv PIPELINE_REVISION)"
+needr "Nextflow $(gv NEXTFLOW_TESTED)"
+needr "4 paired-end human chrX samples"
+needr "No real biological data"
+needr "## Known limitations"
+needr "## rnasplice or \`/bulk-rnaseq-pipeline\`"
+needr "sashimi_plot"
+needr "tests/run_all_tests.sh"
+needr "## Where the results are"
+# no plan variant marker may survive in the skill or the README
+VM='\[(A/C|A/B|B|C|BAM|NO-BAM|fixed|from_sheet|none|pseudo_only|star_salmon_only|star_salmon_both|treatment|control|sheet|sorted_by_name|unordered|all_samples|per_contrast)\]|\[C: '
+! grep -nE "$VM" "$SKILL" || { echo "FAIL: a plan variant marker is left in the skill (lines above)"; fail=1; }
+! grep -nE "$VM" "$README" 2>/dev/null || { echo "FAIL: a plan variant marker is left in the README (lines above)"; fail=1; }
+grep -qE '^Cluster acceptance \(nf-core test data\): (PENDING|DONE \([0-9]{4}-[0-9]{2}-[0-9]{2}\))$' "$README" 2>/dev/null \
+  || { echo "FAIL: README must have the line 'Cluster acceptance (nf-core test data): PENDING' or '... DONE (YYYY-MM-DD)'"; fail=1; }
+# Correction 9: every path line of the Step 12 hand-off note is a row of the README table, with the same description.
+while IFS=$'\t' read -r p d; do
+  needr "| \`$p\` | $d |"
+done < <(printf '%s\n' "$HO" | sed -n 's/^  \([^ ]\{1,\}\)  \(.*\)$/\1\t\2/p')
+# Correction 1: no explicit pull and no NXF_OFFLINE override; the compute nodes download the revision and the containers.
+forbidr "nextflow pull"
+forbidr "NXF_OFFLINE=false"
+needr "| Internet on compute nodes | The job downloads the pinned revision of the pipeline from GitHub and the containers"
+needr "| Nextflow $(gv NEXTFLOW_MIN) or newer | In a conda environment; verified with Nextflow $(gv NEXTFLOW_TESTED) (env \`$(gv CONDA_ENV_TESTED)\`)"
+# Correction 2: only the STAR index is reused; the Salmon index is always built by the pipeline.
+needr "An existing STAR index is reused only when compatible (\`versionGenome $(gv STAR_VERSION_GENOME)\`); the Salmon index is always built by the pipeline, never reused |"
+needr "a path this skill's verification did not exercise: unverified"
+needr "lacks the non-coding transcripts"
+forbidr "Salmon indexes reused"
+forbidr "compatible STAR/Salmon indexes reused"
+# Correction 3: both paired-test defaults (recorded pipeline configuration) and the skill's rule.
+needr "At this revision \`rmats_paired_stats\` defaults to \`$(cfg_default rmats_paired_stats)\` and SUPPA2's \`diffsplice_paired\` to \`$(cfg_default diffsplice_paired)\`. The skill writes both from the confirmed pairing"
+needr "which is asked only with exactly two conditions of equal size"
+needr "so that the i-th sample of one condition is paired with the i-th sample of the other"
+# Correction 4: directions, as Step 12 states them (gate_report.md, SUPPA2 corrected after the Task 7 review).
+forbidr "SUPPA2 matches rMATS"
+case "$(gv RMATS_B1_GROUP)" in
+  treatment) needr "| rMATS | \`IncLevelDifference\` = mean(\`IncLevel1\`) − mean(\`IncLevel2\`); \`b1\` = the treatment samples | more inclusion in the treatment |" ;;
+  control) needr "| rMATS | \`IncLevelDifference\` = mean(\`IncLevel1\`) − mean(\`IncLevel2\`); \`b1\` = the control samples | more inclusion in the control |" ;;
+esac
+needr "| SUPPA2 | dPSI = mean PSI of the control − mean PSI of the treatment, although the header reads \`local_{TREATMENT}-local_{CONTROL}_dPSI\` | more inclusion in the control |"
+needr "| DEXSeq DTU | \`log2fold_{CONTROL}_{TREATMENT}\` | a larger share of the transcript in the control |"
+needr "| DEXSeq exon usage | \`log2fold_{CONTROL}_{TREATMENT}\` | more usage of the exon bin in the control |"
+needr "| edgeR exon usage | \`logFC\` = treatment − control | more usage of the exon in the treatment | pinned code only, not checked numerically |"
+# Correction 5: resources; every selector row of the README table equals the Step 10 template; the head job equals Step 11.
+while IFS= read -r row; do
+  needr "$row"
+done < <(printf '%s\n' "$CFG" | awk -v q="'" '
+  /withName:/ { n = $0; sub(/^[^:]*:[ \t]*/, "", n); gsub(q, "", n); sub(/^\.\*:/, "", n); sub(/[ \t]*\{.*$/, "", n) }
+  n != "" && /^[ \t]*cpus[ \t]*=/ { c = $NF }
+  n != "" && /^[ \t]*memory[ \t]*=/ { m = $0; sub(/^[^=]*=[ \t]*/, "", m); gsub(q, "", m) }
+  n != "" && /^[ \t]*time[ \t]*=/ { t = $NF; gsub(q, "", t); print "| `" n "` | " c " | " m " | " t " |"; n = "" }')
+rl=$(printf '%s\n' "$CFG" | sed -n "s/^ *resourceLimits = \[ cpus: \([0-9]*\), memory: '\([0-9]* GB\)', time: '\([0-9]*\)h' \]$/\1 CPUs, \2 and \3 h/p")
+needr "caps every task at ${rl:-UNPARSED resourceLimits}"
+hj_n=$(printf '%s\n' "$SUB" | sed -n 's/^#SBATCH -n //p'); hj_m=$(printf '%s\n' "$SUB" | sed -n 's/^#SBATCH --mem=//p'); hj_t=$(printf '%s\n' "$SUB" | sed -n 's/^#SBATCH -t //p')
+needr "(\`-n $hj_n --mem=$hj_m -t $hj_t\`)"
+needr "(approved by the user)"
+needr "are NOT measured on a real genome"
+# Correction 6: genome-BAM input; single-end and forward verified from code only.
+needr "strandedness and read type are written to the BAM samplesheet (\`$(gv BAM_SHEET_HEADER)\`)"
+needr "single-end BAM input and \`forward\` strandedness were verified from the pipeline code only, not by a run"
+# Correction 7: unreleased pin, release 1.0.4, upstream rewrite, pin bump procedure.
+needr "is a development commit (\`$(gv VERSION_TAG)\`), not a release"
+needr "Release 1.0.4 does not launch under Nextflow $(gv NEXTFLOW_TESTED)"
+needr "upstream PR #291"
+needr "**Bumping the pin**"
+for fx in rnasplice_schema.json config_params.txt trace_process_names.txt output_tree.txt command_lines.txt verified_urls.txt gate_values.tsv; do
+  needr "\`$fx\`"
+done
+# Correction 8: the test runner (default and --full), the git requirement.
+needr "bash tests/run_all_tests.sh --full"
+needr "RNASPLICE_TEST_GIT_DIR"
+needr "The default run skips the proof-tool self-test"
+# Correction 9: what was verified: the gate date, every run directory of RUN_DIRS, nf-core test data only.
+needr "Verification gate ($(gv GATE_DATE))"
+needr "nf-core's tiny test dataset"
+needr "$(gv TEST_READ_LENGTH) bp reads"
+needr "\`$(gv RUN_DIRS | sed 's/{.*$//')\`"
+for rd in $(gv RUN_DIRS | sed -n 's/^.*{\(.*\)}$/\1/p' | tr ',' ' '); do
+  needr "\`$rd\`"
+done
+# Correction 10: honest limitations.
+needr "MISO (dropped: see Key design points)"
+needr "MISO itself is unmaintained Python 2 software"
+needr "there is no downstream report skill for the splicing tables yet (planned later)"
+needr "No Salmon-results or transcriptome-BAM input, and no iGenomes \`genome\` key"
+needr "Strandedness is asked, not detected"
+needr "they are first used in the cluster acceptance run"
+for k in ignore_tx_version miso_genes miso_read_len fig_height fig_width isoformswitchanalyzer_alpha isoformswitchanalyzer_dIF; do
+  needr "\`$k\`"
+done
+needr "edgeR exon usage uses $(gv EDGER_DEU_FUNCTION) in this revision"
+# Correction 8: run_all_tests.sh names every script of tests/ (TESTS, FULL_TESTS or NOT_TESTS), runs each under env -i, and
+# says when the proof-tool self-test was skipped. CHECK_RUN_ALL overrides the file (used by prove_mutations.sh, target runall).
+RUN_ALL=${CHECK_RUN_ALL:-$HERE/run_all_tests.sh}
+if [ -s "$RUN_ALL" ]; then
+  ra_tests=$(sed -n 's/^TESTS="\(.*\)"$/\1/p' "$RUN_ALL"); ra_full=$(sed -n 's/^FULL_TESTS="\(.*\)"$/\1/p' "$RUN_ALL"); ra_not=$(sed -n 's/^NOT_TESTS="\(.*\)"$/\1/p' "$RUN_ALL")
+  for f in "$HERE"/*.sh; do
+    b=${f##*/}
+    case " $ra_tests $ra_full $ra_not " in *" $b "*) ;; *) echo "FAIL: tests/$b is not named in run_all_tests.sh (TESTS, FULL_TESTS or NOT_TESTS)"; fail=1 ;; esac
+  done
+  [ "$ra_not" = "cut_block.sh test_env.sh render_params.sh prove_red.sh run_all_tests.sh" ] \
+    || { echo "FAIL: run_all_tests.sh NOT_TESTS must be exactly the helpers (cut_block.sh test_env.sh render_params.sh prove_red.sh run_all_tests.sh), found: $ra_not"; fail=1; }
+  [ "$ra_full" = "test_proof_tools.sh" ] || { echo "FAIL: run_all_tests.sh FULL_TESTS must be test_proof_tools.sh, found: $ra_full"; fail=1; }
+  grep -qF 'env -i HOME="${HOME:-/nonexistent}" PATH="$P" /bin/bash --noprofile --norc "$HERE/$1"' "$RUN_ALL" \
+    || { echo "FAIL: run_all_tests.sh must run every test under env -i with an explicit PATH"; fail=1; }
+  grep -qF 'test_proof_tools.sh was SKIPPED' "$RUN_ALL" || { echo "FAIL: run_all_tests.sh must say when the proof-tool self-test was skipped"; fail=1; }
+  grep -qF '1.8.5' "$RUN_ALL" || { echo "FAIL: run_all_tests.sh must check for git 1.8.5 or newer before the proof-tool self-test"; fail=1; }
+else
+  echo "FAIL: tests/run_all_tests.sh is missing or empty"; fail=1
+fi
+# --- end Task 8
 [ $fail -eq 0 ] && echo "PASS" || exit 1

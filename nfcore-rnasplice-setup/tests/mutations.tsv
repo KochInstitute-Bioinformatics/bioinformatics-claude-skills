@@ -394,3 +394,67 @@ T7f-nolog	check	skill	/^#SBATCH -o nf-core_rnasplice_{VERSION_TAG}\.%j\.log$/d	t
 T7f-logdir	check	skill	s/SLURM writes this log in the directory where `sbatch` was run/the log is in `{CWD}`/	missing required text: SLURM writes this log in the directory where `sbatch` was run
 T7f-nflog	check	skill	$s/$/\nAfter submitting, run `nextflow log` on the login node./	forbidden text present: nextflow log
 T7f-bulk	check	skill	s/ (import and Salmon index differ)//	missing required text: import and Salmon index differ
+T8-marker	check	readme	s/^Cluster acceptance (nf-core test data): /Cluster acceptance: /	README must have the line
+T8-data	check	readme	s/No real biological data/Real data/	README missing required text: No real biological data
+T8-acc-indent	check	readme	s/^Cluster acceptance (nf-core test data): PENDING$/  Cluster acceptance (nf-core test data): PENDING/	README must have the line
+T8-acc-trail	check	readme	s/^Cluster acceptance (nf-core test data): PENDING$/& (see Task 9)/	README must have the line
+T8-vm-readme	check	readme	$s/$/\nBAM input: [from_sheet] strandedness from the sheet./	a plan variant marker is left in the README
+T8-vm-readme-c	check	readme	$s/$/\n[C: | `create_nextflow_env.sh` | env |]/	a plan variant marker is left in the README
+T8-vm-skill	check	skill	$s/$/\nGenome BAM input: [fixed] accepted only for some libraries./	a plan variant marker is left in the skill
+T8-ho-desc	check	readme	s/| example: skipped exons, junction reads only |/| example: skipped exons |/	README missing required text: | `star/rmats/{CONTRAST}/SE.MATS.JC.txt` | example: skipped exons, junction reads only |
+T8-ho-row	check	readme	/^| `salmon\/suppa\/` |/d	README missing required text: | `salmon/suppa/` | SUPPA2 event and isoform PSI
+T8-ho-skill	check	skill	s/^  star\/edger\/  edgeR differential exon usage: /  star\/edger\/  edgeR exon usage: /	README missing required text: | `star/edger/` | edgeR exon usage: contrast_
+T8-pull	check	readme	$s/$/\nThe job runs `nextflow pull` first./	README has forbidden text: nextflow pull
+T8-offline	check	readme	$s/$/\nThe script sets NXF_OFFLINE=false for the pull./	README has forbidden text: NXF_OFFLINE=false
+T8-internet	check	readme	s/| Internet on compute nodes | The job downloads the pinned revision of the pipeline from GitHub and the containers/| Internet on compute nodes | The job pulls the pipeline (nextflow pull) and the containers/	README missing required text: | Internet on compute nodes | The job downloads the pinned revision
+T8-nfmin	check	readme	s/| Nextflow @NEXTFLOW_MIN@ or newer |/| Nextflow 24.04 or newer |/	README missing required text: | Nextflow @NEXTFLOW_MIN@ or newer |
+T8-salmon	check	readme	s/the Salmon index is always built by the pipeline, never reused |/compatible STAR\/Salmon indexes reused |/	README missing required text: An existing STAR index is reused only when compatible
+T8-salmon-old	check	readme	$s/$/\nStep 7: compatible STAR\/Salmon indexes reused./	README has forbidden text: compatible STAR/Salmon indexes reused
+T8-starver	check	readme	s/(`versionGenome @STAR_VERSION_GENOME@`); the Salmon/(`versionGenome 2.7.11b`); the Salmon/	README missing required text: An existing STAR index is reused only when compatible (`versionGenome @STAR_VERSION_GENOME@`)
+T8-paired-def	check	readme	s/`rmats_paired_stats` defaults to `false` and SUPPA2's `diffsplice_paired` to `true`/`rmats_paired_stats` and SUPPA2's `diffsplice_paired` default to `true`/	README missing required text: At this revision `rmats_paired_stats` defaults to `false`
+T8-paired-rule	check	readme	s/which is asked only with exactly two conditions of equal size/which is always asked/	README missing required text: which is asked only with exactly two conditions of equal size
+T8-rmats-sign	check	readme	s/`b1` = the treatment samples | more inclusion in the treatment |/`b1` = the treatment samples | more inclusion in the control |/	README missing required text: | rMATS | `IncLevelDifference`
+T8-suppa-sign	check	readme	s/| SUPPA2 | dPSI = mean PSI of the control − mean PSI of the treatment/| SUPPA2 | dPSI = mean PSI of the treatment − mean PSI of the control/	README missing required text: | SUPPA2 | dPSI = mean PSI of the control
+T8-suppa-dir	check	readme	s/_dPSI` | more inclusion in the control |/_dPSI` | more inclusion in the treatment |/	README missing required text: | SUPPA2 | dPSI = mean PSI of the control
+T8-suppa-match	check	readme	$s/$/\nSUPPA2 matches rMATS: positive = more inclusion in the treatment./	README has forbidden text: SUPPA2 matches rMATS
+T8-dtu-sign	check	readme	s/| a larger share of the transcript in the control |/| a larger share of the transcript in the treatment |/	README missing required text: | DEXSeq DTU |
+T8-dexon-sign	check	readme	s/| more usage of the exon bin in the control |/| more usage of the exon bin in the treatment |/	README missing required text: | DEXSeq exon usage |
+T8-edger-sign	check	readme	s/| `logFC` = treatment − control | more usage of the exon in the treatment |/| `logFC` = control − treatment | more usage of the exon in the control |/	README missing required text: | edgeR exon usage |
+T8-edger-code	check	readme	s/| pinned code only, not checked numerically |/| verification run (values) |/	README missing required text: | edgeR exon usage |
+T8-res-row	check	readme	s/^| `SALMON_QUANT\.\*` | 8 | 36 GB | 8h |$/| `SALMON_QUANT.*` | 6 | 36 GB | 8h |/	README missing required text: | `SALMON_QUANT.*` | 8 | 36 GB | 8h |
+T8-res-skill	check	skill	/withName: '\.\*:RMATS_POST'/,/}/s/time = '16h'/time = '24h'/	README missing required text: | `RMATS_POST` | 8 | 32 GB | 24h |
+T8-res-limits	check	readme	s/caps every task at 16 CPUs, 64 GB and 24 h/caps every task at 32 CPUs, 64 GB and 24 h/	README missing required text: caps every task at 16 CPUs, 64 GB and 24 h
+T8-headjob	check	readme	s/(`-n 2 --mem=8G -t 48:00:00`)/(`-n 2 --mem=8G -t 4:00:00`)/	README missing required text: (`-n 2 --mem=8G -t 48:00:00`)
+T8-headjob-skill	check	skill	s/^#SBATCH -t 48:00:00$/#SBATCH -t 72:00:00/	README missing required text: (`-n 2 --mem=8G -t 72:00:00`)
+T8-approved	check	readme	s/ (approved by the user)//	README missing required text: (approved by the user)
+T8-measured	check	readme	s/are NOT measured on a real genome/are measured/	README missing required text: are NOT measured on a real genome
+T8-bamsheet	check	readme	s/written to the BAM samplesheet (`@BAM_SHEET_HEADER@`)/written to the BAM samplesheet (`sample,condition,genome_bam`)/	README missing required text: strandedness and read type are written to the BAM samplesheet (`@BAM_SHEET_HEADER@`)
+T8-bamcode	check	readme	s/were verified from the pipeline code only, not by a run/were verified/	README missing required text: single-end BAM input and `forward` strandedness were verified from the pipeline code only
+T8-dev	check	readme	s/is a development commit (`@VERSION_TAG@`), not a release/is a release/	README missing required text: is a development commit (`@VERSION_TAG@`), not a release
+T8-104	check	readme	s/Release 1.0.4 does not launch under Nextflow/Release 1.0.4 may not launch under Nextflow/	README missing required text: Release 1.0.4 does not launch under Nextflow @NEXTFLOW_TESTED@
+T8-pr291	check	readme	s/upstream PR #291/an upstream pull request/	README missing required text: upstream PR #291
+T8-bump	check	readme	s/\*\*Bumping the pin\*\*/Updating/	README missing required text: **Bumping the pin**
+T8-bump-fx	check	readme	s/the task command lines (`command_lines.txt`: /the task command lines (/	README missing required text: `command_lines.txt`
+T8-full	check	readme	s/bash tests\/run_all_tests.sh --full/bash tests\/test_proof_tools.sh/g	README missing required text: bash tests/run_all_tests.sh --full
+T8-gitdir	check	readme	s/RNASPLICE_TEST_GIT_DIR/GIT_DIR/g	README missing required text: RNASPLICE_TEST_GIT_DIR
+T8-skipnote	check	readme	s/The default run skips the proof-tool self-test/The default run runs everything/	README missing required text: The default run skips the proof-tool self-test
+T8-gatedate	check	readme	s/Verification gate (@GATE_DATE@)/Verification gate/	README missing required text: Verification gate (@GATE_DATE@)
+T8-tiny	check	readme	s/nf-core's tiny test dataset/a test dataset/	README missing required text: nf-core's tiny test dataset
+T8-readlen	check	readme	s/@TEST_READ_LENGTH@ bp reads/100 bp reads/	README missing required text: @TEST_READ_LENGTH@ bp reads
+T8-rundir	check	readme	s/`2026-10-01_g5b_bam_nocols`/G5b/	README missing required text: `2026-10-01_g5b_bam_nocols`
+T8-runroot	check	readme	s/in `\/net\/bmc-lab3\/data\/bcc\/yannvrb\/rnasplice_gate\/results\/`/in the gate directory/	README missing required text: `/net/bmc-lab3/data/bcc/yannvrb/rnasplice_gate/results/`
+T8-miso	check	readme	s/MISO (dropped: see Key design points)/MISO/	README missing required text: MISO (dropped: see Key design points)
+T8-misowhy	check	readme	s/MISO itself is unmaintained Python 2 software/MISO is slow/	README missing required text: MISO itself is unmaintained Python 2 software
+T8-report	check	readme	s/there is no downstream report skill for the splicing tables yet (planned later)/see the report skill/	README missing required text: there is no downstream report skill
+T8-inputs	check	readme	s/No Salmon-results or transcriptome-BAM input, and no iGenomes `genome` key/All nf-core inputs/	README missing required text: No Salmon-results or transcriptome-BAM input
+T8-strand	check	readme	s/Strandedness is asked, not detected/Strandedness is detected/	README missing required text: Strandedness is asked, not detected
+T8-firstuse	check	readme	s/they are first used in the cluster acceptance run/they were tested/	README missing required text: they are first used in the cluster acceptance run
+T8-keys	check	readme	s/`fig_width`, //	README missing required text: `fig_width`
+T8-edgerfn	check	readme	s/edgeR exon usage uses @EDGER_DEU_FUNCTION@ in this revision/edgeR exon usage uses diffSpliceDGE/	README missing required text: edgeR exon usage uses @EDGER_DEU_FUNCTION@ in this revision
+T8-ra-missing	check	runall	s/ test_sample_names.sh / /	tests/test_sample_names.sh is not named in run_all_tests.sh
+T8-ra-full	check	runall	s/^FULL_TESTS="test_proof_tools.sh"$/FULL_TESTS=""/	FULL_TESTS must be test_proof_tools.sh
+T8-ra-hide	check	runall	s/^NOT_TESTS="\(.*\)"$/NOT_TESTS="\1 test_bam_policy.sh"/	NOT_TESTS must be exactly the helpers
+T8-ra-envi	check	runall	s/env -i HOME="\${HOME:-\/nonexistent}" PATH="\$P" \/bin\/bash --noprofile --norc "\$HERE\/\$1"/bash "$HERE\/$1"/	must run every test under env -i with an explicit PATH
+T8-ra-skip	check	runall	s/test_proof_tools.sh was SKIPPED/the proof tools did not run/	must say when the proof-tool self-test was skipped
+T8-ra-git	check	runall	s/1\.8\.5/1.8.3/g	must check for git 1.8.5 or newer
+T8-ra-empty	check	runall	1,$d	tests/run_all_tests.sh is missing or empty
