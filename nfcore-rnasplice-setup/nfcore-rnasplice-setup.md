@@ -502,3 +502,121 @@ Ask, in this order:
 - Salmon: `{SALMON_INDEX}` is always empty: the pipeline always builds its own Salmon index from the transcripts it extracts from the GTF. A Salmon index from /nfcore-rnaseq-setup is built from Ensembl cDNA and lacks the GTF's non-coding transcripts, which would get no quantification (DTU, SUPPA2) without any error; its index version cannot show this, so it is never reused.
 
 When the pipeline builds the STAR index of a human or mouse genome, STAR_GENOMEGENERATE needs about 32 GB of memory and an hour or more; the `nextflow.config` of Step 10 gives it 64 GB and 8 h. The pipeline also builds a decoy-aware Salmon index (SALMON_INDEX: 6 CPUs, 36 GB and 8 h from its process label); for a human or mouse genome this likely takes more than an hour (not measured by this skill's verification). Indexes built by the pipeline are not kept (`save_reference: false`), so a later run builds them again.
+
+---
+
+## Step 8 — Analyses (modules) and their settings
+
+In the pipeline's own configuration every analysis module is switched on, so a module that is not mentioned in the params file runs anyway (the one exception at this revision is LeafCutter, which is off by default). This skill therefore writes every switch explicitly.
+
+Ask (numbered; several can be chosen, for example "1, 3"): "Which analyses should run?"
+1. **rMATS** — differential splicing events (skipped exon, alternative 5' and 3' splice sites, mutually exclusive exons, retained intron) from junction reads, for each contrast. Recommended; usual cut-offs are FDR < 0.05 and |IncLevelDifference| > 0.1 (Akerberg et al. 2022 used these with rMATS).
+2. **SUPPA2** — PSI of local events (SE, SS, MX, RI, FL) and of isoforms from Salmon transcript abundance, with differential splicing between conditions. FASTQ input only.
+3. **DEXSeq exon usage** — differential usage of exon bins within a gene (exon counts relative to the gene).
+4. **edgeR exon usage** — the same question with edgeR on featureCounts exon counts (edgeR function in this revision: diffSpliceDGE glmQLFit glmQLFTest).
+5. **DEXSeq transcript usage (DTU)** — changes in the share of each transcript within its gene (DRIMSeq filter, DEXSeq, stageR), from Salmon. FASTQ input only. ⚠️ `/bulk-rnaseq-pipeline` has the same DTU workflow (DRIMSeq → DEXSeq → stageR) on the Salmon output of an nf-core/rnaseq run; if it ran (or will run) there for these samples, do not choose it here: it is the same analysis twice.
+
+Default (empty answer): 1 only. At least one analysis must be chosen. With BAM input, options 2 and 5 are not offered (they need Salmon quantification from reads), and `{RUN_SUPPA}` and `{RUN_DEXSEQ_DTU}` are `false`. Set `{RUN_RMATS}`, `{RUN_SUPPA}`, `{RUN_DEXSEQ_EXON}`, `{RUN_EDGER_EXON}` and `{RUN_DEXSEQ_DTU}` to `true` for the chosen analyses and `false` for all others. Show the choice as a table (analysis, on/off).
+
+**MISO is not used**: in this pipeline it only draws sashimi plots for a short gene list (by default three human Ensembl IDs), it is no genome-wide splicing test, and MISO itself is unmaintained Python 2 software. This skill always writes `sashimi_plot: false`. For sashimi plots, use rmats2sashimiplot or ggsashimi on the BAMs afterwards.
+
+**rMATS settings** (asked only when rMATS is chosen; otherwise the values below are written unchanged):
+- Novel splice sites (numbered): 1. Annotated splice sites only (default) · 2. Also detect unannotated splice sites. `{RMATS_NOVEL}` = `false` (answer 1, and whenever rMATS is not chosen) or `true` (answer 2). With 2, rMATS also uses `rmats_min_intron_len` (50) and `rmats_max_exon_len` (500), written at their defaults.
+- `rmats_splice_diff_cutoff` stays at 0.0001: it is the threshold of rMATS's null hypothesis (an inclusion difference larger than this counts as differential), not a reporting cut-off; filter the results by FDR and |IncLevelDifference| afterwards.
+- `rmats_read_len` = `{READ_LENGTH}` (Step 6); `rmats_paired_stats` = `{PAIRED_DESIGN}` (Step 5).
+
+**DTU filter values** (always written; used when DTU runs). The pipeline defaults (`min_samps_gene_expr` 4, `min_samps_feature_expr` 2, `min_samps_feature_prop` 2) fit one design size only. This skill uses the rule of Love et al. 2018 (as `/bulk-rnaseq-pipeline` does), with the counts kept in Step 5:
+- `{MIN_SAMPS_GENE_EXPR}` = the number of samples in the samplesheet (distinct names), because the filter is applied once to all samples.
+- `{MIN_SAMPS_FEATURE}` = the size of the smallest condition used in a contrast (for both `min_samps_feature_expr` and `min_samps_feature_prop`).
+- `min_gene_expr` 10, `min_feature_expr` 10, `min_feature_prop` 0.1, `dtu_txi` `dtuScaledTPM` (the pipeline defaults).
+
+Tell the user the six filter values and how the first three were derived (for example: "6 samples, smallest compared condition 3: `min_samps_gene_expr` 6, `min_samps_feature_expr` 3, `min_samps_feature_prop` 3").
+
+**SUPPA2, DEXSeq and edgeR settings:** pipeline defaults, written explicitly; SUPPA2's paired test `diffsplice_paired` = `{PAIRED_DESIGN}` (its pipeline default `true` assumes paired samples).
+
+**Salmon route.** `aligner: "star"` and `pseudo_aligner: "salmon"`: the STAR alignments feed rMATS, DEXSeq and edgeR; Salmon, run on the reads, feeds DTU and SUPPA2 once. (The pipeline's own default, `star_salmon`, quantifies with Salmon twice and runs DTU and SUPPA2 on both.) With FASTQ input, Salmon (index build and quantification) runs even when neither DTU nor SUPPA2 is chosen, because `pseudo_aligner` has no off value at this revision; the cost is mainly the Salmon index build (Step 7). With BAM input no Salmon step runs (verified for this revision).
+
+**Module and option keys (written to the params file).** Step 11 inserts this block, with its placeholders filled, into the params file:
+```yaml
+# alignment and quantification
+aligner: "star"
+pseudo_aligner: "salmon"
+# analysis modules: every switch explicit (pipeline defaults: on for all of them except leafcutter)
+rmats: {RUN_RMATS}
+dexseq_exon: {RUN_DEXSEQ_EXON}
+edger_exon: {RUN_EDGER_EXON}
+dexseq_dtu: {RUN_DEXSEQ_DTU}
+suppa: {RUN_SUPPA}
+sashimi_plot: false
+isoformswitchanalyzer: false
+leafcutter: false
+# rMATS
+rmats_read_len: {READ_LENGTH}
+rmats_paired_stats: {PAIRED_DESIGN}
+rmats_splice_diff_cutoff: 0.0001
+rmats_novel_splice_site: {RMATS_NOVEL}
+rmats_min_intron_len: 50
+rmats_max_exon_len: 500
+# DEXSeq exon usage
+alignment_quality: 10
+aggregation: true
+save_dexseq_annotation: false
+save_dexseq_plot: true
+n_dexseq_plot: 10
+# edgeR exon usage
+save_edger_plot: true
+n_edger_plot: 10
+# DEXSeq transcript usage (DRIMSeq filter, DEXSeq, stageR)
+dtu_txi: "dtuScaledTPM"
+min_samps_gene_expr: {MIN_SAMPS_GENE_EXPR}
+min_samps_feature_expr: {MIN_SAMPS_FEATURE}
+min_samps_feature_prop: {MIN_SAMPS_FEATURE}
+min_gene_expr: 10
+min_feature_expr: 10
+min_feature_prop: 0.1
+ignore_tx_version: true
+# SUPPA2
+suppa_per_local_event: true
+suppa_per_isoform: true
+generateevents_pool_genes: true
+generateevents_event_type: "SE SS MX RI FL"
+generateevents_boundary: "S"
+generateevents_threshold: 10
+generateevents_exon_length: 100
+psiperevent_total_filter: 0
+diffsplice_local_event: true
+diffsplice_isoform: true
+diffsplice_method: "empirical"
+diffsplice_area: 1000
+diffsplice_lower_bound: 0
+diffsplice_gene_correction: true
+diffsplice_paired: {PAIRED_DESIGN}
+diffsplice_alpha: 0.05
+diffsplice_median: false
+diffsplice_tpm_threshold: 0
+diffsplice_nan_threshold: 0
+clusterevents_local_event: true
+clusterevents_isoform: true
+clusterevents_dpsithreshold: 0.05
+clusterevents_eps: 0.05
+clusterevents_metric: "euclidean"
+clusterevents_min_pts: 20
+clusterevents_method: "DBSCAN"
+# MISO sashimi plots (off: sashimi_plot is false), options at the pipeline defaults
+miso_genes: "ENSG00000004961, ENSG00000005302, ENSG00000147403"
+miso_read_len: 75
+fig_height: 7
+fig_width: 7
+# IsoformSwitchAnalyzeR (off), options at the pipeline defaults
+isoformswitchanalyzer_alpha: 0.05
+isoformswitchanalyzer_dIF: 0.1
+```
+Every option of every module is in this block, also for modules that are switched off, at the pipeline default except the switches, `aligner`, `rmats_read_len`, `rmats_novel_splice_site`, the paired tests and the DTU sample counts above. Options without a default value (`gff_dexseq`, `suppa_tpm`, `clusterevents_sigthreshold`, `clusterevents_separation`, `miso_genes_file`) are not written: the pipeline then derives what it needs itself (for example the DEXSeq annotation from the GTF).
+
+Never written: `rmats_variable_read_len` and `local_events` (not parameters; rMATS always uses variable read lengths here, and the SUPPA2 event types are `generateevents_event_type`); `max_cpus`, `max_memory` and `max_time` (not parameters of this revision, and Nextflow 26.04 stops at launch on an undeclared key: resource caps go into `nextflow.config`, Step 10); `salmon_index` (Step 7: the pipeline always builds its own Salmon index); no iGenomes `genome` key (FASTA and GTF are always given). `isoformswitchanalyzer` and `leafcutter` are parameters of this development revision and are written `false` (this skill does not offer them).
+
+---
+
+## Step 9 — Trimming and QC
+
+Trimming (Trim Galore) and QC use the pipeline defaults; this skill does not change them and writes no trimming key. If the user wants other trimming settings, they edit the params file after Step 11 and should know that the run is then not the configuration this skill verified.

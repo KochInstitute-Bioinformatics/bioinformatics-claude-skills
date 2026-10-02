@@ -369,4 +369,117 @@ need "copies a given STAR index into its \`work/\` directory before aligning (ab
 need "did not exercise the reuse path (unverified)"
 # --- end Task 4 review fixes
 
+# --- Task 5 (Steps 8-9): module block
+need "## Step 8 — Analyses (modules) and their settings"
+need "every analysis module is switched on, so a module that is not mentioned in the params file runs anyway"
+need "Default (empty answer): 1 only"
+need "This skill always writes \`sashimi_plot: false\`"
+need "it is the same analysis twice"
+need "## Step 9 — Trimming and QC"
+anchor_once "**Module and option keys (written to the params file).**"
+MOD=$(bash "$CUT" "$SKILL" "**Module and option keys (written to the params file).**" 2>/dev/null)
+[ -n "$MOD" ] || { echo "FAIL: module block not found"; fail=1; }
+for sw in rmats dexseq_exon edger_exon dexseq_dtu suppa sashimi_plot; do
+  [ "$(printf '%s\n' "$MOD" | grep -cE "^$sw: (true|false|\{RUN_[A-Z_]+\})$")" -eq 1 ] \
+    && [ "$(printf '%s\n' "$MOD" | grep -c "^$sw:")" -eq 1 ] \
+    || { echo "FAIL: module switch $sw must be written exactly once with an explicit value"; fail=1; }
+done
+printf '%s\n' "$MOD" | grep -qx 'sashimi_plot: false' || { echo "FAIL: sashimi_plot must be written as false"; fail=1; }
+for kv in 'rmats: {RUN_RMATS}' 'dexseq_exon: {RUN_DEXSEQ_EXON}' 'edger_exon: {RUN_EDGER_EXON}' 'dexseq_dtu: {RUN_DEXSEQ_DTU}' 'suppa: {RUN_SUPPA}' \
+          'rmats_read_len: {READ_LENGTH}' 'rmats_paired_stats: {PAIRED_DESIGN}' 'diffsplice_paired: {PAIRED_DESIGN}' 'rmats_novel_splice_site: {RMATS_NOVEL}' \
+          'min_samps_gene_expr: {MIN_SAMPS_GENE_EXPR}' 'min_samps_feature_expr: {MIN_SAMPS_FEATURE}' 'min_samps_feature_prop: {MIN_SAMPS_FEATURE}' \
+          'min_gene_expr: 10' 'min_feature_expr: 10' 'min_feature_prop: 0.1' 'dtu_txi: "dtuScaledTPM"' 'rmats_splice_diff_cutoff: 0.0001'; do
+  printf '%s\n' "$MOD" | grep -qxF -- "$kv" || { echo "FAIL: module block must contain the line: $kv"; fail=1; }
+done
+case "$(gv SALMON_ROUTE)" in
+  pseudo_only) r1='aligner: "star"'; r2='pseudo_aligner: "salmon"' ;;
+  star_salmon_only) r1='aligner: "star_salmon"'; r2="$(gv PSEUDO_OFF_LINE)" ;;
+  star_salmon_both) r1='aligner: "star_salmon"'; r2='pseudo_aligner: "salmon"' ;;
+esac
+for kv in "$r1" "$r2"; do printf '%s\n' "$MOD" | grep -qxF -- "$kv" || { echo "FAIL: Salmon route $(gv SALMON_ROUTE) needs the line: $kv"; fail=1; }; done
+for sw in isoformswitchanalyzer leafcutter; do
+  if echo "$schema_names" | grep -qx "$sw"; then printf '%s\n' "$MOD" | grep -qx "$sw: false" || { echo "FAIL: $sw is a parameter of this revision and must be written as false"; fail=1; }; fi
+done
+case "$(gv DTU_FILTER_SCOPE)" in
+  all_samples) need "the number of samples in the samplesheet (distinct names), because the filter is applied once to all samples" ;;
+  per_contrast) need "the smallest number of samples in a contrast (treatment plus control), because the filter is applied per contrast" ;;
+esac
+# literal values equal the recorded pipeline config, except the deliberate deviations in DEV
+# (key pattern widened from [a-z_0-9] to [A-Za-z_0-9] so that isoformswitchanalyzer_dIF is compared too)
+DEV=" aligner pseudo_aligner rmats dexseq_exon edger_exon dexseq_dtu suppa sashimi_plot isoformswitchanalyzer leafcutter max_cpus max_memory max_time "
+defaults_equal() {
+  local line k v cv
+  while IFS= read -r line; do
+    k=${line%%:*}; v=${line#*: }
+    case "$v" in *"{"*) continue ;; esac
+    case "$DEV" in *" $k "*) continue ;; esac
+    v=${v#\"}; v=${v%\"}
+    cv=$(printf '%s\n' "$config_kv" | awk -F'\t' -v k="$k" '$1 == k {print $2; f = 1} END {exit !f}') \
+      || { echo "FAIL: key $k has no default in the recorded pipeline config"; fail=1; continue; }
+    [ "$v" = "$cv" ] || { echo "FAIL: key $k = $v differs from the pipeline config default $cv (a deliberate deviation needs a written reason and an entry in DEV)"; fail=1; }
+  done < <(printf '%s\n' "$1" | grep -E '^[A-Za-z_0-9]+: ')
+}
+defaults_equal "$MOD"
+# --- end Task 5
+
+# --- Task 5 additions (controller rulings b, c, e; fixtures of the pinned revision)
+# Ruling (e): every option key of every module group of the recorded schema is written exactly once (also for modules that are
+# switched off), except keys without a default (config value null), which are never written. No key appears twice.
+mod_keys=$(awk '/^        "[A-Za-z_0-9]+": \{/ { g = $1; gsub(/[":{ ]/, "", g) }
+  /^                "[A-Za-z_0-9]+": \{/ { k = $1; gsub(/[":{ ]/, "", k); print g "\t" k }' "$FIX/rnasplice_schema.json")
+for gk in "rmats_options	rmats_read_len" "suppa_options	clusterevents_method" "dexseq_dtu_options	min_samps_gene_expr" "miso	sashimi_plot"; do
+  printf '%s\n' "$mod_keys" | grep -qxF -- "$gk" || { echo "schema group extraction broken: $gk"; exit 2; }
+done
+MODULE_GROUPS=" rmats_options dexseq_deu_options edger_deu_options dexseq_dtu_options miso suppa_options isoformswitchanalyzer leafcutter_options "
+while IFS=$'\t' read -r g k; do
+  case "$MODULE_GROUPS" in *" $g "*) ;; *) continue ;; esac
+  cv=$(cfg_default "$k")
+  [ -n "$cv" ] || { echo "FAIL: module option $k ($g) has no value in the recorded pipeline config"; fail=1; continue; }
+  nk=$(printf '%s\n' "$MOD" | grep -c "^$k:")
+  if [ "$cv" = null ]; then
+    [ "$nk" -eq 0 ] || { echo "FAIL: module option $k has no default (null) and must not be written"; fail=1; }
+  else
+    [ "$nk" -eq 1 ] || { echo "FAIL: module option key missing from the module block or written more than once: $k"; fail=1; }
+  fi
+done < <(printf '%s\n' "$mod_keys")
+dups=$(printf '%s\n' "$MOD" | grep -oE '^[A-Za-z_0-9]+:' | sort | uniq -d | tr '\n' ' ')
+[ -z "$dups" ] || { echo "FAIL: key written more than once in the module block: $dups"; fail=1; }
+# Never written by this block: salmon_index (no Salmon index reuse), genome (no iGenomes), max_* (gate HAS_MAX_PARAMS=no)
+for k in salmon_index genome max_cpus max_memory max_time; do
+  ! printf '%s\n' "$MOD" | grep -q "^$k:" || { echo "FAIL: the module block must not write $k"; fail=1; }
+done
+[ "$(gv HAS_MAX_PARAMS)" = no ] && need "\`max_cpus\`, \`max_memory\` and \`max_time\` (not parameters of this revision"
+need "\`salmon_index\` (Step 7: the pipeline always builds its own Salmon index)"
+need "Options without a default value"
+# Leafcutter is the one module that is off in the pipeline's own config at this revision.
+[ "$(cfg_default leafcutter)" = false ] && need "the one exception at this revision is LeafCutter, which is off by default"
+forbid "the pipeline default is true for all of them"
+# Ruling (b): BAM input switches DTU and SUPPA2 off; no Salmon runs then (gate G5: zero Salmon tasks).
+need "With BAM input, options 2 and 5 are not offered (they need Salmon quantification from reads), and \`{RUN_SUPPA}\` and \`{RUN_DEXSEQ_DTU}\` are \`false\`."
+need "Set \`{RUN_RMATS}\`, \`{RUN_SUPPA}\`, \`{RUN_DEXSEQ_EXON}\`, \`{RUN_EDGER_EXON}\` and \`{RUN_DEXSEQ_DTU}\` to \`true\` for the chosen analyses and \`false\` for all others."
+need "At least one analysis must be chosen."
+need "With BAM input no Salmon step runs"
+# rMATS options
+need "1. Annotated splice sites only (default) · 2. Also detect unannotated splice sites"
+need "\`{RMATS_NOVEL}\` = \`false\` (answer 1, and whenever rMATS is not chosen) or \`true\` (answer 2)"
+need "it is the threshold of rMATS's null hypothesis"
+need "\`rmats_paired_stats\` = \`{PAIRED_DESIGN}\` (Step 5)"
+need "SUPPA2's paired test \`diffsplice_paired\` = \`{PAIRED_DESIGN}\`"
+[ "$(cfg_default diffsplice_paired)" = true ] && need "(its pipeline default \`true\` assumes paired samples)"
+# DTU filter values: the pipeline defaults are quoted from the recorded config (schema and config agree at this revision).
+need "The pipeline defaults (\`min_samps_gene_expr\` $(cfg_default min_samps_gene_expr), \`min_samps_feature_expr\` $(cfg_default min_samps_feature_expr), \`min_samps_feature_prop\` $(cfg_default min_samps_feature_prop))"
+forbid "schema (6/0/0)"
+need "\`{MIN_SAMPS_FEATURE}\` = the size of the smallest condition used in a contrast"
+need "Tell the user the six filter values"
+# Salmon route (pseudo_only at this gate): cost stated honestly (Task 4: the Salmon index build likely takes more than an hour)
+[ "$(gv SALMON_ROUTE)" = pseudo_only ] && need "the STAR alignments feed rMATS, DEXSeq and edgeR; Salmon, run on the reads, feeds DTU and SUPPA2 once"
+need "because \`pseudo_aligner\` has no off value at this revision"
+forbid "it is quick"
+# MISO dropped: why, in one sentence; never written keys of this revision
+need "**MISO is not used**: in this pipeline it only draws sashimi plots for a short gene list"
+[ "$(gv GATE_OUTCOME)" = B ] && need "\`isoformswitchanalyzer\` and \`leafcutter\` are parameters of this development revision and are written \`false\` (this skill does not offer them)"
+need "\`rmats_variable_read_len\` and \`local_events\`"
+need "writes no trimming key"
+need "(edgeR function in this revision: $(gv EDGER_DEU_FUNCTION))"
+# --- end Task 5 additions
 [ $fail -eq 0 ] && echo "PASS" || exit 1

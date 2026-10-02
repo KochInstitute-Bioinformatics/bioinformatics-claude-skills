@@ -218,3 +218,32 @@ T4f-sjdbinfo	check	skill	s/add a note (information only; it is not a reason to r
 T4f-miso	check	skill	s/No other read-length setting is used by the analyses this skill runs ([^)]*)\./rnasplice has no other read-length setting./	forbidden text present: rnasplice has no other read-length setting
 T4f-copy	check	skill	s/copies a given STAR index into its `work\/` directory before aligning/uses a given STAR index in place/	missing required text: copies a given STAR index into its `work/` directory before aligning
 T4f-unverified	check	skill	s/did not exercise the reuse path (unverified)/verified the reuse path/	missing required text: did not exercise the reuse path (unverified)
+T5-switch	check	skill	/^edger_exon: {RUN_EDGER_EXON}$/d	module switch edger_exon must be written exactly once
+T5-dup	check	skill	s/^suppa: {RUN_SUPPA}$/suppa: {RUN_SUPPA}\nsuppa: true/	module switch suppa must be written exactly once
+T5-sashimi	check	skill	s/^sashimi_plot: false$/sashimi_plot: true/	sashimi_plot must be written as false
+T5-readlen	check	skill	s/^rmats_read_len: {READ_LENGTH}$/rmats_read_len: 40/	module block must contain the line: rmats_read_len: {READ_LENGTH}
+T5-paired	check	skill	s/^rmats_paired_stats: {PAIRED_DESIGN}$/rmats_paired_stats: true/	module block must contain the line: rmats_paired_stats: {PAIRED_DESIGN}
+T5-suppa-paired	check	skill	s/^diffsplice_paired: {PAIRED_DESIGN}$/diffsplice_paired: true/	module block must contain the line: diffsplice_paired: {PAIRED_DESIGN}
+T5-dtu	check	skill	/^min_samps_feature_prop: /d	module block must contain the line: min_samps_feature_prop: {MIN_SAMPS_FEATURE}
+T5-default	check	skill	s/^n_dexseq_plot: 10$/n_dexseq_plot: 11/	key n_dexseq_plot = 11 differs from the pipeline config default
+T5-route	check	skill	/^pseudo_aligner: /d	Salmon route
+T5-aligner	check	skill	s/^aligner: "star"$/aligner: "star_salmon"/	Salmon route pseudo_only needs the line: aligner: "star"
+T5-anchor	check	skill	s/^\*\*Module and option keys (written to the params file)\.\*\*.*$/&\n**Module and option keys (written to the params file).**/	anchor must appear exactly once: **Module and option keys (written to the params file).**
+T5-isa	check	skill	s/^isoformswitchanalyzer: false$/isoformswitchanalyzer: true/	isoformswitchanalyzer is a parameter of this revision and must be written as false
+T5-leaf	check	skill	/^leafcutter: false$/d	leafcutter is a parameter of this revision and must be written as false
+T5-complete	check	skill	/^ignore_tx_version: true$/d	module option key missing from the module block or written more than once: ignore_tx_version
+T5-misoopt	check	skill	/^miso_read_len: 75$/d	module option key missing from the module block or written more than once: miso_read_len
+T5-null	check	skill	s/^ignore_tx_version: true$/ignore_tx_version: true\nsuppa_tpm: "tpm.txt"/	module option suppa_tpm has no default (null) and must not be written
+T5-dupkey	check	skill	s/^n_edger_plot: 10$/n_edger_plot: 10\nn_edger_plot: 10/	key written more than once in the module block: n_edger_plot
+T5-dIF	check	skill	s/^isoformswitchanalyzer_dIF: 0.1$/isoformswitchanalyzer_dIF: 0.2/	key isoformswitchanalyzer_dIF = 0.2 differs from the pipeline config default
+T5-salidx	check	skill	s/^pseudo_aligner: "salmon"$/pseudo_aligner: "salmon"\nsalmon_index: "idx"/	the module block must not write salmon_index
+T5-maxcpus	check	skill	s/^leafcutter: false$/leafcutter: false\nmax_cpus: 4/	the module block must not write max_cpus
+T5-genome	check	skill	s/^leafcutter: false$/leafcutter: false\ngenome: "GRCh38"/	the module block must not write genome
+T5-featprop	check	skill	s/^min_feature_prop: 0.1$/min_feature_prop: 0.05/	module block must contain the line: min_feature_prop: 0.1
+T5-novel	check	skill	s/^rmats_novel_splice_site: {RMATS_NOVEL}$/rmats_novel_splice_site: true/	module block must contain the line: rmats_novel_splice_site: {RMATS_NOVEL}
+T5-cutoff	check	skill	s/^rmats_splice_diff_cutoff: 0.0001$/rmats_splice_diff_cutoff: 0.1/	module block must contain the line: rmats_splice_diff_cutoff: 0.0001
+T5-genecount	check	skill	s/^min_samps_gene_expr: {MIN_SAMPS_GENE_EXPR}$/min_samps_gene_expr: 4/	module block must contain the line: min_samps_gene_expr: {MIN_SAMPS_GENE_EXPR}
+T5-quick	check	skill	s/^Trimming (Trim Galore)/Salmon always runs; it is quick. &/	forbidden text present: it is quick
+T5-669	check	skill	s/^Trimming (Trim Galore)/The schema (6\/0\/0) disagrees. &/	forbidden text present: schema (6/0/0)
+T5-alltrue	check	skill	s/^Trimming (Trim Galore)/The pipeline default is true for all of them; the pipeline default is true for all of them. &/	forbidden text present: the pipeline default is true for all of them
+T5-edgerfn	check	skill	s/(edgeR function in this revision: [^)]*)/(edgeR function in this revision: diffSplice)/	missing required text: (edgeR function in this revision: @EDGER_DEU_FUNCTION@)
