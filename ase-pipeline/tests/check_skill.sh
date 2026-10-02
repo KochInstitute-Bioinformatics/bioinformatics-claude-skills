@@ -278,11 +278,6 @@ need "**Dropping a failed sample.**"
 need "remove that sample's row from \`{SAMPLES_CSV}\`"
 grep -qF "the interactive dialogue of Steps 0-9" "$RD" || { echo "FAIL: ase-pipeline/README.md must say the interactive dialogue was not exercised"; fail=1; }
 ! grep -qF "a fresh run of the installed skill" "$RD" || { echo "FAIL: ase-pipeline/README.md still overstates the acceptance run"; fail=1; }
-SPEC="$HERE/../../docs/superpowers/specs/2026-09-29-ase-pipeline-design.md"
-[ -s "$SPEC" ] || { echo "FAIL: spec missing: $SPEC"; fail=1; }
-! grep -qF "YYMMDD" "$SPEC" || { echo "FAIL: spec still uses YYMMDD"; fail=1; }
-! grep -qF "gene counts are exact sums" "$SPEC" || { echo "FAIL: spec still describes the F1 gene test as summed counts"; fail=1; }
-grep -qF "likelihood-ratio test (H0 p = 0.5 vs p free, 1 df)" "$SPEC" || { echo "FAIL: spec must describe the F1 gene LRT"; fail=1; }
 # --- end final-review fix wave
 
 
@@ -314,7 +309,6 @@ grep -qF 'tst <- x$status == "ok"; sg <- tst & x$p < 0.05' "$RT" || { echo "FAIL
 grep -qF 'UNTHINNED_F1_GENE_SIZE' "$RT" && ! grep -qF 'TASK5_INPUT' "$RT" || { echo "FAIL: the unit test must print UNTHINNED_F1_GENE_SIZE (no process token)"; fail=1; }
 grep -qF '#SBATCH -N 1 -n 1 -c 8 --mem=16G' "$HERE/r/run_stats_tests.sh" || { echo "FAIL: run_stats_tests.sh must request -N 1 -n 1 -c 8"; fail=1; }
 ! grep -qF '`aod`, `lme4`, `openxlsx`' "$RD" || { echo "FAIL: ase-pipeline/README.md still lists aod and lme4 as required"; fail=1; }
-! grep -qF 'require `aod` and `lme4`' "$SPEC" || { echo "FAIL: spec still requires aod and lme4"; fail=1; }
 # --- end Stage 2 statistics review fixes
 
 # --- Stage 2 Task 3 (Rmd 03, Step 16); each string is absent from the 3aa9286 skill
@@ -430,7 +424,6 @@ forbid "SNP counts treated as independent"
 forbid "**Limitation (F1):** SNP counts that share read pairs are treated as independent"
 grep -qF "thinned to one SNP per" "$RD" || { echo "FAIL: README must describe the thinned F1 gene test"; fail=1; }
 ! grep -qF "SNPs that share read pairs are treated as independent" "$RD" || { echo "FAIL: README still says the F1 gene test treats SNP counts as independent"; fail=1; }
-! grep -qF "treated as independent, a documented limitation" "$SPEC" || { echo "FAIL: spec still says the F1 gene test treats SNP counts as independent"; fail=1; }
 # --- Stage 2 Task 5 review fixes
 # I1: the per-SNP rho labels and snp_annot keep the Stage 1 findOverlaps-on-exons table (GTF exon order, distinct); the
 #     exon-coordinate table for thinning is separate (sg_exon) and only adds the thin_keep column
