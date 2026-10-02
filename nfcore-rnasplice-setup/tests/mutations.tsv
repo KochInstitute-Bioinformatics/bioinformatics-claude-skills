@@ -247,3 +247,19 @@ T5-quick	check	skill	s/^Trimming (Trim Galore)/Salmon always runs; it is quick. 
 T5-669	check	skill	s/^Trimming (Trim Galore)/The schema (6\/0\/0) disagrees. &/	forbidden text present: schema (6/0/0)
 T5-alltrue	check	skill	s/^Trimming (Trim Galore)/The pipeline default is true for all of them; the pipeline default is true for all of them. &/	forbidden text present: the pipeline default is true for all of them
 T5-edgerfn	check	skill	s/(edgeR function in this revision: [^)]*)/(edgeR function in this revision: diffSplice)/	missing required text: (edgeR function in this revision: @EDGER_DEU_FUNCTION@)
+T5f-dtuadvice	check	skill	s/do not choose it here: it is the same analysis twice/choose it here as well: it is the same analysis twice/	missing required text: if it ran (or will run) there for these samples, do not choose it here
+T5f-genelabel	check	skill	s/^- `{MIN_SAMPS_GENE_EXPR}` = the number of samples/- `{MIN_SAMPS_FEATURE}` = the number of samples/	missing required text: - `{MIN_SAMPS_GENE_EXPR}` = the number of samples in the samplesheet
+T5f-rmatsask	check	skill	s/(asked only when rMATS is chosen; otherwise the values below are written unchanged)/(always asked)/	missing required text: **rMATS settings** (asked only when rMATS is chosen; otherwise the values below are written unchanged)
+T5f-suppafq	check	skill	s/with differential splicing between conditions\. FASTQ input only\./with differential splicing between conditions./	missing required text: with differential splicing between conditions. FASTQ input only.
+T5f-dtufq	check	skill	s/DEXSeq, stageR), from Salmon\. FASTQ input only\./DEXSeq, stageR), from Salmon./	missing required text: DEXSeq, stageR), from Salmon. FASTQ input only.
+T5f-qbool	check	skill	s/^aggregation: true$/aggregation: "true"/	key aggregation = "true" is not a yaml boolean
+T5f-qint	check	skill	s/^n_dexseq_plot: 10$/n_dexseq_plot: "10"/	key n_dexseq_plot = "10" is not a yaml integer
+T5f-qnum	check	skill	s/^isoformswitchanalyzer_alpha: 0.05$/isoformswitchanalyzer_alpha: "0.05"/	key isoformswitchanalyzer_alpha = "0.05" is not a yaml number
+T5f-bare	check	skill	s/^clusterevents_metric: "euclidean"$/clusterevents_metric: euclidean/	key clusterevents_metric = euclidean is not a yaml string
+T5f-baremiso	check	skill	s/^miso_genes: "\(.*\)"$/miso_genes: \1/	is not a yaml string
+T5f-akerberg	check	skill	s/As an example (not a standard), Akerberg et al\. 2022 kept/The required cut-offs, as Akerberg et al. 2022 kept/	missing required text: As an example (not a standard), Akerberg et al. 2022 kept rMATS events
+T5f-methods	check	skill	s/ (from the parts of the paper.s Methods that were accessible)//	missing required text: (from the parts of the paper's Methods that were accessible)
+T5f-usual	check	skill	s/^Trimming (Trim Galore)/The usual cut-offs are FDR < 0.05. &/	forbidden text present: usual cut-offs are
+T5f-dtuwhen	check	skill	s/Choose DTU here only to get it in the same pipeline run from the FASTQ files; //	missing required text: Choose DTU here only to get it in the same pipeline run from the FASTQ files
+T5f-event	check	skill	s/for event-level splicing questions (which exons or events change) use rMATS, and //	missing required text: for event-level splicing questions (which exons or events change) use rMATS
+T5f-bulk	check	skill	s/, and differential expression plus DTU on the Salmon output of an existing nf-core\/rnaseq run stays in `\/bulk-rnaseq-pipeline`\./. /	missing required text: differential expression plus DTU on the Salmon output of an existing nf-core/rnaseq run stays in `/bulk-rnaseq-pipeline`

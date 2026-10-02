@@ -482,4 +482,48 @@ need "\`rmats_variable_read_len\` and \`local_events\`"
 need "writes no trimming key"
 need "(edgeR function in this revision: $(gv EDGER_DEU_FUNCTION))"
 # --- end Task 5 additions
+
+# --- Task 5 review fixes
+# I1: Step 8 decisions pinned with the left-hand side of each rule
+need "if it ran (or will run) there for these samples, do not choose it here"
+case "$(gv DTU_FILTER_SCOPE)" in
+  all_samples) need "- \`{MIN_SAMPS_GENE_EXPR}\` = the number of samples in the samplesheet" ;;
+  per_contrast) need "- \`{MIN_SAMPS_GENE_EXPR}\` = the smallest number of samples in a contrast" ;;
+esac
+need "**rMATS settings** (asked only when rMATS is chosen; otherwise the values below are written unchanged)"
+need "with differential splicing between conditions. FASTQ input only."
+need "DEXSeq, stageR), from Salmon. FASTQ input only."
+# I2: yaml types of the literal lines of the module block, from the recorded schema (types at the parameter depth, 16 spaces;
+# the group named isoformswitchanalyzer is itself an object one level up). string => "quoted"; integer, number, boolean => bare.
+schema_types=$(awk '/^                "[A-Za-z_0-9]+": \{/ { k = $1; gsub(/[":{ ]/, "", k); next }
+  k != "" && /^                    "type": "/ { t = $2; gsub(/[",]/, "", t); print k "\t" t; k = "" }' "$FIX/rnasplice_schema.json")
+for kt in "aggregation	boolean" "n_dexseq_plot	integer" "min_feature_prop	number" "dtu_txi	string" "isoformswitchanalyzer	boolean"; do
+  printf '%s\n' "$schema_types" | grep -qxF -- "$kt" || { echo "schema type extraction broken: $kt"; exit 2; }
+done
+# types_ok "<block text>": every key line with a literal value (no placeholder) has the yaml form of its schema type.
+types_ok() {
+  local line k v t
+  while IFS= read -r line; do
+    k=${line%%:*}; v=${line#*: }
+    case "$v" in *"{"*) continue ;; esac
+    t=$(printf '%s\n' "$schema_types" | awk -F'\t' -v k="$k" '$1 == k {print $2; exit}')
+    case "$t" in
+      string)  [[ $v =~ ^\"[^\"]*\"$ ]] ;;
+      integer) [[ $v =~ ^-?[0-9]+$ ]] ;;
+      number)  [[ $v =~ ^-?[0-9]+(\.[0-9]+)?([eE]-?[0-9]+)?$ ]] ;;
+      boolean) [[ $v =~ ^(true|false)$ ]] ;;
+      *) false ;;
+    esac || { echo "FAIL: key $k = $v is not a yaml ${t:-?} (string: double-quoted; integer, number, boolean: bare)"; fail=1; }
+  done < <(printf '%s\n' "$1" | grep -E '^[A-Za-z_0-9]+: ')
+}
+types_ok "$MOD"
+# M1: the Akerberg et al. 2022 cut-offs are an example of one study, not a standard
+need "As an example (not a standard), Akerberg et al. 2022 kept rMATS events with 0 uncalled replicates, FDR < 0.1 (zebrafish) or FDR < 0.05 (human), and |IncLevelDifference| > 0.1"
+need "(from the parts of the paper's Methods that were accessible)"
+forbid "usual cut-offs are"
+# M2: when to choose DTU here
+need "Choose DTU here only to get it in the same pipeline run from the FASTQ files"
+need "for event-level splicing questions (which exons or events change) use rMATS"
+need "differential expression plus DTU on the Salmon output of an existing nf-core/rnaseq run stays in \`/bulk-rnaseq-pipeline\`"
+# --- end Task 5 review fixes
 [ $fail -eq 0 ] && echo "PASS" || exit 1
