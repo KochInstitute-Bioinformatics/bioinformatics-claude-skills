@@ -11,7 +11,7 @@ HERE=$(cd "$(dirname "$0")" && pwd); FIX="$HERE/fixtures"; CUT="$HERE/cut_block.
 README="$(dirname "$SKILL")/README.md"
 fail=0
 [ -s "$SKILL" ] || { echo "FAIL: skill file missing or empty: $SKILL"; exit 1; }
-for f in rnasplice_schema.json config_params.txt gate_values.tsv trace_process_names.txt output_tree.txt test_samplesheet.csv test_contrastsheet.csv schema_input.json schema_input_genome_bam.json; do
+for f in rnasplice_schema.json config_params.txt gate_values.tsv trace_process_names.txt trace_resources_g3.tsv output_tree.txt test_samplesheet.csv test_contrastsheet.csv schema_input.json schema_input_genome_bam.json; do
   [ -s "$FIX/$f" ] || { echo "cannot read fixture $FIX/$f"; exit 2; }
 done
 GATE_KEYS="GATE_OUTCOME PIPELINE_REVISION VERSION_TAG NEXTFLOW_TESTED NEXTFLOW_MIN NEXTFLOW_MAX_EXCL CONDA_ENV_TESTED HAS_MAX_PARAMS HAS_RESOURCE_LIMITS SALMON_ROUTE PSEUDO_OFF_LINE BAM_SHEET_HEADER BAM_RMATS_LIBTYPE BAM_RMATS_READTYPE BAM_DEXSEQ_STRAND BAM_FC_STRAND BAM_NEEDS_BAI RMATS_BAMLIST_ORDER RMATS_B1_GROUP STAR_VERSION_GENOME SALMON_INDEX_VERSION DTU_FILTER_SCOPE TEST_CONTRAST TEST_READ_LENGTH EDGER_DEU_FUNCTION"
@@ -526,4 +526,149 @@ need "Choose DTU here only to get it in the same pipeline run from the FASTQ fil
 need "for event-level splicing questions (which exons or events change) use rMATS"
 need "differential expression plus DTU on the Salmon output of an existing nf-core/rnaseq run stays in \`/bulk-rnaseq-pipeline\`"
 # --- end Task 5 review fixes
+
+# --- Task 6 (Steps 10-11), gate branch B, with the controller rulings that override the plan's Task 6 text:
+# no `nextflow pull` (a pinned revision downloads on first use), no salmon_index, Salmon selector '.*:SALMON_QUANT.*',
+# no max_* params (HAS_MAX_PARAMS=no) but process.resourceLimits (HAS_RESOURCE_LIMITS=yes), no Nextflow environment helper.
+need "## Step 10 — MultiQC title, output directory, nextflow.config"
+need "## Step 11 — Params file, submission script and helper script"
+for a in "**nextflow.config template.**" "**Params file template.**" "**Submission script.**" "**Genome download helper.**"; do anchor_once "$a"; done
+need "1. \`results/{TODAY_ISO}_{WD_NAME}\` (default)"
+need "If it exists, do not overwrite it"
+need "\`multiqc_title\` is always double-quoted"
+need "\`{PARAMS_YAML}\` = \`{SHEET_PREFIX}_params.yaml\`"
+need "delete the \`star_index\` line when \`{STAR_INDEX}\` is empty"
+need "sbatch --dependency=afterok:"
+need "#SBATCH -t 48:00:00"
+need "The head job only coordinates the pipeline (2 CPUs, 8 GB) but must outlive every task, hence 48 h."
+need "the job reads the version from \`nextflow -version\` on the compute node"
+need "The script fetches nothing itself: Nextflow downloads the pinned revision from GitHub the first time a job runs it"
+need "Never run these scripts on the login node"
+SUB=$(bash "$CUT" "$SKILL" "**Submission script.**" 2>/dev/null)
+[ -n "$SUB" ] || { echo "FAIL: submission script block not found"; fail=1; }
+launch=$(printf '%s\n' "$SUB" | awk '/^nextflow run nf-core\/rnasplice/ {p = 1} p {l = l $0; if ($0 !~ /\\[ \t]*$/) {print l; exit}}' | sed 's/\\[ \t]*/ /g')
+[ "$launch" = "nextflow run nf-core/rnasplice -r {VERSION} -c nextflow.config -profile slurm,singularity -params-file {PARAMS_YAML}" ] \
+  || { echo "FAIL: launch line must be exactly 'nextflow run nf-core/rnasplice -r {VERSION} -c nextflow.config -profile slurm,singularity -params-file {PARAMS_YAML}', found: '$launch'"; fail=1; }
+[ "$(printf '%s\n' "$SUB" | grep -v '^[ \t]*#' | grep -v '^[ \t]*$' | tail -n 1)" = "$launch" ] \
+  || { echo "FAIL: the launch line must be the last command of the submission script (its exit status is the job's)"; fail=1; }
+all_nf=$(grep -cE '(^|[;&|(] *)(NXF_[A-Z_]+=[^ ]+ +)?nextflow +(run|pull|-version)' "$SKILL")
+sub_nf=$(printf '%s\n' "$SUB" | grep -cE '(^|[;&|(] *)(NXF_[A-Z_]+=[^ ]+ +)?nextflow +(run|pull|-version)')
+{ [ "$all_nf" -eq "$sub_nf" ] && [ "$sub_nf" -ge 2 ]; } \
+  || { echo "FAIL: nextflow is invoked outside the submission script ($all_nf lines in the skill, $sub_nf in the script); the wizard must never run nextflow on the login node"; fail=1; }
+while IFS= read -r l; do
+  case "$l" in *"||"*) ;; *) echo "FAIL: unguarded module load (a failed module add silently breaks later ones): $l"; fail=1 ;; esac
+done < <(grep -E '^[ \t]*module (add|load) ' "$SKILL")
+# The module and conda lines that worked in every gate job, in that order, each guarded.
+for l in 'module add miniconda3/v4 || { echo "ERROR: cannot load module miniconda3/v4" >&2; exit 1; }' \
+         'source /home/software/conda/miniconda3/bin/condainit || { echo "ERROR: cannot source condainit" >&2; exit 1; }' \
+         'conda activate {CONDA_ENV} || { echo "ERROR: cannot activate conda environment {CONDA_ENV}" >&2; exit 1; }' \
+         'module add singularity/3.10.4 || { echo "ERROR: cannot load module singularity/3.10.4" >&2; exit 1; }' \
+         'export NXF_SINGULARITY_CACHEDIR="${NXF_SINGULARITY_CACHEDIR:-$HOME/.singularity/cache}"'; do
+  printf '%s\n' "$SUB" | grep -qxF -- "$l" || { echo "FAIL: the submission script must contain the line: $l"; fail=1; }
+done
+# Ruling (a): no pull, and NXF_OFFLINE is neither set nor unset by the script (it may be set in ~/.bashrc; the first download works anyway).
+! printf '%s\n' "$SUB" | grep -q 'NXF_OFFLINE' || { echo "FAIL: the submission script must not set or unset NXF_OFFLINE"; fail=1; }
+printf '%s\n' "$SUB" | grep -qxF "NF_MIN=\"$(gv NEXTFLOW_MIN)\"; NF_MAX_EXCL=\"$(gv NEXTFLOW_MAX_EXCL)\"" || { echo "FAIL: the submission script must carry the verified Nextflow range"; fail=1; }
+printf '%s\n' "$SUB" | grep -qxF '#SBATCH -n 2' && printf '%s\n' "$SUB" | grep -qxF '#SBATCH --mem=8G' && printf '%s\n' "$SUB" | grep -qxF '#SBATCH -p bcc' \
+  || { echo "FAIL: the head job must request -n 2, --mem=8G and -p bcc (approved by the user)"; fail=1; }
+# nextflow.config: the selector table (plan decision 17) checked against every process name of the verification runs and the
+# resources the reference run (G3) requested. A row gives '.*:ROW' when every real process name ending in a component that starts
+# with ROW ends in exactly ROW, and '.*:ROW.*' otherwise (Salmon: SALMON_QUANT_SALMON, SALMON_QUANT_STAR); rows that match no
+# process are left out. Nextflow matches withName regexes against the whole process name (grep -Ex here).
+CFG=$(bash "$CUT" "$SKILL" "**nextflow.config template.**" 2>/dev/null)
+[ -n "$CFG" ] || { echo "FAIL: nextflow.config template not found"; fail=1; }
+SEL_ROWS="STAR_GENOMEGENERATE	8	64 GB	8h
+STAR_ALIGN	8	48 GB	8h
+RMATS_PREP	4	16 GB	8h
+RMATS_POST	8	32 GB	16h
+DEXSEQ_COUNT	2	8 GB	8h
+DEXSEQ_EXON	8	32 GB	8h
+DEXSEQ_DTU	8	32 GB	8h
+SALMON_QUANT	8	16 GB	4h"
+NAMES="$FIX/trace_process_names.txt"; OBS="$FIX/trace_resources_g3.tsv"
+[ "$(wc -l < "$NAMES")" -eq 75 ] || { echo "fixture trace_process_names.txt must hold the 75 process names of the verification runs"; exit 2; }
+# selector<TAB>cpus<TAB>memory<TAB>time for each withName block of the template
+sels=$(printf '%s\n' "$CFG" | awk -v q="'" '
+  $0 ~ "^[ \t]*withName: " q "[^" q "]+" q " [{]$" { s = $0; sub("^[ \t]*withName: " q, "", s); sub(q " [{]$", "", s); c = m = t = ""; next }
+  s != "" && /^[ \t]*cpus = [0-9]+$/ { c = $3 }
+  s != "" && $0 ~ "^[ \t]*memory = " q { m = $0; sub("^[ \t]*memory = " q, "", m); sub(q "$", "", m) }
+  s != "" && $0 ~ "^[ \t]*time = " q { t = $0; sub("^[ \t]*time = " q, "", t); sub(q "$", "", t) }
+  s != "" && /^[ \t]*[}]$/ { print s "\t" c "\t" m "\t" t; s = "" }')
+[ -n "$sels" ] || { echo "FAIL: no withName selectors in the nextflow.config template"; fail=1; }
+while IFS=$'\t' read -r re c m t; do
+  [ -n "$re" ] || continue
+  row=$(printf '%s\n' "$re" | sed -nE 's/^\.\*:([A-Z0-9_]+)(\.\*)?$/\1/p')
+  rres=$(printf '%s\n' "$SEL_ROWS" | awk -F'\t' -v r="$row" '$1 == r {print $2 "\t" $3 "\t" $4}')
+  [ -n "$row" ] && [ -n "$rres" ] || { echo "FAIL: selector $re is not a row of the selector table ('.*:ROW' or '.*:ROW.*')"; fail=1; continue; }
+  [ "$c	$m	$t" = "$rres" ] || { echo "FAIL: selector $re requests $c CPUs, $m, $t; the selector table says $(echo "$rres" | tr '\t' ' ')"; fail=1; }
+  hits=$(grep -Ex -- "$re" "$NAMES")
+  [ -n "$hits" ] || { echo "FAIL: selector $re matches no process of the verification runs ($(wc -l < "$NAMES") names)"; fail=1; continue; }
+  while IFS= read -r h; do
+    case "${h##*:}" in "$row"*) ;; *) echo "FAIL: selector $re also matches $h, which is not a $row process"; fail=1 ;; esac
+  done <<< "$hits"
+done <<< "$sels"
+while IFS=$'\t' read -r row c m t; do
+  comps=$(sed 's/.*://' "$NAMES" | grep -E "^$row" | sort -u)
+  [ -n "$comps" ] || continue
+  if [ "$(printf '%s\n' "$comps" | grep -vx -- "$row")" = "" ]; then want=".*:$row"; else want=".*:$row.*"; fi
+  printf '%s\n' "$sels" | cut -f1 | grep -qxF -- "$want" \
+    || { echo "FAIL: process $(echo $comps | tr ' ' ',') ran in the verification runs but has no withName selector '$want'"; fail=1; }
+  while IFS= read -r n; do
+    k=0; while IFS= read -r re; do [ -n "$re" ] && printf '%s\n' "$n" | grep -Eqx -- "$re" && k=$((k + 1)); done < <(printf '%s\n' "$sels" | cut -f1)
+    [ "$k" -eq 1 ] || { echo "FAIL: process $n is matched by $k withName selectors (expected exactly 1)"; fail=1; }
+  done < <(awk -F: -v r="$row" 'index($NF, r) == 1' "$NAMES")
+done <<< "$SEL_ROWS"
+# Observed resources of the reference run G3 (its config held the '.*:ROW' selectors verbatim; '.*:SALMON_QUANT' matched nothing
+# there, so a '.*:ROW.*' selector is new and its process ran on the pipeline's label): every '.*:ROW' selector must have been applied
+# as written, and no process ran on the bare process default of the template (that would be a process with no label and no selector).
+dflt=$(printf '%s\n' "$CFG" | awk -v q="'" '/withName/ {exit} /^[ \t]*cpus = [0-9]+$/ {c = $3} $0 ~ "^[ \t]*memory = " q {m = $3 " " $4} $0 ~ "^[ \t]*time = " q {t = $3} END {gsub(q, "", m); gsub(q, "", t); print c "\t" m "\t" t}')
+[ "$dflt" = "2	8 GB	4h" ] || { echo "FAIL: the process default of the slurm profile must be 2 CPUs, 8 GB, 4h (found: $(echo "$dflt" | tr '\t' ' '))"; fail=1; }
+[ "$(awk -F'\t' 'NF == 4' "$OBS" | wc -l)" -ge 40 ] || { echo "fixture trace_resources_g3.tsv broken (process<TAB>cpus<TAB>memory<TAB>time)"; exit 2; }
+while IFS=$'\t' read -r n oc om ot; do
+  while IFS=$'\t' read -r re c m t; do
+    case "$re" in *'.*'*'.*') continue ;; esac
+    printf '%s\n' "$n" | grep -Eqx -- "$re" || continue
+    [ "$oc	$om	$ot" = "$c	$m	$t" ] || { echo "FAIL: selector $re: the verification run requested $oc CPUs, $om, $ot for $n, the template says $c, $m, $t"; fail=1; }
+  done <<< "$sels"
+  [ "$oc	$om	$ot" != "$dflt" ] || { echo "FAIL: process $n ran on the bare process default ($oc CPUs, $om, $ot): no label and no selector"; fail=1; }
+done < "$OBS"
+[ "$(printf '%s\n' "$CFG" | grep -cE '^(timeline|report|trace|dag) +\{ enabled = true; overwrite = true;')" -eq 4 ] || { echo "FAIL: overwrite = true must be set for timeline, report, trace and dag"; fail=1; }
+printf '%s\n' "$CFG" | grep -qF "fields = 'task_id,hash,native_id,name,status,exit,cpus,memory,time,realtime,peak_rss'" || { echo "FAIL: trace fields must include the requested cpus, memory and time"; fail=1; }
+if [ "$(gv HAS_RESOURCE_LIMITS)" = yes ]; then
+  printf '%s\n' "$CFG" | grep -qxF "    resourceLimits = [ cpus: 16, memory: '64 GB', time: '24h' ]" || { echo "FAIL: the resourceLimits line is missing"; fail=1; }
+else
+  ! printf '%s\n' "$CFG" | grep -q resourceLimits || { echo "FAIL: resourceLimits is not known to Nextflow $(gv NEXTFLOW_TESTED)"; fail=1; }
+fi
+[ "$(gv HAS_RESOURCE_LIMITS)" = yes ] && need "\`resourceLimits\` caps every task at 16 CPUs, 64 GB and 24 h"
+need "\`SALMON_QUANT_SALMON\` and \`SALMON_QUANT_STAR\`"
+need "below the 36 GB and 8 h that the pipeline's own process label requests"
+# Params file template
+BASEY=$(bash "$CUT" "$SKILL" "**Params file template.**" 2>/dev/null)
+[ "$(printf '%s\n' "$BASEY" | grep -cx '{MODULE_PARAMS}')" -eq 1 ] || { echo "FAIL: the params template must contain one {MODULE_PARAMS} line"; fail=1; }
+for kv in 'input: "{SAMPLESHEET_CSV}"' 'contrasts: "{CONTRASTS_CSV}"' 'source: "{SOURCE}"' 'outdir: "{OUTDIR}"' 'multiqc_title: "{MULTIQC_TITLE}"' \
+          'fasta: "{FASTA_PATH}"' 'gtf: "{GTF_PATH}"' 'star_index: "{STAR_INDEX}"' 'gencode: false' 'save_reference: false'; do
+  printf '%s\n' "$BASEY" | grep -qxF -- "$kv" || { echo "FAIL: the params template must contain the line: $kv"; fail=1; }
+done
+! printf '%s\n' "$BASEY" | grep -q '^salmon_index:' || { echo "FAIL: the params template must not write salmon_index (the pipeline always builds its own Salmon index)"; fail=1; }
+if [ "$(gv HAS_MAX_PARAMS)" = no ]; then
+  ! printf '%s\n' "$BASEY" | grep -qE '^max_(cpus|memory|time):' || { echo "FAIL: max_cpus/max_memory/max_time are not parameters of this revision (Nextflow stops at launch)"; fail=1; }
+fi
+dups=$(printf '%s\n%s\n' "$BASEY" "$MOD" | grep -oE '^[A-Za-z_0-9]+:' | sort | uniq -d | tr '\n' ' ')
+[ -z "$dups" ] || { echo "FAIL: key written in both the params template and the module block: $dups"; fail=1; }
+defaults_equal "$BASEY"
+types_ok "$BASEY"
+# Genome download helper: compute node, resumable wget, gunzip -c, set -u, absolute directory, no rm.
+HELP=$(bash "$CUT" "$SKILL" "**Genome download helper.**" 2>/dev/null)
+[ -n "$HELP" ] || { echo "FAIL: genome download helper not found"; fail=1; }
+printf '%s\n' "$HELP" | grep -qx 'set -u' || { echo "FAIL: the download helper must run with set -u"; fail=1; }
+printf '%s\n' "$HELP" | grep -q '^#SBATCH -p bcc$' || { echo "FAIL: the download helper must be an sbatch script for partition bcc"; fail=1; }
+! printf '%s\n' "$HELP" | grep -qE '(^|[^A-Za-z_])rm( |$)' || { echo "FAIL: the download helper must not remove files (no rm with variable paths)"; fail=1; }
+! printf '%s\n' "$HELP" | grep -q 'gunzip -k' || { echo "FAIL: gunzip -k is not available on CentOS 7; use gunzip -c file.gz > file"; fail=1; }
+printf '%s\n' "$HELP" | grep -q 'wget -c ' && printf '%s\n' "$HELP" | grep -q 'gunzip -c ' || { echo "FAIL: the download helper must use wget -c and gunzip -c"; fail=1; }
+need "write \`download_genome_{REF_TAG}.sh\`"
+# Step 7 promises the helper (Step 11 now also names the file, so the Task 4 need alone no longer pins the Step 7 sentence).
+need "and generate \`download_genome_{REF_TAG}.sh\` (Step 11)"
+forbid "create_nextflow_env_"
+forbid "build_star_index"
+# --- end Task 6
 [ $fail -eq 0 ] && echo "PASS" || exit 1

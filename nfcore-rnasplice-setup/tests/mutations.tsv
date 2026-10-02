@@ -156,7 +156,7 @@ T4-askbase	check	skill	s/ Ask the base directory only for option 1\./ Ask the ba
 T4-folder	check	skill	s/^  {genome_base}\/{organism}\/{assembly}_ens{version}\/$/  {genome_base}\/{assembly}\//	missing required text: {genome_base}/{organism}/{assembly}_ens{version}/
 T4-custom	check	skill	s/`{REF_TAG}` = `custom_{WD_NAME}`/`{REF_TAG}` = `custom`/	missing required text: custom_{WD_NAME}
 T4-gencode	check	skill	s/`gencode: false` is written either way/write `gencode: true` for GENCODE/	missing required text: `gencode: false` is written either way
-T4-dlscript	check	skill	s/and generate `download_genome_{REF_TAG}.sh` (Step 11)/and download the files now/	missing required text: download_genome_{REF_TAG}.sh
+T4-dlscript	check	skill	s/and generate `download_genome_{REF_TAG}.sh` (Step 11)/and download the files now/	missing required text: and generate `download_genome_{REF_TAG}.sh` (Step 11)
 T4-memory	check	skill	s/ Never type a URL from memory\.//	missing required text: Never type a URL from memory
 T4-head200	check	skill	s/check each with a HEAD request (`curl -sI URL | head -1` must show 200), //	missing required text: check each with a HEAD request
 T4-anchor	check	skill	s/^\*\*Read-length detection\.\*\* FASTQ input\./&\n**Read-length detection.** again./	anchor must appear exactly once: **Read-length detection.**
@@ -263,3 +263,55 @@ T5f-usual	check	skill	s/^Trimming (Trim Galore)/The usual cut-offs are FDR < 0.0
 T5f-dtuwhen	check	skill	s/Choose DTU here only to get it in the same pipeline run from the FASTQ files; //	missing required text: Choose DTU here only to get it in the same pipeline run from the FASTQ files
 T5f-event	check	skill	s/for event-level splicing questions (which exons or events change) use rMATS, and //	missing required text: for event-level splicing questions (which exons or events change) use rMATS
 T5f-bulk	check	skill	s/, and differential expression plus DTU on the Salmon output of an existing nf-core\/rnaseq run stays in `\/bulk-rnaseq-pipeline`\./. /	missing required text: differential expression plus DTU on the Salmon output of an existing nf-core/rnaseq run stays in `/bulk-rnaseq-pipeline`
+T6-flag	check	skill	s/-params-file {PARAMS_YAML}$/-params-file {PARAMS_YAML} --rmats_read_len 101/	launch line must be exactly
+T6-cont	check	skill	s/^nextflow run nf-core\/rnasplice -r {VERSION} -c nextflow.config -profile slurm,singularity -params-file {PARAMS_YAML}$/nextflow run nf-core\/rnasplice -r {VERSION} -c nextflow.config -profile slurm,singularity \\\n  --input x.csv -params-file {PARAMS_YAML}/	launch line must be exactly
+T6-last	check	skill	s/^\(nextflow run nf-core\/rnasplice .*{PARAMS_YAML}\)$/\1\necho "pipeline finished"/	the launch line must be the last command of the submission script
+T6-lmod	check	skill	s/^module add singularity\/3.10.4 || .*$/module add singularity\/3.10.4/	unguarded module load
+T6-confine	check	skill	$s/$/\nnextflow -version/	nextflow is invoked outside the submission script
+T6-pull	check	skill	s/^\(nextflow run nf-core\/rnasplice \)/nextflow pull nf-core\/rnasplice -r {VERSION}\n\1/	forbidden text present: nextflow pull
+T6-pullrun	submit	skill	s/^\(nextflow run nf-core\/rnasplice \)/nextflow pull nf-core\/rnasplice -r {VERSION}\n\1/	nextflow pull was called
+T6-offline	check	skill	s/^NF_MIN="/export NXF_OFFLINE=false\nNF_MIN="/	the submission script must not set or unset NXF_OFFLINE
+T6-condaline	check	skill	s/^conda activate {CONDA_ENV} || .*$/conda activate {CONDA_ENV} || exit 1/	the submission script must contain the line: conda activate {CONDA_ENV}
+T6-head	check	skill	s/^#SBATCH -t 48:00:00$/#SBATCH -t 4:00:00/	missing required text: #SBATCH -t 48:00:00
+T6-headn	check	skill	s/^#SBATCH -n 2$/#SBATCH -n 32/	the head job must request -n 2, --mem=8G and -p bcc
+T6-dep	check	skill	s/sbatch --dependency=afterok:\$jid /sbatch /	missing required text: sbatch --dependency=afterok:
+T6-sel	check	skill	s/withName: '\.\*:RMATS_POST' {/withName: '.*:RMATS_POSTX' {/	has no withName selector '.*:RMATS_POST'
+T6-selmiss	check	skill	/withName: '\.\*:STAR_ALIGN' {/,+4d	process STAR_ALIGN ran in the verification runs but has no withName selector '.*:STAR_ALIGN'
+T6-salsel	check	skill	s/withName: '\.\*:SALMON_QUANT\.\*' {/withName: '.*:SALMON_QUANT' {/	selector .*:SALMON_QUANT matches no process of the verification runs (75 names)
+T6-salmem	check	skill	/withName: '\.\*:SALMON_QUANT\.\*' {/,+2s/memory = '16 GB'/memory = '36 GB'/	selector .*:SALMON_QUANT.* requests 8 CPUs, 36 GB, 4h; the selector table says
+T6-double	check	skill	s/withName: '\.\*:DEXSEQ_DTU' {/withName: '.*:DEXSEQ_DTU.*' {\n            }\n            withName: '.*:DEXSEQ_DTU' {/	is matched by 2 withName selectors
+T6-res	check	skill	/withName: '\.\*:STAR_ALIGN' {/,+2s/memory = '48 GB'/memory = '32 GB'/	the verification run requested 8 CPUs, 48 GB, 8h for NFCORE_RNASPLICE:RNASPLICE:ALIGN_STAR:STAR_ALIGN
+T6-default	check	skill	s/^            memory = '8 GB'$/            memory = '6 GB'/	the process default of the slurm profile must be 2 CPUs, 8 GB, 4h
+T6-over	check	skill	s/^trace    { enabled = true; overwrite = true;/trace    { enabled = true;/	overwrite = true must be set
+T6-fields	check	skill	s/,cpus,memory,time,realtime/,realtime/	trace fields must include the requested cpus, memory and time
+T6-rl	check	skill	/^    resourceLimits = /d	the resourceLimits line is missing
+T6-maxp	check	skill	s/^save_reference: false$/save_reference: false\nmax_cpus: 16/	max_cpus/max_memory/max_time are not parameters of this revision
+T6-salidx	check	skill	s/^star_index: "{STAR_INDEX}"$/star_index: "{STAR_INDEX}"\nsalmon_index: "{STAR_INDEX}"/	the params template must not write salmon_index
+T6-qtitle	check	skill	s/^multiqc_title: "{MULTIQC_TITLE}"$/multiqc_title: {MULTIQC_TITLE}/	the params template must contain the line: multiqc_title: "{MULTIQC_TITLE}"
+T6-qtitler	render	skill	s/^multiqc_title: "{MULTIQC_TITLE}"$/multiqc_title: {MULTIQC_TITLE}/	FAIL: case full: line missing: multiqc_title: "261001"
+T6-gencode	check	skill	s/^gencode: false$/gencode: "false"/	key gencode = "false" is not a yaml boolean
+T6-dupkey	check	skill	s/^{MODULE_PARAMS}$/aligner: "star"\n{MODULE_PARAMS}/	key written in both the params template and the module block: aligner
+T6-render	render	skill	s/^{MODULE_PARAMS}$/{MODULE_PARAMS}\noutdir: "x"/	FAIL: case full
+T6-nfmin	submit	skill	s/^NF_MIN="[^"]*"/NF_MIN="0.0.0"/	FAIL: case below_min
+T6-nfmax	submit	skill	s/NF_MAX_EXCL="none"/NF_MAX_EXCL="27.0.0"/	FAIL: case far_future
+T6-vercheck	submit	skill	/^ver_ge "\$NF_VER" "\$NF_MIN" ||/d	FAIL: case below_min
+T6-noread	submit	skill	/^\[ -n "\$NF_VER" \] ||/d	FAIL: case no_version
+T6-nfmissing	submit	skill	/^command -v nextflow /d	FAIL: case nextflow_missing
+T6-guard	submit	skill	s/^conda activate {CONDA_ENV} || .*$/conda activate {CONDA_ENV}/	FAIL: case conda_fails
+T6-order	submit	skill	/^module add singularity\/3.10.4 ||/d; s/^module add miniconda3\/v4 || /module add singularity\/3.10.4 || { exit 1; }\n&/	FAIL: case order
+T6-cachedir	submit	skill	/^export NXF_SINGULARITY_CACHEDIR=/d	FAIL: case cache_default
+T6-cachekeep	submit	skill	s/^export NXF_SINGULARITY_CACHEDIR=.*$/export NXF_SINGULARITY_CACHEDIR="$HOME\/.singularity\/cache"/	FAIL: case cache_preset
+T6-gzipt	helper	skill	/gzip -t "\$out.gz.part" 2>\/dev\/null ||/d	FAIL: case truncated_download
+T6-abs	helper	skill	/case "\$GENOME_DIR" in/d	FAIL: case relative_dir
+T6-wgetc	helper	skill	s/wget -c -O/wget -O/	wget was called without -c
+T6-gunzipc	helper	skill	s/gunzip -c "\$out.gz" > "\$out.part"/gunzip "$out.gz" > "$out.part"/	gunzip was called without -c
+T6-gunzipk	check	skill	s/gunzip -c "\$out.gz"/gunzip -k "$out.gz"/	gunzip -k is not available on CentOS 7
+T6-setu	check	skill	/^set -u$/d	the download helper must run with set -u
+T6-rm	check	skill	s/^  echo "ready: \$out"$/  rm -f "$out.gz"\n&/	the download helper must not remove files
+T6-nfrange	check	skill	s/NF_MIN="@NEXTFLOW_MIN@"/NF_MIN="1.0.0"/	the submission script must carry the verified Nextflow range
+T6-modline	check	skill	/^{MODULE_PARAMS}$/d	the params template must contain one {MODULE_PARAMS} line
+T6-saveref	check	skill	s/^save_reference: false$/save_reference: true/	key save_reference = true differs from the pipeline config default
+T6-hpart	check	skill	s/^#SBATCH -p bcc$/#SBATCH -p normal/	the download helper must be an sbatch script for partition bcc
+T6-wgetcs	check	skill	s/wget -c -O/wget -O/	the download helper must use wget -c and gunzip -c
+T6-envhelper	check	skill	$s/$/\nWrite create_nextflow_env_26.04.6.sh first./	forbidden text present: create_nextflow_env_
+T6-indexhelper	check	skill	$s/$/\nWrite build_star_index_x.sh first./	forbidden text present: build_star_index
