@@ -43,6 +43,8 @@ gate_ok RMATS_BAMLIST_ORDER '^(sheet|sorted_by_name|unordered)$'
 gate_ok RMATS_B1_GROUP '^(treatment|control)$'
 gate_ok STAR_VERSION_GENOME '^[0-9]+\.[0-9]+\.[0-9]+[a-z]?$'
 gate_ok SALMON_INDEX_VERSION '^[0-9]+$'
+# SALMON_INDEX_VERSION stays a validated fixture value, but the skill no longer uses it: by controller ruling (Task 4 review I3)
+# the skill never reuses a Salmon index (the pipeline always builds its own from the GTF-derived transcripts).
 gate_ok DTU_FILTER_SCOPE '^(all_samples|per_contrast)$'
 gate_ok TEST_CONTRAST '^[A-Za-z][A-Za-z0-9_]*_vs_[A-Za-z][A-Za-z0-9_]*$'
 gate_ok TEST_READ_LENGTH '^[1-9][0-9]*$'
@@ -291,28 +293,80 @@ need "Ask the base directory only for option 1"
 need "custom_{WD_NAME}"
 need "versionGenome"
 need "$(gv STAR_VERSION_GENOME)"
-need "\"indexVersion\""
-# The bare gate value (a single digit) would match any text; pin the sentence that compares against it.
-need "only when its \`\"indexVersion\"\` is \`$(gv SALMON_INDEX_VERSION)\`"
 need "1. Reuse (default) · 2. Let the pipeline build its own"
 need "\`gencode: false\` is written either way"
 need "download_genome_{REF_TAG}.sh"
 need "Never type a URL from memory"
-# Controller rulings: one Bash call per procedure; index reuse only for the gate's index formats; sjdbOverhang warning;
+# Controller rulings: one Bash call per procedure; STAR index reuse only for the gate's index format; sjdbOverhang note;
 # the wizard never builds an index; pipeline-built indexes are not kept.
-need "In one Bash call, define this function, run it on the first FASTQ of up to 5 different samples"
 need "only when \`versionGenome\` is \`$(gv STAR_VERSION_GENOME)\`"
 need "grep -E '^(versionGenome|sjdbOverhang)[[:space:]]' \"{STAR_DIR}/genomeParameters.txt\""
-need "grep '\"indexVersion\"' \"{SALMON_DIR}/versionInfo.json\""
 [ "$(cfg_default rmats_read_len)" = 40 ] || { echo "config extraction broken: rmats_read_len default is not 40"; exit 2; }
 [ "$(cfg_default save_reference)" = false ] || { echo "config extraction broken: save_reference default is not false"; exit 2; }
 need "If its \`sjdbOverhang\` is not 100"
 need "the junction database is tuned for reads of"
 need "The wizard never builds an index itself"
 need "\`save_reference: false\`"
-need "(BAM input uses no index: skip this part; \`{STAR_INDEX}\` and \`{SALMON_INDEX}\` are empty.)"
-need "for option 1; FASTQ input only"
 need "check each with a HEAD request"
 # --- end Task 4
+
+# --- Task 4 review fixes
+# I1: the Ensembl release lookup (current_README is a 404); fallback listing
+need "the latest Ensembl release from \`https://ftp.ensembl.org/pub/current/README\`"
+need "its line \"Ensembl Release N Databases.\" gives N"
+need "use the highest \`release-N/\` directory in the listing of \`https://ftp.ensembl.org/pub/\`"
+forbid "pub/current_README"
+# I2: Step 6-7 decisions
+need "with any other value, say why and let the pipeline build it"
+need "Any \`MISSING\` line: there is no usable index; let the pipeline build it."
+need "\`{READ_LENGTH}\` = the number on the \`READ_LENGTH\` line (the most common R1 length over all samples), never a single sample's value"
+need "Every row of the samplesheet is checked: its R1 file and, for paired-end data, its R2 file"
+forbid "up to 5 different samples"
+need "Version: the highest existing \`{assembly}_ens{N}\` directory unless the user asks otherwise"
+need "FASTA \`Mus_musculus.GRCm39.dna.primary_assembly.fa\`"
+need "Human: GRCh38, FASTA \`Homo_sapiens.GRCh38.dna.primary_assembly.fa\`"
+forbid "GRCh37"
+need "Check that both files exist (\`test -s\`)."
+need "for f in SA SAindex Genome sjdbList.out.tab genomeParameters.txt; do"
+need "(\`{STAR_DIR}\` = \`{GENOME_DIR}/index/star\` for option 1"
+need "whether a STAR index built from exactly this FASTA and GTF exists: 1. No (default) · 2. Yes"
+need "STAR_GENOMEGENERATE needs about 32 GB of memory and an hour or more"
+need "must show 200), show them to the user,"
+need "2. (numbered): 1. Ensembl release in the standard folder (default) · 2. Custom reference"
+need "gene IDs with a version suffix (\`ENSG00000000003.15\`) indicate GENCODE, without one Ensembl"
+need "BAM input: ask \"What is the read length of the sequencing (for example 100 or 150)?\""
+forbid_re 'Ensembl release [0-9]+' "a hard-coded Ensembl release (read it at run time)"
+# I3 (controller ruling): no Salmon index reuse
+need "\`{SALMON_INDEX}\` is always empty: the pipeline always builds its own Salmon index from the transcripts it extracts from the GTF"
+need "lacks the GTF's non-coding transcripts, which would get no quantification (DTU, SUPPA2) without any error"
+need "(BAM input uses no index: skip this part; \`{STAR_INDEX}\` is empty.)"
+need "FASTA, GTF and the STAR index are reused"
+need "not used: rnasplice always builds its own Salmon index"
+need "SALMON_INDEX: 6 CPUs, 36 GB and 8 h"
+need "likely takes more than an hour (not measured by this skill's verification)"
+forbid "{SALMON_DIR}"
+forbid "versionInfo.json"
+forbid "indexVersion"
+forbid "STAR or Salmon"
+# I4: every sample, grouped by condition, confounding with condition
+anchor_once "**Running the read-length check.**"
+need "read_length_report() {"
+need "In one Bash call, paste this block, then the lines under **Running the read-length check** below."
+need "After the block above, in the same Bash call"
+need "Show the \`SAMPLE\` lines as a table grouped by condition"
+need "- \`CONFOUNDED\`: warn loudly"
+need "their PSI values, and the differences between the conditions, are biased, and rMATS gives no error"
+need "1. Stop here (default) — trim all reads to one common length"
+need "- \`WARNING\`: warn loudly"
+# Minors: errors, informational sjdbOverhang note, miso_read_len, STAR reuse copy cost
+need "never continue with an empty or guessed read length"
+need "A \`gzip: stdout: Broken pipe\` message is harmless"
+need "add a note (information only; it is not a reason to rebuild"
+forbid "warn before asking"
+need "\`miso_read_len\` belongs to the MISO sashimi plots"
+forbid "rnasplice has no other read-length setting"
+need "copies a given STAR index into its \`work/\` directory before aligning (about 30 GB for a human index, for every run)"
+need "did not exercise the reuse path (unverified)"
+# --- end Task 4 review fixes
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1

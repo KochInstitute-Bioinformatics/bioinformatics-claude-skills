@@ -385,19 +385,86 @@ Keep for Step 8: the number of distinct samples, the size of the smallest compar
 
 ## Step 6 — Read length for rMATS
 
-rMATS needs the read length (`rmats_read_len`), and the pipeline default of 40 is wrong for almost all data, so the length is always set here and written to the params file. rnasplice has no other read-length setting (the STAR index it builds does not depend on it), and rMATS always runs with `--variable-read-length` and `--allow-clipping`, so trimmed reads of other lengths are still counted.
+rMATS needs the read length (`rmats_read_len`), and the pipeline default of 40 is wrong for almost all data, so the length is always set here and written to the params file. rMATS uses this value to normalise the inclusion and skipping counts of every sample, and always runs with `--variable-read-length` and `--allow-clipping`, so trimmed reads of other lengths are still counted. No other read-length setting is used by the analyses this skill runs (the STAR index the pipeline builds does not depend on it; `miso_read_len` belongs to the MISO sashimi plots, which this skill leaves off).
 
-**Read-length detection.** FASTQ input. In one Bash call, define this function, run it on the first FASTQ of up to 5 different samples, one file at a time (report per sample), then on all of them together (the value used). It reads only the first 1000 reads of each file, which is light work on the login node.
+**Read-length detection.** FASTQ input. Every row of the samplesheet is checked: its R1 file and, for paired-end data, its R2 file, each with its first 1000 reads only (`head -n 4000`), which is light work on the login node. In one Bash call, paste this block, then the lines under **Running the read-length check** below.
 ```bash
+read_lengths_of() {
+  # usage: read_lengths_of <fastq.gz>; prints the length of each of the first 1000 reads (a CR at the line end is ignored),
+  # or one "ERROR: ..." line and returns 1 when the file is missing, empty, unreadable, truncated, corrupt or not FASTQ
+  local f=$1 e out msg
+  [ -f "$f" ] && [ -r "$f" ] && [ -s "$f" ] || { echo "ERROR: $f is missing, empty or unreadable"; return 1; }
+  e=$(mktemp) || { echo "ERROR: mktemp failed"; return 1; }
+  out=$(zcat -f -- "$f" 2> "$e" | head -n 4000 | awk '
+    { sub(/\r$/, "") }
+    NR % 4 == 1 && !/^@/ { bad = 1 }
+    NR % 4 == 2 { s = length($0) }
+    NR % 4 == 3 && !/^\+/ { bad = 1 }
+    NR % 4 == 0 { if (length($0) != s) bad = 1; print s }
+    END { if (bad || NR == 0 || NR % 4 != 0) print "BAD" }')
+  msg=$(grep -v 'Broken pipe' "$e" | head -n 1)
+  rm -f "$e"
+  [ -z "$msg" ] || { echo "ERROR: $f cannot be read: $msg"; return 1; }
+  case "$out" in *BAD*) echo "ERROR: $f is not a complete FASTQ file (truncated, corrupt or not FASTQ)"; return 1 ;; esac
+  printf '%s\n' "$out"
+}
 detect_read_length() {
   # usage: detect_read_length <fastq.gz> ...
-  # prints "<length> <reads>": the most common read length among the first 1000 reads of each file (a tie goes to the longer length)
-  local f
-  for f in "$@"; do zcat -f "$f" | head -n 4000 | awk 'NR % 4 == 2 {print length($0)}'; done \
-    | sort -n | uniq -c | sort -k1,1nr -k2,2nr | head -1 | awk '{print $2, $1}'
+  # prints "<length> <reads>": the most common read length among the first 1000 reads of each file (a tie goes to the longer
+  # length), or the "ERROR: ..." line of the first file that cannot be read, and returns 1
+  local f l all=""
+  [ $# -gt 0 ] || { echo "ERROR: no FASTQ file given"; return 1; }
+  for f in "$@"; do l=$(read_lengths_of "$f") || { echo "$l"; return 1; }; all+="$l"$'\n'; done
+  printf '%s' "$all" | sort -n | uniq -c | sort -k1,1nr -k2,2nr | head -1 | awk '{print $2, $1}'
+}
+read_length_report() {
+  # usage: read_length_report < rows (one per samplesheet row: sample<TAB>condition<TAB>fastq_1<TAB>fastq_2, fastq_2 empty if single-end)
+  # prints "SAMPLE <sample> <condition> R1 <length> [R2 <length>]" per row, then "READ_LENGTH <n>" (the most common length over
+  # the reads of every R1 file) and one verdict: "OK: ..." (one length everywhere), "WARNING: ..." (lengths differ, but every
+  # condition has every length) or "CONFOUNDED: ..." (lengths differ between conditions).
+  # A file that cannot be read gives its ERROR line, a final "ERROR: read length not set ..." line and return 1 (no READ_LENGTH).
+  local s c r1 r2 l1 l2 rc=0 rows="" r1s=()
+  while IFS=$'\t' read -r s c r1 r2; do
+    [ -n "$s" ] || continue
+    l1=$(detect_read_length "$r1") || { echo "$l1"; rc=1; continue; }
+    l2=""
+    if [ -n "$r2" ]; then l2=$(detect_read_length "$r2") || { echo "$l2"; rc=1; continue; }; fi
+    echo "SAMPLE $s $c R1 ${l1%% *}${l2:+ R2 ${l2%% *}}"
+    rows+="$c"$'\t'"${l1%% *}"$'\t'"${l2%% *}"$'\n'; r1s+=("$r1")
+  done
+  [ $rc -eq 0 ] || { echo "ERROR: read length not set: fix or replace the files above (Step 4), then run the whole call again"; return 1; }
+  [ ${#r1s[@]} -gt 0 ] || { echo "ERROR: read length not set: no samplesheet rows were given"; return 1; }
+  l1=$(detect_read_length "${r1s[@]}") || { echo "$l1"; return 1; }
+  echo "READ_LENGTH ${l1%% *}"
+  printf '%s' "$rows" | awk -F'\t' '
+    function add(c, l) {
+      if (!((c, l) in has)) { has[c, l] = 1; per[c] = per[c] (per[c] == "" ? "" : "/") l }
+      if (!(l in len)) { len[l] = 1; nl++; all = all (all == "" ? "" : ", ") l }
+    }
+    !($1 in seen) { seen[$1] = 1; order[++nc] = $1 }
+    { add($1, $2); if ($3 != "") add($1, $3) }
+    END {
+      if (nl == 1) { print "OK: every file has " all " bp reads"; exit }
+      for (i = 1; i <= nc; i++) for (l in len) if (!((order[i], l) in has)) conf = 1
+      for (i = 1; i <= nc; i++) sum = sum (i > 1 ? "; " : "") order[i] ": " per[order[i]] " bp"
+      if (conf) print "CONFOUNDED: read lengths differ between conditions (" sum ")"
+      else print "WARNING: read lengths differ (" all " bp), but every condition has every length (" sum ")"
+    }'
 }
 ```
-`{READ_LENGTH}` = the first number of the combined result. If the per-sample values differ, show them and say that `{READ_LENGTH}` is the most common length, which is what rMATS expects for variable read lengths. Tell the user: "Read length for rMATS: {READ_LENGTH} bp (`rmats_read_len: {READ_LENGTH}`)."
+**Running the read-length check.** After the block above, in the same Bash call (the rows come from the samplesheet written in Step 5; paths are relative to `{CWD}`):
+```bash
+cd "{CWD}" || exit 1
+awk -F',' '{ sub(/\r$/, "") } NR == 1 { for (i = 1; i <= NF; i++) c[$i] = i; next } $0 != "" {
+  print $c["sample"] "\t" $c["condition"] "\t" $c["fastq_1"] "\t" $c["fastq_2"] }' "{SAMPLESHEET_CSV}" | read_length_report
+```
+Show the `SAMPLE` lines as a table grouped by condition (condition, sample, R1 length, R2 length). `{READ_LENGTH}` = the number on the `READ_LENGTH` line (the most common R1 length over all samples), never a single sample's value. A `gzip: stdout: Broken pipe` message is harmless (`head` stops reading early) and is already filtered out.
+- `ERROR` lines: there is no `READ_LENGTH` line, and `{READ_LENGTH}` is not set. Show the errors and ask the user to fix or replace the files (back to Step 4) or stop; never continue with an empty or guessed read length.
+- `OK`: tell the user.
+- `WARNING`: warn loudly: "⚠️ Read lengths differ between files ({the lengths}). rMATS normalises every sample with one read length ({READ_LENGTH} bp); the lengths are spread over all conditions, so the comparison is not biased by them, but tell me if this is unexpected." Continue.
+- `CONFOUNDED`: warn loudly: "⚠️ Read lengths differ between conditions ({the per-condition lengths}). rMATS normalises the inclusion and skipping counts of every sample with one read length ({READ_LENGTH} bp), so the samples of the condition with other lengths are normalised with the wrong length: their PSI values, and the differences between the conditions, are biased, and rMATS gives no error." Ask (numbered): 1. Stop here (default) — trim all reads to one common length (for example the shortest) outside this wizard, then run it again · 2. Continue with {READ_LENGTH} bp anyway (the bias stays).
+
+Tell the user: "Read length for rMATS: {READ_LENGTH} bp (`rmats_read_len: {READ_LENGTH}`)."
 
 BAM input: ask "What is the read length of the sequencing (for example 100 or 150)?" — an integer between 20 and 1000; store it as `{READ_LENGTH}`.
 
@@ -410,28 +477,28 @@ Ask, in this order:
 2. (numbered): 1. Ensembl release in the standard folder (default) · 2. Custom reference — I already have a FASTA and GTF.
 3. The option-specific questions below. Ask the base directory only for option 1.
 
-- **Option 1 (Ensembl):** ask "What is the base directory where genome files and indexes are stored?" (`{genome_base}`). Folder convention, shared with `/nfcore-rnaseq-setup` so that FASTA, GTF and indexes are reused, never downloaded twice:
+- **Option 1 (Ensembl):** ask "What is the base directory where genome files and indexes are stored?" (`{genome_base}`). Folder convention, shared with `/nfcore-rnaseq-setup` so that FASTA, GTF and the STAR index are reused, never downloaded or built twice:
   ```
   {genome_base}/{organism}/{assembly}_ens{version}/
   ├── {FASTA}.fa            ← primary assembly FASTA
   ├── {GTF}.gtf             ← annotation GTF
   └── index/
       ├── star/             ← STAR index (as built by /nfcore-rnaseq-setup); reused only if compatible
-      └── salmon/           ← Salmon index (as built by /nfcore-rnaseq-setup); reused only if compatible
+      └── salmon/           ← not used: rnasplice always builds its own Salmon index
   ```
-  Mouse: GRCm39, FASTA `Mus_musculus.GRCm39.dna.primary_assembly.fa`, GTF `Mus_musculus.GRCm39.{version}.gtf`, directory `{genome_base}/mouse/mm39_ens{version}/`. Human: GRCh38, FASTA `Homo_sapiens.GRCh38.dna.primary_assembly.fa`, GTF `Homo_sapiens.GRCh38.{version}.gtf`, directory `{genome_base}/human/hg38_ens{version}/`. Other organisms: option 2. Version: the highest existing `{assembly}_ens{N}` directory unless the user asks otherwise; if none exists, the latest Ensembl release from `https://ftp.ensembl.org/pub/current_README` (`WebFetch`). Store `{GENOME_DIR}`, `{FASTA_PATH}`, `{GTF_PATH}`, `{ORGANISM}`, `{ASSEMBLY}`, `{ENS_VERSION}` and `{REF_TAG}` = `{ASSEMBLY}_ens{ENS_VERSION}`.
+  Mouse: GRCm39, FASTA `Mus_musculus.GRCm39.dna.primary_assembly.fa`, GTF `Mus_musculus.GRCm39.{version}.gtf`, directory `{genome_base}/mouse/mm39_ens{version}/`. Human: GRCh38, FASTA `Homo_sapiens.GRCh38.dna.primary_assembly.fa`, GTF `Homo_sapiens.GRCh38.{version}.gtf`, directory `{genome_base}/human/hg38_ens{version}/`. Other organisms: option 2. Version: the highest existing `{assembly}_ens{N}` directory unless the user asks otherwise; if none exists, the latest Ensembl release from `https://ftp.ensembl.org/pub/current/README` (`WebFetch`; its line "Ensembl Release N Databases." gives N). If that fetch fails, use the highest `release-N/` directory in the listing of `https://ftp.ensembl.org/pub/` (`WebFetch`); if both fail, ask the user for the release. Store `{GENOME_DIR}`, `{FASTA_PATH}`, `{GTF_PATH}`, `{ORGANISM}`, `{ASSEMBLY}`, `{ENS_VERSION}` and `{REF_TAG}` = `{ASSEMBLY}_ens{ENS_VERSION}`.
   If the FASTA or the GTF is missing: resolve both download URLs at run time with `WebFetch` on the Ensembl FTP listing of that release (`https://ftp.ensembl.org/pub/release-{version}/fasta/{species}/dna/` and `https://ftp.ensembl.org/pub/release-{version}/gtf/{species}/`), check each with a HEAD request (`curl -sI URL | head -1` must show 200), show them to the user, store `{ENSEMBL_FASTA_URL}` and `{ENSEMBL_GTF_URL}`, and generate `download_genome_{REF_TAG}.sh` (Step 11). Never type a URL from memory.
-- **Option 2 (Custom reference):** ask for the FASTA path and the GTF path; `{GENOME_DIR}` = the directory of the FASTA, `{REF_TAG}` = `custom_{WD_NAME}`; no download. The pipeline accepts `.fa`, `.fasta`, `.fna` and the same with `.gz`, and `.gtf` or `.gtf.gz`. Check that both files exist (`test -s`). Ask (numbered) whether STAR or Salmon indexes built from exactly this FASTA and GTF exist: 1. No (default) · 2. Yes — ask for their directories and apply the compatibility checks below.
+- **Option 2 (Custom reference):** ask for the FASTA path and the GTF path; `{GENOME_DIR}` = the directory of the FASTA, `{REF_TAG}` = `custom_{WD_NAME}`; no download. The pipeline accepts `.fa`, `.fasta`, `.fna` and the same with `.gz`, and `.gtf` or `.gtf.gz`. Check that both files exist (`test -s`). Ask (numbered) whether a STAR index built from exactly this FASTA and GTF exists: 1. No (default) · 2. Yes — ask for its directory and apply the compatibility checks below.
 
 **GTF source.** `zcat -f {GTF_PATH} | grep -v "^#" | head -3`: gene IDs with a version suffix (`ENSG00000000003.15`) indicate GENCODE, without one Ensembl. Report it. `gencode: false` is written either way: the pipeline builds the transcript FASTA from the GTF itself, so it never receives a GENCODE-format transcript FASTA, the only case `gencode: true` is for.
 
-**Existing indexes — reused only when compatible; otherwise the pipeline builds its own.** (BAM input uses no index: skip this part; `{STAR_INDEX}` and `{SALMON_INDEX}` are empty.) The wizard never builds an index itself.
+**Existing STAR index — reused only when compatible; otherwise the pipeline builds its own.** (BAM input uses no index: skip this part; `{STAR_INDEX}` is empty.) The wizard never builds an index itself.
 - STAR (`{STAR_DIR}` = `{GENOME_DIR}/index/star` for option 1, or the directory the user gave): in one Bash call, check the files and read the two header lines (small text files, light work on the login node):
   ```bash
-  for f in SA Genome sjdbList.out.tab genomeParameters.txt; do [ -s "{STAR_DIR}/$f" ] || echo "MISSING: $f"; done
+  for f in SA SAindex Genome sjdbList.out.tab genomeParameters.txt; do [ -s "{STAR_DIR}/$f" ] || echo "MISSING: $f"; done
   grep -E '^(versionGenome|sjdbOverhang)[[:space:]]' "{STAR_DIR}/genomeParameters.txt"
   ```
-  Any `MISSING` line: there is no usable index; let the pipeline build it. Otherwise offer reuse — (numbered) 1. Reuse (default) · 2. Let the pipeline build its own — only when `versionGenome` is `2.7.4a` (the index format of the STAR inside this pipeline revision); with any other value, say why and let the pipeline build it. If its `sjdbOverhang` is not 100 (the value the pipeline uses when it builds the index itself), warn before asking: "⚠️ This STAR index was built with sjdbOverhang {N}, not the pipeline's 100. STAR aligns with it, but the junction database is tuned for reads of {N}+1 bp (your reads: {READ_LENGTH} bp)." Reuse: `{STAR_INDEX}` = that directory; otherwise `{STAR_INDEX}` is empty.
-- Salmon (`{SALMON_DIR}` = `{GENOME_DIR}/index/salmon` for option 1; FASTQ input only): present when `versionInfo.json` exists; read it with `grep '"indexVersion"' "{SALMON_DIR}/versionInfo.json"` and offer reuse the same way only when its `"indexVersion"` is `5` (the index format of the Salmon inside this pipeline revision). Reuse: `{SALMON_INDEX}` = that directory; otherwise empty.
+  Any `MISSING` line: there is no usable index; let the pipeline build it. Otherwise offer reuse — (numbered) 1. Reuse (default) · 2. Let the pipeline build its own — only when `versionGenome` is `2.7.4a` (the index format of the STAR inside this pipeline revision); with any other value, say why and let the pipeline build it. If its `sjdbOverhang` is not 100 (the value the pipeline uses when it builds the index itself), add a note (information only; it is not a reason to rebuild, and indexes from /nfcore-rnaseq-setup usually have read length − 1): "This STAR index was built with sjdbOverhang {N}, not the pipeline's 100. STAR aligns with it; the junction database is tuned for reads of {N}+1 bp (your reads: {READ_LENGTH} bp)." Reuse: `{STAR_INDEX}` = that directory; otherwise `{STAR_INDEX}` is empty. Tell the user, when reuse is chosen: at this revision the pipeline copies a given STAR index into its `work/` directory before aligning (about 30 GB for a human index, for every run), and this skill's verification run did not exercise the reuse path (unverified).
+- Salmon: `{SALMON_INDEX}` is always empty: the pipeline always builds its own Salmon index from the transcripts it extracts from the GTF. A Salmon index from /nfcore-rnaseq-setup is built from Ensembl cDNA and lacks the GTF's non-coding transcripts, which would get no quantification (DTU, SUPPA2) without any error; its index version cannot show this, so it is never reused.
 
-When the pipeline builds the STAR index of a human or mouse genome, STAR_GENOMEGENERATE needs about 32 GB of memory and an hour or more; the `nextflow.config` of Step 10 gives it 64 GB and 8 h. Indexes built by the pipeline are not kept (`save_reference: false`), so a later run builds them again.
+When the pipeline builds the STAR index of a human or mouse genome, STAR_GENOMEGENERATE needs about 32 GB of memory and an hour or more; the `nextflow.config` of Step 10 gives it 64 GB and 8 h. The pipeline also builds a decoy-aware Salmon index (SALMON_INDEX: 6 CPUs, 36 GB and 8 h from its process label); for a human or mouse genome this likely takes more than an hour (not measured by this skill's verification). Indexes built by the pipeline are not kept (`save_reference: false`), so a later run builds them again.

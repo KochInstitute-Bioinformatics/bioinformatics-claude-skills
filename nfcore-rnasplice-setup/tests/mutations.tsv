@@ -144,21 +144,13 @@ T4-tie	readlen	skill	s/sort -k1,1nr -k2,2nr/sort -k1,1nr -k2,2n/	FAIL: case tie
 T4-mode	readlen	skill	s/-k2,2nr | head -1 |/-k2,2nr | tail -1 |/	FAIL: case mixed
 T4-head	readlen	skill	s/head -n 4000 | awk/awk/	FAIL: case first1000
 T4-star	check	skill	s/@STAR_VERSION_GENOME@/9.9.9z/g	missing required text: @STAR_VERSION_GENOME@
-T4-salmon	check	skill	s/is `@SALMON_INDEX_VERSION@` (the index format/is `4` or newer (the index format/	missing required text: only when its `"indexVersion"` is `@SALMON_INDEX_VERSION@`
 T4-starcmp	check	skill	s/only when `versionGenome` is `@STAR_VERSION_GENOME@`/only when `versionGenome` is at least `2.7.0`/	missing required text: only when `versionGenome` is `@STAR_VERSION_GENOME@`
 T4-reusedef	check	skill	s/1\. Reuse (default) · 2\. Let the pipeline build its own/1. Let the pipeline build its own (default) · 2. Reuse/	missing required text: 1. Reuse (default) · 2. Let the pipeline build its own
-T4-sjdb	check	skill	s/If its `sjdbOverhang` is not 100 ([^)]*), warn before asking: "[^"]*"//	missing required text: If its `sjdbOverhang` is not 100
 T4-sjdbtext	check	skill	s/the junction database is tuned for reads of/it is fine for reads of/	missing required text: the junction database is tuned for reads of
 T4-stargrep	check	skill	s/grep -E '^(versionGenome|sjdbOverhang)\[\[:space:\]\]' "{STAR_DIR}\/genomeParameters.txt"/cat "{STAR_DIR}\/Log.out"/	missing required text: grep -E '^(versionGenome|sjdbOverhang)[[:space:]]' "{STAR_DIR}/genomeParameters.txt"
-T4-salmongrep	check	skill	s/grep '"indexVersion"' "{SALMON_DIR}\/versionInfo.json"/cat "{SALMON_DIR}\/info.json"/	missing required text: grep '"indexVersion"' "{SALMON_DIR}/versionInfo.json"
 T4-nobuild	check	skill	s/ The wizard never builds an index itself\./ If no index exists, build one with STAR before the run./	missing required text: The wizard never builds an index itself
 T4-saveref	check	skill	s/(`save_reference: false`)/(`save_reference: true` keeps them)/	missing required text: `save_reference: false`
-T4-bamidx	check	skill	s/(BAM input uses no index: skip this part; `{STAR_INDEX}` and `{SALMON_INDEX}` are empty\.)//	missing required text: (BAM input uses no index: skip this part;
-T4-salmonfq	check	skill	s/for option 1; FASTQ input only)/for option 1)/	missing required text: for option 1; FASTQ input only
-T4-onecall	check	skill	s/FASTQ input\. In one Bash call, define this function, run it/FASTQ input. Define this function, then run it/	missing required text: In one Bash call, define this function, run it on the first FASTQ
-T4-bashtool	check	skill	s/FASTQ input\. In one Bash call, define this function,/FASTQ input: define this function in the Bash tool, In one Bash call, define this function,/	forbidden pattern present: 'in the Bash tool'
 T4-default40	check	skill	s/the pipeline default of 40 is wrong for almost all data/the pipeline default of 40 is usually fine/	missing required text: the pipeline default of 40 is wrong for almost all data
-T4-flags	check	skill	s/rMATS always runs with `--variable-read-length` and `--allow-clipping`/rMATS runs with fixed-length reads/	missing required text: `--variable-read-length` and `--allow-clipping`
 T4-bamlen	check	skill	s/ — an integer between 20 and 1000;/;/	missing required text: an integer between 20 and 1000
 T4-askbase	check	skill	s/ Ask the base directory only for option 1\./ Ask the base directory./	missing required text: Ask the base directory only for option 1
 T4-folder	check	skill	s/^  {genome_base}\/{organism}\/{assembly}_ens{version}\/$/  {genome_base}\/{assembly}\//	missing required text: {genome_base}/{organism}/{assembly}_ens{version}/
@@ -169,3 +161,60 @@ T4-memory	check	skill	s/ Never type a URL from memory\.//	missing required text:
 T4-head200	check	skill	s/check each with a HEAD request (`curl -sI URL | head -1` must show 200), //	missing required text: check each with a HEAD request
 T4-anchor	check	skill	s/^\*\*Read-length detection\.\*\* FASTQ input\./&\n**Read-length detection.** again./	anchor must appear exactly once: **Read-length detection.**
 T4-fn	readlen	skill	s/^detect_read_length() {/read_length_of() {/	FAIL: detect_read_length is not defined by the block
+T4-sjdb	check	skill	s/If its `sjdbOverhang` is not 100 ([^)]*), add a note ([^)]*): "[^"]*"//	missing required text: If its `sjdbOverhang` is not 100
+T4-onecall	check	skill	s/In one Bash call, paste this block, then/Paste this block; in a later Bash call run/	missing required text: In one Bash call, paste this block, then the lines under **Running the read-length check** below.
+T4-bashtool	check	skill	s/FASTQ input\. Every row/FASTQ input: define the functions in the Bash tool. Every row/	forbidden pattern present: 'in the Bash tool'
+T4-flags	check	skill	s/and always runs with `--variable-read-length` and `--allow-clipping`/and runs with fixed-length reads/	missing required text: `--variable-read-length` and `--allow-clipping`
+T4f-readmeurl	check	skill	s#https://ftp.ensembl.org/pub/current/README#https://ftp.ensembl.org/pub/current_README#	forbidden text present: pub/current_README
+T4f-readmeline	check	skill	s/its line "Ensembl Release N Databases." gives N/read it/	missing required text: its line "Ensembl Release N Databases." gives N
+T4f-fallback	check	skill	s/use the highest `release-N\/` directory in the listing of `https:\/\/ftp.ensembl.org\/pub\/`/guess the release/	missing required text: use the highest `release-N/` directory in the listing
+T4f-m1	check	skill	s/with any other value, say why and let the pipeline build it/with any other value, reuse it anyway/	missing required text: with any other value, say why and let the pipeline build it
+T4f-m2	check	skill	s/Any `MISSING` line: there is no usable index; let the pipeline build it\./Any `MISSING` line: reuse it anyway./	missing required text: Any `MISSING` line: there is no usable index; let the pipeline build it.
+T4f-m3	check	skill	s/`{READ_LENGTH}` = the number on the `READ_LENGTH` line/`{READ_LENGTH}` = the first sample's value/	missing required text: `{READ_LENGTH}` = the number on the `READ_LENGTH` line
+T4f-m3fn	readlen	skill	s/l1=$(detect_read_length "${r1s\[@\]}")/l1=$(detect_read_length "${r1s[0]}")/	FAIL: case unconfounded: missing line 'READ_LENGTH 150'
+T4f-m4ok	readlen	skill	s/if (nl == 1) {/if (nl >= 1) {/	FAIL: case unconfounded: verdict 'OK '
+T4f-m4conf	readlen	skill	s/if (!((order\[i\], l) in has)) conf = 1/if (0) conf = 1/	FAIL: case confounded
+T4f-m4text	check	skill	/^- `CONFOUNDED`: warn loudly/d	missing required text: - `CONFOUNDED`: warn loudly
+T4f-m4warn	check	skill	/^- `WARNING`: warn loudly/d	missing required text: - `WARNING`: warn loudly
+T4f-m5	check	skill	s/the highest existing/the lowest existing/	missing required text: Version: the highest existing
+T4f-m6	check	skill	s/Mus_musculus\.GRCm39\.dna\.primary_assembly\.fa/Mus_musculus.GRCm39.dna.toplevel.fa/	missing required text: FASTA `Mus_musculus.GRCm39.dna.primary_assembly.fa`
+T4f-m7	check	skill	s/ Check that both files exist (`test -s`)\.//	missing required text: Check that both files exist (`test -s`).
+T4f-m8	check	skill	s/for f in SA SAindex Genome sjdbList\.out\.tab genomeParameters\.txt; do/for f in genomeParameters.txt; do/	missing required text: for f in SA SAindex Genome sjdbList.out.tab genomeParameters.txt; do
+T4f-saindex	check	skill	s/for f in SA SAindex Genome/for f in SA Genome/	missing required text: for f in SA SAindex Genome sjdbList.out.tab genomeParameters.txt; do
+T4f-m9	check	skill	s#`{GENOME_DIR}/index/star` for option 1#`{GENOME_DIR}/index/star_rnasplice` for option 1#	missing required text: (`{STAR_DIR}` = `{GENOME_DIR}/index/star` for option 1
+T4f-m10	check	skill	s/exists: 1\. No (default) · 2\. Yes/exists: 1. Yes (default) · 2. No/	missing required text: whether a STAR index built from exactly this FASTA and GTF exists: 1. No (default) · 2. Yes
+T4f-m11	check	skill	s/STAR_GENOMEGENERATE needs about 32 GB of memory and an hour or more; //	missing required text: STAR_GENOMEGENERATE needs about 32 GB of memory and an hour or more
+T4f-m12	check	skill	s/, show them to the user,/,/	missing required text: must show 200), show them to the user,
+T4f-m13	check	skill	s/1\. Ensembl release in the standard folder (default) · 2\. Custom reference/1. Custom reference (default) · 2. Ensembl release in the standard folder/	missing required text: 2. (numbered): 1. Ensembl release in the standard folder (default) · 2. Custom reference
+T4f-m14	check	skill	s#the latest Ensembl release from `https://ftp.ensembl.org/pub/current/README`#Ensembl release 110 (`https://ftp.ensembl.org/pub/current/README`)#	forbidden pattern present: a hard-coded Ensembl release
+T4f-m15	check	skill	s/indicate GENCODE, without one Ensembl/indicate Ensembl, without one GENCODE/	missing required text: gene IDs with a version suffix (`ENSG00000000003.15`) indicate GENCODE, without one Ensembl
+T4f-m16	check	skill	s/Human: GRCh38, FASTA `Homo_sapiens\.GRCh38/Human: GRCh37, FASTA `Homo_sapiens.GRCh37/	forbidden text present: GRCh37
+T4f-m17	check	skill	s/^BAM input: ask "What is the read length of the sequencing (for example 100 or 150)?"/BAM input: use 100 as the read length; optionally ask "What is the read length?"/	missing required text: BAM input: ask "What is the read length of the sequencing (for example 100 or 150)?"
+T4f-m18	check	skill	s/Every row of the samplesheet is checked: its R1 file/Up to 5 different samples (or just one) are checked: the R1 file/	missing required text: Every row of the samplesheet is checked
+T4f-upto5	check	skill	s/Every row of the samplesheet is checked: its R1 file/Every row of the samplesheet is checked (or up to 5 different samples): its R1 file/	forbidden text present: up to 5 different samples
+T4f-salmonalways	check	skill	s/`{SALMON_INDEX}` is always empty: /`{SALMON_INDEX}` = the existing index if any: /	missing required text: `{SALMON_INDEX}` is always empty
+T4f-salmonwhy	check	skill	s/lacks the GTF's non-coding transcripts, which would get no quantification (DTU, SUPPA2) without any error/is equivalent/	missing required text: lacks the GTF's non-coding transcripts
+T4f-salmonoffer	check	skill	s/^- Salmon: /- Salmon (`{SALMON_DIR}` = `{GENOME_DIR}\/index\/salmon`): reuse it when its `versionInfo.json` has `"indexVersion": 5`. /	forbidden text present: {SALMON_DIR}
+T4f-bamidx	check	skill	s/(BAM input uses no index: skip this part; `{STAR_INDEX}` is empty\.)//	missing required text: (BAM input uses no index: skip this part; `{STAR_INDEX}` is empty.)
+T4f-shared	check	skill	s/FASTA, GTF and the STAR index are reused/FASTA, GTF and indexes are reused/	missing required text: FASTA, GTF and the STAR index are reused
+T4f-tree	check	skill	s/not used: rnasplice always builds its own Salmon index/Salmon index; reused only if compatible/	missing required text: not used: rnasplice always builds its own Salmon index
+T4f-staror	check	skill	s/whether a STAR index built from exactly this FASTA and GTF exists/whether STAR or Salmon indexes built from exactly this FASTA and GTF exist/	forbidden text present: STAR or Salmon
+T4f-salmonres	check	skill	s/SALMON_INDEX: 6 CPUs, 36 GB and 8 h/SALMON_INDEX/	missing required text: SALMON_INDEX: 6 CPUs, 36 GB and 8 h
+T4f-salmontime	check	skill	s/likely takes more than an hour (not measured by this skill's verification)/takes a few minutes/	missing required text: likely takes more than an hour
+T4f-anchorrun	check	skill	s/^\*\*Running the read-length check\.\*\* After/&\n**Running the read-length check.** again./	anchor must appear exactly once: **Running the read-length check.**
+T4f-runcall	check	skill	s/After the block above, in the same Bash call/In a later Bash call/	missing required text: After the block above, in the same Bash call
+T4f-table	check	skill	s/Show the `SAMPLE` lines as a table grouped by condition/Show the `READ_LENGTH` line/	missing required text: Show the `SAMPLE` lines as a table grouped by condition
+T4f-bias	check	skill	s/their PSI values, and the differences between the conditions, are biased, and rMATS gives no error/this is fine/	missing required text: their PSI values, and the differences between the conditions, are biased
+T4f-stopdef	check	skill	s/1\. Stop here (default) — trim/1. Stop here — trim/	missing required text: 1. Stop here (default) — trim all reads to one common length
+T4f-r2	readlen	skill	s/if \[ -n "\$r2" \]; then l2=/if false; then l2=/	FAIL: case paired_r2
+T4f-crlf	readlen	skill	s/^    { sub(\/\\r\$\/, "") }$/    { }/	FAIL: case crlf: expected '75 20', got '76 20'
+T4f-bad	readlen	skill	s/END { if (bad || NR == 0 || NR % 4 != 0) print "BAD" }/END { }/	FAIL: case not_fastq
+T4f-noargs	readlen	skill	s/\[ \$# -gt 0 \] || { echo "ERROR: no FASTQ file given"; return 1; }/:/	FAIL: case no_args
+T4f-rcfail	readlen	skill	s/\[ \$rc -eq 0 \] || { echo "ERROR: read length not set: fix/[ 0 -eq 0 ] || { echo "ERROR: read length not set: fix/	FAIL: case report_error_empty.fastq.gz
+T4f-runcols	readlen	skill	s/print \$c\["sample"\] "\\t" \$c\["condition"\]/print $c["sample"] "\\t" $c["strandedness"]/	FAIL: case run_lines
+T4f-errtext	check	skill	s/never continue with an empty or guessed read length/continue with 100/	missing required text: never continue with an empty or guessed read length
+T4f-pipe	check	skill	s/A `gzip: stdout: Broken pipe` message is harmless/Stop on any gzip message/	missing required text: A `gzip: stdout: Broken pipe` message is harmless
+T4f-sjdbinfo	check	skill	s/add a note (information only; it is not a reason to rebuild/warn before asking (/	missing required text: add a note (information only; it is not a reason to rebuild
+T4f-miso	check	skill	s/No other read-length setting is used by the analyses this skill runs ([^)]*)\./rnasplice has no other read-length setting./	forbidden text present: rnasplice has no other read-length setting
+T4f-copy	check	skill	s/copies a given STAR index into its `work\/` directory before aligning/uses a given STAR index in place/	missing required text: copies a given STAR index into its `work/` directory before aligning
+T4f-unverified	check	skill	s/did not exercise the reuse path (unverified)/verified the reuse path/	missing required text: did not exercise the reuse path (unverified)
