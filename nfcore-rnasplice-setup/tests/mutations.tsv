@@ -6,3 +6,27 @@ T1-group	check	skill	$s/$/\n```yaml\ninput_output_options: 1\n```/	params key no
 T1-rev	check	skill	s/nf-core\/rnasplice @PIPELINE_REVISION@ with Nextflow/nf-core\/rnasplice 0.0.0 with Nextflow/	missing required text: verified against nf-core/rnasplice @PIPELINE_REVISION@ with Nextflow @NEXTFLOW_TESTED@
 T1-nfmin	check	skill	s/Nextflow @NEXTFLOW_MIN@ or newer/Nextflow 0.0.1 or newer/g	missing required text: Nextflow @NEXTFLOW_MIN@ or newer
 T1-guil	check	skill	s/^# nf-core\/rnasplice Pipeline Setup Skill$/&\n«X»/	forbidden text present: «
+T1-latest	check	skill	s/^- Set `{VERSION}` = @PIPELINE_REVISION@ /- Set `{VERSION}` = {TAG} /	missing required text: - Set `{VERSION}` = @PIPELINE_REVISION@
+T1-default	check	skill	s/1\. Use the pinned commit (verified; default)/1. Use the pinned commit/	missing required text: 1. Use the pinned commit (verified; default)
+T1-branch	check	skill	s/; that is a commit of the development branch (`@VERSION_TAG@`)//	missing required text: that is a commit of the development branch (`@VERSION_TAG@`)
+T1-nfhere	check	skill	s/Do not run `nextflow` here/Run `nextflow -version` here/	missing required text: Do not run `nextflow` here
+T1-vtag	check	skill	s/^Set `{VERSION_TAG}` =/`{VERSION_TAG}` is/	missing required text: Set `{VERSION_TAG}`
+T1-url	check	skill	s#api.github.com/repos/nf-core/rnasplice/releases/latest#api.github.com/repos/nf-core/rnavar/releases/latest#	missing required text: api.github.com/repos/nf-core/rnasplice/releases/latest
+T1-schema	check	skill	s#raw.githubusercontent.com/nf-core/rnasplice/{TAG}/nextflow_schema.json#raw.githubusercontent.com/nf-core/rnasplice/master/nextflow_schema.json#	missing required text: raw.githubusercontent.com/nf-core/rnasplice/{TAG}/nextflow_schema.json
+T1-pointer	check	skill	s/ (the Step 8 module block and the Step 11 template)//	missing required text: (the Step 8 module block and the Step 11 template)
+T1-fetchfail	check	skill	/^- If the fetch fails/d	missing required text: - If the fetch fails
+T1-tag104	check	skill	/^- If `{TAG}` is 1\.0\.4:/d	missing required text: - If `{TAG}` is 1.0.4: tell the user that the pinned commit is used
+T1-warn	check	skill	s/, and warn the user that .*$/./	missing required text: were verified for the pinned commit only, not for release {TAG}
+T1-pwd	check	skill	s/run `pwd` to record/ask the user for/	missing required text: run `pwd` to record the current working directory
+T1-wdname	check	skill	/^- `{WD_NAME}` = /d	missing required text: `{WD_NAME}` = basename of `{CWD}`
+T1-today	check	skill	s/^- `{TODAY_ISO}` = today's date as `YYYY-MM-DD`.*$/- `{TODAY_ISO}` = today/	missing required text: `{TODAY_ISO}` = today's date as `YYYY-MM-DD`
+T1-yymmdd	check	skill	/^- `{TODAY_YYMMDD}` = /d	missing required text: `{TODAY_YYMMDD}` = today's date as `YYMMDD`
+T1-email	check	skill	s/Do \*\*not\*\* pre-suggest or pre-fill any email address\. //	missing required text: Do **not** pre-suggest or pre-fill any email address.
+T1-env	check	skill	s/Do \*\*not\*\* pre-suggest any environment name\. //	missing required text: Do **not** pre-suggest any environment name.
+T1-separate	check	skill	s/ — never combine Steps 1 and 2 in one message//	missing required text: never combine Steps 1 and 2 in one message
+T1-yml	check	skill	$s/$/\n```yml\nmax_cpus: 16\n```/	params key not in the recorded schema: max_cpus
+T1-yaml4	check	skill	$s/$/\n````YAML\nmax_memory: "64.GB"\n````/	params key not in the recorded schema: max_memory
+T1-nested	check	skill	$s/$/\n````markdown\n```yaml\nmax_time: "24.h"\n```\n````/	params key not in the recorded schema: max_time
+T1-ghcmd	check	skill	s/Always use `WebFetch`\./Always use `gh release view` or `WebFetch`./	forbidden pattern present: a gh command
+T1-marker	check	skill	s/^- If the fetch fails/[A\/C] - If the fetch fails/	forbidden pattern present: a plan variant marker
+T1-pull	check	skill	s/^Extract `tag_name`/Run `NXF_OFFLINE=false nextflow pull nf-core\/rnasplice` first. Extract `tag_name`/	forbidden text present: nextflow pull

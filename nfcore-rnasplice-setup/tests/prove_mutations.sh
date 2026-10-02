@@ -3,17 +3,20 @@
 # Each row of mutations.tsv (id<TAB>runner<TAB>target<TAB>sed program<TAB>expected text) is applied to a copy of the skill and
 # its README (target: skill or readme); @KEY@ in the program and the text is replaced by the gate value KEY. A row passes when
 # the sed program changed the target, the runner exits non-zero, and the runner printed the expected text.
+# An @KEY@ that is not a non-empty gate value fails its row (it would otherwise become an empty string).
 # Runners: check strand bam validate readlen render submit helper (see runner() below).
 # Prints "MUTATIONS PASS (<n>)" or exits 1.
 set -u
 SKILL=${1:?usage: prove_mutations.sh <skill.md>}
 case "$SKILL" in /*) ;; *) SKILL="$PWD/$SKILL" ;; esac
 HERE=$(cd "$(dirname "$0")" && pwd); README="$(dirname "$SKILL")/README.md"
-T=$(mktemp -d) || exit 1
-case "$T" in /tmp/tmp.*) ;; *) echo "unexpected temp dir: $T"; exit 1 ;; esac
+T=$(mktemp -d /tmp/tmp.XXXXXXXXXX) || exit 1
 trap 'rm -f "$T/nfcore-rnasplice-setup.md" "$T/README.md" "$T/out"; rmdir "$T"' EXIT
+case "$T" in /tmp/tmp.??????????) ;; *) echo "unexpected temp dir: $T"; exit 1 ;; esac
 gv() { awk -F'\t' -v k="$1" '$1 == k {print $2; exit}' "$HERE/fixtures/gate_values.tsv"; }
-subst() { local s=$1 k; while [[ $s =~ @([A-Z_0-9]+)@ ]]; do k=${BASH_REMATCH[1]}; s=${s//@$k@/$(gv "$k")}; done; printf '%s' "$s"; }
+# subst: replace every @KEY@ by its gate value; an unknown or empty KEY is an error (return 1, message on stderr).
+subst() { local s=$1 k v; while [[ $s =~ @([A-Z_0-9]+)@ ]]; do k=${BASH_REMATCH[1]}; v=$(gv "$k")
+  [ -n "$v" ] || { echo "unknown or empty gate key @$k@" >&2; return 1; }; s=${s//@$k@/$v}; done; printf '%s' "$s"; }
 runner() { case "$1" in
   check) echo check_skill.sh ;; strand) echo test_strandedness.sh ;; bam) echo test_bam_policy.sh ;;
   validate) echo test_validate_sheets.sh ;; readlen) echo test_read_length.sh ;; render) echo test_render_params.sh ;;
@@ -25,7 +28,7 @@ done
 n=0; bad=0
 while IFS=$'\t' read -r id run target prog expect; do
   case "$id" in ''|'#'*) continue ;; esac
-  n=$((n + 1)); prog=$(subst "$prog"); expect=$(subst "$expect")
+  n=$((n + 1)); prog=$(subst "$prog") && expect=$(subst "$expect") || { echo "MUTATION $id: unknown gate key"; bad=1; continue; }
   cp "$SKILL" "$T/nfcore-rnasplice-setup.md"; cp "$README" "$T/README.md" 2>/dev/null || : > "$T/README.md"
   case "$target" in
     skill) f="$T/nfcore-rnasplice-setup.md"; orig=$SKILL ;;
