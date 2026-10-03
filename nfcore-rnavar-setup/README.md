@@ -108,7 +108,7 @@ sbatch --dependency=afterok:<star_jobid>:<known_sites_jobid> nf-core_rnavar_1.3.
 
 One end-to-end run on real data, with the skill at master 77bfb5d followed literally, on 2026-10-02. It is ONE dataset, one sample and one run; the numbers below hold for that dataset only.
 
-- **Dataset:** SRR5665260 (BioProject PRJNA389940), GM12878 = GIAB HG001, whole-transcriptome RNA-seq, paired-end, 39,598,362 read pairs, NextSeq 500, reads pre-trimmed (151 bp mode). Library selection and strandedness are not stated by ENA.
+- **Dataset:** SRR5665260 (BioProject PRJNA389940, study accession from the ENA filereport API for SRR5665260, fetched 2026-10-02), GM12878 = GIAB HG001, a whole human RNA-seq sample, paired-end, 39,598,362 read pairs, NextSeq 500, reads pre-trimmed (151 bp mode). Library selection and strandedness are not stated by ENA.
 - **What was run:** nf-core/rnavar 1.3.0, Nextflow 26.04.6, SLURM partition `bcc`. Ensembl 116 GRCh38 primary assembly and GTF (already on disk), a STAR index built by the skill's helper for sjdbOverhang 150, GATK hg38 bundle dbSNP138 and Mills/1000G indels (contigs renamed `chrN`→`N` by the helper's guard), default calling and filtering, no annotation.
 - **Outcome:** 82/82 tasks completed, 0 failed, 0 retried. Pipeline wall time **3 h 10 min 42 s**; **22.9 CPU-hours** used by all tasks; 3 h 54 min end to end including the 43-minute STAR index build. STAR uniquely mapped 89.95%; Picard duplication 40.9%.
 
@@ -139,12 +139,12 @@ PASS vs all records (PASS plus soft-filtered), exons_all_dp10, genotype mode:
 **Call-set statistics:** 85,799 calls, 84.6% PASS; ts/tv 2.92 (PASS SNVs, autosomes); het/hom-alt 1.15; 72.9% of PASS calls in dbSNP138 (exact position, REF and ALT).
 
 **What the errors were (measured; the editing-mask gain is inferred):**
-- 78% of the false-positive SNVs were A>G/T>C (2,300 of 2,932), and 88.5% of those (2,036) sit on known REDIportal editing sites, against 1.37% of true-positive SNVs: they are RNA editing, real at the RNA level but absent from the DNA truth. Masking known editing sites would raise SNV precision to about 0.96 (an estimate, not re-run through vcfeval). The skill's hand-off note now recommends masking known editing sites (for example REDIportal).
+- 78% of the false-positive SNVs were A>G/T>C (2,300 of 2,932), and 88.5% of those (2,036) sit on known REDIportal editing sites, against 1.37% of true-positive SNVs: consistent with RNA editing (88.5% of those sit on known editing sites), which is real at the RNA level but absent from the DNA truth. Masking known editing sites would raise SNV precision to about 0.96, at a cost of about 1.3 points of SNV recall (308 true SNVs also sit on REDIportal positions); both are estimates, not re-run through vcfeval. The skill's hand-off note now recommends masking known editing sites (for example REDIportal).
 - 76.5% of the missed truth variants were heterozygous. Of the 1,706 missed heterozygous SNVs, 841 (49%) showed strong allelic imbalance (no alt read or alt fraction < 0.2 at a median depth of 32×) and 777 (46%) were called but removed by the soft filters, 91% of the filtered ones by SnpCluster; the groups overlap partly. Depth was not the main cause: only 17 missed SNVs had depth < 10 at the site.
 
 ### Resources: requested vs observed (that run)
 
-Requested values are those the tasks received in that run (the skill at 77bfb5d); the last column is this skill's request after the fix round. Observed values are from Nextflow's `execution_trace.txt` (peak_rss, realtime, %CPU); the helper memory is a lower bound from 2-minute `sstat` samples.
+Requested values are those the tasks received in that run (the skill at 77bfb5d); the last column is this skill's request now, for attempt 1: memory and time double on the automatic retry (rnavar retries a task killed for time or memory once), up to the config's cap of 64 GB and 24 h. Observed values are from Nextflow's `execution_trace.txt` (peak_rss, realtime, %CPU); the helper memory is a lower bound from 2-minute `sstat` samples.
 
 | Process | Requested then (cpu / mem / time) | Observed peak memory | Observed time | CPU used | Request now |
 |---|---|---|---|---|---|
@@ -162,12 +162,12 @@ No task exceeded 80% of its memory or time. The head job's former 32-core reques
 
 **Disk use:** about 67 GB under the test folder (FASTQ, truth and REDIportal 7.6 GB; project with `work/` and outputs 58 GB; evaluation 1.7 GB), plus 33 GB written to the shared genome folder: STAR index 30 GB and `known_sites/` 2.9 GB.
 
-### Defects found and fixed in this round
+### Changes made after the real-data test
 
-- D1, D2: the GATK resource-bundle page returned HTTP 403, and the skill named no files. Step 7 now falls back to the public bucket listing and names the two `.vcf.gz` objects to use (not the 11 GB plain `.vcf`).
-- D8: the head job requested 32 cores with no memory or time; now `-n 2 --mem=8G -t 2-00:00:00`.
-- D3: the sample-name rule now covers `_1.fastq.gz` (SRA/ENA names). D4: when no sequencing date is found, the identical date options are offered once. D5: every `module add` line in the helpers and the pipeline script is checked. D6: `wget -nv` keeps helper logs short (the known-sites log had 30,922 lines). D9: STAR's temporary directory goes next to the index (`--outTmpDir`) instead of the working directory, and is removed after the build. D7: the generic `cpus`/`memory`/`time` lines in the config are kept as a fallback for unlabelled processes, and the comment now says so (no task in the run used them; every rnavar process carries a label).
-- Resource tiers updated as in the table above; hand-off note gains the RNA-editing and missed-variant guidance.
+- The GATK resource-bundle page returned HTTP 403, and the skill named no files. Step 7 now falls back to the public bucket listing and names the two `.vcf.gz` objects to use (not the 11 GB plain `.vcf`).
+- The head job requested 32 cores with no memory or time; now `-n 2 --mem=8G -t 2-00:00:00`.
+- The sample-name rule now covers `_1.fastq.gz` (SRA/ENA names). When no sequencing date is found, the identical date options are offered once. Every `module add` line in the helpers and the pipeline script is checked. `wget -nv` keeps helper logs short (the known-sites log had 30,922 lines). STAR's temporary directory goes next to the index (`--outTmpDir`) instead of the working directory, and is removed after the build. The generic `cpus`/`memory`/`time` lines in the config are kept as a fallback for unlabelled processes, and the comment now says so (no task in the run used them; every rnavar process carries a label).
+- Resource tiers updated as in the table above, with memory and time scaled by the retry attempt; the hand-off note gains the RNA-editing and missed-variant guidance.
 
 ### Not verified
 
@@ -176,7 +176,7 @@ No task exceeded 80% of its memory or time. The head job's former 32-core reques
 - A cluster that enforces memory limits.
 - Accuracy outside GIAB confident regions ∩ exons ∩ depth ≥ 10; X/Y; other samples, libraries or tissues.
 - A second run for reproducibility (one run only).
-- The fixes of this round (new tiers, head-job request, `--outTmpDir`, the bucket fallback) have not been run on real data; they were checked statically and with stubs.
+- The changes made after that test (new tiers and their retry scaling, head-job request, `--outTmpDir`, the bucket fallback) have not been run on real data; they were checked statically and with stubs.
 
 ---
 
@@ -186,7 +186,7 @@ No task exceeded 80% of its memory or time. The head job's former 32-core reques
 - Known sites are required, otherwise base recalibration is skipped, which is slightly less accurate
 - A separate STAR index is built for each read length
 - Parameter names were verified against rnavar 1.3.0 only; newer versions are re-checked at run time against the release schema
-- The resource tiers are measured on one human dataset (one 39.6 M-pair library, 151 bp); much deeper libraries may need more memory or time. Compare the selectors with `pipeline_info/execution_trace.txt` after the first run, and after the first run on a new version
+- The resource tiers are measured on one human dataset (one 39.6 M-pair library, 151 bp); much deeper libraries may need more memory or time. Memory and time double on the one automatic retry, up to 64 GB and 24 h; if a task still fails with exit 140/143 (time) or 137 (memory), raise its selector in `nextflow.config` and resubmit with `-resume`. The 48 GB for MarkDuplicates is a headroom judgment, not a measured need: a Java task sizes its heap to the request, so its observed peak follows the request. Compare the selectors with `pipeline_info/execution_trace.txt` after the first run, and after the first run on a new version
 - RNA editing sites appear as A>G/T>C false positives against a DNA truth; mask known editing sites before treating them as genomic variants
 - The head job requests 2 days; a longer run must be resumed with `-resume`
 - Organisms other than mouse and human require manual FASTA/GTF paths and known-sites files

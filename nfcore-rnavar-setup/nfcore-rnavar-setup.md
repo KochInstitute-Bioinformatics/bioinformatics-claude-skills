@@ -140,9 +140,16 @@ rnavar passes the known-sites files directly to GATK BaseRecalibrator and **does
    - If they do not exist, **resolve the resource URLs at run time**: use `WebFetch` on the current GATK resource-bundle page (human) or the Mouse Genomes Project / Ensembl variation FTP listing (mouse), show the exact URLs to the user, and download only after they confirm. Never type a URL from memory. Add the download, `bgzip` and `tabix -f -p vcf` steps to the helper script (Step 12).
    - **Human: when the GATK page cannot be read.** Try the official resource-bundle article first (https://gatk.broadinstitute.org/hc/en-us/articles/360035890811). It returned HTTP 403 to `WebFetch` in the real-data test, and HTTP 403 to `curl -sI` on 2026-10-02. When it is not readable, resolve the files from the public Google Cloud Storage bucket that hosts the bundle, with a small listing (about 120 KB):
      ```bash
-     curl -s "https://storage.googleapis.com/storage/v1/b/gcp-public-data--broad-references/o?prefix=hg38/v0/&fields=items(name,size),nextPageToken" | grep -A1 -E '"name": "hg38/v0/(Homo_sapiens_assembly38\.dbsnp138|Mills_and_1000G_gold_standard\.indels\.hg38)\.vcf\.gz"'
+     OUT=$(curl -s -w '\nHTTP_STATUS=%{http_code}' "https://storage.googleapis.com/storage/v1/b/gcp-public-data--broad-references/o?prefix=hg38/v0/&fields=items(name,size),nextPageToken")
+     CODE=${OUT##*HTTP_STATUS=}; BODY=${OUT%HTTP_STATUS=*}
+     if [ "$CODE" != 200 ] || [ -z "${BODY//[[:space:]]/}" ]; then
+       echo "ERROR: bucket listing failed (HTTP $CODE, ${#BODY} bytes): stop and tell the user; never guess the URLs"
+     else
+       printf '%s\n' "$BODY" | grep -A1 -E '"name": "hg38/v0/(Homo_sapiens_assembly38\.dbsnp138|Mills_and_1000G_gold_standard\.indels\.hg38)\.vcf\.gz"' \
+         || echo "NOT FOUND on this page: repeat with &pageToken=<nextPageToken>"
+     fi
      ```
-     (HTTP 200 on 2026-10-02, both objects on the first page; if one is missing, the listing is paged: repeat the request with `&pageToken=<nextPageToken>`.) The download URL of an object is https://storage.googleapis.com/gcp-public-data--broad-references/ followed by its listed name, for example https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz . Check each URL with `curl -sI` (HTTP 200 and a `Content-Length` equal to the listed size), then show the exact URLs and sizes to the user and download only after they confirm.
+     (HTTP 200 on 2026-10-02, both objects on the first page.) On the ERROR line, stop: do not fall back to paging or to URLs from memory; tell the user the status and offer option 2 (skip base recalibration) or local files. On NOT FOUND, the listing is paged: repeat the request with `&pageToken=<nextPageToken>` (the token is in the listing). The download URL of an object is https://storage.googleapis.com/gcp-public-data--broad-references/ followed by its listed name, for example https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz . Check each URL with `curl -sI` (HTTP 200 and a `Content-Length` equal to the listed size), then show the exact URLs and sizes to the user and download only after they confirm.
    - **Mandatory contig-name check, before the known-sites choice is finalised.** The FASTA from Step 6 is Ensembl-named (`1` ... `MT`) for option 1; a custom FASTA may use either style. GATK resource-bundle hg38 VCFs use `chr1` ... `chrM`. A mismatch makes GATK BaseRecalibrator stop with "incompatible contigs" only after alignment, MarkDuplicates and SplitNCigarReads have already run. On the login node (no `tabix` there), compare the first VCF contig with the first FASTA header (of `{FASTA_SOURCE}`, which may be gzipped; Step 12's guard runs later on the compute node and uses `{FASTA_PATH}`):
      ```bash
      VCF_CONTIG=$(zcat -f FILE | awk '!/^#/{print $1; exit}')
@@ -212,30 +219,31 @@ profiles {
             time = '4h'
 
             // Tiers measured on one human sample (39.6 M read pairs); see the README.
+            // Values are for attempt 1; a retried task (time or memory kill) gets them x2, capped by resourceLimits.
             withName: '.*:STAR_ALIGN' {
                 cpus = 8
-                memory = '64 GB'
-                time = '8h'
+                memory = { 64.GB * task.attempt }
+                time = { 8.h * task.attempt }
             }
             withName: '.*:PICARD_MARKDUPLICATES' {
                 cpus = 2
-                memory = '48 GB'
-                time = '8h'
+                memory = { 48.GB * task.attempt }
+                time = { 8.h * task.attempt }
             }
             withName: '.*:GATK4_SPLITNCIGARREADS' {
                 cpus = 4
-                memory = '24 GB'
-                time = '4h'
+                memory = { 24.GB * task.attempt }
+                time = { 4.h * task.attempt }
             }
             withName: '.*:GATK4_BASERECALIBRATOR' {
                 cpus = 2
-                memory = '8 GB'
-                time = '4h'
+                memory = { 8.GB * task.attempt }
+                time = { 4.h * task.attempt }
             }
             withName: '.*:GATK4_HAPLOTYPECALLER' {
                 cpus = 2
-                memory = '8 GB'
-                time = '4h'
+                memory = { 8.GB * task.attempt }
+                time = { 4.h * task.attempt }
             }
         }
         executor {
@@ -262,7 +270,9 @@ trace    { enabled = true; overwrite = true; file = "${params.outdir}/pipeline_i
 dag      { enabled = true; overwrite = true; file = "${params.outdir}/pipeline_info/pipeline_dag.svg"        }
 ```
 
-rnavar's own `base.config` defines label-based resources only (`process_medium` = 6 CPU/36 GB/8 h, `process_high` = 12 CPU/72 GB/16 h), so the `withName` overrides above use regex selectors (`'.*:NAME'`) that do not depend on the workflow-name prefix. The selector values come from one real run (GM12878, one human sample of 39.6 M read pairs, 151 bp): STAR_ALIGN peaked at 43.0 GB of 64 GB; MarkDuplicates, which had no selector, peaked at 27.8 GB of its label's 36 GB (77%), hence 48 GB of headroom for deeper libraries; SplitNCigarReads peaked at 12.2 GB on a 16 GB request and used 3.4 to 7.5 cores on a 2-CPU request, hence 4 CPUs and 24 GB; BaseRecalibrator peaked at 4.4 GB and HaplotypeCaller at 2.2 GB, hence 8 GB; no task took more than 27 minutes, except STAR_ALIGN (49 minutes), hence 4 h for the GATK steps. A library much deeper than 40 M pairs may need more. After the first run, compare the selectors with the process names in `{OUTDIR}/pipeline_info/execution_trace.txt` and adjust if any did not match.
+rnavar's own `base.config` defines label-based resources only (`process_medium` = 6 CPU/36 GB/8 h, `process_high` = 12 CPU/72 GB/16 h), so the `withName` overrides above use regex selectors (`'.*:NAME'`) that do not depend on the workflow-name prefix. The selector values come from one real run (GM12878, one human sample of 39.6 M read pairs, 151 bp): STAR_ALIGN peaked at 43.0 GB of 64 GB; MarkDuplicates, which had no selector, peaked at 27.8 GB of its label's 36 GB (77%); the 48 GB is a headroom judgment for deeper libraries, not a measured need, because a Java task sizes its heap to the requested memory, so its observed peak follows the request; SplitNCigarReads peaked at 12.2 GB on a 16 GB request and used 3.4 to 7.5 cores on a 2-CPU request, hence 4 CPUs and 24 GB; BaseRecalibrator peaked at 4.4 GB and HaplotypeCaller at 2.2 GB, hence 8 GB; no task took more than 27 minutes, except STAR_ALIGN (49 minutes), hence 4 h for the GATK steps. A library much deeper than 40 M pairs may need more. After the first run, compare the selectors with the process names in `{OUTDIR}/pipeline_info/execution_trace.txt` and adjust if any did not match.
+
+**Retries.** rnavar's `base.config` retries a task once (`maxRetries = 1`) when it exits with 130-145, 104 or 175-177, which covers a SLURM time-limit or memory kill, and its labels scale resources with `task.attempt`. The selectors keep that behaviour: memory and time are written as closures (`{ 24.GB * task.attempt }`, the form nf-core's own `base.config` uses), so the values above are for attempt 1 and are doubled on the retry; `cpus` stays fixed. `resourceLimits` caps every request at 16 CPUs, 64 GB and 24 h, and Nextflow lowers a request above the cap to the cap instead of failing. At attempt 2: STAR_ALIGN asks for 128 GB / 16 h and gets 64 GB / 16 h (the same memory, so a memory kill of STAR_ALIGN is not helped by the retry); MarkDuplicates 96 GB / 16 h gets 64 GB / 16 h; SplitNCigarReads gets 48 GB / 8 h; BaseRecalibrator and HaplotypeCaller get 16 GB / 8 h. If a task still fails after the retry with exit 140/143 (time) or 137 (memory), raise that selector in `nextflow.config` (and `resourceLimits` if needed) and resubmit with ` -resume` added to the `nextflow run` line.
 
 The `resourceLimits` values are literal because the pipeline-level maximum-resource parameters of older nf-core templates are not rnavar 1.3.0 parameters and trigger an invalid-parameter schema warning. `overwrite = true` on the four report scopes is needed because a launch that fails early (for example at parameter validation) has already created the files in `pipeline_info/`, and a rerun would otherwise refuse to overwrite them, leaving an empty trace and no HTML reports.
 
@@ -448,7 +458,8 @@ one 39.6 M-pair library, against the GIAB v4.2.1 truth):
     (2,036) sit on known REDIportal editing sites, against 1.37% of the true-positive SNVs.
     Mask known editing sites (for example REDIportal) before treating A>G/T>C calls as genomic
     variants (also before allele-specific expression). The gain is an estimate: SNV precision
-    would rise from 0.885 to about 0.96, a counterfactual that was not re-run.
+    would rise from 0.885 to about 0.96, a counterfactual that was not re-run, at a cost of
+    about 1.3 points of SNV recall (308 true SNVs also sit on REDIportal positions).
   - Missed variants: 76.5% of the missed truth variants were heterozygous. Of the missed
     heterozygous SNVs, 49% showed strong allelic imbalance (no alt read, or alt fraction < 0.2,
     at a median depth of 32x) and 46% were called but removed by the soft filters, mostly
