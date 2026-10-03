@@ -60,7 +60,7 @@ find {CWD} -name "*.bam" -o -name "*.cram" | head -10
 **Path style:** if the input directory is inside `{CWD}`, use paths relative to `{CWD}`; otherwise absolute paths.
 
 **Samplesheet forms (exactly one file type per sample):**
-- FASTQ: `sample,fastq_1,fastq_2` (rnavar has no `strandedness` column). Find each R1, pair it with its R2 by substituting `_R1_`→`_R2_`, `_1.`→`_2.`, or `_1_sequence`→`_2_sequence`; warn and leave `fastq_2` empty if R2 is missing. Sample name = filename up to `_S\d+`, `_R1`, or `_1_sequence`.
+- FASTQ: `sample,fastq_1,fastq_2` (rnavar has no `strandedness` column). Find each R1, pair it with its R2 by substituting `_R1_`→`_R2_`, `_1.`→`_2.`, or `_1_sequence`→`_2_sequence`; warn and leave `fastq_2` empty if R2 is missing. Sample name = filename up to `_S\d+`, `_R1`, `_1.` (SRA/ENA names: `SRR5665260_1.fastq.gz` gives `SRR5665260`), or `_1_sequence`.
 - BAM: `sample,bam,bai`. CRAM: `sample,cram,crai`.
 - **Never mix types for one sample.** Supplying FASTQ files and a BAM/CRAM file for the same sample makes the pipeline error; check for this and stop with a clear message.
 
@@ -71,7 +71,7 @@ find {CWD} -name "*.bam" -o -name "*.cram" | head -10
 **Review and naming — order is mandatory:**
 1. Show the full samplesheet (all rows) as a table.
 2. Ask about names (numbered): 1. Use auto-generated names · 2. Provide custom names. For custom names, show numbered auto names next to filenames, ask for a plain-language description, build the mapping, show it as an auto→new table and ask "Does this mapping look correct?" Validate custom names: no `-`; duplicates only where the user chose option 1 above (validation must allow the deliberate duplicates); any other duplicate triggers the same warning and choice.
-3. Ask for the samplesheet filename (numbered): 1. `{SEQ_DATE}_{WD_NAME}_samplesheet.csv` · 2. `{TODAY_YYMMDD}_{WD_NAME}_samplesheet.csv` · 3. Custom.
+3. Ask for the samplesheet filename (numbered): 1. `{SEQ_DATE}_{WD_NAME}_samplesheet.csv` · 2. `{TODAY_YYMMDD}_{WD_NAME}_samplesheet.csv` · 3. Custom. When `{SEQ_DATE}` equals `{TODAY_YYMMDD}` (no date prefix was found, so it fell back to today), options 1 and 2 are the same: offer only 1. `{TODAY_YYMMDD}_{WD_NAME}_samplesheet.csv` · 2. Custom.
 4. Write the file only after names and filename are confirmed; first check whether `{SAMPLESHEET_CSV}` already exists and, if so, ask (numbered): 1. overwrite · 2. choose another filename — before writing. Store as `{SAMPLESHEET_CSV}`.
 
 ---
@@ -133,11 +133,16 @@ The `star_index` key is always written to the params file (Step 11) so rnavar ne
 rnavar passes the known-sites files directly to GATK BaseRecalibrator and **does not skip base recalibration automatically** — if they are missing the run fails late, after alignment. So always resolve this now. Ask (numbered):
 
 1. **Use known-sites VCFs** — write the keys `dbsnp: "{DBSNP}"`, `dbsnp_tbi: "{DBSNP}.tbi"`, `known_indels: "{INDELS}"`, `known_indels_tbi: "{INDELS}.tbi"` (double-quoted paths). `{DBSNP}` and `{INDELS}` are the FINAL post-guard paths (the `.renamed.vcf.gz` names when a rename is expected, see Step 12).
-   - Human: the GATK resource-bundle dbSNP and Mills/1000G known-indels VCFs for the matching assembly.
+   - Human: the GATK resource-bundle dbSNP and Mills/1000G known-indels VCFs for the matching assembly. For GRCh38 use exactly these two bundle objects (in `hg38/v0/` of the public bucket): `Homo_sapiens_assembly38.dbsnp138.vcf.gz` (dbSNP, 1,560,889,937 bytes) and `Mills_and_1000G_gold_standard.indels.hg38.vcf.gz` (known indels, 20,685,880 bytes); their `.tbi` companions are listed next to them but need not be downloaded, because the helper re-indexes with `tabix -f -p vcf`. Do NOT use the plain `Homo_sapiens_assembly38.dbsnp138.vcf` (10,950,827,213 bytes, with a `.vcf.idx`): it is the same data uncompressed and would cost 11 GB plus a long `bgzip`. The bucket also holds `Homo_sapiens_assembly38.known_indels.vcf.gz`; this skill uses the Mills/1000G set for `known_indels` (the set used in the real-data test).
    - Mouse: Mouse Genomes Project variants (SNPs and indels) for GRCm39.
    - Check whether the files already exist under `{GENOME_DIR}/known_sites/`; if so reuse them and verify the `.tbi` indexes exist.
    - The pipeline schema requires bgzipped `.vcf.gz` files with `.tbi` indexes (`dbsnp` must match `.vcf.gz`, `dbsnp_tbi` must match `.vcf.gz.tbi`). Some sources ship plain `.vcf` (with `.vcf.idx`); those must be bgzipped and re-indexed with `tabix`, never passed as-is.
    - If they do not exist, **resolve the resource URLs at run time**: use `WebFetch` on the current GATK resource-bundle page (human) or the Mouse Genomes Project / Ensembl variation FTP listing (mouse), show the exact URLs to the user, and download only after they confirm. Never type a URL from memory. Add the download, `bgzip` and `tabix -f -p vcf` steps to the helper script (Step 12).
+   - **Human: when the GATK page cannot be read.** Try the official resource-bundle article first (https://gatk.broadinstitute.org/hc/en-us/articles/360035890811). It returned HTTP 403 to `WebFetch` in the real-data test, and HTTP 403 to `curl -sI` on 2026-10-02. When it is not readable, resolve the files from the public Google Cloud Storage bucket that hosts the bundle, with a small listing (about 120 KB):
+     ```bash
+     curl -s "https://storage.googleapis.com/storage/v1/b/gcp-public-data--broad-references/o?prefix=hg38/v0/&fields=items(name,size),nextPageToken" | grep -A1 -E '"name": "hg38/v0/(Homo_sapiens_assembly38\.dbsnp138|Mills_and_1000G_gold_standard\.indels\.hg38)\.vcf\.gz"'
+     ```
+     (HTTP 200 on 2026-10-02, both objects on the first page; if one is missing, the listing is paged: repeat the request with `&pageToken=<nextPageToken>`.) The download URL of an object is https://storage.googleapis.com/gcp-public-data--broad-references/ followed by its listed name, for example https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz . Check each URL with `curl -sI` (HTTP 200 and a `Content-Length` equal to the listed size), then show the exact URLs and sizes to the user and download only after they confirm.
    - **Mandatory contig-name check, before the known-sites choice is finalised.** The FASTA from Step 6 is Ensembl-named (`1` ... `MT`) for option 1; a custom FASTA may use either style. GATK resource-bundle hg38 VCFs use `chr1` ... `chrM`. A mismatch makes GATK BaseRecalibrator stop with "incompatible contigs" only after alignment, MarkDuplicates and SplitNCigarReads have already run. On the login node (no `tabix` there), compare the first VCF contig with the first FASTA header (of `{FASTA_SOURCE}`, which may be gzipped; Step 12's guard runs later on the compute node and uses `{FASTA_PATH}`):
      ```bash
      VCF_CONTIG=$(zcat -f FILE | awk '!/^#/{print $1; exit}')
@@ -189,6 +194,7 @@ Collect the emitted key lines as `{ANNOTATION_PARAMS}`.
 
 **MultiQC title** (numbered): 1. `{SEQ_DATE}_{WD_NAME}` · 2. `{TODAY_YYMMDD}_{WD_NAME}` · 3. Custom. Store as `{MULTIQC_TITLE}`.
 **Output directory** (numbered): same three options. Store as `{OUTDIR}`.
+For both questions, when `{SEQ_DATE}` equals `{TODAY_YYMMDD}`, options 1 and 2 are the same: offer only 1. `{TODAY_YYMMDD}_{WD_NAME}` · 2. Custom.
 
 Check for an existing config: `ls nextflow.config`. **If it exists, do not overwrite it** — instead tell the user the selectors that matter for rnavar (below) and that they can compare them. If it does not exist, write:
 
@@ -199,29 +205,37 @@ profiles {
         process {
             executor = 'slurm'
             queue = 'bcc'
+            // Fallback for unlabelled processes only: every rnavar 1.3.0 process carries a
+            // resource label (process_single/low/medium/high), and labels outrank these values.
             cpus = 2
             memory = '8 GB'
             time = '4h'
 
+            // Tiers measured on one human sample (39.6 M read pairs); see the README.
             withName: '.*:STAR_ALIGN' {
                 cpus = 8
                 memory = '64 GB'
                 time = '8h'
             }
-            withName: '.*:GATK4_SPLITNCIGARREADS' {
+            withName: '.*:PICARD_MARKDUPLICATES' {
                 cpus = 2
-                memory = '16 GB'
+                memory = '48 GB'
                 time = '8h'
+            }
+            withName: '.*:GATK4_SPLITNCIGARREADS' {
+                cpus = 4
+                memory = '24 GB'
+                time = '4h'
             }
             withName: '.*:GATK4_BASERECALIBRATOR' {
                 cpus = 2
-                memory = '16 GB'
-                time = '8h'
+                memory = '8 GB'
+                time = '4h'
             }
             withName: '.*:GATK4_HAPLOTYPECALLER' {
                 cpus = 2
-                memory = '16 GB'
-                time = '8h'
+                memory = '8 GB'
+                time = '4h'
             }
         }
         executor {
@@ -248,7 +262,7 @@ trace    { enabled = true; overwrite = true; file = "${params.outdir}/pipeline_i
 dag      { enabled = true; overwrite = true; file = "${params.outdir}/pipeline_info/pipeline_dag.svg"        }
 ```
 
-rnavar's own `base.config` defines label-based resources only (`process_medium` = 6 CPU/36 GB/8 h, `process_high` = 12 CPU/72 GB/16 h), so the `withName` overrides above use regex selectors (`'.*:NAME'`) that do not depend on the workflow-name prefix. After the first run, compare the selectors with the process names in `{OUTDIR}/pipeline_info/execution_trace.txt` and adjust if any did not match.
+rnavar's own `base.config` defines label-based resources only (`process_medium` = 6 CPU/36 GB/8 h, `process_high` = 12 CPU/72 GB/16 h), so the `withName` overrides above use regex selectors (`'.*:NAME'`) that do not depend on the workflow-name prefix. The selector values come from one real run (GM12878, one human sample of 39.6 M read pairs, 151 bp): STAR_ALIGN peaked at 43.0 GB of 64 GB; MarkDuplicates, which had no selector, peaked at 27.8 GB of its label's 36 GB (77%), hence 48 GB of headroom for deeper libraries; SplitNCigarReads peaked at 12.2 GB on a 16 GB request and used 3.4 to 7.5 cores on a 2-CPU request, hence 4 CPUs and 24 GB; BaseRecalibrator peaked at 4.4 GB and HaplotypeCaller at 2.2 GB, hence 8 GB; no task took more than 27 minutes, except STAR_ALIGN (49 minutes), hence 4 h for the GATK steps. A library much deeper than 40 M pairs may need more. After the first run, compare the selectors with the process names in `{OUTDIR}/pipeline_info/execution_trace.txt` and adjust if any did not match.
 
 The `resourceLimits` values are literal because the pipeline-level maximum-resource parameters of older nf-core templates are not rnavar 1.3.0 parameters and trigger an invalid-parameter schema warning. `overwrite = true` on the four report scopes is needed because a launch that fails early (for example at parameter validation) has already created the files in `pipeline_info/`, and a rerun would otherwise refuse to overwrite them, leaving an empty trace and no HTML reports.
 
@@ -281,19 +295,19 @@ Typing rules: `seq_platform: "illumina"` is always written (always written, alth
 
 ```bash
 #!/bin/bash
-#SBATCH -N 1
-#SBATCH -n 32
-#SBATCH -p bcc
+#SBATCH -N 1 -n 2 --mem=8G -t 2-00:00:00 -p bcc
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user={USER_EMAIL}
 
-module add miniconda3/v4
+module add miniconda3/v4 || { echo "ERROR: cannot load miniconda3" >&2; exit 1; }
 source /home/software/conda/miniconda3/bin/condainit
 conda activate {CONDA_ENV}
-module add singularity/3.10.4
+module add singularity/3.10.4 || { echo "ERROR: cannot load singularity" >&2; exit 1; }
 
 nextflow run nf-core/rnavar -r {VERSION} -c nextflow.config -profile slurm,singularity -params-file {PARAMS_YAML}
 ```
+
+The head job only coordinates the pipeline (about 1 core in the real-data test, where the former 32-core request held about 101 core-hours against 22.9 CPU-hours used by all 82 tasks), but it must outlive every task, so it asks for 2 days: a deliberate exception to the usual 4 h default. If it reaches that limit, add ` -resume` at the end of the `nextflow run` line and submit it again; Nextflow reuses the finished tasks from `work/`.
 
 Show both files in full and instruct:
 ```
@@ -309,7 +323,7 @@ If any helper script (Step 12) was generated, list the order: helpers first, the
 
 Generate only what is missing. Each is an `sbatch` script (`#SBATCH -N 1 -p bcc --mail-type=END,FAIL` plus resources scaled as below), run on a compute node — never on the login node. Always use `gunzip -c file.gz > file` (never `gunzip -k`; not available on CentOS 7).
 
-**`build_star_index_rnavar_{REF_TAG}.sh`** — downloads (`wget -c`) and decompresses the FASTA and GTF if absent (never downloaded for a custom reference, whose files already exist; a `.gz` custom FASTA/GTF is decompressed as described in Step 6), then computes the genome length and the STAR suffix-array parameter itself, in shell, at run time (the FASTA may not exist yet when the wizard writes the script, so the wizard never substitutes these two values):
+**`build_star_index_rnavar_{REF_TAG}.sh`** — downloads (`wget -c -nv`, which logs one line per file instead of a progress bar) and decompresses the FASTA and GTF if absent (never downloaded for a custom reference, whose files already exist; a `.gz` custom FASTA/GTF is decompressed as described in Step 6), then computes the genome length and the STAR suffix-array parameter itself, in shell, at run time (the FASTA may not exist yet when the wizard writes the script, so the wizard never substitutes these two values):
 
 ```bash
 FASTA="{FASTA_PATH}"
@@ -319,11 +333,13 @@ SA_INDEX_NBASES=$(awk -v L="$GENOME_LENGTH" 'BEGIN{n=int(log(L)/log(2)/2-1); if(
 
 `SA_INDEX_NBASES` = `min(14, floor(log2(GENOME_LENGTH)/2 - 1))`, clamped to a minimum of 4 (40001 bp gives 6; 3.1e9 bp, as for GRCh38, gives 14). STAR's default `--genomeSAindexNbases 14` is far too large for small genomes and makes indexing fail or blow up memory, so it is always passed explicitly. The thread count is taken from SLURM (`${SLURM_NTASKS:-4}`), so it always matches the `-n` of the chosen tier.
 
-**Resource tier — chosen by the wizard when it writes the script** (these respect the HPC defaults of at most 64 G and 4 h). If the FASTA already exists, do not read it with `grep | tr | wc` on the login node (no heavy work there); approximate `{GENOME_LENGTH}` from the file size (`stat -c %s FASTA`) or, if a `.fai` exists, the sum of its length column, and pick the tier; if it is an Ensembl human or mouse download (FASTA not yet on disk), use the over-1-Gb tier. Genome over 1 Gb: `-n 8 --mem=64G -t 4:00:00`; genome under 100 Mb: `-n 4 --mem=8G -t 00:30:00`; in between: `-n 8 --mem=32G -t 2:00:00`. The other helpers need little: `-n 2 --mem=8G -t 4:00:00` (a full dbSNP download plus `bcftools annotate` plus `tabix` may exceed 2 h).
+**Resource tier — chosen by the wizard when it writes the script** (these respect the HPC defaults of at most 64 G and 4 h). If the FASTA already exists, do not read it with `grep | tr | wc` on the login node (no heavy work there); approximate `{GENOME_LENGTH}` from the file size (`stat -c %s FASTA`) or, if a `.fai` exists, the sum of its length column, and pick the tier; if it is an Ensembl human or mouse download (FASTA not yet on disk), use the over-1-Gb tier. Genome over 1 Gb: `-n 8 --mem=64G -t 4:00:00` (measured for GRCh38 in the real-data test: 42 min 27 s and at least 43.1 GB, so 64G stays and 4 h is ample); genome under 100 Mb: `-n 4 --mem=8G -t 00:30:00`; in between: `-n 8 --mem=32G -t 2:00:00`. The other helpers need little: `-n 2 --mem=8G -t 4:00:00` (a full dbSNP download plus `bcftools annotate` plus `tabix` may exceed 2 h).
 
 ```bash
-module add star/2.7.9a
-mkdir -p "{GENOME_DIR}/index/star_rnavar_sjdb{SJDB_OVERHANG}"
+module add star/2.7.9a || { echo "ERROR: cannot load star" >&2; exit 1; }
+mkdir -p "{GENOME_DIR}/index/star_rnavar_sjdb{SJDB_OVERHANG}" || exit 1
+# STAR refuses an existing --outTmpDir: remove a leftover of an interrupted run (literal path only)
+rm -rf -- "{GENOME_DIR}/index/_STARtmp_rnavar_sjdb{SJDB_OVERHANG}"
 STAR \
     --runMode genomeGenerate \
     --genomeDir "{GENOME_DIR}/index/star_rnavar_sjdb{SJDB_OVERHANG}" \
@@ -331,8 +347,13 @@ STAR \
     --sjdbGTFfile "{GTF_PATH}" \
     --sjdbOverhang {SJDB_OVERHANG} \
     --genomeSAindexNbases "$SA_INDEX_NBASES" \
-    --runThreadN "${SLURM_NTASKS:-4}"
+    --runThreadN "${SLURM_NTASKS:-4}" \
+    --outTmpDir "{GENOME_DIR}/index/_STARtmp_rnavar_sjdb{SJDB_OVERHANG}"
+STAR_RC=$?
+rm -rf -- "{GENOME_DIR}/index/_STARtmp_rnavar_sjdb{SJDB_OVERHANG}"
+[ "$STAR_RC" -eq 0 ] || { echo "ERROR: STAR genomeGenerate failed (exit $STAR_RC)" >&2; exit 1; }
 ```
+`--outTmpDir` keeps STAR's temporary files (the suffix-array chunks it writes to disk) next to the index, on the same file system, instead of a `_STARtmp/` directory in the user's working directory, which is where STAR puts them by default. Both removals use the literal path that the wizard writes (never a shell variable), so they can only ever remove that one directory. The wizard substitutes `{GENOME_DIR}` and `{SJDB_OVERHANG}` in all three places with the same values as in `--genomeDir`.
 
 **`prepare_known_sites_{REF_TAG}.sh`** — must be safely re-runnable. Download each confirmed Step 7 URL into `{GENOME_DIR}/known_sites/`, but skip the download only when `FILE.vcf.gz` exists AND passes `gzip -t` (this works on bgzip files); an interrupted `wget -c` can otherwise leave a truncated `.vcf.gz` that a re-run would accept. Otherwise download to `FILE.vcf.gz.part`, verify it, and only then move it into place:
 Then run `bgzip` on any plain `.vcf` before `tabix -f -p vcf`, and only when `FILE.vcf` exists and `FILE.vcf.gz` does not (`bgzip` deletes the `.vcf`, and refuses to overwrite an existing `.gz`). Always re-index with `tabix -f -p vcf` (`tabix` without `-f` errors when an index exists, and the script has no `set -e`, so a stale index would survive). `bcftools annotate -o` overwrites `NEW`. The schema requires `.vcf.gz`.
@@ -340,25 +361,25 @@ Then run `bgzip` on any plain `.vcf` before `tabix -f -p vcf`, and only when `FI
 if [ -s "$FILE.vcf" ] || { [ -s "$FILE.vcf.gz" ] && gzip -t "$FILE.vcf.gz"; }; then
   :   # already present (a valid .vcf.gz, or the user's own plain .vcf): no download
 else
-  wget -c -O "$FILE.vcf.gz.part" "URL" \
+  wget -c -nv -O "$FILE.vcf.gz.part" "URL" \
     && gzip -t "$FILE.vcf.gz.part" && mv "$FILE.vcf.gz.part" "$FILE.vcf.gz" \
     || { echo "ERROR: download or gzip test failed for $FILE.vcf.gz" >&2; exit 1; }
 fi
 ```
 This download branch applies only to files that have a confirmed Step 7 URL (a local file without a URL is never downloaded). If the URL is a plain `.vcf` (not `.gz`), use the same skip test and download to `FILE.vcf.part`, check it is non-empty, and move it to `FILE.vcf`; the bgzip rule below then compresses it:
 ```bash
-wget -c -O "$FILE.vcf.part" "URL" && [ -s "$FILE.vcf.part" ] && mv "$FILE.vcf.part" "$FILE.vcf" \
+wget -c -nv -O "$FILE.vcf.part" "URL" && [ -s "$FILE.vcf.part" ] && mv "$FILE.vcf.part" "$FILE.vcf" \
   || { echo "ERROR: download failed for $FILE.vcf" >&2; exit 1; }
 ```
 
-**Tools come from a container; never load an htslib module.** This cluster has no htslib or tabix module, and under Lmod a failed `module add` (unknown module) silently makes every later `module add` in the same shell fail (observed: bcftools and singularity were then not found). Take `bcftools`, `tabix` and `bgzip` from one Singularity biocontainer, the same mechanism the pipeline uses. The wizard sets `{BCFTOOLS_SIF}` to `${NXF_SINGULARITY_CACHEDIR:-$HOME/.singularity/cache}/depot.galaxyproject.org-singularity-bcftools-1.20--h8b25389_0.img` if that file exists; otherwise the helper downloads the container to that path before use (the SIF download branch is always emitted (the URL is embedded even when the image already exists), so the URL must be re-verified in the session either way), from `https://depot.galaxyproject.org/singularity/bcftools:1.20--h8b25389_0`. The wizard must re-verify the URL with a HEAD request (`curl -sI`) or `WebFetch` in the session before writing it into a script (never embed an unverified URL); if the download fails the helper exits 1 (the pipeline then never starts). `--bind` is needed because `/net/...` paths are not auto-bound. Module order matters and each `module add` in a helper should be checked (`|| exit 1`).
+**Tools come from a container; never load an htslib module.** This cluster has no htslib or tabix module, and under Lmod a failed `module add` (unknown module) silently makes every later `module add` in the same shell fail (observed: bcftools and singularity were then not found). Take `bcftools`, `tabix` and `bgzip` from one Singularity biocontainer, the same mechanism the pipeline uses. The wizard sets `{BCFTOOLS_SIF}` to `${NXF_SINGULARITY_CACHEDIR:-$HOME/.singularity/cache}/depot.galaxyproject.org-singularity-bcftools-1.20--h8b25389_0.img` if that file exists; otherwise the helper downloads the container to that path before use (the SIF download branch is always emitted (the URL is embedded even when the image already exists), so the URL must be re-verified in the session either way), from `https://depot.galaxyproject.org/singularity/bcftools:1.20--h8b25389_0`. The wizard must re-verify the URL with a HEAD request (`curl -sI`) or `WebFetch` in the session before writing it into a script (never embed an unverified URL); if the download fails the helper exits 1 (the pipeline then never starts). `--bind` is needed because `/net/...` paths are not auto-bound. Module order matters and each `module add` in a helper and in the pipeline script must be checked (`|| exit 1`, or `|| { echo "ERROR: ..." >&2; exit 1; }`).
 ```bash
 module add singularity/3.10.4 || { echo "ERROR: cannot load singularity" >&2; exit 1; }
 command -v singularity >/dev/null || { echo "ERROR: singularity not on PATH" >&2; exit 1; }
 SIF="{BCFTOOLS_SIF}"
 if [ ! -s "$SIF" ]; then
   mkdir -p "$(dirname "$SIF")"
-  wget -c -O "$SIF.part" "https://depot.galaxyproject.org/singularity/bcftools:1.20--h8b25389_0" && mv "$SIF.part" "$SIF" \
+  wget -c -nv -O "$SIF.part" "https://depot.galaxyproject.org/singularity/bcftools:1.20--h8b25389_0" && mv "$SIF.part" "$SIF" \
     || { echo "ERROR: could not download the bcftools container to $SIF" >&2; exit 1; }
 fi
 [ -s "$SIF" ] || { echo "ERROR: bcftools container not found: $SIF" >&2; exit 1; }
@@ -419,6 +440,24 @@ These VCFs and BAMs are the inputs expected by the ase-pipeline skill (allele-sp
 ```
 Before printing, confirm the actual directory names against the pipeline's `docs/output` page for `{VERSION}` with `WebFetch`, and use the real names.
 
+Then print this note on interpreting the calls (measured on one dataset; keep the wording):
+```
+What to expect from RNA-seq variant calls (measured on ONE human dataset: GM12878/HG001,
+one 39.6 M-pair library, against the GIAB v4.2.1 truth):
+  - RNA editing: 78% of the false-positive SNVs were A>G/T>C (2,300 of 2,932), and 88.5% of those
+    (2,036) sit on known REDIportal editing sites, against 1.37% of the true-positive SNVs.
+    Mask known editing sites (for example REDIportal) before treating A>G/T>C calls as genomic
+    variants (also before allele-specific expression). The gain is an estimate: SNV precision
+    would rise from 0.885 to about 0.96, a counterfactual that was not re-run.
+  - Missed variants: 76.5% of the missed truth variants were heterozygous. Of the missed
+    heterozygous SNVs, 49% showed strong allelic imbalance (no alt read, or alt fraction < 0.2,
+    at a median depth of 32x) and 46% were called but removed by the soft filters, mostly
+    SnpCluster (91% of the filtered ones); the two groups overlap partly.
+  - Limits: these numbers hold only in GIAB confident regions ∩ exons ∩ RNA depth >= 10 (or >= 20),
+    32.9 Mb, about 1.3% of the GIAB confident genome. No accuracy claim is made outside it;
+    unexpressed genes, introns and intergenic sequence cannot be called from RNA.
+```
+
 ---
 
 ## Notes for the assistant
@@ -433,4 +472,5 @@ Before printing, confirm the actual directory names against the pipeline's `docs
 - `read_length` is always written to the params file; a STAR index made for a different read length is never reused.
 - Known sites are never assumed — either supply all four files or `skip_baserecalibration: true`.
 - Never embed a download URL that was not verified in this session.
+- Every `module add` line in every generated script (helpers and the pipeline script) ends with a check that stops the job (`|| exit 1` or `|| { echo ...; exit 1; }`).
 - Not rnavar parameters, never emit: `annotation_cache`, `gencode`, `strandedness`.

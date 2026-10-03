@@ -16,7 +16,7 @@ forbid() { ! grep -qF -- "$1" "$SKILL" || { echo "FAIL: forbidden text present: 
 
 # (a) every --flag in the skill is a schema parameter or an allowlisted non-rnavar flag
 schema_names=$(grep -oE '"[a-z_0-9]+": *\{' "$SCHEMA" | sed -E 's/"([a-z_0-9]+)".*/\1/' | sort -u)
-allow="bind genomeSAindexNbases rename-chrs dependency runMode genomeDir genomeFastaFiles sjdbGTFfile sjdbOverhang runThreadN mail-type mail-user mem"
+allow="bind genomeSAindexNbases rename-chrs dependency runMode genomeDir genomeFastaFiles sjdbGTFfile sjdbOverhang runThreadN outTmpDir mail-type mail-user mem"
 for flag in $(grep -oE '(^|[ `(=])--[A-Za-z_][A-Za-z_0-9-]*' "$SKILL" | sed -E 's/^[^-]*--//' | sort -u); do
   if ! echo "$schema_names $allow" | tr ' ' '\n' | grep -qx -- "$flag"; then
     echo "FAIL: flag not in rnavar schema or allowlist: --$flag"; fail=1
@@ -225,11 +225,11 @@ forbid "-n 2 --mem=8G -t 2:00:00"
 # --- Parked-items fixes
 # A: bcftools container download branch before the existence check
 need 'if [ ! -s "$SIF" ]; then'
-need 'wget -c -O "$SIF.part" "https://depot.galaxyproject.org/singularity/bcftools:1.20--h8b25389_0" && mv "$SIF.part" "$SIF"'
+need 'wget -c -nv -O "$SIF.part" "https://depot.galaxyproject.org/singularity/bcftools:1.20--h8b25389_0" && mv "$SIF.part" "$SIF"'
 need 'ERROR: could not download the bcftools container to $SIF'
 need "re-verify the URL with a HEAD request (\`curl -sI\`) or \`WebFetch\`"
 need "the helper exits 1 (the pipeline then never starts)"
-dl_ln=$(grep -nF 'wget -c -O "$SIF.part"' "$SKILL" | head -1 | cut -d: -f1)
+dl_ln=$(grep -nF 'wget -c -nv -O "$SIF.part"' "$SKILL" | head -1 | cut -d: -f1)
 ck_ln=$(grep -nF 'ERROR: bcftools container not found' "$SKILL" | head -1 | cut -d: -f1)
 { [ -n "$dl_ln" ] && [ -n "$ck_ln" ] && [ "$dl_ln" -lt "$ck_ln" ]; } || { echo "FAIL: container download branch must precede the SIF existence check"; fail=1; }
 # B: FASTA_SOURCE for the login-node contig check
@@ -246,7 +246,7 @@ need '[ "$(dirname "{FASTA_PATH}")" = "{GENOME_DIR}" ] || BIND="$BIND,$(dirname 
 forbid 'BIND="{GENOME_DIR},$(dirname "{FASTA_PATH}")"'
 # E: truncated-download safety
 need 'gzip -t "$FILE.vcf.gz"'
-need 'wget -c -O "$FILE.vcf.gz.part" "URL"'
+need 'wget -c -nv -O "$FILE.vcf.gz.part" "URL"'
 need 'gzip -t "$FILE.vcf.gz.part" && mv "$FILE.vcf.gz.part" "$FILE.vcf.gz"'
 forbid "Skip \`wget\` when \`FILE.vcf.gz\` already exists"
 # F1-F4
@@ -287,12 +287,117 @@ need 'The `star_index` key is always written'
 
 # --- Parked-items fix round 1
 need 'if [ -s "$FILE.vcf" ] || { [ -s "$FILE.vcf.gz" ] && gzip -t "$FILE.vcf.gz"; }; then'
-need 'wget -c -O "$FILE.vcf.part" "URL" && [ -s "$FILE.vcf.part" ] && mv "$FILE.vcf.part" "$FILE.vcf"'
+need 'wget -c -nv -O "$FILE.vcf.part" "URL" && [ -s "$FILE.vcf.part" ] && mv "$FILE.vcf.part" "$FILE.vcf"'
 need "If the URL is a plain \`.vcf\` (not \`.gz\`)"
 need "applies only to files that have a confirmed Step 7 URL"
 need "Step 6 option 1 binds \`{FASTA_SOURCE}\` = \`{FASTA_PATH}\`"
 need "skip the wizard-side check and rely on the helper's contig guard"
 need "always emitted (the URL is embedded even when the image already exists)"
 # --- end Parked-items fix round 1
+
+# --- Real-data fix round (GM12878 / HG001 test, 2026-10-02)
+README="$(dirname "$SKILL")/README.md"
+FIXDIR="$(cd "$(dirname "$0")" && pwd)/fixtures"
+needr()   { grep -qF -- "$1" "$README" 2>/dev/null || { echo "FAIL: README missing required text: $1"; fail=1; }; }
+forbidr() { ! grep -qF -- "$1" "$README" 2>/dev/null || { echo "FAIL: README has forbidden text: $1"; fail=1; }; }
+# D1: a working resolution path for the GATK hg38 bundle
+need "https://gatk.broadinstitute.org/hc/en-us/articles/360035890811"
+need "**Human: when the GATK page cannot be read.**"
+need 'https://storage.googleapis.com/storage/v1/b/gcp-public-data--broad-references/o?prefix=hg38/v0/&fields=items(name,size),nextPageToken'
+need '&pageToken=<nextPageToken>'
+need "The download URL of an object is https://storage.googleapis.com/gcp-public-data--broad-references/ followed by its listed name"
+need "show the exact URLs and sizes to the user and download only after they confirm"
+# D2: which bundle files
+need '`Homo_sapiens_assembly38.dbsnp138.vcf.gz` (dbSNP, 1,560,889,937 bytes)'
+need '`Mills_and_1000G_gold_standard.indels.hg38.vcf.gz` (known indels, 20,685,880 bytes)'
+need 'Do NOT use the plain `Homo_sapiens_assembly38.dbsnp138.vcf`'
+# D8: head-job resources
+need '#SBATCH -N 1 -n 2 --mem=8G -t 2-00:00:00 -p bcc'
+forbid '#SBATCH -n 32'
+need 'a deliberate exception to the usual 4 h default'
+sub_block=$(awk '/^```bash/{f=1;b="";next} /^```/{if(f&&b~/nextflow run nf-core\/rnavar/)print b; f=0;next} f{b=b $0 "\n"}' "$SKILL")
+{ echo "$sub_block" | grep -qE '^#SBATCH .*-t [0-9]' && echo "$sub_block" | grep -qE '^#SBATCH .*--mem=' && ! echo "$sub_block" | grep -qE '^#SBATCH .*-n ([3-9][0-9]|[0-9]{3})'; } \
+  || { echo "FAIL: the pipeline submission script must request a time (-t), memory (--mem=) and a small -n"; fail=1; }
+# D3, D4
+need '`_1.` (SRA/ENA names: `SRR5665260_1.fastq.gz` gives `SRR5665260`)'
+need 'When `{SEQ_DATE}` equals `{TODAY_YYMMDD}` (no date prefix was found, so it fell back to today), options 1 and 2 are the same: offer only 1. `{TODAY_YYMMDD}_{WD_NAME}_samplesheet.csv` · 2. Custom.'
+need 'For both questions, when `{SEQ_DATE}` equals `{TODAY_YYMMDD}`, options 1 and 2 are the same: offer only 1. `{TODAY_YYMMDD}_{WD_NAME}` · 2. Custom.'
+# D5: every module line is checked
+need 'module add star/2.7.9a || { echo "ERROR: cannot load star" >&2; exit 1; }'
+need 'module add miniconda3/v4 || { echo "ERROR: cannot load miniconda3" >&2; exit 1; }'
+bad_mod=$(grep -nE '^[[:space:]]*module add ' "$SKILL" | grep -vF '|| ')
+[ -z "$bad_mod" ] || { echo "FAIL: unchecked module add line(s): $bad_mod"; fail=1; }
+# D6: quiet downloads
+need 'downloads (`wget -c -nv`'
+bad_wget=$(grep -nE '^[[:space:]]*wget ' "$SKILL" | grep -vF ' -nv ')
+[ -z "$bad_wget" ] || { echo "FAIL: wget line(s) without -nv: $bad_wget"; fail=1; }
+# D9: STAR temp dir next to the index, removed by literal path only
+need '--outTmpDir "{GENOME_DIR}/index/_STARtmp_rnavar_sjdb{SJDB_OVERHANG}"'
+[ "$(grep -cxF 'rm -rf -- "{GENOME_DIR}/index/_STARtmp_rnavar_sjdb{SJDB_OVERHANG}"' "$SKILL")" -eq 2 ] \
+  || { echo "FAIL: the STAR helper must remove its temp dir by literal path before and after STAR (2 lines)"; fail=1; }
+need 'STAR_RC=$?'
+need 'ERROR: STAR genomeGenerate failed (exit $STAR_RC)'
+bad_rm=$(grep -nE 'rm -[a-z]*r[a-z]* .*\$' "$SKILL")
+[ -z "$bad_rm" ] || { echo "FAIL: recursive rm on a shell variable: $bad_rm"; fail=1; }
+# D7: generic defaults kept, described as a fallback
+need "// Fallback for unlabelled processes only"
+awk '/Fallback for unlabelled processes only/{f=1} f&&/withName/{exit} f&&/^ +cpus = 2$/{c=1} f&&/^ +memory = .8 GB.$/{m=1} f&&/^ +time = .4h.$/{t=1} END{exit !(c&&m&&t)}' "$SKILL" \
+  || { echo "FAIL: the fallback cpus = 2 / memory = '8 GB' / time = '4h' must follow the fallback comment"; fail=1; }
+# Tiers: exact values per selector (measured on one dataset)
+sel_vals() { awk -v s="withName: '$1' {" 'index($0,s){f=1;next} f&&/}/{exit} f{gsub(/^ +/,""); printf "%s;", $0}' "$SKILL"; }
+chk_sel() { [ "$(sel_vals "$1")" = "$2" ] || { echo "FAIL: selector $1 values are '$(sel_vals "$1")', expected '$2'"; fail=1; }; }
+chk_sel '.*:STAR_ALIGN'             "cpus = 8;memory = '64 GB';time = '8h';"
+chk_sel '.*:PICARD_MARKDUPLICATES'  "cpus = 2;memory = '48 GB';time = '8h';"
+chk_sel '.*:GATK4_SPLITNCIGARREADS' "cpus = 4;memory = '24 GB';time = '4h';"
+chk_sel '.*:GATK4_BASERECALIBRATOR' "cpus = 2;memory = '8 GB';time = '4h';"
+chk_sel '.*:GATK4_HAPLOTYPECALLER'  "cpus = 2;memory = '8 GB';time = '4h';"
+need "Tiers measured on one human sample (39.6 M read pairs)"
+need "MarkDuplicates, which had no selector, peaked at 27.8 GB of its label's 36 GB (77%)"
+need 'Genome over 1 Gb: `-n 8 --mem=64G -t 4:00:00` (measured for GRCh38 in the real-data test: 42 min 27 s and at least 43.1 GB'
+# every withName selector matches a process of the real run (fixture from its execution_trace.txt)
+PROCS="$FIXDIR/realdata_gm12878_processes.txt"
+if [ ! -s "$PROCS" ]; then echo "FAIL: fixture missing: $PROCS"; fail=1
+else
+  sels=$(grep -oE "withName: '[^']+'" "$SKILL" | sed -E "s/withName: '([^']+)'/\1/")
+  [ -n "$sels" ] || { echo "FAIL: no withName selectors found"; fail=1; }
+  for s in $sels; do
+    grep -v '^#' "$PROCS" | grep -qxE -- "$s" || { echo "FAIL: selector '$s' matches no process of the real-data run"; fail=1; }
+  done
+fi
+# Hand-off note: RNA editing and evaluation limits (measured on one dataset)
+need "measured on ONE human dataset: GM12878/HG001"
+need "78% of the false-positive SNVs were A>G/T>C (2,300 of 2,932), and 88.5% of those"
+need "(2,036) sit on known REDIportal editing sites, against 1.37% of the true-positive SNVs."
+need "Mask known editing sites (for example REDIportal) before treating A>G/T>C calls as genomic"
+need "would rise from 0.885 to about 0.96, a counterfactual that was not re-run."
+need "76.5% of the missed truth variants were heterozygous"
+need "SnpCluster (91% of the filtered ones)"
+need "32.9 Mb, about 1.3% of the GIAB confident genome. No accuracy claim is made outside it;"
+# README: real-data test record and honesty statements
+needr "## Real-data test (one human dataset)"
+needr "It is ONE dataset, one sample and one run; the numbers below hold for that dataset only."
+needr "SRR5665260 (BioProject PRJNA389940), GM12878 = GIAB HG001"
+needr "Pipeline wall time **3 h 10 min 42 s**; **22.9 CPU-hours** used by all tasks"
+needr "| exons_all_dp10 | genotype | 0.885 | 0.917 | 0.901 | 0.674 | 0.815 | 0.738 |"
+needr "| all records | 0.766 | 0.957 | 0.851 | 0.534 | 0.823 | 0.648 |"
+needr "85,799 calls, 84.6% PASS; ts/tv 2.92 (PASS SNVs, autosomes); het/hom-alt 1.15; 72.9% of PASS calls in dbSNP138"
+needr "No accuracy claim is made outside GIAB confident regions ∩ exons ∩ depth ≥ 10 (or ≥ 20)"
+needr "about 67 GB under the test folder"
+needr "STAR index 30 GB and \`known_sites/\` 2.9 GB"
+needr "### Resources: requested vs observed (that run)"
+needr "| Head job (Nextflow) | 32 cores, no memory or time | about 1 core |"
+needr "### Not verified"
+needr "A cluster that enforces memory limits."
+needr "A second run for reproducibility (one run only)."
+needr "have not been run on real data; they were checked statically and with stubs."
+needr "The resource tiers are measured on one human dataset"
+needr "deliberate exception to the usual 4 h default"
+forbidr "Process-name selectors were verified against real tasks only for the four listed"
+forbidr "validated on real data"
+forbidr "validated on real genomes"
+forbidr "fully validated"
+forbidr "production-ready"
+forbidr "validated genome-wide"
+# --- end Real-data fix round
 
 [ $fail -eq 0 ] && echo "PASS" || exit 1
