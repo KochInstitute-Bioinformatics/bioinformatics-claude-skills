@@ -15,7 +15,7 @@
 # points them at a mutated copy of this file.
 #
 # Live acceptance on the nf-core test data (not run by this script: by hand, on the cluster, the pipeline only through sbatch;
-# needed after any change to a generated file, for example the nextflow.config template of the real-data fix round):
+# needed after any change to a generated file, for example the nextflow.config template, changed after the real-data test):
 #   1. In an empty project directory, follow the skill with the nf-core test FASTQ files (the 4 paired-end human chrX samples of
 #      tests/fixtures/test_samplesheet.csv, downloaded to that directory) and the test FASTA and GTF of nf-core/test-datasets
 #      (branch rnasplice; see tests/fixtures/gate_report.md, G0b) as a custom reference; choose all five analyses.

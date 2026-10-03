@@ -1083,7 +1083,7 @@ need "**Path style:** if \`{BAM_DIR}\` is inside \`{CWD}\`, use paths relative t
 needr "job 11380326, wall time 11 min 49 s, 80/80 tasks COMPLETED"
 needr "job 11380459, wall time 6 min 16 s, 43/43 tasks COMPLETED"
 needr "the rMATS sign on 202/202 rows of SE.MATS.JC.txt and the SUPPA2 sign on 1098/1098 local and 1854/1854 isoform events"
-needr "- Not exercised: real data; the Ensembl download helper; a paired design; strandedness other than unstranded, and single-end input; a human- or mouse-size genome; the time and memory of any process on real data."
+needr "- Not exercised by these runs (see **Real-data test** below for the real-data run): real data; the Ensembl download helper; a paired design; strandedness other than unstranded, and single-end input; a human- or mouse-size genome; the time and memory of any process on real data."
 # --- end Task 9 fix round
 # --- Final review fixes (I1, I3, M1, M2, M4, M6)
 # I1: custom prefix and custom file names: Step 10's character rule; install_rnasplice_sheets refuses a split or odd name.
@@ -1165,7 +1165,7 @@ need "the \`STAR_ALIGN\` \`ext.args\` block below) so they can compare"
 needr "- **No STAR transcriptome BAM.**"
 needr "repeats the pinned STAR_ALIGN \`ext.args\` without \`--quantMode TranscriptomeSAM\` and \`--quantTranscriptomeSAMoutput BanSingleEnd\`; the launch line is unchanged."
 needr "Verified on the real-data test with the same selector and arguments in a separate config file (resumed run: 22 tasks cached, 0 failed)"
-needr "the form written into \`nextflow.config\` is to be verified by an acceptance re-run on the nf-core test data"
+needr "the form written into \`nextflow.config\` was applied in a run on the nf-core test data (2026-10-03: no STAR_ALIGN task had \`--quantMode\`, no transcriptome BAM was written; see Validation status)"
 needr "Not verified: an unmodified STAR_ALIGN run to completion at full size. BAM input is unaffected (no STAR_ALIGN task)."
 needr "The \`nextflow.config\` template was changed after the real-data test (see **Real-data test** below); these three runs did not use its new form."
 forbidr "\`nextflow.config\` is byte-identical to the Step 10 template, and"
@@ -1174,7 +1174,7 @@ forbid "The resources of every selector are judgement: they are not measured on 
 forbid "It requests 8 CPUs, 36 GB and 8 h"
 need "The SUPPA2 selector \`'.*:DIFFSPLICE_IO[EI]'\` matches its two differential-splicing processes, DIFFSPLICE_IOE and DIFFSPLICE_IOI."
 need "**Where the selector values come from.** \`STAR_GENOMEGENERATE\` and \`DEXSEQ_EXON\` keep the values that this skill's verification run on the nf-core test data applied."
-need "one human dataset (6 samples of about 38 M read pairs of 78 bp, one contrast, all five analyses), so they rest on that one dataset, and these new values have not yet been applied in a run."
+need "one human dataset (6 samples of about 38 M read pairs of 78 bp, one contrast, all five analyses), so they rest on that one dataset. The new values were applied in a run on the nf-core test data (2026-10-03: every task requested exactly these values), which shows that they are applied, not that they are enough for real data."
 need "- STAR_ALIGN: peak 37.7 GB (79% of 48 GB; the human index takes most of it), at most 15 min: 8 CPUs, 48 GB, 4 h."
 need "- RMATS_PREP: single-threaded, 1.3 GB, 8 min: 2 CPUs, 8 GB, 4 h."
 need "- RMATS_POST: 2.0 GB, 3 min for one contrast: 8 CPUs, 16 GB, 8 h"
@@ -1190,7 +1190,7 @@ need "\`peak_rss\`, \`realtime\` and \`%cpu\` what it used, and \`attempt\` whet
 need "**DEXSEQ_EXON memory:** its \`peak_rss\` in the trace is misleading. In the real-data test the trace reported 187 GB for this task, which requested 32 GB and was not killed; \`sstat\` showed 8.4 GB during its serial phase."
 need "Its true peak was not measured: do not raise its selector because of that column alone; compare with SLURM's MaxRSS"
 needr "| Selector | CPUs | Memory | Time | Evidence |"
-needr "The values marked \"real-data test\" were set from what each process used in the real-data test (below): ONE human dataset, 6 samples of about 38 M read pairs of 78 bp, one contrast, all five analyses. They rest on that one dataset, and these values have not yet been applied in a run"
+needr "The values marked \"real-data test\" were set from what each process used in the real-data test (below): ONE human dataset, 6 samples of about 38 M read pairs of 78 bp, one contrast, all five analyses. They rest on that one dataset (the test ran with the earlier values); they were then applied in a run on the nf-core test data (2026-10-03), which shows that they are applied, not that they are enough for real data"
 needr "\`STAR_GENOMEGENERATE\` and \`DEXSEQ_EXON\` keep the values of the verification gate."
 needr "The executor's \`queueSize\` is 20"
 needr "for \`DEXSEQ_EXON\`, the trace's \`peak_rss\` is misleading (187 GB reported in the real-data test for a 32 GB task that was not killed; \`sstat\` showed 8.4 GB; probably forked workers counted separately): compare with SLURM's MaxRSS instead."
@@ -1210,7 +1210,7 @@ need "A kit name alone does not determine the direction"
 need "in this skill's real-data test the GEO text said \"NEB Ultra II protocol\", without \"Directional\", and the reads were clearly reverse-stranded: Salmon found ISR), so never derive the answer from a kit name"
 forbid_re 'Ultra II[^.]*(implies|means|so it is) (stranded|unstranded|reverse|forward)' "a strandedness derived from a kit name"
 need "without such a directory, with FASTQ input, offer the Salmon helper"
-need "only when a Salmon index of the same organism exists in the shared genome folder"
+need "only when a Salmon index of the same organism is available (below). Ask (numbered): 1. Generate the Salmon strandedness helper (default) · 2. I will answer 1, 2 or 3 myself."
 need "The index serves only this detection: the pipeline never receives it (\`{SALMON_INDEX}\` stays empty, Step 7), and the wizard never guesses from the result: it proposes, and the user confirms."
 need "No \`SALMON_INDEX\` line: the helper is not offered"
 need "at least two, one from each condition the user will compare"
@@ -1244,22 +1244,22 @@ grep -qE "^$(printf '%s' "$s_url" | sed 's/[.]/\\./g') 200 " "$FIX/verified_urls
 s_sif=$(printf '%s' "${s_url#https://}" | tr '/:' '--').img
 printf '%s\n' "$STRH_FULL" | grep -qF "SIF=\"\${NXF_SINGULARITY_CACHEDIR:-\$HOME/.singularity/cache}/$s_sif\"" \
   || { echo "FAIL: the strandedness helper must look for the cached image $s_sif in the Singularity cache"; fail=1; }
-needr "a Salmon helper that detects the library type from 1,000,000 reads of a few samples"
+needr "a Salmon helper that detects the library type from up to 1,000,000 reads of a few samples"
 needr "A kit name alone does not determine the direction"
 needr "The Salmon helper was run by hand in the real-data test (reverse-stranded paired-end data); its generated form was tested with stubs only."
-# D2: disk estimate (report D2: about 40 GB + 18 GB per sample with the STAR_ALIGN override, about 38 GB per sample without it),
+# D2: disk estimate (review I1, du of the real run: about 70 GB + 18 GB per sample with the STAR_ALIGN override, 38 GB or more per sample without it),
 # where the output directory is asked and in the README prerequisites; work/ is never deleted by the skill.
 need "**Disk space.** When asking for the output directory, tell the user how much space the run needs in \`{CWD}\`"
-need "a run needed about 40 GB plus 18 GB per sample for \`work/\` and the output directory together, with the \`STAR_ALIGN\` block of the \`nextflow.config\` template (about 38 GB per sample without it), not counting the FASTQ files"
+need "a run needs about 70 GB plus 18 GB per sample for \`work/\` and the output directory together (6 samples: about 175 GB), with the \`STAR_ALIGN\` block of the \`nextflow.config\` template (about 38 GB or more per sample without it), not counting the FASTQ files."
 need "This is an estimate from one dataset; it grows with the number of reads per sample."
 need "It is needed to resume a run (**Resuming a run**, Step 11); after a successful run the user can delete it to free the space. The wizard and the generated scripts never delete it."
 forbid_re 'rm +-[a-z]*r[a-z]* +[^ ]*work' "a command that deletes work/ (the user deletes it, never the wizard)"
-needr "| Disk space | About 40 GB plus 18 GB per sample for \`work/\` and the results together (FASTQ files not counted), measured in the real-data test on one human dataset of about 38 M read pairs of 78 bp per sample"
-needr "(about 38 GB per sample without it); it grows with the reads."
+needr "| Disk space | About 70 GB plus 18 GB per sample for \`work/\` and the results together (6 samples: about 175 GB; FASTQ files not counted), estimated from the disk use of the real-data test on one human dataset of about 38 M read pairs of 78 bp per sample"
+needr "(about 38 GB or more per sample without it); it grows with the reads. The fixed part is mostly the STAR index copy (28.5 GB), the Salmon index (about 22 GB), the transcript FASTA (about 7.4 GB) and the gene-filter step (about 4.4 GB)."
 needr "resuming a run needs it, and after a successful run it can be deleted; the skill never deletes it |"
 # D5: stopping a run without orphan tasks, and without cancelling other runs.
 need "- To stop a run: cancel the head job with \`scancel {JOBID}\`."
-need "Check each one with \`scontrol show job <id>\` (its \`WorkDir\` must be under \`{CWD}/work\`, so that it belongs to this run), and cancel them one at a time with \`scancel <id>\`."
+need "Check each one with \`scontrol show job <id>\`: its \`StdOut\` (the task's \`.command.log\`) must be under \`{CWD}/work\`, so that it belongs to this run. Then cancel them one at a time with \`scancel <id>\`."
 need "Never cancel by a name pattern or all of the user's jobs at once: that can stop other runs."
 forbid_re 'scancel +(-[A-Za-z]|--[a-z])' "a scancel command that selects jobs by user or name (it can stop other runs)"
 # D8: the rMATS chr column.
@@ -1277,7 +1277,7 @@ needr "Akerberg et al. 2022 (GEO GSE207681)"
 needr "WT_1, WT_2, WT_3 = SRR20021261, SRR20021260, SRR20021259 (GSM6307608-GSM6307610) and KO_1, KO_2, KO_3 = SRR20021257, SRR20021256, SRR20021255 (GSM6307612-GSM6307614)"
 needr "- What ran: all five analyses (rMATS, SUPPA2, DEXSeq and edgeR exon usage, DEXSeq DTU), one contrast (\`KO_vs_WT\`), no paired design."
 needr "81 tasks completed and 22 cached, 0 failed, 0 retried; the resumed run took 4 h 11 min"
-needr "RBPMS2 expression (Salmon gene TPM) was 67% lower in KO"
+needr "RBPMS2 (ENSG00000166831) expression (Salmon gene TPM) was 67% lower in KO"
 needr "was found by all four splicing analyses"
 needr "PC1 (65.9% of the variance) separated WT from KO"
 needr "rMATS found 7,031 significant events (junction-count tables), about 2.6 times the 2,679 events the paper reports. The reason was not determined"
@@ -1296,4 +1296,44 @@ forbidr "matches the paper's"
 forbidr "explained by the sample number"
 needr "the stub dry runs of the submission script, the download helper and the Salmon strandedness helper"
 # --- end Real-data fix round
+# --- Fix round 2 (review realdata-fix-rnasplice-review.md, live re-run 2026-10-03 on the nf-core test data)
+# I1: disk estimate from the real run's disk use (about 70 GB fixed, 18 GB per sample).
+forbid "about 40 GB plus 18 GB per sample"
+forbidr "About 40 GB plus 18 GB per sample"
+need "Most of the fixed part is the copy of the reused STAR index (28.5 GB), the finished Salmon index (about 22 GB), the transcript FASTA (about 7.4 GB) and the gene-filter step (about 4.4 GB)"
+# M3: the transcriptome BAM size is a projection from a partial file.
+forbid "(measured in this skill's real-data test). With this skill's route"
+need "an estimated 20 GB or more per sample of 38 M read pairs (projected in this skill's real-data test from a partial file: 5.57 GB after about 7.5 M of 38 M read pairs, which extrapolates to 20-28 GB)"
+needr "(an estimated 20 GB or more per sample of 38 M read pairs, projected from a partial file in the real-data test)"
+# Live re-run: the template and the tier values were applied on the test data (not proof for real data).
+need "The block as written in this template was then applied in a run on the nf-core test data (2026-10-03, Nextflow 26.04.6): the config was accepted, no STAR_ALIGN task had \`--quantMode\`, and no transcriptome BAM was written."
+forbid "have not yet been applied in a run"
+forbidr "have not yet been applied in a run"
+forbidr "is to be verified by an acceptance re-run"
+grep -qE '^Live re-run of the changed template \(nf-core test data\): DONE \(2026-[0-9-]+\)$' "$README" 2>/dev/null \
+  || { echo "FAIL: README must have the whole line 'Live re-run of the changed template (nf-core test data): DONE (2026-MM-DD)'"; fail=1; }
+needr "- \`nextflow.config\` was byte-identical to the Step 10 template and was accepted by Nextflow 26.04.6; the launch line was unchanged."
+needr "- Run (a), all five analyses: 80/80 tasks COMPLETED; run (b), rMATS only: 51/51; run (c), genome-BAM input from the BAM files of run (a): 43/43; the Salmon strandedness helper: 11 s for two samples of 50,000 read pairs"
+needr "- Every selector was applied: each task requested exactly the values of the Resources table"
+needr "- STAR_ALIGN: no task had \`--quantMode\`, and no transcriptome BAM was written."
+needr "it shows that the template and its values are applied, not that they are enough for real data. Not exercised: \`queueSize\` 20 at scale (at most 6 tasks ran at once), the stop-a-run guidance, the disk estimate at real size."
+# M1: the strandedness helper refuses an existing output directory (no stale results, no rm).
+need "  [ ! -e \"\$OUT/\$s\" ] || { echo \"ERROR: \$s: \$OUT/\$s exists from an earlier run: move or delete it, then submit again\" >&2; rc=1; return 1; }"
+need "a sample whose output directory exists from an earlier run is refused"
+# M2: the verified StdOut field, full job names, never a broad scancel.
+forbid "\`WorkDir\` must be under"
+need "\`squeue -u \$USER -o \"%.12i %.70j\"\` (the default name column shows only 8 characters)"
+# M4 and live-test items: numbered offer, index options, run time depends on the data, unstranded counts.
+need "The genome is chosen only in Step 7, so ask first (numbered): \"Where is a Salmon index of this organism?\" 1. In the shared genome folder of \`/nfcore-rnaseq-setup\` (Ensembl, Step 7 option 1; default) · 2. I will give the path of a Salmon index directory · 3. There is none."
+need "for 2, run the same lines with the given directory (quoted) in place of the \`{genome_base}\` pattern"
+need "Its run time depends on the data size: about 6 minutes for two samples of the real-data test, 11 s for two samples of 50,000 read pairs of the nf-core test data."
+forbid "of a few samples; this was how the real-data test found its library type"
+need "An unstranded library shows ISF about equal to ISR, IU about 0 and \`expected_format\` IU"
+needr "the generated helper took 11 s on two samples of the 50,000-pair nf-core test data and found them unstranded (ISF about equal to ISR, IU 0)."
+# M5: an existing nextflow.config without the STAR_ALIGN block costs disk.
+need "If it has no \`STAR_ALIGN\` \`ext.args\` block like the template's, tell the user that STAR then also writes the transcriptome BAM, an estimated 20 GB or more of extra disk per sample"
+# M8
+needr "a hand-written job with the same Salmon command"
+forbidr "an equivalent hand-written job"
+# --- end Fix round 2
 [ $fail -eq 0 ] && echo "PASS" || exit 1

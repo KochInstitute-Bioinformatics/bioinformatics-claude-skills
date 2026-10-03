@@ -44,7 +44,9 @@ line=$(salmon_strandedness "$P/SRR20021259")
 # paired-end
 mk pe_forward ISF 1.0 ISF=900 ISR=50;            check pe_forward forward
 mk pe_unstranded IU 1.0 ISF=500 ISR=500;         check pe_unstranded unstranded
-mk pe_iu_only IU 1.0 IU=1000;                    check pe_iu_only unstranded
+mk pe_iu_only IU 1.0 IU=1000;                    check pe_iu_only unstranded  # edge case: real unstranded data show ISF ~ ISR, IU 0
+# live re-run on the unstranded nf-core test data (2026-10-03): ISF 22822, ISR 22215, SF 960, SR 775, IU 0, expected_format IU
+mk live_unstranded IU 1.0 ISF=22822 ISR=22215 SF=960 SR=775; check live_unstranded unstranded
 # the RSeQC rule's boundaries: >= 0.8 for a strand, |forward - reverse| <= 0.1 for unstranded
 mk pe_r_at_080 ISR 1.0 ISR=80 ISF=20;            check pe_r_at_080 reverse
 mk pe_f_at_080 ISF 1.0 ISF=80 ISR=20;            check pe_f_at_080 forward
@@ -138,11 +140,15 @@ mk_helper() { # mk_helper <run_sample lines...>: fills the placeholders as the w
 }
 runh() { # runh <name> <expected exit 0|1> [module_fail salmon_fail salmon_nojson wget_fail no_singularity no_sif]
   local name=$1 erc=$2 p="$S:$PATH" w rc; shift 2
+  local keep=0; for w in "$@"; do [ "$w" = keep_outputs ] && keep=1; done
+  # the helper refuses an existing sample directory (it never deletes): the test clears them between cases
+  if [ $keep -eq 0 ]; then for w in "$OUT"/*/; do [ -d "$w" ] && rm -rf -- "$w"; done; fi
   rm -f "$STUB_STATE/calls" "$STUB_STATE/module_fail" "$STUB_STATE/salmon_fail" "$STUB_STATE/salmon_nojson" "$STUB_STATE/wget_fail"
   mkdir -p "$(dirname "$SIF")" && echo "cached image" > "$SIF" || exit 1
   for w in "$@"; do case "$w" in
     no_singularity) p="$TEST_TMP/nosing:/usr/bin:/bin" ;;
     no_sif) mv "$SIF" "$TEST_TMP/held_sif" || exit 1 ;;
+    keep_outputs) ;;
     *) : > "$STUB_STATE/$w" ;;
   esac; done
   ( cd "$ELSE" && HOME="$TEST_TMP/home" PATH="$p" bash "$TEST_TMP/helper.sh" ) > "$TEST_TMP/out" 2>&1; rc=$?
@@ -167,6 +173,10 @@ done
   || { echo "FAIL: case paired: calls"; cat "$STUB_STATE/calls"; fail=1; }
 awk '/^module add singularity/ && !m {m = NR} /^singularity / && !s {s = NR} END {exit !(m && s && m < s)}' "$STUB_STATE/calls" || { echo "FAIL: case paired: module add singularity must come first"; fail=1; }
 [ ! -e "$ELSE/strandedness_salmon" ] || { echo "FAIL: case paired: output written in the submit directory, not in {CWD}"; fail=1; }
+# a rerun with an existing sample directory is refused (old results are never read as new ones)
+mk_helper 'run_sample "B" "data/B_1.fq.gz" "data/B_2.fq.gz"'
+runh stale_output 1 keep_outputs
+{ grep -q "B: $OUT/B exists from an earlier run" "$TEST_TMP/out" && [ "$(ncalls singularity)" -eq 0 ] && [ "$(ncalls zcat)" -eq 0 ]; } || { echo "FAIL: case stale_output"; sed 's/^/    /' "$TEST_TMP/out"; fail=1; }
 # single-end: salmon -r, no -1/-2
 mk_helper 'run_sample "C" "data/C.fq.gz"'
 runh single 0
