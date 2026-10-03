@@ -13,8 +13,22 @@
 # test_run_all.sh tests this script on a fake tree (exit codes, PASS lines, every test run, the git version comparison).
 # CHECK_RUN_ALL (read by check_skill.sh and test_run_all.sh, not by this script) is a test hook of prove_mutations.sh only: it
 # points them at a mutated copy of this file.
+#
+# Live acceptance on the nf-core test data (not run by this script: by hand, on the cluster, the pipeline only through sbatch;
+# needed after any change to a generated file, for example the nextflow.config template of the real-data fix round):
+#   1. In an empty project directory, follow the skill with the nf-core test FASTQ files (the 4 paired-end human chrX samples of
+#      tests/fixtures/test_samplesheet.csv, downloaded to that directory) and the test FASTA and GTF of nf-core/test-datasets
+#      (branch rnasplice; see tests/fixtures/gate_report.md, G0b) as a custom reference; choose all five analyses.
+#   2. Before submitting: nextflow.config must be byte-identical to the Step 10 template
+#      (bash tests/cut_block.sh <skill> "**nextflow.config template.**" | cmp - nextflow.config), and the params file must equal
+#      the output of tests/render_params.sh with the same values.
+#   3. sbatch the generated script. Afterwards: 'Pipeline completed successfully' in its log; every task COMPLETED in
+#      {OUTDIR}/pipeline_info/execution_trace.txt; its cpus, memory and time columns equal the withName selectors for every
+#      process they match; the STAR_ALIGN .command.sh files hold no --quantMode or --quantTranscriptomeSAMoutput; every path of
+#      the Step 12 hand-off note exists.
+#   4. Record the run in the README (Validation status) and pin it in check_skill.sh, with its mutation rows.
 set -u
-TESTS="check_skill.sh test_strandedness.sh test_bam_policy.sh test_sample_names.sh test_validate_sheets.sh test_read_length.sh test_render_params.sh dry_run_submit.sh dry_run_helpers.sh test_run_all.sh prove_mutations.sh"
+TESTS="check_skill.sh test_strandedness.sh test_strand_salmon.sh test_bam_policy.sh test_sample_names.sh test_validate_sheets.sh test_read_length.sh test_render_params.sh dry_run_submit.sh dry_run_helpers.sh test_run_all.sh prove_mutations.sh"
 FULL_TESTS="test_proof_tools.sh"
 NOT_TESTS="cut_block.sh test_env.sh render_params.sh prove_red.sh run_all_tests.sh"
 HERE=$(cd "$(dirname "$0")" && pwd); SK="$HERE/../nfcore-rnasplice-setup.md"; ROOT_README="$HERE/../../README.md"

@@ -5,7 +5,7 @@
 # CHECK_RUN_ALL); @KEY@ in the program and the text is replaced by the gate value KEY. A row passes when
 # the sed program changed the target, the runner exits non-zero, and the runner printed the expected text.
 # An @KEY@ that is not a non-empty gate value fails its row (it would otherwise become an empty string).
-# Runners: check strand bam names validate readlen render submit helper runtest (see runner() below).
+# Runners: check strand bam names validate readlen render submit helper runtest salmonstrand (see runner() below).
 # Prints "MUTATIONS PASS (<n>)" or exits 1.
 set -u
 SKILL=${1:?usage: prove_mutations.sh <skill.md>}
@@ -21,7 +21,7 @@ subst() { local s=$1 k v; while [[ $s =~ @([A-Z_0-9]+)@ ]]; do k=${BASH_REMATCH[
 runner() { case "$1" in
   check) echo check_skill.sh ;; strand) echo test_strandedness.sh ;; bam) echo test_bam_policy.sh ;; names) echo test_sample_names.sh ;;
   validate) echo test_validate_sheets.sh ;; readlen) echo test_read_length.sh ;; render) echo test_render_params.sh ;;
-  submit) echo dry_run_submit.sh ;; helper) echo dry_run_helpers.sh ;; runtest) echo test_run_all.sh ;; *) echo "" ;; esac; }
+  submit) echo dry_run_submit.sh ;; helper) echo dry_run_helpers.sh ;; runtest) echo test_run_all.sh ;; salmonstrand) echo test_strand_salmon.sh ;; *) echo "" ;; esac; }
 for r in $(awk -F'\t' '$1 !~ /^#/ && NF >= 5 {print $2}' "$HERE/mutations.tsv" | sort -u); do
   s=$(runner "$r"); [ -n "$s" ] || { echo "unknown runner: $r"; exit 1; }
   bash "$HERE/$s" "$SKILL" > "$T/out" 2>&1 || { echo "$s fails on the unmutated skill:"; tail -20 "$T/out"; exit 1; }
