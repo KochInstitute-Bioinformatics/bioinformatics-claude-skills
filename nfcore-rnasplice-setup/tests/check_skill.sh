@@ -956,8 +956,8 @@ done
 # Correction 8: the test runner (default and --full), the git requirement.
 needr "bash tests/run_all_tests.sh --full"
 needr "RNASPLICE_TEST_GIT_DIR"
-needr "The default run takes about 17 minutes (bash, awk and sed only) and skips the proof-tool self-test (\`test_proof_tools.sh\`, 30 to 35 minutes)"
-needr "\`bash tests/run_all_tests.sh --full\` includes it (about 50 minutes in all)."
+needr "The default run takes about 50 minutes (bash, awk and sed only; measured on 2026-10-02, it varies with the load of the login node) and skips the proof-tool self-test (\`test_proof_tools.sh\`, about 100 minutes)"
+needr "\`bash tests/run_all_tests.sh --full\` includes it (about 2 h 30 min in all)."
 forbidr "about 20 minutes"
 # Correction 9: what was verified: the gate date, every run directory of RUN_DIRS, nf-core test data only.
 needr "Verification gate ($(gv GATE_DATE))"

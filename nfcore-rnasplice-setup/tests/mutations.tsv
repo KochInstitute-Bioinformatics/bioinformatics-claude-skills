@@ -437,7 +437,7 @@ T8-bump	check	readme	s/\*\*Bumping the pin\*\*/Updating/	README missing required
 T8-bump-fx	check	readme	s/the task command lines (`command_lines.txt`: /the task command lines (/	README missing required text: `command_lines.txt`
 T8-full	check	readme	s/bash tests\/run_all_tests.sh --full/bash tests\/test_proof_tools.sh/g	README missing required text: bash tests/run_all_tests.sh --full
 T8-gitdir	check	readme	s/RNASPLICE_TEST_GIT_DIR/GIT_DIR/g	README missing required text: RNASPLICE_TEST_GIT_DIR
-T8-skipnote	check	readme	s/and skips the proof-tool self-test/and runs everything/	README missing required text: The default run takes about 17 minutes
+T8-skipnote	check	readme	s/and skips the proof-tool self-test/and runs everything/	README missing required text: The default run takes about 50 minutes
 T8-gatedate	check	readme	s/Verification gate (@GATE_DATE@)/Verification gate/	README missing required text: Verification gate (@GATE_DATE@)
 T8-tiny	check	readme	s/nf-core's tiny test dataset/a test dataset/	README missing required text: nf-core's tiny test dataset
 T8-readlen	check	readme	s/@TEST_READ_LENGTH@ bp reads/100 bp reads/	README missing required text: @TEST_READ_LENGTH@ bp reads
@@ -490,8 +490,8 @@ T8f-starindex	check	readme	s/ `star_index` (reuse of an existing STAR index) was
 T8f-bulk	check	readme	s/: run it in one place only\./: run it in both places./	README has forbidden text: run it in both places
 T8f-bulk-del	check	readme	s/: run it in one place only\./, with DESeq2./	README missing required text: ): run it in one place only.
 T8f-4h	check	readme	s/(a deliberate exception)\./(a deliberate exception); it needs no more than 4 h in practice./	README has forbidden text: no more than 4 h
-T8f-duration	check	readme	s/(`test_proof_tools.sh`, 30 to 35 minutes)/(`test_proof_tools.sh`, about 20 minutes)/	README missing required text: The default run takes about 17 minutes
-T8f-duration-del	check	readme	s/The default run takes about 17 minutes (bash, awk and sed only) and skips/The default run skips/	README missing required text: The default run takes about 17 minutes
+T8f-duration	check	readme	s/(`test_proof_tools.sh`, about 100 minutes)/(`test_proof_tools.sh`, about 20 minutes)/	README missing required text: The default run takes about 50 minutes
+T8f-duration-del	check	readme	s/The default run takes about 50 minutes (bash, awk and sed only; measured on 2026-10-02, it varies with the load of the login node) and skips/The default run skips/	README missing required text: The default run takes about 50 minutes
 T8f-approved	check	readme	s/(a deliberate exception)/(approved by the user)/	README has forbidden text: approved by the user
 T8f-step6	check	readme	s/warns when read lengths differ, and stops by default when they differ between conditions |/warns when read lengths differ between conditions |/	README missing required text: warns when read lengths differ, and stops by default
 T8f-prefix	check	readme	s/^| `{SHEET_PREFIX}_contrasts\.csv` |/| `{prefix}_contrasts.csv` |/	README has forbidden text: {prefix}
@@ -520,7 +520,7 @@ T8f-rt-unnamed	runtest	runall	s/\*) echo "FAIL: tests\/\$b is not named in run_a
 T8f-rt-rootrow	runtest	runall	/FAIL: root README row missing/d	(runner args ''): exit 0, expected 1
 T8f-rt-rootdev	runtest	runall	/FAIL: root README row still marked in development/d	(runner args ''): exit 0, expected 1
 T8f-rt-nogit	runtest	runall	s/^  \[ -x "\$RNASPLICE_TEST_GIT_DIR\/git" \] || .*$/  :/	output lacks the line: ERROR: RNASPLICE_TEST_GIT_DIR=
-T8f-rt-skipmsg	runtest	runall	s/^  echo "== SKIPPED: \$FULL_TESTS (proof-tool self-test, 30 to 35 minutes; run with --full)"$/  :/	output lacks the line: == SKIPPED: test_proof_tools.sh
+T8f-rt-skipmsg	runtest	runall	s/^  echo "== SKIPPED: \$FULL_TESTS (proof-tool self-test, about 100 minutes; run with --full)"$/  :/	output lacks the line: == SKIPPED: test_proof_tools.sh
 T8f-ra-runtest	check	runall	s/ test_run_all\.sh / /	run_all_tests.sh TESTS must run test_run_all.sh
 T8f-ra-gitline	check	runall	s/| sort -V | head -n1)" != 1\.8\.5/| sort -V | head -n1)" != 1.8.6/	must check for git 1.8.5 or newer
 T9-pending-add	check	readme	$s/$/\nCluster acceptance (nf-core test data): PENDING/	README must have the whole line
@@ -573,7 +573,7 @@ F-i2-gate	check	readme	s/^- Static gate (commit bcb63e9):/- Static gate:/	README
 F-m7	check	readme	s/ its automatic sample names still ended in `_sorted` (made before Step 4b strips `_sorted\.bam`; that fix is unit-tested, run (c) was not repeated);//	README missing required text: its automatic sample names still ended in `_sorted`
 F-bashrow	check	readme	/^| bash 4 or newer |/d	README missing required text: | bash 4 or newer |
 F-m3-runall	runtest	runall	/needs internet on the compute nodes: its job downloads/,+1d	(runner args ''): exit 0, expected 1
-F-fullduration	check	readme	s/ (about 50 minutes in all)\././	README missing required text: `bash tests/run_all_tests.sh --full` includes it (about 50 minutes in all).
+F-fullduration	check	readme	s/ (about 2 h 30 min in all)\././	README missing required text: `bash tests/run_all_tests.sh --full` includes it (about 2 h 30 min in all).
 RD1-del	check	skill	/^    withName: 'STAR_ALIGN' {$/,/^    }$/d	must hold the STAR_ALIGN ext.args override
 RD1-qm	check	skill	s/^                '--twopassMode Basic',$/                '--quantMode TranscriptomeSAM',\n&/	differs from the pinned conf/modules.config block minus --quantMode TranscriptomeSAM
 RD1-ban	check	skill	s/^                '--outSAMattributes NH HI AS NM MD',$/&\n                '--quantTranscriptomeSAMoutput BanSingleEnd',/	differs from the pinned conf/modules.config block
