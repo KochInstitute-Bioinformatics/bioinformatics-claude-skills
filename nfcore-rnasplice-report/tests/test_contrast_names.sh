@@ -17,6 +17,7 @@ want='CONTRAST=GBR-1_vs_YRI_2
 TREATMENT=GBR-1
 CONTROL=YRI_2
 RMATS_DIR=star/rmats/GBR-1_vs_YRI_2
+RMATS_DIR_PAIRED=star/rmats/GBR-1_vs_YRI_2_paired
 DEXSEQ_EXON_FILE=star/dexseq_exon/results/DEXSeqResults.GBR-1_vs_YRI_2.csv
 EDGER_EXON_FILE=star/edger/contrast_GBR-1_vs_YRI_2.usage.exon.csv
 SUPPA_FILE=salmon/suppa/diffsplice/per_local_event/local_GBR-1-YRI_2.dpsi

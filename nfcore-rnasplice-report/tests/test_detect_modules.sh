@@ -48,6 +48,11 @@ check rmats-only "MODULES=rmats" "$(modules)"
 # 3. only the JCEC file of rMATS present
 mkdir -p "$tmp/jcec/star/rmats/GBR_vs_YRI"; cp "$fx"/star/rmats/GBR_vs_YRI/SE.MATS.JCEC.txt "$tmp/jcec/star/rmats/GBR_vs_YRI/"; run "$tmp/jcec" "$csv"
 check rmats-jcec-only "MODULES=rmats" "$(modules)"
+# 3b. paired run: rMATS tables only in star/rmats/{CONTRAST}_paired/ (rmats_paired_stats: true) count as found; header-only there does not
+mkdir -p "$tmp/pr/star/rmats/GBR_vs_YRI_paired"; cp "$fx"/star/rmats/GBR_vs_YRI/SE.MATS.JC.txt "$tmp/pr/star/rmats/GBR_vs_YRI_paired/"; run "$tmp/pr" "$csv"
+check rmats-paired-dir "MODULES=rmats" "$(modules)"
+mkdir -p "$tmp/prh/star/rmats/GBR_vs_YRI_paired"; head -n1 "$fx"/star/rmats/GBR_vs_YRI/SE.MATS.JC.txt > "$tmp/prh/star/rmats/GBR_vs_YRI_paired/SE.MATS.JC.txt"; run "$tmp/prh" "$csv"
+check rmats-paired-header-only "MODULES=" "$(modules)"
 # 4. header-only files must NOT count (every module)
 tree "$tmp/hdr" rsdet
 for f in star/rmats/GBR_vs_YRI/SE.MATS.JC.txt star/dexseq_exon/results/DEXSeqResults.GBR_vs_YRI.csv star/edger/contrast_GBR_vs_YRI.usage.exon.csv \

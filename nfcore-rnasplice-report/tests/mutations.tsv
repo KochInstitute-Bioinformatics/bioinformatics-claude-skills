@@ -95,3 +95,5 @@ S2-forbid-install	check	skill	$s/$/\n```r\ninstall.packages("x")\n```/	forbidden
 S2-forbid-biocmanager	check	skill	$s/$/\n```r\nBiocManager::install("x")\n```/	forbidden pattern present: a package is installed at run time
 S2-forbid-fastq	check	skill	$s/$/\n```bash\nzcat a_1.fastq.gz | head\n```/	forbidden pattern present: a FASTQ file is opened
 S2-module-unguarded	check	skill	s|module add singularity/3.10.4 \|\| exit 1|module add singularity/3.10.4|	a module add without || exit 1
+S2-path-rmats-paired	check	skill	s|`star/rmats/{CONTRAST}_paired/` with the same file names|REMOVED|g	missing required text: star/rmats/{CONTRAST}_paired/
+S2-names-rmats-paired	check	skill	s|RMATS_DIR_PAIRED=|RMATS_DIR_X=|	missing required text: RMATS_DIR_PAIRED=star/rmats/${c}_paired
