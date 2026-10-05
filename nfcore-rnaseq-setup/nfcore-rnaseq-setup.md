@@ -260,7 +260,7 @@ grep -v "^#" {GTF_PATH} | head -3
 - cDNA: `Homo_sapiens.GRCh38.cdna.all.fa`
 
 ### Genome version check procedure:
-1. Fetch latest Ensembl release: `https://ftp.ensembl.org/pub/current_README`
+1. Fetch latest Ensembl release: `https://ftp.ensembl.org/pub/current/README` (the line "Ensembl Release N Databases." gives `N`). If that fetch fails, use the highest `release-N/` directory in the listing at `https://ftp.ensembl.org/pub/`, or ask the user.
 2. Check: `ls {genome_base}/{organism}/` — find highest `ens{N}` present.
 3. If latest version **present** and all files + index subdirs exist: report paths and proceed.
 4. If **missing or outdated**: detect read length now (needed for `sjdbOverhang` in the STAR index build script — `sjdbOverhang = read_length − 1`):
