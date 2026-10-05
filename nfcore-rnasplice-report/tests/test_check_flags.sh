@@ -1,6 +1,6 @@
 #!/bin/bash
 # Test of the --flag rule of check_skill.sh on small skills built in a temp dir: prose outside ``` fences must never contain a
-# --flag; inside a fence a --flag is allowed only on a line that starts with (or continues, after a trailing backslash)
+# --flag; inside a fence a --flag is allowed only in a command segment (the line split on ; && || and |) that starts with (or continues, after a trailing backslash)
 # singularity exec, sbatch, Rscript or srun, and on #SBATCH lines. Only the flag message of the checker is looked at.
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -27,5 +27,15 @@ flagcase fenced-continuation ok $'```bash\nsingularity exec \\\n  --bind /x img 
 flagcase fenced-ls red $'```bash\nls --color\n```'
 flagcase fenced-continuation-of-ls red $'```bash\nls \\\n  --color\n```'
 flagcase fenced-assignment-red red $'```bash\nout=$(ls --color)\n```'
+flagcase capture-sbatch ok $'```bash\njid=$(sbatch --parsable job.sh)\n```'
+flagcase capture-sbatch-dep ok $'```bash\nJOB02=$(sbatch --parsable --dependency=afterok:$JOB01 run_02.sbatch) || exit 1\n```'
+flagcase capture-ls red $'```bash\njid=$(ls --color)\n```'
+flagcase segment-semicolon red $'```bash\nsbatch x; ls --color\n```'
+flagcase segment-and red $'```bash\nsbatch x && rm --force y\n```'
+flagcase segment-or red $'```bash\nsbatch x || ls --color\n```'
+flagcase segment-pipe red $'```bash\nsbatch x | tee --append y\n```'
+flagcase segment-in-capture red $'```bash\njid=$(sbatch x; ls --color)\n```'
+flagcase segment-continuation-red red $'```bash\nsbatch x; ls \\\n  --color\n```'
+flagcase segment-all-allowed ok $'```bash\nsbatch --parsable a.sh && sbatch --parsable b.sh\n```'
 flagcase flag-after-fence-closed red $'```bash\ntrue\n```\nRun report --now here.'
 [ $bad -eq 0 ] && echo "FLAG RULE PASS" || exit 1

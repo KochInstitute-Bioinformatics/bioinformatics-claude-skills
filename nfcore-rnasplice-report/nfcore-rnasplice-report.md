@@ -218,3 +218,192 @@ ls "{CWD}"/*_pairs.csv 2>/dev/null && cat "{CWD}"/*_pairs.csv
 Store `{PAIRED_RMATS}` and `{PAIRED_SUPPA}` (`true` or `false`) from the two switches. A switch that the params file does not name has the pinned pipeline's default: `rmats_paired_stats` false, `diffsplice_paired` true; say that the value is a default. Print the pairing to the user in one line per tool ("rMATS: unpaired statistics; SUPPA2: paired statistics" or the reverse) and, when a pairs file exists, its sample and subject columns. The two switches can differ; each report section states the pairing of its own tool. The DEXSeq and edgeR exon and DTU analyses use the sample sheet design of the run as it is; the report does not change it.
 
 Default: the pairing as read. Ask (default: yes): "Is this pairing what you intended for the run? If not, the run has to be set up again; the report cannot change it."
+
+
+---
+
+## Step 7 — Thresholds
+
+Ask one question per value, state the default with each, and store the answers:
+- `{FDR}`: adjusted p-value (FDR) cutoff for a significant event, gene or transcript. Default: 0.05.
+- `{DPSI}`: minimum absolute change in percent spliced in (dPSI) for an rMATS or SUPPA2 event to count as significant, in addition to `{FDR}`. Default: 0.1. It is not applied to exon usage or transcript usage, which are cut by `{FDR}` only; the report states this.
+- `{RMATS_TYPE}`: which rMATS count type to read, `JC` (junction counts only) or `JCEC` (junction counts plus reads on the target exon). Default: `JC`. Asked only when `rmats` is in `{MODULES}`; a type whose files the run did not produce is not offered.
+- `{MIN_READS}`: minimum read support of an rMATS event, the sum of `IJC` and `SJC` over the samples of a group, required in both groups. Default: 10. Events below it are dropped from the tests, and their number is reported. Asked only when `rmats` is in `{MODULES}`.
+
+SUPPA2 reports a p-value but no adjusted p-value; the report applies the Benjamini-Hochberg correction to it and says so, and `{FDR}` is applied to the corrected value. Print the thresholds in one line and ask (default: yes): "Use these thresholds?"
+
+---
+
+## Step 8 — Analyses menu
+
+Offer only the sections the run supports; a section that cannot be produced is not offered, and the report says why. Ask one question per section (numbered; default as stated) and store the sections switched on as `{SECTIONS}`, a space-separated subset of `events cross topgene enrich`:
+- `events`: event and result tables with a volcano plot for each module in `{MODULES}`. Default: yes. This is the content of the rMATS, SUPPA2 and exon and transcript usage reports.
+- `cross`: cross-tool comparison (UpSet plot of the significant genes of each tool and the direction concordance). Offered only when two or more of `rmats`, `suppa`, `dexseq_exon`, `edger_exon` and `dtu` are in `{MODULES}` (each counts as a separate tool) and UpSetR or ComplexUpset is in the image (Step 2). Default: yes when offered.
+- `topgene`: top-gene plots (per-sample PSI of the top events, exon usage and isoform proportions), drawn from the pipeline's own tables only, never from BAM files. Default: yes.
+- `enrich`: GO enrichment, plus KEGG and Reactome as far as `{ENRICH_DBS}` (Step 2) allows, of the significant genes, with the genes that could be tested as the background. Offered only when `{ORGANISM}` is `human` or `mouse`. Default: yes when offered.
+
+Which Rmd and job each switch controls is fixed in Step 10. `events` and `topgene` are both passed to the module reports as parameters. Ask (default: yes): "Generate these sections: `{SECTIONS}`?"
+
+---
+
+## Step 9 — SLURM resources and project name
+
+Ask one question per value and state the default:
+- Memory `{MEM}`: default 32G (at most 64G).
+- Time `{TIME}`: default 4:00:00 (at most 4:00:00).
+- `{PROJECT}`: the name used in the job names. Default: `{WD_NAME}`.
+
+Every generated script uses partition `bcc`, one node, one task and four CPUs (`-N 1 -n 1 -c 4`). A value above 64G or 4:00:00 is written only when the user asks for it by name; the generator then prints a note that the value is above the default limits. Tell the user the values in one line.
+
+---
+
+## Step 10 — Generate the reports and the SLURM scripts
+
+All files go to `{REPORT_DIR}` (Step 0), which is under `results/`. Nothing is written to `{OUTDIR_RNASPLICE}`: the output of the run is read-only for the skill and is never written to.
+
+The Rmd files have fixed names, and there is one job per Rmd that applies:
+
+| Job script | Rmd file | When the job exists |
+|---|---|---|
+| `run_01.sbatch` | `01_import.Rmd` | always |
+| `run_02.sbatch` | `02_rmats.Rmd` | `rmats` in `{MODULES}` |
+| `run_03.sbatch` | `03_suppa.Rmd` | `suppa` in `{MODULES}` |
+| `run_04.sbatch` | `04_usage.Rmd` (DEXSeq and edgeR exon usage, and DTU) | any of `dexseq_exon`, `edger_exon`, `dtu` in `{MODULES}` |
+| `run_05.sbatch` | `05_cross_tool.Rmd` | `cross` in `{SECTIONS}` and two or more tools in `{MODULES}` |
+| `run_06.sbatch` | `06_enrichment.Rmd` | `enrich` in `{SECTIONS}` |
+| `run_07.sbatch` | `07_summary.Rmd` (always last) | always |
+
+Default: every job that applies. Write the Rmd files that apply to `{REPORT_DIR}`, then generate the job scripts and `run_all.sh`. Jobs 02 to 06 start when job 01 has finished successfully (`dependency=afterok`) and run side by side; job 07 starts when all the others have finished successfully.
+
+**SLURM scripts.** Paste this block whole into one Bash call, with the placeholders replaced by the literal values of the earlier steps (`{EMAIL}` is `none` when no mail is wanted). It checks the values, refuses a report directory outside `results/` or inside the output of the run, writes one `run_NN.sbatch` per job that applies, and writes `run_all.sh`, which only calls sbatch:
+```bash
+R="{REPORT_DIR}"
+OUT="{OUTDIR_RNASPLICE}"
+WORK="{CWD}"
+SIF="{SIF}"
+EMAIL="{EMAIL}"
+JOBNAME="{PROJECT}_report"
+MEM="{MEM}"
+TIME="{TIME}"
+MODULES="{MODULES}"
+SECTIONS="{SECTIONS}"
+FDR="{FDR}"
+DPSI="{DPSI}"
+RMATS_TYPE="{RMATS_TYPE}"
+MIN_READS="{MIN_READS}"
+ORGANISM="{ORGANISM}"
+ENRICH_DBS="{ENRICH_DBS}"
+GTF="{GTF}"
+CONTRASTS_CSV="{CONTRASTS_CSV}"
+SAMPLESHEET="{SAMPLESHEET}"
+PAIRED_RMATS="{PAIRED_RMATS}"
+PAIRED_SUPPA="{PAIRED_SUPPA}"
+fail() { echo "ERROR: $1"; exit 1; }
+case "$R" in */results/*) ;; *) fail "report directory $R is not under a results/ directory" ;; esac
+case "$R/" in "$OUT"/*) fail "report directory $R is inside the pipeline output $OUT" ;; esac
+[[ "$MEM" =~ ^[0-9]+[GM]$ ]] || fail "memory $MEM is not of the form 32G"
+[[ "$TIME" =~ ^([0-9]+-)?[0-9]+:[0-9][0-9]:[0-9][0-9]$ ]] || fail "time $TIME is not of the form 4:00:00"
+[[ "$FDR" =~ ^[0-9]*\.?[0-9]+$ && "$DPSI" =~ ^[0-9]*\.?[0-9]+$ && "$MIN_READS" =~ ^[0-9]+$ ]] || fail "FDR, DPSI or MIN_READS is not a number"
+case "$RMATS_TYPE" in JC|JCEC) ;; *) fail "RMATS_TYPE $RMATS_TYPE is not JC or JCEC" ;; esac
+# memory in MB and time in seconds, for the note about the default limits
+case "$MEM" in *G) mb=$(( ${MEM%G} * 1024 )) ;; *) mb=${MEM%M} ;; esac
+tt=$TIME; d=0; case "$tt" in *-*) d=${tt%%-*}; tt=${tt#*-} ;; esac
+hh=${tt%%:*}; mm=${tt#*:}; mm=${mm%%:*}; ss=${tt##*:}
+secs=$(( ((10#$d * 24 + 10#$hh) * 60 + 10#$mm) * 60 + 10#$ss ))
+if [ "$mb" -gt 65536 ] || [ "$secs" -gt 14400 ]; then echo "NOTE: $MEM and $TIME are above the default limits (64G, 4:00:00), as requested"; fi
+has() { case " $MODULES " in *" $1 "*) return 0 ;; esac; return 1; }
+sec() { case " $SECTIONS " in *" $1 "*) return 0 ;; esac; return 1; }
+tf() { if "$@"; then echo TRUE; else echo FALSE; fi; }
+EV=$(tf sec events); CR=$(tf sec cross); TG=$(tf sec topgene); EN=$(tf sec enrich)
+PR=$(tf test "$PAIRED_RMATS" = true); PS=$(tf test "$PAIRED_SUPPA" = true)
+ntools=0
+for m in rmats suppa dexseq_exon edger_exon dtu; do if has $m; then ntools=$((ntools + 1)); fi; done
+# the jobs that apply, as number:Rmd
+JOBS="01:01_import.Rmd"
+if has rmats; then JOBS="$JOBS 02:02_rmats.Rmd"; fi
+if has suppa; then JOBS="$JOBS 03:03_suppa.Rmd"; fi
+if has dexseq_exon || has edger_exon || has dtu; then JOBS="$JOBS 04:04_usage.Rmd"; fi
+if sec cross && [ $ntools -ge 2 ]; then JOBS="$JOBS 05:05_cross_tool.Rmd"; fi
+if sec enrich; then JOBS="$JOBS 06:06_enrichment.Rmd"; fi
+JOBS="$JOBS 07:07_summary.Rmd"
+for j in $JOBS; do [ -f "$R/${j#*:}" ] || fail "$R/${j#*:} does not exist: write the Rmd files first"; done
+mkdir -p "$R/logs" || fail "cannot create $R/logs"
+# bind the cluster share, and the directory of any path that lies outside it
+BIND=/net/bmc-lab3
+for p in "$R" "$OUT" "$WORK" "$SIF" "$GTF" "$CONTRASTS_CSV" "$SAMPLESHEET"; do
+  case "$p" in /net/bmc-lab3/*) ;; /*) q=$(dirname "$p"); case ",$BIND," in *",$q,"*) ;; *) BIND="$BIND,$q" ;; esac ;; esac
+done
+write_job() {
+  f="$R/run_$1.sbatch"
+  cat > "$f" <<EOF
+#!/bin/bash
+#SBATCH -J ${JOBNAME}_$1
+#SBATCH -p bcc
+#SBATCH -N 1
+#SBATCH -n 1
+#SBATCH -c 4
+#SBATCH --mem=$MEM
+#SBATCH -t $TIME
+#SBATCH -o $R/logs/run_$1.%j.log
+EOF
+  if [ -n "$EMAIL" ] && [ "$EMAIL" != none ]; then
+    cat >> "$f" <<EOF
+#SBATCH --mail-user=$EMAIL
+#SBATCH --mail-type=END,FAIL
+EOF
+  fi
+  cat >> "$f" <<EOF
+module add singularity/3.10.4 || exit 1
+cd "$R" || exit 1
+singularity exec --bind $BIND "$SIF" Rscript -e "rmarkdown::render('$R/$2',
+  output_dir = '$R', knit_root_dir = '$R',
+  params = list(outdir = '$OUT', report_dir = '$R', contrasts = '$CONTRASTS_CSV', samplesheet = '$SAMPLESHEET',
+    modules = '$MODULES', fdr = $FDR, dpsi = $DPSI, rmats_type = '$RMATS_TYPE', min_reads = $MIN_READS,
+    events = $EV, cross = $CR, topgene = $TG, enrich = $EN, organism = '$ORGANISM', enrich_dbs = '$ENRICH_DBS',
+    gtf = '$GTF', paired_rmats = $PR, paired_suppa = $PS))"
+EOF
+}
+cat > "$R/run_all.sh" <<EOF
+#!/bin/bash
+# Submits the report jobs of $R in order; light work only, every job runs R on a compute node.
+cd "$R" || exit 1
+EOF
+ALLDEP=""; ALLJ=""; NUMS=""
+for j in $JOBS; do
+  n=${j%%:*}; rmd=${j#*:}
+  write_job "$n" "$rmd"
+  case "$n" in
+    01) DEP="" ;;
+    07) DEP=$ALLDEP ;;
+    *) DEP='$JOB01' ;;
+  esac
+  if [ -z "$DEP" ]; then
+    cat >> "$R/run_all.sh" <<EOF
+JOB$n=\$(sbatch --parsable run_$n.sbatch) || exit 1
+EOF
+  else
+    cat >> "$R/run_all.sh" <<EOF
+JOB$n=\$(sbatch --parsable --dependency=afterok:$DEP run_$n.sbatch) || exit 1
+EOF
+  fi
+  case "$n" in 01|07) ;; *) ALLDEP="${ALLDEP:+$ALLDEP:}\$JOB$n" ;; esac
+  ALLJ="$ALLJ \$JOB$n"; NUMS="$NUMS $n"
+done
+cat >> "$R/run_all.sh" <<EOF
+echo "submitted:$ALLJ"
+EOF
+ls -la "$R"
+echo "JOBS=${NUMS# }"
+echo "SUBMIT=bash $R/run_all.sh"
+```
+
+The block prints the files written, `JOBS=` with the job numbers, and `SUBMIT=` with the one command that submits everything.
+
+**Final instructions.** Print this to the user, with `{REPORT_DIR}` replaced, and nothing else to run:
+```
+Reports are ready to submit. Run this one command:
+  bash {REPORT_DIR}/run_all.sh
+It submits the jobs in order (each waits for the one it needs). The reports and the summary page appear in {REPORT_DIR}; the logs are in {REPORT_DIR}/logs.
+Check progress with: squeue -u $USER
+```
+`run_all.sh` calls only sbatch; R runs inside the jobs, on compute nodes. When a job fails, read its log, fix the cause, and submit the jobs that did not run with sbatch from `{REPORT_DIR}`.

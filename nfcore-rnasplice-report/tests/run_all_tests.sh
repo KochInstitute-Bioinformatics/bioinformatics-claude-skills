@@ -15,7 +15,7 @@
 # CHECK_RUN_ALL (read by check_skill.sh and test_run_all.sh, not by this script) is a test hook of prove_mutations.sh only: it
 # points them at a mutated copy of this file.
 set -u
-TESTS="check_skill.sh test_run_all.sh prove_mutations.sh test_check_flags.sh test_detect_modules.sh test_contrast_names.sh"
+TESTS="check_skill.sh test_run_all.sh prove_mutations.sh test_check_flags.sh test_detect_modules.sh test_contrast_names.sh test_render_slurm.sh"
 FULL_TESTS="test_proof_tools.sh"
 NOT_TESTS="cut_block.sh test_env.sh prove_red.sh run_all_tests.sh"
 HERE=$(cd "$(dirname "$0")" && pwd); SK="$HERE/../nfcore-rnasplice-report.md"

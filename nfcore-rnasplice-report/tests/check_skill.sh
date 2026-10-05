@@ -25,17 +25,26 @@ forbid_re() { ! grep -qE -- "$1" "$SKILL" || { echo "FAIL: forbidden pattern pre
 # --- skeleton checks
 # The skill starts with its title line (the first line, not any line).
 [ "$(head -n1 "$SKILL")" = "# nf-core/rnasplice Report Skill" ] || { echo "FAIL: missing required text: # nf-core/rnasplice Report Skill"; fail=1; }
-# Command-line flags (--name): prose outside ``` fences never has one. Inside a fence a flag is allowed only on a line that starts
-# with, or continues (the previous line ends with a backslash), singularity exec, sbatch, Rscript or srun, and on #SBATCH lines.
+# Command-line flags (--name): prose outside ``` fences never has one. Inside a fence a flag is allowed only in a command segment that
+# starts with singularity exec, sbatch, Rscript or srun (also as the capture jid=$(sbatch ...)), in a line that continues such a
+# command (the previous line ends with a backslash), and on #SBATCH lines. A line is split on ; && || and | into segments and
+# the rule is applied to each segment, so a flag after the first command of a line does not pass.
 # A fence is closed by a line of the same number of backticks as the one that opened it (four-backtick Rmd fences hold ``` lines).
 if awk '
+  function cmd(s) { return s ~ /^(singularity exec|sbatch|Rscript|srun)([[:space:]]|$)/ }
+  function segok(s,   c) { c = s; sub(/^[A-Za-z_][A-Za-z0-9_${}]*=\\?\$\(/, "", c); return cmd(s) || cmd(c) }
   { t = $0; sub(/^[[:space:]]+/, "", t); n = 0; while (substr(t, n + 1, 1) == "`") n++ }
   !infence && n >= 3 { infence = 1; flen = n; allowed = 0; next }
   infence && n == flen && n == length(t) { infence = 0; allowed = 0; next }
   !infence { if ($0 ~ /(^|[[:space:]`(])--[A-Za-z]/) found = 1; next }
-  { ok = (t ~ /^(singularity exec|sbatch|Rscript|srun)([[:space:]]|$)/) || (t ~ /^#SBATCH /) || allowed
-    if ($0 ~ /(^|[[:space:]`(])--[A-Za-z]/ && !ok) found = 1
-    allowed = (ok && ($0 ~ /\\$/)) }
+  t ~ /^#SBATCH / { allowed = ($0 ~ /\\$/); next }
+  { ns = split(t, seg, /&&|\|\||;|\|/); lastok = 0
+    for (i = 1; i <= ns; i++) {
+      s = seg[i]; sub(/^[[:space:]]+/, "", s)
+      lastok = segok(s) || (i == 1 && allowed)
+      if (s ~ /(^|[[:space:]`(])--[A-Za-z]/ && !lastok) found = 1
+    }
+    allowed = (lastok && ($0 ~ /\\$/)) }
   END { exit !found }' "$SKILL"; then
   echo "FAIL: a --flag appears in prose or outside the allowed commands (singularity exec, sbatch, Rscript, srun, #SBATCH lines)"; fail=1
 fi
@@ -116,6 +125,74 @@ forbid_re 'zcat[^|]*(fastq|fq)' 'a FASTQ file is opened'
 # Every module add is guarded.
 if grep 'module add' "$SKILL" | grep -qv '|| exit 1'; then echo "FAIL: a module add without || exit 1"; fail=1; fi
 # --- end wizard checks
+# --- wizard checks (Steps 7-10, thresholds, menu, SLURM)
+for s in 7 8 9 10; do
+  need "## Step $s — "
+  awk -v s="$s" '/^## Step / { insec = ($3 == s); next } insec && /[Dd]efault/ { f = 1 } END { exit !f }' "$SKILL" || { echo "FAIL: Step $s states no default"; fail=1; }
+done
+need 'Default: every job that applies.'
+need '(FDR) cutoff for a significant event, gene or transcript. Default: 0.05.'
+need 'Default: 0.1. It is not applied to exon usage or transcript usage'
+need '`{RMATS_TYPE}`: which rMATS count type to read, `JC` (junction counts only) or `JCEC`'
+need 'Default: `JC`.'
+need 'minimum read support of an rMATS event, the sum of `IJC` and `SJC` over the samples of a group'
+need 'Default: 10. Events below it are dropped from the tests, and their number is reported.'
+need 'applies the Benjamini-Hochberg correction to it and says so'
+need 'a space-separated subset of `events cross topgene enrich`'
+need 'two or more of `rmats`, `suppa`, `dexseq_exon`, `edger_exon` and `dtu` are in `{MODULES}` (each counts as a separate tool)'
+need 'drawn from the pipeline'\''s own tables only, never from BAM files'
+need 'Offered only when `{ORGANISM}` is `human` or `mouse`'
+need '`events` and `topgene` are both passed to the module reports as parameters'
+need 'Memory `{MEM}`: default 32G (at most 64G).'
+need 'Time `{TIME}`: default 4:00:00 (at most 4:00:00).'
+need 'the name used in the job names. Default: `{WD_NAME}`.'
+need 'one node, one task and four CPUs (`-N 1 -n 1 -c 4`)'
+need 'is written only when the user asks for it by name'
+need '| `run_01.sbatch` | `01_import.Rmd` | always |'
+need '| `run_02.sbatch` | `02_rmats.Rmd` | `rmats` in `{MODULES}` |'
+need '| `run_03.sbatch` | `03_suppa.Rmd` | `suppa` in `{MODULES}` |'
+need '| `run_04.sbatch` | `04_usage.Rmd` (DEXSeq and edgeR exon usage, and DTU) | any of `dexseq_exon`, `edger_exon`, `dtu` in `{MODULES}` |'
+need '| `run_05.sbatch` | `05_cross_tool.Rmd` | `cross` in `{SECTIONS}` and two or more tools in `{MODULES}` |'
+need '| `run_06.sbatch` | `06_enrichment.Rmd` | `enrich` in `{SECTIONS}` |'
+need '| `run_07.sbatch` | `07_summary.Rmd` (always last) | always |'
+need 'Jobs 02 to 06 start when job 01 has finished successfully (`dependency=afterok`)'
+need 'job 07 starts when all the others have finished successfully'
+need '**SLURM scripts.**'
+need 'case "$R" in */results/*) ;; *) fail "report directory $R is not under a results/ directory" ;; esac'
+need 'is inside the pipeline output $OUT'
+need 'are above the default limits (64G, 4:00:00), as requested'
+need '#SBATCH -N 1'
+need '#SBATCH -n 1'
+need '#SBATCH -c 4'
+need '#SBATCH --mem=$MEM'
+need '#SBATCH -t $TIME'
+need 'singularity exec --bind $BIND "$SIF" Rscript -e "rmarkdown::render('\''$R/$2'\'','
+need "output_dir = '\$R', knit_root_dir = '\$R',"
+need 'events = $EV, cross = $CR, topgene = $TG, enrich = $EN'
+need 'if sec cross && [ $ntools -ge 2 ]; then JOBS="$JOBS 05:05_cross_tool.Rmd"; fi'
+need 'if sec enrich; then JOBS="$JOBS 06:06_enrichment.Rmd"; fi'
+need 'JOBS="$JOBS 07:07_summary.Rmd"'
+need 'JOB$n=\$(sbatch --parsable --dependency=afterok:$DEP run_$n.sbatch) || exit 1'
+need '`run_all.sh`, which only calls sbatch'
+need 'echo "SUBMIT=bash $R/run_all.sh"'
+need '**Final instructions.**'
+need 'Run this one command:'
+need 'the output of the run is read-only for the skill and is never written to'
+# The final instructions print exactly one submit command (a bash or sbatch line naming a run script of the report directory).
+n_submit=$(grep -cE '^[[:space:]]*(bash|sbatch)[[:space:]].*\{REPORT_DIR\}.*run_' "$SKILL")
+[ "$n_submit" -eq 1 ] || { echo "FAIL: the final instructions must print exactly one submit command (bash {REPORT_DIR}/run_all.sh), found $n_submit"; fail=1; }
+# Defaults of the resources are at most 64G and 4h; so is every literal request of a script written in the skill.
+mem_def=$(sed -n 's/.*Memory `{MEM}`: default \([0-9]*\)G.*/\1/p' "$SKILL" | head -n1)
+time_def=$(sed -n 's/.*Time `{TIME}`: default \([0-9]*\):\([0-9][0-9]\):\([0-9][0-9]\).*/\1\2\3/p' "$SKILL" | head -n1)
+[ -n "$mem_def" ] && [ "$mem_def" -le 64 ] || { echo "FAIL: default memory is missing or above 64G: '$mem_def'"; fail=1; }
+[ -n "$time_def" ] && [ "$time_def" -le 40000 ] || { echo "FAIL: default time is missing or above 4:00:00: '$time_def'"; fail=1; }
+if grep -oE '^#SBATCH --mem=[0-9]+[GM]' "$SKILL" | sed 's/.*=//' | awk '/G$/ { v = $0; sub(/G/, "", v); if (v + 0 > 64) bad = 1 } /M$/ { v = $0; sub(/M/, "", v); if (v + 0 > 65536) bad = 1 } END { exit !bad }'; then
+  echo "FAIL: a literal memory request above 64G in a script of the skill"; fail=1
+fi
+if grep -oE '^#SBATCH -t [0-9]+(-[0-9]+)?:[0-9]+:[0-9]+' "$SKILL" | sed 's/^#SBATCH -t //' | awk -F'[-:]' '{ if (NF == 4) s = ($1 * 24 + $2) * 3600 + $3 * 60 + $4; else s = $1 * 3600 + $2 * 60 + $3; if (s > 14400) bad = 1 } END { exit !bad }'; then
+  echo "FAIL: a literal time request above 4:00:00 in a script of the skill"; fail=1
+fi
+# --- end wizard checks (Steps 7-10)
 
 # tests/run_all_tests.sh names every script of tests/ in exactly one list (TESTS, FULL_TESTS or NOT_TESTS), runs each under
 # env -i, and says when the proof-tool self-test was skipped. CHECK_RUN_ALL overrides the file (used by prove_mutations.sh).

@@ -97,3 +97,71 @@ S2-forbid-fastq	check	skill	$s/$/\n```bash\nzcat a_1.fastq.gz | head\n```/	forbi
 S2-module-unguarded	check	skill	s|module add singularity/3.10.4 \|\| exit 1|module add singularity/3.10.4|	a module add without || exit 1
 S2-path-rmats-paired	check	skill	s|`star/rmats/{CONTRAST}_paired/` with the same file names|REMOVED|g	missing required text: star/rmats/{CONTRAST}_paired/
 S2-names-rmats-paired	check	skill	s|RMATS_DIR_PAIRED=|RMATS_DIR_X=|	missing required text: RMATS_DIR_PAIRED=star/rmats/${c}_paired
+# Steps 7-10 (thresholds, menu, SLURM): one row per required text, then the numeric, count and flag-rule rows
+S3-need-01	check	skill	s|## Step 7 — |REMOVED|g	missing required text: ## Step 7 — 
+S3-need-02	check	skill	s|## Step 8 — |REMOVED|g	missing required text: ## Step 8 — 
+S3-need-03	check	skill	s|## Step 9 — |REMOVED|g	missing required text: ## Step 9 — 
+S3-need-04	check	skill	s|## Step 10 — |REMOVED|g	missing required text: ## Step 10 — 
+S3-need-05	check	skill	s|(FDR) cutoff for a significant event, gene or transcript\. Default: 0\.05\.|REMOVED|g	missing required text: (FDR) cutoff for a significant event, gene or transcript. Default: 0.05.
+S3-need-06	check	skill	s|Default: 0\.1\. It is not applied to exon usage or transcript usage|REMOVED|g	missing required text: Default: 0.1. It is not applied to exon usage or transcript usage
+S3-need-07	check	skill	s|`{RMATS_TYPE}`: which rMATS count type to read, `JC` (junction counts only) or `JCEC`|REMOVED|g	missing required text: `{RMATS_TYPE}`: which rMATS count type to read, `JC` (junction counts only) or `JCEC`
+S3-need-08	check	skill	s|Default: `JC`\.|REMOVED|g	missing required text: Default: `JC`.
+S3-need-09	check	skill	s|minimum read support of an rMATS event, the sum of `IJC` and `SJC` over the samples of a group|REMOVED|g	missing required text: minimum read support of an rMATS event, the sum of `IJC` and `SJC` over the samples of a group
+S3-need-10	check	skill	s|Default: 10\. Events below it are dropped from the tests, and their number is reported\.|REMOVED|g	missing required text: Default: 10. Events below it are dropped from the tests, and their number is reported.
+S3-need-11	check	skill	s|applies the Benjamini-Hochberg correction to it and says so|REMOVED|g	missing required text: applies the Benjamini-Hochberg correction to it and says so
+S3-need-12	check	skill	s|a space-separated subset of `events cross topgene enrich`|REMOVED|g	missing required text: a space-separated subset of `events cross topgene enrich`
+S3-need-13	check	skill	s|two or more of `rmats`, `suppa`, `dexseq_exon`, `edger_exon` and `dtu` are in `{MODULES}` (each counts as a separate tool)|REMOVED|g	missing required text: two or more of `rmats`, `suppa`, `dexseq_exon`, `edger_exon` and `dtu` are in `{MODULES}` (each counts as a separate tool)
+S3-need-14	check	skill	s|drawn from the pipeline's own tables only, never from BAM files|REMOVED|g	missing required text: drawn from the pipeline's own tables only, never from BAM files
+S3-need-15	check	skill	s|Offered only when `{ORGANISM}` is `human` or `mouse`|REMOVED|g	missing required text: Offered only when `{ORGANISM}` is `human` or `mouse`
+S3-need-16	check	skill	s|`events` and `topgene` are both passed to the module reports as parameters|REMOVED|g	missing required text: `events` and `topgene` are both passed to the module reports as parameters
+S3-need-17	check	skill	s|Memory `{MEM}`: default 32G (at most 64G)\.|REMOVED|g	missing required text: Memory `{MEM}`: default 32G (at most 64G).
+S3-need-18	check	skill	s|Time `{TIME}`: default 4:00:00 (at most 4:00:00)\.|REMOVED|g	missing required text: Time `{TIME}`: default 4:00:00 (at most 4:00:00).
+S3-need-19	check	skill	s|the name used in the job names\. Default: `{WD_NAME}`\.|REMOVED|g	missing required text: the name used in the job names. Default: `{WD_NAME}`.
+S3-need-20	check	skill	s|one node, one task and four CPUs (`-N 1 -n 1 -c 4`)|REMOVED|g	missing required text: one node, one task and four CPUs (`-N 1 -n 1 -c 4`)
+S3-need-21	check	skill	s|is written only when the user asks for it by name|REMOVED|g	missing required text: is written only when the user asks for it by name
+S3-need-22	check	skill	s|\| `run_01\.sbatch` \| `01_import\.Rmd` \| always \||REMOVED|g	missing required text: | `run_01.sbatch` | `01_import.Rmd` | always |
+S3-need-23	check	skill	s|\| `run_02\.sbatch` \| `02_rmats\.Rmd` \| `rmats` in `{MODULES}` \||REMOVED|g	missing required text: | `run_02.sbatch` | `02_rmats.Rmd` | `rmats` in `{MODULES}` |
+S3-need-24	check	skill	s|\| `run_03\.sbatch` \| `03_suppa\.Rmd` \| `suppa` in `{MODULES}` \||REMOVED|g	missing required text: | `run_03.sbatch` | `03_suppa.Rmd` | `suppa` in `{MODULES}` |
+S3-need-25	check	skill	s|\| `run_04\.sbatch` \| `04_usage\.Rmd` (DEXSeq and edgeR exon usage, and DTU) \| any of `dexseq_exon`, `edger_exon`, `dtu` in `{MODULES}` \||REMOVED|g	missing required text: | `run_04.sbatch` | `04_usage.Rmd` (DEXSeq and edgeR exon usage, and DTU) | any of `dexseq_exon`, `edger_exon`, `dtu` in `{MODULES}` |
+S3-need-26	check	skill	s|\| `run_05\.sbatch` \| `05_cross_tool\.Rmd` \| `cross` in `{SECTIONS}` and two or more tools in `{MODULES}` \||REMOVED|g	missing required text: | `run_05.sbatch` | `05_cross_tool.Rmd` | `cross` in `{SECTIONS}` and two or more tools in `{MODULES}` |
+S3-need-27	check	skill	s|\| `run_06\.sbatch` \| `06_enrichment\.Rmd` \| `enrich` in `{SECTIONS}` \||REMOVED|g	missing required text: | `run_06.sbatch` | `06_enrichment.Rmd` | `enrich` in `{SECTIONS}` |
+S3-need-28	check	skill	s|\| `run_07\.sbatch` \| `07_summary\.Rmd` (always last) \| always \||REMOVED|g	missing required text: | `run_07.sbatch` | `07_summary.Rmd` (always last) | always |
+S3-need-29	check	skill	s|Jobs 02 to 06 start when job 01 has finished successfully (`dependency=afterok`)|REMOVED|g	missing required text: Jobs 02 to 06 start when job 01 has finished successfully (`dependency=afterok`)
+S3-need-30	check	skill	s|job 07 starts when all the others have finished successfully|REMOVED|g	missing required text: job 07 starts when all the others have finished successfully
+S3-need-31	check	skill	s|\*\*SLURM scripts\.\*\*|REMOVED|g	missing required text: **SLURM scripts.**
+S3-need-32	check	skill	s|case "\$R" in \*/results/\*) ;; \*) fail "report directory \$R is not under a results/ directory" ;; esac|REMOVED|g	missing required text: case "$R" in */results/*) ;; *) fail "report directory $R is not under a results/ directory" ;; esac
+S3-need-33	check	skill	s|is inside the pipeline output \$OUT|REMOVED|g	missing required text: is inside the pipeline output $OUT
+S3-need-34	check	skill	s|are above the default limits (64G, 4:00:00), as requested|REMOVED|g	missing required text: are above the default limits (64G, 4:00:00), as requested
+S3-need-35	check	skill	s|#SBATCH -N 1|REMOVED|g	missing required text: #SBATCH -N 1
+S3-need-36	check	skill	s|#SBATCH -n 1|REMOVED|g	missing required text: #SBATCH -n 1
+S3-need-37	check	skill	s|#SBATCH -c 4|REMOVED|g	missing required text: #SBATCH -c 4
+S3-need-38	check	skill	s|#SBATCH --mem=\$MEM|REMOVED|g	missing required text: #SBATCH --mem=$MEM
+S3-need-39	check	skill	s|#SBATCH -t \$TIME|REMOVED|g	missing required text: #SBATCH -t $TIME
+S3-need-40	check	skill	s|singularity exec --bind \$BIND "\$SIF" Rscript -e "rmarkdown::render('\$R/\$2',|REMOVED|g	missing required text: singularity exec --bind $BIND "$SIF" Rscript -e "rmarkdown::render('$R/$2',
+S3-need-41	check	skill	s|output_dir = '\$R', knit_root_dir = '\$R',|REMOVED|g	missing required text: output_dir = '$R', knit_root_dir = '$R',
+S3-need-42	check	skill	s|events = \$EV, cross = \$CR, topgene = \$TG, enrich = \$EN|REMOVED|g	missing required text: events = $EV, cross = $CR, topgene = $TG, enrich = $EN
+S3-need-43	check	skill	s|if sec cross && \[ \$ntools -ge 2 \]; then JOBS="\$JOBS 05:05_cross_tool\.Rmd"; fi|REMOVED|g	missing required text: if sec cross && [ $ntools -ge 2 ]; then JOBS="$JOBS 05:05_cross_tool.Rmd"; fi
+S3-need-44	check	skill	s|if sec enrich; then JOBS="\$JOBS 06:06_enrichment\.Rmd"; fi|REMOVED|g	missing required text: if sec enrich; then JOBS="$JOBS 06:06_enrichment.Rmd"; fi
+S3-need-45	check	skill	s|JOBS="\$JOBS 07:07_summary\.Rmd"|REMOVED|g	missing required text: JOBS="$JOBS 07:07_summary.Rmd"
+S3-need-46	check	skill	s|JOB\$n=\\\$(sbatch --parsable --dependency=afterok:\$DEP run_\$n\.sbatch) \|\| exit 1|REMOVED|g	missing required text: JOB$n=\$(sbatch --parsable --dependency=afterok:$DEP run_$n.sbatch) || exit 1
+S3-need-47	check	skill	s|`run_all\.sh`, which only calls sbatch|REMOVED|g	missing required text: `run_all.sh`, which only calls sbatch
+S3-need-48	check	skill	s|echo "SUBMIT=bash \$R/run_all\.sh"|REMOVED|g	missing required text: echo "SUBMIT=bash $R/run_all.sh"
+S3-need-49	check	skill	s|\*\*Final instructions\.\*\*|REMOVED|g	missing required text: **Final instructions.**
+S3-need-50	check	skill	s|Run this one command:|REMOVED|g	missing required text: Run this one command:
+S3-need-51	check	skill	s|the output of the run is read-only for the skill and is never written to|REMOVED|g	missing required text: the output of the run is read-only for the skill and is never written to
+S3-step10-default	check	skill	s|Default: every job that applies. |Every job that applies. |	missing required text: Default: every job that applies.
+S3-mem-default-high	check	skill	s|default 32G (at most 64G)|default 128G (at most 64G)|	default memory is missing or above 64G
+S3-mem-default-gone	check	skill	s|Memory `{MEM}`: default 32G|Memory `{MEM}`: about 32G|	default memory is missing or above 64G
+S3-time-default-high	check	skill	s|default 4:00:00 (at most 4:00:00)|default 8:00:00 (at most 4:00:00)|	default time is missing or above 4:00:00
+S3-literal-mem-high	check	skill	s|^#SBATCH --mem=8G$|#SBATCH --mem=80G|	a literal memory request above 64G
+S3-literal-time-high	check	skill	s|^#SBATCH -t 1:00:00$|#SBATCH -t 5:00:00|	a literal time request above 4:00:00
+S3-literal-time-days	check	skill	s|^#SBATCH -t 1:00:00$|#SBATCH -t 1-00:00:00|	a literal time request above 4:00:00
+S3-submit-two	check	skill	s|^  bash {REPORT_DIR}/run_all.sh$|  bash {REPORT_DIR}/run_all.sh\n  sbatch {REPORT_DIR}/run_01.sbatch|	the final instructions must print exactly one submit command
+S3-submit-none	check	skill	s|^  bash {REPORT_DIR}/run_all.sh$|  run the scripts|	the final instructions must print exactly one submit command
+S3-chain-afterany	check	skill	s|afterok|afterany|g	missing required text: Jobs 02 to 06 start when job 01 has finished successfully (`dependency=afterok`)
+S3-flag-segment-semicolon	check	skill	$s/$/\n```bash\nsbatch x; ls --color\n```/	a --flag appears in prose or outside the allowed commands
+S3-flag-segment-and	check	skill	$s/$/\n```bash\nsbatch x \&\& rm --force y\n```/	a --flag appears in prose or outside the allowed commands
+S3-flag-segment-or	check	skill	$s/$/\n```bash\nsbatch x \|\| ls --color\n```/	a --flag appears in prose or outside the allowed commands
+S3-flag-capture-ls	check	skill	$s/$/\n```bash\njid=$(ls --color)\n```/	a --flag appears in prose or outside the allowed commands
+S3-flag-prose-dependency	check	skill	$s/$/\nJobs wait with --dependency=afterok here./	a --flag appears in prose or outside the allowed commands
+S3-runall-in-tests	check	runall	s| test_render_slurm.sh"|"|	tests/test_render_slurm.sh must be named in exactly one list of run_all_tests.sh
