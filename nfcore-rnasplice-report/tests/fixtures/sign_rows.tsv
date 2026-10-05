@@ -1,0 +1,20 @@
+# Real rows of the nf-core/rnasplice test-data run (contrast GBR_vs_YRI, treatment GBR, control YRI); source files: see README.md in this directory.
+# expected_sign is the sign of the harmonised treatment-minus-control effect, derived from the rule in the last column.
+# edgeR: the test data have 0 exon rows at FDR < 0.05 and 2 at FDR < 0.5; those 2 are used, and the third row (FDR 0.9999) is included only because it is the first row with a negative logFC.
+# rMATS, DEXSeq exon, DEXSeq DTU: rows with FDR/padj < 0.05. SUPPA2 has no adjusted p-value: rows with p-val < 0.05.
+tool	feature	raw_value	raw_column_name	treatment	control	expected_sign	rule
+rMATS	SE.JC:ID=213:GEMIN8	0.166	IncLevelDifference	GBR	YRI	+	rMATS IncLevelDifference is treatment minus control (IncLevel1 = treatment): keep the sign
+rMATS	SE.JC:ID=143:PDZD11	-0.274	IncLevelDifference	GBR	YRI	-	rMATS IncLevelDifference is treatment minus control (IncLevel1 = treatment): keep the sign
+rMATS	SE.JC:ID=374:DMD	1.0	IncLevelDifference	GBR	YRI	+	rMATS IncLevelDifference is treatment minus control (IncLevel1 = treatment): keep the sign
+SUPPA2	ENSG00000102034;AF:X:129215513-129244300:129244470:129215513-129244595:129244691:-	-0.619641692	local_GBR-local_YRI_dPSI	GBR	YRI	+	SUPPA2 dPSI is control minus treatment: flip the sign
+SUPPA2	ENSG00000085224;SE:X:76944420-76949313:76949426-76952065:-	0.6739992377	local_GBR-local_YRI_dPSI	GBR	YRI	-	SUPPA2 dPSI is control minus treatment: flip the sign
+SUPPA2	ENSG00000160219;SE:X:153906571-153908409:153908525-153924192:-	1.0	local_GBR-local_YRI_dPSI	GBR	YRI	-	SUPPA2 dPSI is control minus treatment: flip the sign
+DEXSeq_exon	ENSG00000147403+ENSG00000207165:E024	0.352842932074479	log2fold_YRI_GBR	GBR	YRI	-	DEXSeq log2fold_{CONTROL}_{TREATMENT} is control versus treatment: flip the sign
+DEXSeq_exon	ENSG00000147403+ENSG00000207165:E032	-2.19071164146952	log2fold_YRI_GBR	GBR	YRI	+	DEXSeq log2fold_{CONTROL}_{TREATMENT} is control versus treatment: flip the sign
+DEXSeq_exon	ENSG00000147403+ENSG00000207165:E033	-1.95963729635652	log2fold_YRI_GBR	GBR	YRI	+	DEXSeq log2fold_{CONTROL}_{TREATMENT} is control versus treatment: flip the sign
+DEXSeq_DTU	ENSG00000101974:ENST00000327569	15.8687152054711	log2fold_YRI_GBR	GBR	YRI	-	DEXSeq log2fold_{CONTROL}_{TREATMENT} is control versus treatment: flip the sign
+DEXSeq_DTU	ENSG00000101974:ENST00000361648	-14.2821441049349	log2fold_YRI_GBR	GBR	YRI	+	DEXSeq log2fold_{CONTROL}_{TREATMENT} is control versus treatment: flip the sign
+DEXSeq_DTU	ENSG00000147403:ENST00000436473	1.38545152022203	log2fold_YRI_GBR	GBR	YRI	-	DEXSeq log2fold_{CONTROL}_{TREATMENT} is control versus treatment: flip the sign
+edgeR_exon	ENSG00000147403:X:153629153-153629158	1.63130131120844	logFC	GBR	YRI	+	edgeR exon usage logFC is treatment minus control: keep the sign
+edgeR_exon	ENSG00000147403:X:153629159-153629238	1.42693661709152	logFC	GBR	YRI	+	edgeR exon usage logFC is treatment minus control: keep the sign
+edgeR_exon	ENSG00000001497:X:64732463-64732781	-0.76080811049154	logFC	GBR	YRI	-	edgeR exon usage logFC is treatment minus control: keep the sign

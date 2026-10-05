@@ -1,0 +1,20 @@
+# id	runner	target	sed program	expected text
+S1-title	check	skill	\|^@TITLE@$|d	missing required text: @TITLE@
+S1-flag	check	skill	$s/$/\nRun `report --now` here./	a --flag appears outside the #SBATCH header lines
+S1-word-task	check	skill	$s/$/\nAdded in Task 3./	forbidden process word in the skill: Task [0-9]
+S1-word-ledger	check	skill	$s/$/\nSee the ledger./	forbidden process word in the skill: ledger
+S1-word-fix	check	skill	$s/$/\nAfter the fix round./	forbidden process word in the skill: fix round
+S1-word-reviewer	check	skill	$s/$/\nThe reviewer agreed./	forbidden process word in the skill: reviewer
+S1-readme-task	check	readme	$s/$/\nTask 2 text./	forbidden process word in the README: Task [0-9]
+S1-readme-ledger	check	readme	$s/$/\nledger/	forbidden process word in the README: ledger
+S1-readme-fix	check	readme	$s/$/\nfix round/	forbidden process word in the README: fix round
+S1-readme-reviewer	check	readme	$s/$/\nreviewer/	forbidden process word in the README: reviewer
+S1-full	check	runall	s/^FULL_TESTS="test_proof_tools.sh"/FULL_TESTS=""/	FULL_TESTS must include test_proof_tools.sh
+S1-notfull	check	runall	s/^TESTS="check_skill.sh/TESTS="test_proof_tools.sh check_skill.sh/	TESTS must not include test_proof_tools.sh
+S1-notlist	check	runall	s/^NOT_TESTS="cut_block.sh/NOT_TESTS="cut_block.sh prove_mutations.sh/	NOT_TESTS must be exactly the helpers
+S1-onelist	check	runall	s/^NOT_TESTS="cut_block.sh/NOT_TESTS="check_skill.sh cut_block.sh/	must be named in exactly one list
+S1-envi	check	runall	s/env -i HOME=/env HOME=/	must run every test under env -i with an explicit PATH
+S1-skipped	check	runall	s/was SKIPPED; run/was left out; run/	must say when the proof-tool self-test was skipped
+S1-gitver	check	runall	s/!= 1.8.5 \]; then/!= 1.8.4 ]; then/	must check for git 1.8.5 or newer
+S1-selfrun	check	runall	s/^TESTS="check_skill.sh test_run_all.sh /TESTS="check_skill.sh /	TESTS must run test_run_all.sh
+S1-passline	runtest	runall	s/full run, proof-tool self-test included/full run/	output lacks the line: ALL TESTS PASS (full run, proof-tool self-test included)
