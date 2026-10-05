@@ -21,6 +21,7 @@ finish <- function() {
   cat(sprintf("R TESTS FAIL (%d/%d)\n", n_fail, n_ok + n_fail)); quit(status = 1)
 }
 work <- tempfile("rsr_usage_"); dir.create(work)
+suppressPackageStartupMessages(library(stageR))
 txt <- readLines(skill, warn = FALSE)
 
 # --- extract an Rmd block by its file name
@@ -178,6 +179,67 @@ for (eng in c("ComplexUpset", "UpSetR")) {
 check("make_upset draws nothing when fewer than two tools have a gene", identical(E5$make_upset(list(rmats = cr, suppa = list(genes = character(0), tested = character(0), dir = cs$dir[0, ])), file.path(work, "none.png")), FALSE) &&
       !file.exists(file.path(work, "none.png")))
 
+# --- 2b. SYNTHETIC: stageR version stripping, SUPPA2 merged loci, effects in the cross table, proportions, stageR at another FDR
+check("04 and 05 define the functions of the stageR re-run, the version stripping and the proportions",
+      need_fun(E4, c("strip_version", "strip_tx_version", "stager_for_fdr", "stager_note", "read_dtu_samples", "read_dtu_counts", "dtu_proportions", "dtu_proportion_plot")) &&
+      need_fun(E5, c("strip_tx_version", "stager_alpha", "stager_for_fdr", "stager_note", "read_stager")))
+check("strip_tx_version removes a trailing version of a transcript identifier only", identical(E5$strip_tx_version(c("ENST00000406022.2", "ENST00000406022", "TX.A.3")), c("ENST00000406022", "ENST00000406022", "TX.A")) &&
+      identical(E4$strip_tx_version("ENST1.7"), "ENST1"))
+# I4: a SUPPA2 locus of overlapping genes counts for each gene
+SYNTHETIC_loc <- SYNTHETIC_suppa; SYNTHETIC_loc$gene_id[1] <- "G20_and_G21"; SYNTHETIC_loc$gene_id[2] <- "ENSG00000000022.3_and_ENSG00000000023"
+cl <- E5$calls_from_events(SYNTHETIC_loc, 0.05, 0.1)
+check("a SUPPA2 locus GENE1_and_GENE2 counts for each of its genes, and a version suffix is stripped after the split (G20, G21, ENSG00000000022, ENSG00000000023)",
+      all(c("G20", "G21", "ENSG00000000022", "ENSG00000000023") %in% cl$genes) && !any(grepl("_and_", cl$genes, fixed = TRUE)) && !"ENSG00000000022.3" %in% cl$genes &&
+      identical(dirof(cl, "G20"), "treatment_up") && identical(dirof(cl, "G21"), "treatment_up"))
+check("expand_genes splits GENE1_and_GENE2 as well as GENE1+GENE2",
+      identical(E5$expand_genes(data.frame(gene_id = c("A_and_B", "C+D", "E"), stringsAsFactors = FALSE))$gene_id, c("A", "B", "C", "D", "E")))
+# I3: the cross table has the harmonised effect of each tool
+xt2 <- E5$cross_table(calls_syn)
+xe <- function(g, tool) xt2[[paste0("effect_", tool)]][xt2$gene_id == g]
+check("SYNTHETIC cross table: effect_<tool> is the effect of the top feature (G2: rMATS -0.2, SUPPA2 +0.3; G1 DEXSeq 2; G6 DEXSeq has none)",
+      isTRUE(all.equal(xe("G2", "rmats"), -0.2)) && isTRUE(all.equal(xe("G2", "suppa"), 0.3)) && isTRUE(all.equal(xe("G1", "exon_dexseq"), 2)) && is.na(xe("G6", "exon_dexseq")) && is.na(xe("G6", "suppa")))
+# I5: versioned DEXSeq identifiers against the unversioned stageR identifiers
+st_v <- data.frame(gene_id = c("ENSG1", "ENSG1", "ENSG2"), tx_id = c("ENST1", "ENST2", "ENST3"), gene = c(0.01, 0.01, 0.5), transcript = c(0.02, 1, NA), stringsAsFactors = FALSE)
+feat_v <- data.frame(gene_id = c("ENSG1.5", "ENSG1.5", "ENSG2.4"), feature_id = c("ENST1.2", "ENST2.2", "ENST3.1"), padj = c(0.001, 0.2, 0.3), effect = c(-2, 1, 1),
+                     direction = c("control_up", "treatment_up", "treatment_up"), stringsAsFactors = FALSE)
+cv <- E5$calls_from_stager(st_v, feat_v, 0.05)
+check("calls_from_stager joins versioned DEXSeq identifiers (ENSG1.5, ENST1.2) to the unversioned stageR identifiers: the gene is called with the direction of the confirmed transcript",
+      identical(cv$genes, "ENSG1") && identical(dirof(cv, "ENSG1"), "control_up") && isTRUE(all.equal(cv$dir$top_effect[cv$dir$gene_id == "ENSG1"], -2)))
+check("read_dtu_groups and read_dtu_counts strip the versions of the identifiers", {
+  f <- file.path(work, "dtu_v.tsv")
+  writeLines(c("groupID\tfeatureID\tpadj\tGBR\tYRI\tcountData.1\tcountData.2", "ENSG1.5\tENST1.2\t0.01\t1\t2\t4\t6", "ENSG1.5\tENST2.2\t0.02\t3\t4\t6\t4"), f)
+  g <- E4$read_dtu_groups(f, "GBR", "YRI"); k <- E4$read_dtu_counts(f, data.frame(sample = c("a", "b"), condition = c("GBR", "YRI"), stringsAsFactors = FALSE))
+  identical(g$gene_id, c("ENSG1", "ENSG1")) && identical(g$feature_id, c("ENST1", "ENST2")) && identical(k$feature_id, c("ENST1", "ENST2")) && identical(k$count_2, c(6, 4)) })
+check("read_dtu_counts gives NULL when the number of countData columns is not the number of samples",
+      is.null(E4$read_dtu_counts(file.path(work, "dtu_v.tsv"), data.frame(sample = "a", condition = "GBR", stringsAsFactors = FALSE))))
+# I2: the proportion of a transcript in its gene, per sample, and the group of the sample
+SYNTHETIC_cnt <- data.frame(gene_id = c("GA", "GA", "GB", "GB"), feature_id = c("TA1", "TA2", "TB1", "TB2"), count_1 = c(10, 10, 0, 0), count_2 = c(30, 10, 5, 5),
+                            count_3 = c(5, 15, 2, 6), count_4 = c(15, 5, 1, 3), stringsAsFactors = FALSE)
+SYNTHETIC_smp <- data.frame(sample = c("S1", "S2", "S3", "S4"), condition = c("GBR", "GBR", "YRI", "YRI"), stringsAsFactors = FALSE)
+pp <- E4$dtu_proportions(SYNTHETIC_cnt, SYNTHETIC_smp, c("GA", "GB"), "GBR", "YRI")
+pv <- function(g, t, s) pp$proportion[pp$gene_id == g & pp$feature_id == t & pp$sample == s]
+check("SYNTHETIC proportions: count / sum of the gene's transcript counts in the sample (GA TA1: S1 0.5, S2 0.75, S3 0.25, S4 0.75; GB TB1 S3 0.25)",
+      isTRUE(all.equal(c(pv("GA", "TA1", "S1"), pv("GA", "TA1", "S2"), pv("GA", "TA1", "S3"), pv("GA", "TA1", "S4"), pv("GB", "TB1", "S3")), c(0.5, 0.75, 0.25, 0.75, 0.25))))
+check("SYNTHETIC proportions: the proportions of the transcripts of a gene sum to 1 in every sample, a sample without counts gives NA (GB in S1)",
+      all(abs(tapply(pp$proportion[!is.na(pp$proportion)], paste(pp$gene_id, pp$sample)[!is.na(pp$proportion)], sum) - 1) < 1e-12) && is.na(pv("GB", "TB1", "S1")))
+check("SYNTHETIC proportions: samples of the treatment condition have the role treatment, those of the control the role control",
+      all(pp$role[pp$sample %in% c("S1", "S2")] == "treatment") && all(pp$role[pp$sample %in% c("S3", "S4")] == "control") &&
+      all(E4$dtu_proportions(SYNTHETIC_cnt, SYNTHETIC_smp, "GA", "YRI", "GBR")$role[pp$sample[pp$gene_id == "GA"] == "S1"] == "control"))
+sm <- E4$read_dtu_samples(file.path(rt, "salmon/dexseq_dtu/results/dexseq/DEXSeqDataSet.GBR-YRI.rds"))
+check("read_dtu_samples reads the sample and the condition of the four columns from the DEXSeqDataSet (columns 1-2 GBR, 3-4 YRI)",
+      !is.null(sm) && identical(sm$condition, c("GBR", "GBR", "YRI", "YRI")) && identical(sm$sample[1], "ERR188383_chrX") && nrow(sm) == 4)
+check("read_dtu_samples is NULL for a missing file", is.null(E4$read_dtu_samples(file.path(work, "absent_dxd.rds"))))
+# I1: stager_note says which values are used
+check("stager_note: the run's alpha equal to the FDR, the re-run, and the warning when the object cannot be read",
+      grepl("equal to the FDR of this report", E4$stager_note(list(mode = "run", alpha = 0.05), 0.05), fixed = TRUE) &&
+      grepl("re-run at 0.9", E4$stager_note(list(mode = "rerun", alpha = 0.05), 0.9), fixed = TRUE) &&
+      grepl("WARNING: the stageR values of the run are valid only at the alpha the run used", E4$stager_note(list(mode = "unreadable", alpha = NA_real_), 0.9), fixed = TRUE))
+sr <- file.path(rt, "salmon/dexseq_dtu/results/stager/stageRTx.GBR-YRI.rds")
+stf_run <- E4$read_stager(file.path(rt, "salmon/dexseq_dtu/results/stager/getAdjustedPValues.GBR-YRI.tsv"))
+check("stager_for_fdr: the run's table as it is at the run's alpha (mode run), a re-run at another FDR (mode rerun), the run's table when the object is absent (mode unreadable)",
+      identical(E4$stager_for_fdr(stf_run, sr, 0.05)$mode, "run") && identical(E4$stager_for_fdr(stf_run, sr, 0.9)$mode, "rerun") &&
+      identical(E4$stager_for_fdr(stf_run, file.path(work, "absent.rds"), 0.9)$mode, "unreadable") && identical(E4$stager_for_fdr(stf_run, file.path(work, "absent.rds"), 0.9)$st, stf_run))
+
 # --- 3. render 01, 04 and 05 on the fixture tree
 base_params <- list(outdir = rt, report_dir = "", contrasts = file.path(rt, "261003_a_contrasts.csv"),
                     samplesheet = file.path(rt, "261003_a_samplesheet.csv"), modules = "rmats suppa dexseq_exon edger_exon dtu", rmats_type = "JC",
@@ -199,13 +261,20 @@ C <- "GBR_vs_YRI"
 rd_csv <- function(f) utils::read.csv(f, stringsAsFactors = FALSE, check.names = FALSE)
 rd_tsv <- function(f) utils::read.delim(f, stringsAsFactors = FALSE, check.names = FALSE)
 dir_txt <- function(x) ifelse(is.na(x) | x == 0, NA_character_, ifelse(x > 0, "treatment_up", "control_up"))
+# the stageR table of the run, and the table of an independent stage-wise adjustment re-run from the stageRTx object at another alpha
+stg_run <- function() rd_tsv(file.path(rt, "salmon/dexseq_dtu/results/stager/getAdjustedPValues.GBR-YRI.tsv"))
+stg_at <- function(fdr) {
+  obj <- readRDS(file.path(rt, "salmon/dexseq_dtu/results/stager/stageRTx.GBR-YRI.rds"))
+  if (isTRUE(all.equal(obj@alpha, fdr))) return(stg_run())
+  as.data.frame(stageR::getAdjustedPValues(stageR::stageWiseAdjustment(obj, method = "dtu", alpha = fdr, allowNA = TRUE), onlySignificantGenes = FALSE, order = FALSE), stringsAsFactors = FALSE)
+}
 
 # --- raw recomputation (base R from the raw fixture tables; the sign rules are applied here: DEXSeq and SUPPA2 flipped)
 raw_usage <- function(fdr) {
   dex <- rd_csv(file.path(rt, "star/dexseq_exon/results/DEXSeqResults.GBR_vs_YRI.csv")); pg <- rd_csv(file.path(rt, "star/dexseq_exon/results/perGeneQValue.GBR_vs_YRI.csv"))
   eex <- rd_csv(file.path(rt, "star/edger/contrast_GBR_vs_YRI.usage.exon.csv")); egn <- rd_csv(file.path(rt, "star/edger/contrast_GBR_vs_YRI.usage.gene.csv"))
   esm <- rd_csv(file.path(rt, "star/edger/contrast_GBR_vs_YRI.usage.simes.csv"))
-  dtx <- rd_tsv(file.path(rt, "salmon/dexseq_dtu/results/dexseq/DEXSeqResults.GBR-YRI.tsv")); stg <- rd_tsv(file.path(rt, "salmon/dexseq_dtu/results/stager/getAdjustedPValues.GBR-YRI.tsv"))
+  dtx <- rd_tsv(file.path(rt, "salmon/dexseq_dtu/results/dexseq/DEXSeqResults.GBR-YRI.tsv")); stg <- stg_at(fdr)
   sg <- function(p) !is.na(p) & p < fdr
   row <- function(tool, level, p, sig, eff = NULL) list(tool = tool, level = level, tested = sum(!is.na(p)), significant = sum(sig),
     up = if (is.null(eff)) NA_integer_ else sum(sig & eff > 0, na.rm = TRUE), down = if (is.null(eff)) NA_integer_ else sum(sig & eff < 0, na.rm = TRUE))
@@ -309,7 +378,8 @@ check("04 renders when the per-gene, Simes and stageR files of the run are absen
 
 # 3f. Rmd 05 on the fixtures: sets, intersections, directions
 raw5 <- function(fdr, dpsi, min_reads) {
-  pick <- function(df) { df <- df[order(df$padj, 1 - abs(df$eff), df$feat), ]; df <- df[!duplicated(df$gene), ]; stats::setNames(dir_txt(df$eff), df$gene) }
+  pick <- function(df) { df <- df[order(df$padj, 1 - abs(df$eff), df$feat), ]; df <- df[!duplicated(df$gene), ]; r <- stats::setNames(dir_txt(df$eff), df$gene); attr(r, "eff") <- stats::setNames(df$eff, df$gene); r }
+  ex_ <- function(df) { parts <- strsplit(df$gene, "\\+|_and_"); o <- df[rep(seq_len(nrow(df)), lengths(parts)), ]; o$gene <- unlist(parts); o }
   # rMATS
   rm <- do.call(rbind, lapply(c("SE", "A5SS", "A3SS", "MXE", "RI"), function(ty) {
     r <- utils::read.delim(file.path(rt, sprintf("star/rmats/GBR_vs_YRI/%s.MATS.JC.txt", ty)), quote = "\"", stringsAsFactors = FALSE, colClasses = "character")
@@ -322,9 +392,9 @@ raw5 <- function(fdr, dpsi, min_reads) {
     t <- do.call(rbind, strsplit(readLines(file.path(rt, "salmon/suppa/diffsplice", f))[-1], "\t", fixed = TRUE))
     d <- num(t[, 2]); p <- num(t[, 3]); q <- rep(NA_real_, length(d)); ok <- !is.na(d) & !is.na(p); q[ok] <- stats::p.adjust(p[ok], method = "BH")
     data.frame(gene = sub(";.*$", "", t[, 1]), feat = sub("^[^;]*;", "", t[, 1]), padj = q, eff = -d, stringsAsFactors = FALSE) }))
+  sp <- ex_(sp)
   sp_sig <- !is.na(sp$padj) & !is.na(sp$eff) & sp$padj < fdr & abs(sp$eff) >= dpsi
   # DEXSeq exon: genes from perGeneQValue, bins from the exon table (merged groups A+B count for A and for B)
-  ex_ <- function(df) { parts <- strsplit(df$gene, "+", fixed = TRUE); df[rep(seq_len(nrow(df)), lengths(parts)), ] -> o; o$gene <- unlist(parts); o }
   pg <- rd_csv(file.path(rt, "star/dexseq_exon/results/perGeneQValue.GBR_vs_YRI.csv")); dx <- rd_csv(file.path(rt, "star/dexseq_exon/results/DEXSeqResults.GBR_vs_YRI.csv"))
   dxf <- ex_(data.frame(gene = dx$groupID, feat = paste0(dx$groupID, ":", dx$featureID), padj = dx$padj, eff = -dx$log2fold_YRI_GBR, stringsAsFactors = FALSE))
   dxs <- !is.na(dxf$padj) & dxf$padj < fdr
@@ -333,7 +403,7 @@ raw5 <- function(fdr, dpsi, min_reads) {
   es <- rd_csv(file.path(rt, "star/edger/contrast_GBR_vs_YRI.usage.simes.csv")); ee <- rd_csv(file.path(rt, "star/edger/contrast_GBR_vs_YRI.usage.exon.csv"))
   eef <- data.frame(gene = ee$Geneid, feat = paste0(ee$Geneid, ":", ee$Chr, ":", ee$Start, "-", ee$End), padj = ee$FDR, eff = ee$logFC, stringsAsFactors = FALSE)
   # DTU: genes and transcripts of stageR; the transcript with the smallest DEXSeq padj among the confirmed ones gives the direction
-  dt <- rd_tsv(file.path(rt, "salmon/dexseq_dtu/results/dexseq/DEXSeqResults.GBR-YRI.tsv")); sg <- rd_tsv(file.path(rt, "salmon/dexseq_dtu/results/stager/getAdjustedPValues.GBR-YRI.tsv"))
+  dt <- rd_tsv(file.path(rt, "salmon/dexseq_dtu/results/dexseq/DEXSeqResults.GBR-YRI.tsv")); sg <- stg_at(fdr)
   dtf <- data.frame(gene = dt$groupID, feat = dt$featureID, padj = dt$padj, eff = -dt$log2fold_YRI_GBR, stringsAsFactors = FALSE)
   conf <- paste(sg$geneID, sg$txID)[!is.na(sg$transcript) & sg$transcript < fdr]
   list(rmats = list(genes = unique(rm$gene[rm_sig]), dir = pick(rm[rm_sig, ])), suppa = list(genes = unique(sp$gene[sp_sig]), dir = pick(sp[sp_sig, ])),
@@ -360,6 +430,9 @@ check_cross <- function(rd, fdr, dpsi, min_reads, tag) {
     dirs_ok <- sapply(TOOLS, function(t) { col <- xt[[paste0("direction_", t)]]; want <- unname(ex[[t]]$dir[xt$gene_id]); want[!xt$gene_id %in% ex[[t]]$genes] <- NA
       identical(is.na(col), is.na(want)) && all(col[!is.na(col)] == want[!is.na(want)]) })
     check(sprintf("each tool's direction in the cross-tool table equals the recomputation (sign of the smallest-padj significant feature; DEXSeq and SUPPA2 flipped) at %s", tag), all(dirs_ok))
+    effs_ok <- sapply(TOOLS, function(t) { col <- as.numeric(xt[[paste0("effect_", t)]]); want <- unname(attr(ex[[t]]$dir, "eff")[xt$gene_id]); want[!xt$gene_id %in% ex[[t]]$genes] <- NA
+      identical(is.na(col), is.na(want)) && isTRUE(all.equal(col[!is.na(col)], want[!is.na(want)])) })
+    check(sprintf("each tool's effect in the cross-tool table is the effect of its top feature (dPSI for rMATS and SUPPA2, log2 fold change for the others; signs as harmonised) at %s", tag), all(effs_ok))
     cc <- rd_csv(file.path(rd, "tables", paste0(C, ".cross_tool.concordance.csv")))
     pr <- utils::combn(TOOLS, 2)
     expd <- do.call(rbind, lapply(seq_len(ncol(pr)), function(j) { a <- pr[1, j]; b <- pr[2, j]; both <- intersect(ex[[a]]$genes, ex[[b]]$genes)
@@ -387,9 +460,80 @@ if (ok5b) {
   ex <- check_cross(rd5b, 0.9, 0.05, 0, "FDR 0.9, |dPSI| 0.05, min_reads 0")
   two <- sum(table(unlist(lapply(ex, function(x) x$genes))) >= 2)
   check(sprintf("at the permissive thresholds some genes are called by two or more tools (%d), so directions and concordance are exercised", two), two > 0)
+  mtp <- rd_csv(file.path(rd5b, "tables", paste0(C, ".cross_tool.membership.csv"))); gp <- mtp[mtp$gene_id == "ENSG00000147403", ]
+  check("ENSG00000147403 (in the SUPPA2 locus ENSG00000147403_and_ENSG00000207165) is called by SUPPA2 and counted for four or more tools", nrow(gp) == 1 && isTRUE(gp$suppa == TRUE) && sum(unlist(gp[TOOLS])) >= 4)
   check("the UpSet figure exists at the permissive thresholds", nonempty(file.path(rd5b, "figures", paste0(C, ".upset.png"))))
 }
 # a single tool in the modules: no comparison, the page says so
 rd5c <- new_dir("rd5_one"); ok <- render(rd5c, "01_import.Rmd", modules = "dtu"); ok5c <- ok && render(rd5c, "05_cross_tool.Rmd", modules = "dtu")
 check("05 renders with one tool and says that fewer than two tools are available", ok5c && has(html_of(rd5c, "05_cross_tool.html"), "fewer than two") && !file.exists(file.path(rd5c, "figures", paste0(C, ".upset.png"))))
+# --- 4. stageR at the report's FDR, proportions from the counts, versioned identifiers, the fallback without the stageRTx object
+dtu_counts <- function(rd) { cn <- rd_csv(file.path(rd, "tables", paste0(C, ".usage.counts.csv"))); cn <- cn[cn$tool == "dtu", ]; rownames(cn) <- NULL; cn }
+if (ok4) {
+  h <- html_of(rd1, "04_usage.html")
+  check("at the run's alpha (FDR 0.05) 04 says that the table of the run is used as it is", has(h, "equal to the FDR of this report") && has(h, "overall alpha of 0.05"))
+  # the proportions of the top 6 DTU genes equal a recomputation from the raw counts (columns 1-2 are GBR = treatment, 3-4 YRI = control)
+  dtx <- rd_tsv(file.path(rt, "salmon/dexseq_dtu/results/dexseq/DEXSeqResults.GBR-YRI.tsv")); stg <- stg_at(0.05)
+  gg <- stg[!duplicated(stg$geneID) & !is.na(stg$gene), ]; top <- head(gg$geneID[order(gg$gene, gg$geneID)], 6)
+  snames <- c("ERR188383_chrX", "ERR188428_chrX", "ERR188454_chrX", "ERR204916_chrX"); cond <- c("GBR", "GBR", "YRI", "YRI")
+  expp <- do.call(rbind, lapply(1:4, function(i) { d <- dtx[dtx$groupID %in% top, ]; v <- d[[paste0("countData.", i)]]; tot <- ave(v, d$groupID, FUN = sum)
+    data.frame(key = paste(d$groupID, d$featureID, snames[i]), role = ifelse(cond[i] == "GBR", "treatment", "control"), p = ifelse(tot > 0, v / tot, NA), stringsAsFactors = FALSE) }))
+  pt <- utils::read.csv(file.path(rd1, "tables", paste0(C, ".usage.dtu_proportions.csv")), stringsAsFactors = FALSE)
+  k <- match(paste(pt$gene_id, pt$feature_id, pt$sample), expp$key)
+  check("the proportion table has one row per transcript and sample of the top 6 DTU genes (4 samples)", !anyNA(k) && nrow(pt) == sum(!is.na(expp$p)) && length(unique(pt$gene_id)) == length(top))
+  check("the proportions equal count / sum of the gene's counts in the sample, recomputed from the raw table", !anyNA(k) && isTRUE(all.equal(pt$proportion, expp$p[k])))
+  check("treatment is GBR (samples 1-2) and control YRI (samples 3-4) in the proportion table", !anyNA(k) && identical(pt$role, expp$role[k]))
+  check("the isoform figure and the text are the proportion plot", has(h, "proportion of a transcript") && !has(h, "not a proportion") && nonempty(file.path(rd1, "figures", paste0(C, ".usage.dtu_top.png"))))
+}
+# FDR 0.9 (rd2 above) re-ran the stage-wise adjustment; an FDR of 0.02 too
+if (ok4b) check("at FDR 0.9 04 says that the stage-wise adjustment was re-run at 0.9 from the run's stageRTx object", has(html_of(rd2, "04_usage.html"), "re-run at 0.9") && has(html_of(rd2, "04_usage.html"), "the values of the run are not used"))
+rd02 <- new_dir("rd_fdr002"); dir.create(file.path(rd02, "rds")); file.copy(list.files(file.path(rd1, "rds"), full.names = TRUE), file.path(rd02, "rds"))
+ok02 <- render(rd02, "04_usage.Rmd", fdr = 0.02)
+check("04_usage.Rmd renders at FDR 0.02", ok02)
+if (ok02) {
+  check_counts(rd02, 0.02, "FDR 0.02")
+  ex <- raw_usage(0.02); run <- stg_run()
+  check("at FDR 0.02 the DTU genes and transcripts are those of the independent stage-wise re-run, not the run's transcript column compared with 0.02",
+        setequal(tab_ids(rd02, "dtu.genes", "gene_id"), ex$dtu_genes) && setequal(tab_ids(rd02, "dtu.transcripts", "transcript_id"), ex$dtu_tx) &&
+        !setequal(ex$dtu_tx, run$txID[!is.na(run$transcript) & run$transcript < 0.02]))
+  check("at FDR 0.02 every confirmed transcript belongs to a gene that is called (no transcript confirmed without its gene)",
+        all(tab_ids(rd02, "dtu.transcripts", "gene_id") %in% tab_ids(rd02, "dtu.genes", "gene_id")))
+  check("04 at FDR 0.02 says re-run at 0.02", has(html_of(rd02, "04_usage.html"), "re-run at 0.02"))
+}
+# the stageRTx object and the DEXSeqDataSet of the run are not there: the run's values with the warning, the coefficient plot with its label
+fbo <- file.path(work, "fb_dtu_out"); for (d in c("salmon/dexseq_dtu/results/dexseq", "salmon/dexseq_dtu/results/stager", "star/dexseq_exon/results")) dir.create(file.path(fbo, d), recursive = TRUE)
+file.copy(file.path(rt, "salmon/dexseq_dtu/results/dexseq/DEXSeqResults.GBR-YRI.tsv"), file.path(fbo, "salmon/dexseq_dtu/results/dexseq"))
+file.copy(file.path(rt, "salmon/dexseq_dtu/results/stager/getAdjustedPValues.GBR-YRI.tsv"), file.path(fbo, "salmon/dexseq_dtu/results/stager"))
+file.copy(list.files(file.path(rt, "star/dexseq_exon/results"), full.names = TRUE), file.path(fbo, "star/dexseq_exon/results"))
+rdb <- new_dir("rd_fallback_dtu"); okb <- render(rdb, "01_import.Rmd", outdir = fbo, modules = "dexseq_exon dtu") && render(rdb, "04_usage.Rmd", outdir = fbo, modules = "dexseq_exon dtu", fdr = 0.9)
+check("04 renders at FDR 0.9 without the stageRTx object and the DEXSeqDataSet", okb)
+if (okb) {
+  h <- html_of(rdb, "04_usage.html"); run <- stg_run(); cn <- dtu_counts(rdb)
+  check("without the stageRTx object 04 prints the warning that the values of the run are valid only at the alpha the run used", has(h, "WARNING: the stageR values of the run are valid only at the alpha the run used"))
+  check("without the stageRTx object the values of the run are used as they stand at FDR 0.9 (transcripts and genes of the run's table)",
+        cn$significant[cn$level == "transcript_stager"] == sum(!is.na(run$transcript) & run$transcript < 0.9) && cn$significant[cn$level == "gene_stager"] == length(unique(run$geneID[!is.na(run$gene) & run$gene < 0.9])) &&
+        cn$significant[cn$level == "transcript_stager"] != sum(!is.na(stg_at(0.9)$transcript) & stg_at(0.9)$transcript < 0.9))
+  check("without the DEXSeqDataSet 04 draws the coefficient plot, labelled as not a proportion, and says that the DataSet was not found",
+        has(h, "not a proportion") && has(h, "was not found or does not match") && nonempty(file.path(rdb, "figures", paste0(C, ".usage.dtu_top.png"))) && !file.exists(file.path(rdb, "tables", paste0(C, ".usage.dtu_proportions.csv"))))
+  ok5f <- render(rdb, "05_cross_tool.Rmd", outdir = fbo, modules = "dexseq_exon dtu", fdr = 0.9)
+  check("05 renders without the stageRTx object, prints the warning and uses the run's gene values for DTU", ok5f && has(html_of(rdb, "05_cross_tool.html"), "WARNING: the stageR values of the run are valid only at the alpha the run used") &&
+        setequal(rd_csv(file.path(rdb, "tables", paste0(C, ".cross_tool.membership.csv")))$gene_id[rd_csv(file.path(rdb, "tables", paste0(C, ".cross_tool.membership.csv")))$dtu %in% c(TRUE, "TRUE")], unique(run$geneID[!is.na(run$gene) & run$gene < 0.9])))
+}
+# a versioned annotation: the DEXSeq DTU table keeps the versions, the stageR table has none
+vout <- file.path(work, "versioned_out"); for (d in c("salmon/dexseq_dtu/results/dexseq", "salmon/dexseq_dtu/results/stager")) dir.create(file.path(vout, d), recursive = TRUE)
+SYNTHETIC_dtu <- rd_tsv(file.path(rt, "salmon/dexseq_dtu/results/dexseq/DEXSeqResults.GBR-YRI.tsv")); SYNTHETIC_dtu$groupID <- paste0(SYNTHETIC_dtu$groupID, ".5"); SYNTHETIC_dtu$featureID <- paste0(SYNTHETIC_dtu$featureID, ".2")
+utils::write.table(SYNTHETIC_dtu, file.path(vout, "salmon/dexseq_dtu/results/dexseq/DEXSeqResults.GBR-YRI.tsv"), sep = "\t", quote = FALSE, row.names = FALSE, na = "NA")
+file.copy(file.path(rt, "salmon/dexseq_dtu/results/dexseq/DEXSeqDataSet.GBR-YRI.rds"), file.path(vout, "salmon/dexseq_dtu/results/dexseq"))
+file.copy(list.files(file.path(rt, "salmon/dexseq_dtu/results/stager"), full.names = TRUE), file.path(vout, "salmon/dexseq_dtu/results/stager"))
+rdv <- new_dir("rd_versioned"); okv <- render(rdv, "01_import.Rmd", outdir = vout, modules = "dtu") && render(rdv, "04_usage.Rmd", outdir = vout, modules = "dtu")
+check("04 renders on a versioned copy of the DTU tables (SYNTHETIC: .5 on the genes, .2 on the transcripts)", okv)
+if (okv) {
+  a <- dtu_counts(rdv); b <- dtu_counts(rd1)
+  check("on the versioned copy the DTU counts, including the directions of the confirmed transcripts, equal those of the unversioned tables",
+        nrow(a) == 3 && identical(a, b) && a$significant[a$level == "transcript_stager"] > 0 && !anyNA(a[["more used in treatment"]][a$level == "transcript_stager"]))
+  check("on the versioned copy the transcript table has the stripped identifiers, the effects and the DEXSeq padj of the confirmed transcripts",
+        setequal(tab_ids(rdv, "dtu.transcripts", "transcript_id"), tab_ids(rd1, "dtu.transcripts", "transcript_id")) && !anyNA(utils::read.csv(file.path(rdv, "tables", paste0(C, ".dtu.transcripts.csv")))$effect) &&
+        nrow(utils::read.csv(file.path(rdv, "tables", paste0(C, ".usage.dtu_proportions.csv")))) == nrow(utils::read.csv(file.path(rd1, "tables", paste0(C, ".usage.dtu_proportions.csv")))))
+}
+
 finish()

@@ -1392,7 +1392,7 @@ for (i in seq_len(nrow(contrasts))) {
 ```
 ````
 
-The exon and transcript usage report `04_usage.Rmd` reads `rds/{CONTRAST}.exon_dexseq.rds`, `rds/{CONTRAST}.exon_edger.rds` and `rds/{CONTRAST}.dtu.rds` (written by `01_import.Rmd`) for every contrast and the gene-level files of the run, which the RDS does not hold and which the report reads again (read only): `star/dexseq_exon/results/perGeneQValue.{CONTRAST}.csv` (columns `groupID`, `padj`), `star/edger/contrast_{CONTRAST}.usage.simes.csv` and `.usage.gene.csv` (columns `Geneid`, `FDR`), `salmon/dexseq_dtu/results/stager/getAdjustedPValues.{T}-{C}.tsv` (columns `geneID`, `txID`, `gene`, `transcript`), the stageR object `stageRTx.{T}-{C}.rds` next to it and `salmon/dexseq_dtu/results/dexseq/DEXSeqResults.{T}-{C}.tsv` (for the two group columns, named by the treatment and the control). It writes, per contrast, `tables/{CONTRAST}.usage.counts.csv`, `tables/{CONTRAST}.exon_dexseq.genes.csv` and `.exon_dexseq.bins.csv`, `tables/{CONTRAST}.exon_edger.genes.csv` and `.exon_edger.exons.csv`, `tables/{CONTRAST}.dtu.genes.csv` and `.dtu.transcripts.csv`, `figures/{CONTRAST}.usage.volcano.{exon_dexseq,exon_edger,dtu}.png`, `figures/{CONTRAST}.usage.exon_top.png` and `figures/{CONTRAST}.usage.dtu_top.png`. Exon bins, exons, genes and transcripts are significant when their adjusted p-value is below `{FDR}`; `{DPSI}` is not applied. For DEXSeq exon usage a gene is significant when its `perGeneQValue` is below `{FDR}`; for edgeR exon usage when its Simes FDR is below `{FDR}`; for DTU, stageR's `gene` column (the screened adjusted p-value at the gene level) is compared with `{FDR}` for the genes and its `transcript` column (the screened adjusted p-value at the transcript level, `NA` where the gene was not screened in) for the transcripts. stageR's own overall alpha is the run's setting: the report prints it when the `stageRTx` object is readable with the stageR package of the image and otherwise says that it is not recorded in the table. `params$events` switches the tables and the volcano plots, `params$topgene` the top-gene plots. A tool whose RDS is missing is reported as missing and the report still renders.
+The exon and transcript usage report `04_usage.Rmd` reads `rds/{CONTRAST}.exon_dexseq.rds`, `rds/{CONTRAST}.exon_edger.rds` and `rds/{CONTRAST}.dtu.rds` (written by `01_import.Rmd`) for every contrast and the gene-level files of the run, which the RDS does not hold and which the report reads again (read only): `star/dexseq_exon/results/perGeneQValue.{CONTRAST}.csv` (columns `groupID`, `padj`), `star/edger/contrast_{CONTRAST}.usage.simes.csv` and `.usage.gene.csv` (columns `Geneid`, `FDR`), `salmon/dexseq_dtu/results/stager/getAdjustedPValues.{T}-{C}.tsv` (columns `geneID`, `txID`, `gene`, `transcript`), the stageR object `stageRTx.{T}-{C}.rds` next to it and `salmon/dexseq_dtu/results/dexseq/DEXSeqResults.{T}-{C}.tsv` (for the two group columns, named by the treatment and the control). It writes, per contrast, `tables/{CONTRAST}.usage.counts.csv`, `tables/{CONTRAST}.exon_dexseq.genes.csv` and `.exon_dexseq.bins.csv`, `tables/{CONTRAST}.exon_edger.genes.csv` and `.exon_edger.exons.csv`, `tables/{CONTRAST}.dtu.genes.csv` and `.dtu.transcripts.csv`, `figures/{CONTRAST}.usage.volcano.{exon_dexseq,exon_edger,dtu}.png`, `figures/{CONTRAST}.usage.exon_top.png` and `figures/{CONTRAST}.usage.dtu_top.png`. Exon bins, exons, genes and transcripts are significant when their adjusted p-value is below `{FDR}`; `{DPSI}` is not applied. For DEXSeq exon usage a gene is significant when its `perGeneQValue` is below `{FDR}`; for edgeR exon usage when its Simes FDR is below `{FDR}`; for DTU, stageR's `gene` column (the screened adjusted p-value at the gene level) is compared with `{FDR}` for the genes and its `transcript` column (the screened adjusted p-value at the transcript level, `NA` where the gene was not screened in) for the transcripts. stageR's own overall alpha is the run's setting: the report prints it when the `stageRTx` object is readable with the stageR package of the image and otherwise says that it is not recorded in the table. stageR's adjusted p-values are valid only at the alpha they were computed for: when the report's FDR differs from the alpha of the `stageRTx` object (read with `getAlpha`), the stage-wise adjustment is re-run at the report's FDR from that object with the stageR package of the image, and when the object cannot be read the values of the run are used with a printed warning. The DEXSeq files of the DTU run hold the transcript counts (`countData.N`); with the sample annotation of `salmon/dexseq_dtu/results/dexseq/DEXSeqDataSet.{T}-{C}.rds` (read only, the sample and condition of each column) the isoform plot shows the proportion of each transcript in its gene for each sample (`tables/{CONTRAST}.usage.dtu_proportions.csv`), and without that object it shows the two group columns, labelled as DEXSeq usage coefficients that are not proportions. `params$events` switches the tables and the volcano plots, `params$topgene` the top-gene plots. A tool whose RDS is missing is reported as missing and the report still renders.
 
 **File `04_usage.Rmd`.**
 ````rmd
@@ -1428,7 +1428,7 @@ knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, dev = "png
 
 This report shows the exon usage results of DEXSeq and edgeR and the transcript usage (DTU) results of DEXSeq with stageR screening for each contrast, read from the tables that `01_import.Rmd` wrote to `r file.path(params$report_dir, "rds")` and from the gene-level files of the run (read only). Every effect is stated as **treatment minus control**: a positive effect is higher in the treatment group (more inclusion for rMATS and SUPPA2, higher usage for the exon and transcript usage tools). For an exon bin, an exon or a transcript, a positive log2 fold change means it is more used in treatment and a negative one that it is more used in control. The effect is the harmonised column of the RDS and is used as it is.
 
-Exon usage and transcript usage are cut by the adjusted p-value only: a gene, an exon bin or a transcript is significant when its adjusted p-value is below `r params$fdr` (the dPSI threshold of the rMATS and SUPPA2 reports is not applied here). DEXSeq exon usage: a gene is significant when its per-gene q-value (`perGeneQValue`, read from the run's file) is below the FDR, an exon bin when its adjusted p-value is. edgeR exon usage: a gene is significant when its Simes FDR is below the FDR, an exon when its exon-level FDR is; the F-test gene table is counted as well. DTU: stageR screening. In the stageR table the column `gene` holds the screened adjusted p-value at the gene level and the column `transcript` the screened adjusted p-value at the transcript level (`NA` where the gene was not screened in); a gene is significant when `gene` is below the FDR and a transcript when `transcript` is. The direction of a gene is the sign of the effect of its most significant feature (smallest adjusted p-value among the significant bins, exons or transcripts of the gene); it is empty when the gene is significant but none of its features is.
+Exon usage and transcript usage are cut by the adjusted p-value only: a gene, an exon bin or a transcript is significant when its adjusted p-value is below `r params$fdr` (the dPSI threshold of the rMATS and SUPPA2 reports is not applied here). DEXSeq exon usage: a gene is significant when its per-gene q-value (`perGeneQValue`, read from the run's file) is below the FDR, an exon bin when its adjusted p-value is. edgeR exon usage: a gene is significant when its Simes FDR is below the FDR, an exon when its exon-level FDR is; the F-test gene table is counted as well. DTU: stageR screening. In the stageR table the column `gene` holds the screened adjusted p-value at the gene level and the column `transcript` the screened adjusted p-value at the transcript level (`NA` where the gene was not screened in); a gene is significant when `gene` is below the FDR and a transcript when `transcript` is. stageR's adjusted p-values are valid only at the alpha they were computed for: when the FDR of this report differs from the alpha of the run (read from the `stageRTx` object with `getAlpha`), the stage-wise adjustment is re-run at the FDR of this report from that object, and when the object cannot be read the values of the run are used with a warning. The direction of a gene is the sign of the effect of its most significant feature (smallest adjusted p-value among the significant bins, exons or transcripts of the gene); it is empty when the gene is significant but none of its features is.
 
 ```{r functions}
 suppressPackageStartupMessages(library(ggplot2))
@@ -1531,17 +1531,79 @@ stager_genes <- function(st) {
   g <- st[!duplicated(st$gene_id), , drop = FALSE]
   data.frame(gene_id = g$gene_id, padj = g$gene, stringsAsFactors = FALSE)
 }
-# the overall alpha stageR was run with, read from the stageRTx object; NA when the file is absent or cannot be read
+# an Ensembl gene identifier loses its version suffix (.5) only when it has one; a transcript identifier loses a trailing version in the same way
+# (the pipeline strips the versions of the stageR identifiers, not those of the DEXSeq table: both sides of a join are stripped here)
+strip_version <- function(x) sub("^(ENS[A-Z]*G[0-9]+)\\.[0-9]+$", "\\1", x)
+strip_tx_version <- function(x) sub("\\.[0-9]+$", "", x)
+# the overall alpha stageR was run with, read from the stageRTx object with getAlpha; NA when the file is absent or cannot be read
 stager_alpha <- function(path) {
   if (!file.exists(path) || !requireNamespace("stageR", quietly = TRUE)) return(NA_real_)
-  tryCatch(as.numeric(methods::slot(readRDS(path), "alpha"))[1], error = function(e) NA_real_)
+  tryCatch(as.numeric(stageR::getAlpha(readRDS(path)))[1], error = function(e) NA_real_)
+}
+# stageR's adjusted p-values are valid only at the alpha they were computed for. At another FDR the stage-wise adjustment is re-run
+# from the stageRTx object of the run (stageR is in the image); when the object cannot be read the values of the run are used as they stand
+stager_for_fdr <- function(st, path, fdr) {
+  alpha <- stager_alpha(path)
+  if (is.na(alpha)) return(list(st = st, alpha = NA_real_, mode = "unreadable"))
+  if (isTRUE(all.equal(alpha, fdr))) return(list(st = st, alpha = alpha, mode = "run"))
+  re <- tryCatch({
+    obj <- stageR::stageWiseAdjustment(readRDS(path), method = "dtu", alpha = fdr, allowNA = TRUE)
+    r <- stageR::getAdjustedPValues(obj, onlySignificantGenes = FALSE, order = FALSE)
+    data.frame(gene_id = as.character(r$geneID), tx_id = as.character(r$txID), gene = as.numeric(r$gene), transcript = as.numeric(r$transcript),
+               stringsAsFactors = FALSE)
+  }, error = function(e) NULL)
+  if (is.null(re)) return(list(st = st, alpha = alpha, mode = "unreadable"))
+  list(st = re, alpha = alpha, mode = "rerun")
+}
+# the sentence that tells which stageR values are used
+stager_note <- function(res, fdr) {
+  if (res$mode == "run") return(paste0("stageR was run with an overall alpha of ", format(res$alpha), " (read from the `stageRTx` object of the run), equal to the FDR of this report: the stageR table of the run is used as it is."))
+  if (res$mode == "rerun") return(paste0("stageR's adjusted p-values are valid only at the alpha they were computed for. The run used an overall alpha of ", format(res$alpha),
+    " (read from the `stageRTx` object of the run) and the FDR of this report is ", format(fdr), ", so the stage-wise adjustment was re-run at ", format(fdr),
+    " from that object with the stageR package of the image; the values of the run are not used."))
+  paste0("**WARNING: the stageR values of the run are valid only at the alpha the run used, which is the run's setting and is not recorded in the table.** stageR's overall alpha is the run's setting; the `stageRTx` object was not found or could not be read, or the adjustment could not be re-run, so the values of the run are used as they stand for the FDR of this report, ",
+         format(fdr), ", and the transcript-level values may not be adjusted p-values at that level.")
 }
 # the two group columns of the DEXSeq transcript table are named by the conditions of the contrast
 read_dtu_groups <- function(path, treatment, control) {
   tab <- read_delim_chr(path, "\t")
   need_cols(tab, c("groupID", "featureID", treatment, control), path)
-  data.frame(gene_id = strip_quotes(tab$groupID), feature_id = strip_quotes(tab$featureID), treatment = to_num(tab[[treatment]], path, treatment),
+  data.frame(gene_id = strip_version(strip_quotes(tab$groupID)), feature_id = strip_tx_version(strip_quotes(tab$featureID)), treatment = to_num(tab[[treatment]], path, treatment),
              control = to_num(tab[[control]], path, control), stringsAsFactors = FALSE)
+}
+# the sample and the condition of each column of the DEXSeq transcript table (countData.1, countData.2, ...): the colData of the DEXSeqDataSet of the run
+read_dtu_samples <- function(path) {
+  if (!file.exists(path) || !requireNamespace("DEXSeq", quietly = TRUE)) return(NULL)
+  tryCatch({
+    sa <- as.data.frame(DEXSeq::sampleAnnotation(readRDS(path)))
+    nm <- if ("sample.1" %in% names(sa)) sa[["sample.1"]] else sa[["sample"]]
+    data.frame(sample = as.character(nm), condition = as.character(sa$condition), stringsAsFactors = FALSE)
+  }, error = function(e) NULL)
+}
+# the raw counts of the transcripts: the columns countData.1 ... countData.N of the table, named by the samples; NULL when the columns do not match the samples
+read_dtu_counts <- function(path, samples) {
+  tab <- read_delim_chr(path, "\t")
+  need_cols(tab, c("groupID", "featureID"), path)
+  cc <- grep("^countData\\.[0-9]+$", names(tab), value = TRUE)
+  cc <- cc[order(as.integer(sub("^countData\\.", "", cc)))]
+  if (is.null(samples) || length(cc) != nrow(samples)) return(NULL)
+  out <- data.frame(gene_id = strip_version(strip_quotes(tab$groupID)), feature_id = strip_tx_version(strip_quotes(tab$featureID)), stringsAsFactors = FALSE)
+  for (i in seq_along(cc)) out[[paste0("count_", i)]] <- to_num(tab[[cc[i]]], path, cc[i])
+  out
+}
+# the proportion of each transcript in its gene, for each sample: the count of the transcript divided by the sum of the counts of all the
+# transcripts of the gene in that sample (NA when the gene has no count in the sample); the condition of the sample decides treatment or control
+dtu_proportions <- function(cnt, samples, genes, treatment, control) {
+  d <- cnt[cnt$gene_id %in% genes, , drop = FALSE]
+  rows <- lapply(seq_len(nrow(samples)), function(i) {
+    v <- d[[paste0("count_", i)]]
+    tot <- stats::ave(v, d$gene_id, FUN = function(x) sum(x, na.rm = TRUE))
+    role <- if (samples$condition[i] == treatment) "treatment" else if (samples$condition[i] == control) "control" else NA_character_
+    data.frame(gene_id = d$gene_id, feature_id = d$feature_id, sample = samples$sample[i], condition = samples$condition[i], role = role,
+               proportion = ifelse(tot > 0, v / tot, NA_real_), stringsAsFactors = FALSE)
+  })
+  out <- do.call(rbind, rows)
+  out[!is.na(out$role), , drop = FALSE]
 }
 
 # volcano: x = log2 fold change (treatment minus control), y = -log10 adjusted p-value, the FDR as a dashed line, the top 10 significant labelled
@@ -1581,7 +1643,22 @@ exon_usage_plot <- function(feat, genes, fdr, treatment, control, contrast) {
          y = paste0("log2 fold change in exon usage (", treatment, " minus ", control, ")")) +
     theme_bw()
 }
-# the two group columns of the DEXSeq transcript table for some genes, treatment next to control; confirmed = keys "gene transcript" kept by stageR
+# the proportion of each transcript in its gene for each sample (points) and the mean of the group (bar), treatment next to control; confirmed = keys "gene transcript" kept by stageR
+dtu_proportion_plot <- function(prop, genes, confirmed, treatment, control, contrast) {
+  d <- prop[prop$gene_id %in% genes & !is.na(prop$proportion), , drop = FALSE]
+  d$label <- paste0(d$feature_id, ifelse(paste(d$gene_id, d$feature_id) %in% confirmed, " *", ""))
+  d$role <- factor(d$role, levels = c("treatment", "control"), labels = c(paste0("treatment (", treatment, ")"), paste0("control (", control, ")")))
+  d$gene_id <- factor(d$gene_id, levels = genes)
+  ggplot(d, aes(x = label, y = proportion, colour = role, fill = role)) +
+    stat_summary(fun = mean, geom = "col", position = position_dodge(width = 0.8), width = 0.7, alpha = 0.35) +
+    geom_point(position = position_dodge(width = 0.8), size = 1.8) +
+    facet_wrap(~gene_id, scales = "free_x", ncol = 2) +
+    scale_colour_manual(values = c("#D55E00", "#0072B2"), name = "group") + scale_fill_manual(values = c("#D55E00", "#0072B2"), name = "group") +
+    labs(title = paste0("Transcript proportions of the top DTU genes, ", contrast), x = "transcript (* confirmed by stageR)",
+         y = "proportion of the gene's transcript counts") +
+    theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+# when the counts and the samples are not available: the two group columns of the DEXSeq transcript table (usage coefficients, not proportions); confirmed = keys "gene transcript" kept by stageR
 dtu_group_plot <- function(grp, genes, confirmed, treatment, control, contrast) {
   d <- grp[grp$gene_id %in% genes, , drop = FALSE]
   d$label <- paste0(d$feature_id, ifelse(paste(d$gene_id, d$feature_id) %in% confirmed, " *", ""))
@@ -1594,7 +1671,7 @@ dtu_group_plot <- function(grp, genes, confirmed, treatment, control, contrast) 
     facet_wrap(~gene_id, scales = "free_x", ncol = 2) +
     scale_fill_manual(values = c("#D55E00", "#0072B2"), name = "group") +
     labs(title = paste0("Transcripts of the top DTU genes, ", contrast), x = "transcript (* confirmed by stageR)",
-         y = "value of the group column of the DEXSeq table") +
+         y = "DEXSeq usage coefficient (fitted, variance-stabilised; not a proportion)") +
     theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
 }
 save_plot <- function(p, file, width = 7, height = 5) {
@@ -1741,10 +1818,11 @@ for (i in seq_len(nrow(contrasts))) {
         cnt$dtu_dexseq <- usage_counts("dtu", "transcript_dexseq", tab$padj, sig_usage(tab, params$fdr), tab$direction)
       } else {
         st <- read_stager(sf)
-        alpha <- stager_alpha(path_of("salmon", "dexseq_dtu", "results", "stager", sprintf("stageRTx.%s-%s.rds", Tr, Co)))
-        if (is.na(alpha)) cat("stageR's overall alpha is the run's setting; it is not recorded in the table `getAdjustedPValues.", Tr, "-", Co, ".tsv`, and the `stageRTx` object was not found or could not be read, so it is not shown here. ", sep = "")
-        else cat("stageR was run with an overall alpha of ", format(alpha), " (read from the `stageRTx` object of the run). The screened adjusted p-values below are compared with the FDR of this report, ", format(params$fdr),
-                 "; the stageR guarantee on the overall false discovery rate holds at its own alpha. ", sep = "")
+        sres <- stager_for_fdr(st, path_of("salmon", "dexseq_dtu", "results", "stager", sprintf("stageRTx.%s-%s.rds", Tr, Co)), params$fdr)
+        st <- sres$st
+        st$gene_id <- strip_version(st$gene_id); st$tx_id <- strip_tx_version(st$tx_id)
+        tab$gene_id <- strip_version(tab$gene_id); tab$feature_id <- strip_tx_version(tab$feature_id)
+        cat(stager_note(sres, params$fdr), "\n\n")
         cat("The column `gene` of the stageR table is the screened adjusted p-value at the gene level and the column `transcript` the screened adjusted p-value at the transcript level (`NA` where the gene was not screened in).\n\n")
         sg <- stager_genes(st)
         txsig <- !is.na(st$transcript) & st$transcript < params$fdr
@@ -1780,10 +1858,21 @@ for (i in seq_len(nrow(contrasts))) {
           top <- head(cand$gene_id[order(cand$padj, cand$gene_id)], 6)
           if (!file.exists(dxf)) missing_file(dxf, "no transcript plot of the top genes.") else if (length(top) == 0) cat("No gene was screened: no transcript plot.\n\n") else {
             grp <- read_dtu_groups(dxf, Tr, Co)
-            cat("The six genes with the smallest stageR gene-level adjusted p-value. The bars are the two group columns of the DEXSeq table, `", Tr, "` (treatment) and `", Co,
-                "` (control), as they stand in the table; transcripts confirmed by stageR are marked with *.\n\n", sep = "")
             pf <- file.path(fig_dir, paste0(C, ".usage.dtu_top.png"))
-            save_plot(dtu_group_plot(grp, top, confirmed, Tr, Co, C), pf, width = 9, height = 2 + 2 * ceiling(length(top) / 2))
+            samples <- read_dtu_samples(path_of("salmon", "dexseq_dtu", "results", "dexseq", sprintf("DEXSeqDataSet.%s-%s.rds", Tr, Co)))
+            cnts <- read_dtu_counts(dxf, samples)
+            if (!is.null(cnts) && all(samples$condition %in% c(Tr, Co))) {
+              prop <- dtu_proportions(cnts, samples, top, Tr, Co)
+              write_tab(prop, "usage.dtu_proportions")
+              cat("The six genes with the smallest stageR gene-level adjusted p-value. For each sample the proportion of a transcript is its count (columns `countData.N` of the DEXSeq table) divided by the sum of the counts of all the transcripts of the gene in that sample; the group of each sample is read from the sample annotation of the `DEXSeqDataSet` of the run (`", Tr,
+                  "` treatment, `", Co, "` control). Points are samples, bars the mean of the group; transcripts confirmed by stageR are marked with * (table `tables/", C, ".usage.dtu_proportions.csv`).\n\n", sep = "")
+              save_plot(dtu_proportion_plot(prop, top, confirmed, Tr, Co, C), pf, width = 9, height = 2 + 2 * ceiling(length(top) / 2))
+            } else {
+              cat("The `DEXSeqDataSet` of the run (`DEXSeqDataSet.", Tr, "-", Co, ".rds`) was not found or does not match the counts of the DEXSeq table, so the transcript proportions of the samples cannot be drawn. ",
+                  "The plot below shows the two group columns of the DEXSeq table, `", Tr, "` (treatment) and `", Co, "` (control): DEXSeq usage coefficient (fitted, variance-stabilised; not a proportion). ",
+                  "Transcripts confirmed by stageR are marked with *.\n\n", sep = "")
+              save_plot(dtu_group_plot(grp, top, confirmed, Tr, Co, C), pf, width = 9, height = 2 + 2 * ceiling(length(top) / 2))
+            }
             show_image(pf, paste0("Transcripts of the top DTU genes, ", C))
           }
         } else cat("The top-gene plots are switched off for this report (topgene = FALSE).\n\n")
@@ -1806,7 +1895,7 @@ for (i in seq_len(nrow(contrasts))) {
 ```
 ````
 
-The cross-tool report `05_cross_tool.Rmd` is generated only when two or more tools ran (Step 10). It compares, for every contrast, the genes called by each tool that has a result. It reads `rds/{CONTRAST}.{tool}.rds` (written by `01_import.Rmd`) and, for the gene-level calls of DEXSeq exon usage, edgeR exon usage and DTU, the same gene-level files of the run as `04_usage.Rmd` (`perGeneQValue.{CONTRAST}.csv`, `usage.simes.csv`, stageR's `getAdjustedPValues.{T}-{C}.tsv`), read only. A gene is called by rMATS or SUPPA2 when at least one of its events is significant (adjusted p-value below `{FDR}`, absolute dPSI at least `{DPSI}`, and for rMATS not flagged `low_support`); by DEXSeq exon usage when its `perGeneQValue` is below `{FDR}`; by edgeR exon usage when its Simes FDR is below `{FDR}`; by DTU when stageR's `gene` column is below `{FDR}`. Gene identifiers are Ensembl identifiers in every tool; a version suffix is removed only where one is present, and a DEXSeq group of overlapping genes (`GENE1+GENE2`) counts for each of its genes. The direction of a gene in a tool is the sign of the effect of the feature with the smallest adjusted p-value among that tool's significant features in the gene (rMATS and SUPPA2 on dPSI, the other tools on log2 fold change): `treatment_up`, `control_up`, or empty when the gene is called at gene level and none of its features is significant. The concordance table counts, for each pair of tools, the genes called by both with the same direction and with the opposite direction; directions compared only, never effect sizes across scales. The background is stated in the report: a gene outside a tool's set was either not significant or not tested by that tool. It writes, per contrast, `tables/{CONTRAST}.cross_tool.sets.csv`, `.cross_tool.membership.csv`, `.cross_tool.intersections.csv`, `.cross_tool.genes.csv` (the genes called by two or more tools, with the direction of each tool), `.cross_tool.concordance.csv` and `figures/{CONTRAST}.upset.png` (ComplexUpset when the image has it, otherwise UpSetR). A tool whose RDS or gene-level file is missing is left out and named; fewer than two tools left means no comparison, and the report still renders.
+The cross-tool report `05_cross_tool.Rmd` is generated only when two or more tools ran (Step 10). It compares, for every contrast, the genes called by each tool that has a result. It reads `rds/{CONTRAST}.{tool}.rds` (written by `01_import.Rmd`) and, for the gene-level calls of DEXSeq exon usage, edgeR exon usage and DTU, the same gene-level files of the run as `04_usage.Rmd` (`perGeneQValue.{CONTRAST}.csv`, `usage.simes.csv`, stageR's `getAdjustedPValues.{T}-{C}.tsv`), read only. A gene is called by rMATS or SUPPA2 when at least one of its events is significant (adjusted p-value below `{FDR}`, absolute dPSI at least `{DPSI}`, and for rMATS not flagged `low_support`); by DEXSeq exon usage when its `perGeneQValue` is below `{FDR}`; by edgeR exon usage when its Simes FDR is below `{FDR}`; by DTU when stageR's `gene` column is below `{FDR}` (stageR's adjusted p-values are valid only at the alpha they were computed for: at another FDR the stage-wise adjustment is re-run from the `stageRTx` object of the run, or the values of the run are used with a warning). Gene identifiers are Ensembl identifiers; a version suffix is removed only where one is present, and a group of overlapping genes (a DEXSeq group `GENE1+GENE2` or a SUPPA2 locus `GENE1_and_GENE2`) counts for each of its genes. The direction of a gene in a tool is the sign of the effect of the feature with the smallest adjusted p-value among that tool's significant features in the gene (rMATS and SUPPA2 on dPSI, the other tools on log2 fold change): `treatment_up`, `control_up`, or empty when the gene is called at gene level and none of its features is significant. The concordance table counts, for each pair of tools, the genes called by both with the same direction and with the opposite direction; directions compared only, never effect sizes across scales. The background is stated in the report: a gene outside a tool's set was either not significant or not tested by that tool. It writes, per contrast, `tables/{CONTRAST}.cross_tool.sets.csv`, `.cross_tool.membership.csv`, `.cross_tool.intersections.csv`, `.cross_tool.genes.csv` (the genes called by two or more tools, with the direction and the harmonised effect of each tool: `direction_{tool}`, `effect_{tool}`), `.cross_tool.concordance.csv` and `figures/{CONTRAST}.upset.png` (ComplexUpset when the image has it, otherwise UpSetR). A tool whose RDS or gene-level file is missing is left out and named; fewer than two tools left means no comparison, and the report still renders.
 
 **File `05_cross_tool.Rmd`.**
 ````rmd
@@ -1842,9 +1931,9 @@ knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, dev = "png
 
 This report compares the genes called by each tool that ran, for each contrast, from the tables that `01_import.Rmd` wrote to `r file.path(params$report_dir, "rds")` and from the gene-level files of the run (read only). Every effect is stated as **treatment minus control**: a positive effect is higher in the treatment group (more inclusion for rMATS and SUPPA2, higher usage for the exon and transcript usage tools). The direction of a gene is `treatment_up` for a positive effect and `control_up` for a negative one, as in the harmonised column `direction` of the RDS, which is used as it is.
 
-A gene is called by a tool when: rMATS and SUPPA2, at least one event of the gene has an adjusted p-value below `r params$fdr`, an absolute dPSI of at least `r params$dpsi`, and (rMATS) is not flagged `low_support`; DEXSeq exon usage, the per-gene q-value (`perGeneQValue`) is below the FDR; edgeR exon usage, the Simes FDR is below the FDR; DTU, the stageR column `gene` (the screened adjusted p-value at the gene level) is below the FDR. Gene identifiers are Ensembl identifiers in every tool; a version suffix is removed only where one is present, and a DEXSeq group of overlapping genes (`GENE1+GENE2`) counts for each of its genes.
+A gene is called by a tool when: rMATS and SUPPA2, at least one event of the gene has an adjusted p-value below `r params$fdr`, an absolute dPSI of at least `r params$dpsi`, and (rMATS) is not flagged `low_support`; DEXSeq exon usage, the per-gene q-value (`perGeneQValue`) is below the FDR; edgeR exon usage, the Simes FDR is below the FDR; DTU, the stageR column `gene` (the screened adjusted p-value at the gene level) is below the FDR (stageR's adjusted p-values are valid only at the alpha they were computed for: at another FDR the stage-wise adjustment is re-run from the `stageRTx` object of the run, or the values of the run are used with a warning). Gene identifiers are Ensembl identifiers; a version suffix is removed only where one is present, and a group of overlapping genes (a DEXSeq group `GENE1+GENE2` or a SUPPA2 locus `GENE1_and_GENE2`) counts for each of its genes.
 
-The direction of a gene in a tool is the sign of the effect of the feature with the smallest adjusted p-value among that tool's significant features in the gene (dPSI for rMATS and SUPPA2, log2 fold change for the other tools); it is empty when the gene is called at gene level but none of its features is significant. The concordance table counts, for each pair of tools, the genes called by both with the same direction and with the opposite direction (directions compared only, never effect sizes across scales: dPSI and log2 fold change are not on one scale); genes without a direction in one of the two tools are counted separately.
+The direction of a gene in a tool is the sign of the effect of the feature with the smallest adjusted p-value among that tool's significant features in the gene (dPSI for rMATS and SUPPA2, log2 fold change for the other tools); it is empty when the gene is called at gene level but none of its features is significant. The cross-tool table has, for each tool, `direction_<tool>` and `effect_<tool>`, the effect of that feature (dPSI for rMATS and SUPPA2, log2 fold change for the others; the two scales are not comparable). The concordance table counts, for each pair of tools, the genes called by both with the same direction and with the opposite direction (directions compared only, never effect sizes across scales: dPSI and log2 fold change are not on one scale); genes without a direction in one of the two tools are counted separately.
 
 Background: the tools do not test the same genes. A gene outside the set of a tool was either not significant or not tested by that tool, so the overlaps describe the genes called and say nothing about genes a tool could not test; the number of genes each tool tested is in the sets table.
 
@@ -1855,9 +1944,11 @@ MODULE_OF_TOOL <- c(rmats = "rmats", suppa = "suppa", exon_dexseq = "dexseq_exon
 
 # an Ensembl gene identifier loses its version suffix (.5) only when it has one
 strip_version <- function(x) sub("^(ENS[A-Z]*G[0-9]+)\\.[0-9]+$", "\\1", x)
-# a DEXSeq group of overlapping genes (GENE1+GENE2) becomes one row per gene
+# a transcript identifier loses a trailing version in the same way (the pipeline strips the versions of the stageR identifiers, not those of the DEXSeq table: both sides of a join are stripped)
+strip_tx_version <- function(x) sub("\\.[0-9]+$", "", x)
+# a DEXSeq group of overlapping genes (GENE1+GENE2) or a SUPPA2 locus of overlapping genes (GENE1_and_GENE2) becomes one row per gene
 expand_genes <- function(df) {
-  parts <- strsplit(df$gene_id, "+", fixed = TRUE)
+  parts <- strsplit(df$gene_id, "\\+|_and_")
   out <- df[rep(seq_len(nrow(df)), lengths(parts)), , drop = FALSE]
   out$gene_id <- as.character(unlist(parts))
   rownames(out) <- NULL
@@ -1887,7 +1978,7 @@ make_calls <- function(genes, tested, feat, sig_feat) {
 }
 # rMATS and SUPPA2: a gene is called when one of its events is significant
 calls_from_events <- function(tab, fdr, dpsi) {
-  tab <- tidy_ids(tab)
+  tab <- tidy_ids(expand_genes(tab))
   sig <- sig_events(tab, fdr, dpsi)
   make_calls(tab$gene_id[sig], tab$gene_id[!is.na(tab$padj)], tab, sig)
 }
@@ -1901,6 +1992,8 @@ calls_from_gene_table <- function(gene_tab, feat, fdr) {
 calls_from_stager <- function(st, feat, fdr) {
   s <- tidy_ids(st)
   f <- tidy_ids(feat)
+  s$tx_id <- strip_tx_version(s$tx_id)
+  f$feature_id <- strip_tx_version(f$feature_id)
   txsig <- !is.na(s$transcript) & s$transcript < fdr
   confirmed <- paste(s$gene_id, s$tx_id)[txsig]
   sigf <- paste(f$gene_id, f$feature_id) %in% confirmed
@@ -1939,6 +2032,7 @@ cross_table <- function(calls, min_tools = 2) {
   for (t in tools) {
     d <- calls[[t]]$dir
     out[[paste0("direction_", t)]] <- ifelse(out$gene_id %in% calls[[t]]$genes, d$direction[match(out$gene_id, d$gene_id)], NA_character_)
+    out[[paste0("effect_", t)]] <- ifelse(out$gene_id %in% calls[[t]]$genes, d$top_effect[match(out$gene_id, d$gene_id)], NA_real_)
   }
   out <- out[order(out$n_tools, out$gene_id, decreasing = c(TRUE, FALSE), method = "radix"), , drop = FALSE]
   rownames(out) <- NULL
@@ -2036,6 +2130,35 @@ read_stager <- function(path) {
   data.frame(gene_id = strip_quotes(tab$geneID), tx_id = strip_quotes(tab$txID), gene = to_num(tab$gene, path, "gene"),
              transcript = to_num(tab$transcript, path, "transcript"), stringsAsFactors = FALSE)
 }
+# the overall alpha stageR was run with, read from the stageRTx object with getAlpha; NA when the file is absent or cannot be read
+stager_alpha <- function(path) {
+  if (!file.exists(path) || !requireNamespace("stageR", quietly = TRUE)) return(NA_real_)
+  tryCatch(as.numeric(stageR::getAlpha(readRDS(path)))[1], error = function(e) NA_real_)
+}
+# stageR's adjusted p-values are valid only at the alpha they were computed for. At another FDR the stage-wise adjustment is re-run
+# from the stageRTx object of the run (stageR is in the image); when the object cannot be read the values of the run are used as they stand
+stager_for_fdr <- function(st, path, fdr) {
+  alpha <- stager_alpha(path)
+  if (is.na(alpha)) return(list(st = st, alpha = NA_real_, mode = "unreadable"))
+  if (isTRUE(all.equal(alpha, fdr))) return(list(st = st, alpha = alpha, mode = "run"))
+  re <- tryCatch({
+    obj <- stageR::stageWiseAdjustment(readRDS(path), method = "dtu", alpha = fdr, allowNA = TRUE)
+    r <- stageR::getAdjustedPValues(obj, onlySignificantGenes = FALSE, order = FALSE)
+    data.frame(gene_id = as.character(r$geneID), tx_id = as.character(r$txID), gene = as.numeric(r$gene), transcript = as.numeric(r$transcript),
+               stringsAsFactors = FALSE)
+  }, error = function(e) NULL)
+  if (is.null(re)) return(list(st = st, alpha = alpha, mode = "unreadable"))
+  list(st = re, alpha = alpha, mode = "rerun")
+}
+# the sentence that tells which stageR values are used
+stager_note <- function(res, fdr) {
+  if (res$mode == "run") return(paste0("stageR was run with an overall alpha of ", format(res$alpha), " (read from the `stageRTx` object of the run), equal to the FDR of this report: the stageR table of the run is used as it is."))
+  if (res$mode == "rerun") return(paste0("stageR's adjusted p-values are valid only at the alpha they were computed for. The run used an overall alpha of ", format(res$alpha),
+    " (read from the `stageRTx` object of the run) and the FDR of this report is ", format(fdr), ", so the stage-wise adjustment was re-run at ", format(fdr),
+    " from that object with the stageR package of the image; the values of the run are not used."))
+  paste0("**WARNING: the stageR values of the run are valid only at the alpha the run used, which is the run's setting and is not recorded in the table.** stageR's overall alpha is the run's setting; the `stageRTx` object was not found or could not be read, or the adjustment could not be re-run, so the values of the run are used as they stand for the FDR of this report, ",
+         format(fdr), ", and the transcript-level values may not be adjusted p-values at that level.")
+}
 show_image <- function(file, alt) cat("![", alt, "](", file, ")\n\n", sep = "")
 ```
 
@@ -2054,7 +2177,7 @@ for (i in seq_len(nrow(contrasts))) {
   cat("Treatment `", Tr, "`, control `", Co, "`: every effect and direction below is `", Tr, "` minus `", Co, "`; `treatment_up` is higher in `", Tr,
       "`, `control_up` is higher in `", Co, "`.\n\n", sep = "")
   cat("Thresholds: FDR ", format(params$fdr), ", abs(dPSI) ", format(params$dpsi), " (rMATS and SUPPA2 events only); rMATS minimum read support ", params$min_reads, ".\n\n", sep = "")
-  calls <- list(); notfound <- character(0)
+  calls <- list(); notfound <- character(0); stnote <- NULL
   for (tool in names(TOOL_LABELS)) {
     if (!MODULE_OF_TOOL[[tool]] %in% modules) next
     f <- file.path(params$report_dir, "rds", paste0(C, ".", tool, ".rds"))
@@ -2072,11 +2195,17 @@ for (i in seq_len(nrow(contrasts))) {
       if (file.exists(sf)) { sm <- read_gene_table(sf, ",", "Geneid", "FDR"); cl <- calls_from_gene_table(sm, tab, params$fdr) } else notfound <- c(notfound, sf)
     } else if (tool == "dtu") {
       gf <- path_of("salmon", "dexseq_dtu", "results", "stager", sprintf("getAdjustedPValues.%s-%s.tsv", Tr, Co))
-      if (file.exists(gf)) { st <- read_stager(gf); cl <- calls_from_stager(st, tab, params$fdr) } else notfound <- c(notfound, gf)
+      if (file.exists(gf)) {
+        st <- read_stager(gf)
+        sres <- stager_for_fdr(st, path_of("salmon", "dexseq_dtu", "results", "stager", sprintf("stageRTx.%s-%s.rds", Tr, Co)), params$fdr)
+        stnote <- stager_note(sres, params$fdr)
+        cl <- calls_from_stager(sres$st, tab, params$fdr)
+      } else notfound <- c(notfound, gf)
     }
     if (!is.null(cl)) calls[[tool]] <- cl
   }
   if (length(notfound)) cat("Files not found (the tool is left out of the comparison):\n\n", paste0("- `", notfound, "`\n"), "\n", sep = "")
+  if (!is.null(stnote)) cat("DTU, stageR: ", stnote, "\n\n", sep = "")
   if (length(calls) < 2) {
     cat("There are fewer than two tools with a result for this contrast", if (length(calls) == 1) paste0(" (only ", TOOL_LABELS[[names(calls)]], ")") else "",
         ": no comparison is made.\n\n", sep = "")
