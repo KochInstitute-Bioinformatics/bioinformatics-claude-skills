@@ -3,8 +3,10 @@
 # Runs every static test of the skill, each under `env -i` with an explicit PATH; prints "ALL TESTS PASS ..." or exits 1.
 #   default  the static suites in TESTS below (bash, awk and sed only; R is never started); the proof-tool self-test is SKIPPED,
 #            and the last line says so
-#   --full   also runs FULL_TESTS: the proof-tool self-test and, from the step that adds them, the tests that run the R code of the
-#            skill (through sbatch on a compute node, never on a login node); the default suite stays static
+#   --full   also runs FULL_TESTS, each with the skill path: the proof-tool self-test, the stub test of the R test runner, and
+#            test_r.sh, which runs the R tests of the skill through sbatch on a compute node (never on a login node); then
+#            prove_mutations.sh in mode rtest (each rtest row is an sbatch job on a mutated copy). Minutes, not seconds.
+#            The default suite stays static. tests/r/run_r_tests.sh is the job script (NOT_TESTS: never run directly).
 # The proof-tool self-test needs git 1.8.5 or newer (git -C); /usr/bin/git on the cluster is 1.8.3. To use a newer git, set
 # RNASPLICE_REPORT_TEST_GIT_DIR to the directory that holds it (for example the bin directory of a conda environment with git):
 #   RNASPLICE_REPORT_TEST_GIT_DIR=$HOME/.conda/envs/git-new/bin bash tests/run_all_tests.sh --full
@@ -16,8 +18,8 @@
 # points them at a mutated copy of this file.
 set -u
 TESTS="check_skill.sh test_run_all.sh prove_mutations.sh test_check_flags.sh test_detect_modules.sh test_contrast_names.sh test_render_slurm.sh"
-FULL_TESTS="test_proof_tools.sh"
-NOT_TESTS="cut_block.sh test_env.sh prove_red.sh run_all_tests.sh"
+FULL_TESTS="test_proof_tools.sh test_rtest_runner.sh test_r.sh"
+NOT_TESTS="cut_block.sh test_env.sh prove_red.sh run_all_tests.sh run_r_tests.sh"
 HERE=$(cd "$(dirname "$0")" && pwd); SK="$HERE/../nfcore-rnasplice-report.md"
 full=0
 case "${1:-}" in
@@ -53,9 +55,10 @@ fi
 run() { echo "== $1"; env -i HOME="${HOME:-/nonexistent}" PATH="$P" /bin/bash --noprofile --norc "$HERE/$1" "${@:2}" || { echo "FAIL: $1"; rc=1; }; }
 for t in $TESTS; do run "$t" "$SK"; done
 if [ $full -eq 1 ]; then
-  for t in $FULL_TESTS; do run "$t"; done
+  for t in $FULL_TESTS; do run "$t" "$SK"; done
+  run prove_mutations.sh "$SK" rtest
 else
-  echo "== SKIPPED: $FULL_TESTS (proof-tool self-test and R tests; run with --full)"
+  echo "== SKIPPED: $FULL_TESTS and the rtest rows of prove_mutations.sh (proof-tool self-test and R tests; run with --full)"
 fi
 [ $rc -eq 0 ] || { echo "SOME TESTS FAILED"; exit 1; }
 if [ $full -eq 1 ]; then

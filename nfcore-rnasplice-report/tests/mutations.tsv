@@ -9,7 +9,7 @@ S1-readme-task	check	readme	$s/$/\nTask 2 text./	forbidden process word in the R
 S1-readme-ledger	check	readme	$s/$/\nledger/	forbidden process word in the README: ledger
 S1-readme-fix	check	readme	$s/$/\nfix round/	forbidden process word in the README: fix round
 S1-readme-reviewer	check	readme	$s/$/\nreviewer/	forbidden process word in the README: reviewer
-S1-full	check	runall	s/^FULL_TESTS="test_proof_tools.sh"/FULL_TESTS=""/	FULL_TESTS must include test_proof_tools.sh
+S1-full	check	runall	s/^FULL_TESTS="test_proof_tools.sh /FULL_TESTS="/	FULL_TESTS must include test_proof_tools.sh
 S1-notfull	check	runall	s/^TESTS="check_skill.sh/TESTS="test_proof_tools.sh check_skill.sh/	TESTS must not include test_proof_tools.sh
 S1-notlist	check	runall	s/^NOT_TESTS="cut_block.sh/NOT_TESTS="cut_block.sh prove_mutations.sh/	NOT_TESTS must be exactly the helpers
 S1-onelist	check	runall	s/^NOT_TESTS="cut_block.sh/NOT_TESTS="check_skill.sh cut_block.sh/	must be named in exactly one list
@@ -106,7 +106,7 @@ S3-need-05	check	skill	s|(FDR) cutoff for a significant event, gene or transcrip
 S3-need-06	check	skill	s|Default: 0\.1\. It is not applied to exon usage or transcript usage|REMOVED|g	missing required text: Default: 0.1. It is not applied to exon usage or transcript usage
 S3-need-07	check	skill	s|`{RMATS_TYPE}`: which rMATS count type to read, `JC` (junction counts only) or `JCEC`|REMOVED|g	missing required text: `{RMATS_TYPE}`: which rMATS count type to read, `JC` (junction counts only) or `JCEC`
 S3-need-08	check	skill	s|Default: `JC`\.|REMOVED|g	missing required text: Default: `JC`.
-S3-need-09	check	skill	s|minimum read support of an rMATS event, the sum of `IJC` and `SJC` over the samples of a group|REMOVED|g	missing required text: minimum read support of an rMATS event, the sum of `IJC` and `SJC` over the samples of a group
+S3-need-09	check	skill	s|minimum read support of an rMATS event: for each group, the mean over its samples of `IJC` plus `SJC`, required in both groups|REMOVED|g	missing required text: minimum read support of an rMATS event: for each group, the mean over its samples of `IJC` plus `SJC`, required in both groups
 S3-need-10	check	skill	s|Default: 10\. Events below it are dropped from the tests, and their number is reported\.|REMOVED|g	missing required text: Default: 10. Events below it are dropped from the tests, and their number is reported.
 S3-need-11	check	skill	s|applies the Benjamini-Hochberg correction to it and says so|REMOVED|g	missing required text: applies the Benjamini-Hochberg correction to it and says so
 S3-need-12	check	skill	s|a space-separated subset of `events cross topgene enrich`|REMOVED|g	missing required text: a space-separated subset of `events cross topgene enrich`
@@ -174,3 +174,43 @@ S3-param-4	check	skill	s|    fdr = \$FDR, dpsi = \$DPSI, min_reads = \$MIN_READS
 S3-param-5	check	skill	s|    organism = '\$ORGANISM', gtf = '\$GTF',|REMOVED|g	missing required text:     organism = '$ORGANISM', gtf = '$GTF',
 S3-param-6	check	skill	s|    enrich_dbs = '\$ENRICH_DBS',|REMOVED|g	missing required text:     enrich_dbs = '$ENRICH_DBS',
 S3-param-7	check	skill	s|    paired_rmats = \$PR, paired_suppa = \$PS))|REMOVED|g	missing required text:     paired_rmats = $PR, paired_suppa = $PS))
+R4-rtest-sign-rmats	rtest	skill	s/^    rmats = value, /    rmats = -value,/	FAIL: harmonise_effect rmats 0.3 gives 0.3
+R4-rtest-sign-suppa	rtest	skill	s/^    suppa = -value,/    suppa = value, /	FAIL: harmonise_effect suppa 0.3 gives -0.3
+R4-rtest-sign-dexseq	rtest	skill	s/^    exon_dexseq = -value,/    exon_dexseq = value, /	FAIL: harmonise_effect exon_dexseq 0.3 gives -0.3
+R4-rtest-sign-dtu	rtest	skill	s/^    dtu = -value,/    dtu = value, /	FAIL: harmonise_effect dtu 0.3 gives -0.3
+R4-rtest-sign-edger	rtest	skill	s/^    exon_edger = value, /    exon_edger = -value,/	FAIL: harmonise_effect exon_edger 0.3 gives 0.3
+R4-rtest-quote	rtest	skill	s/^strip_quotes <- function(x) gsub(.*$/strip_quotes <- function(x) x/	FAIL: rMATS gene_id has no quote characters
+R4-rtest-nacount	rtest	skill	/qc\$suppa_untested\[\["local"\]\] <- sum/d	FAIL: qc$suppa_untested counts the nan rows of the local file
+R4-rtest-bh	rtest	skill	s/ftype, event, dpsi, bh_adjust(p), NA_real_)/ftype, event, dpsi, p, NA_real_)/	FAIL: SUPPA2 padj is BH of the p-val column over the tested rows
+R4-rtest-dupid	rtest	skill	/^  names(tab) <- dedupe_names(names(tab))$/d	FAIL: rMATS raw table has one ID column and the second one renamed ID_2
+R4-rtest-stopmsg	rtest	skill	s/column not found: ", paste(miss, collapse = ", "),/column not found",/	FAIL: missing column stop names the file and IncLevelDifference
+R4-rtest-rds-edger	rtest	skill	s/"exon", feat, to_num(tab\$logFC, path, "logFC"),/"exon", feat, -to_num(tab$logFC, path, "logFC"),/	FAIL: rds exon_edger direction equals the raw sign rule, row by row
+R4-rtest-rds-suppa	rtest	skill	s/ftype, event, dpsi, bh_adjust(p)/ftype, event, -dpsi, bh_adjust(p)/	FAIL: rds suppa direction equals the raw sign rule, row by row
+R4-rtest-minreads	rtest	skill	s/tab\$n_support >= params\$min_reads/tab$n_support >= 0/	FAIL: rds rmats: rows = raw events minus the low-support events
+R4-need-sign-rmats	check	skill	s/^    rmats = value, .*/    rmats = value,/	missing required text:     rmats = value,          # IncLevelDifference: b1 = treatment, already treatment - control
+R4-need-sign-suppa	check	skill	s/^    suppa = -value,/    suppa = value, /	missing required text:     suppa = -value,         # SUPPA2 dPSI is control - treatment
+R4-need-sign-dexseq	check	skill	s/^    exon_dexseq = -value,/    exon_dexseq = value, /	missing required text:     exon_dexseq = -value,   # log2fold_{CONTROL}_{TREATMENT}
+R4-need-sign-dtu	check	skill	s/^    dtu = -value,/    dtu = value, /	missing required text:     dtu = -value,           # log2fold_{CONTROL}_{TREATMENT}
+R4-need-sign-edger	check	skill	s/^    exon_edger = value, /    exon_edger = -value,/	missing required text:     exon_edger = value,     # logFC is treatment - control
+R4-need-direction	check	skill	s/ifelse(effect > 0, "treatment_up", "control_up")/ifelse(effect > 0, "control_up", "treatment_up")/	missing required text:   ifelse(is.na(effect) | effect == 0, "none", ifelse(effect > 0, "treatment_up", "control_up"))
+R4-forbid-value	check	skill	s/^RMATS_TYPES <- .*/&\nflipped <- -value/	FAIL: a sign flip (-value) outside harmonise_effect
+R4-forbid-value-dup	check	skill	s/^    dtu = -value, .*/&\n    dtu2 = -value,/	FAIL: a sign flip (-value) outside harmonise_effect
+R4-forbid-effect	check	skill	s/^modules <- modules\[nzchar(modules)\]$/&\nout_effect <- -effect/	forbidden pattern present: a bare -effect
+R4-forbid-effect-col	check	skill	s/^modules <- modules\[nzchar(modules)\]$/&\nx <- - tab$effect/	forbidden pattern present: a bare -effect
+R4-need-heading	check	skill	s/^\*\*File `01_import.Rmd`\.\*\*$/**File 01_import.Rmd.**/	missing required text: **File `01_import.Rmd`.**
+R4-need-writing	check	skill	s/\*\*Writing the Rmd files\.\*\*/Writing the Rmd files./	missing required text: **Writing the Rmd files.**
+R4-need-bytes	check	skill	s/byte for byte, without the two fence lines/with the fence lines/	missing required text: Write that block with the Write tool
+R4-need-bh-text	check	skill	s/This report applies the Benjamini-Hochberg correction itself/This report uses the p-values/	missing required text: This report applies the Benjamini-Hochberg correction itself
+R4-need-bh-code	check	skill	s/ftype, event, dpsi, bh_adjust(p), NA_real_)/ftype, event, dpsi, p, NA_real_)/	missing required text: harmonised_table(contrast, "suppa", gene, NA_character_, ftype, event, dpsi, bh_adjust(p), NA_real_)
+R4-need-untested-local	check	skill	/qc\$suppa_untested\[\["local"\]\] <- sum/d	missing required text: qc$suppa_untested[["local"]] <- sum(is.na(parts$local$effect))
+R4-need-untested-iso	check	skill	/qc\$suppa_untested\[\["isoform"\]\] <- sum/d	missing required text: qc$suppa_untested[["isoform"]] <- sum(is.na(parts$isoform$effect))
+R4-need-strip	check	skill	s/^strip_quotes <- function(x) gsub(.*$/strip_quotes <- function(x) x/	missing required text: strip_quotes <- function(x) gsub(
+R4-need-dedupe	check	skill	/^  names(tab) <- dedupe_names(names(tab))$/d	missing required text: names(tab) <- dedupe_names(names(tab))
+R4-need-support	check	skill	s/support of a group = mean over its samples of (IJC + SJC)/support of a group = sum over its samples of (IJC + SJC)/	missing required text: # support of a group = mean over its samples of (IJC + SJC)
+R4-need-minreads	check	skill	s/tab\$n_support >= params\$min_reads/tab$n_support >= 10/	missing required text: keep <- !is.na(tab$n_support) & tab$n_support >= params$min_reads
+R4-need-stopmsg	check	skill	s/column not found: ", paste(miss, collapse = ", "),/column not found",/	missing required text: if (length(miss)) stop("file ", path, ": column not found: "
+R4-forbid-network	check	skill	s/^modules <- modules\[nzchar(modules)\]$/&\ndownload.file("x", "y")/	forbidden pattern present: network access or package installation in an Rmd
+R4-runall-full-r	check	runall	s/^\(FULL_TESTS=.*\) test_r.sh"$/\1"/	FULL_TESTS must include test_r.sh
+R4-runall-full-stub	check	runall	s/^FULL_TESTS="test_proof_tools.sh test_rtest_runner.sh /FULL_TESTS="test_proof_tools.sh /	FULL_TESTS must include test_rtest_runner.sh
+R4-runall-rtest	check	runall	/^  run prove_mutations.sh "\$SK" rtest$/d	must run prove_mutations.sh in mode rtest
+R4-runall-not	check	runall	s/ run_all_tests.sh run_r_tests.sh"$/ run_all_tests.sh"/	NOT_TESTS must be exactly the helpers

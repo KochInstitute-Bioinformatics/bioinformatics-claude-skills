@@ -1,11 +1,11 @@
 #!/bin/bash
 # Usage: test_run_all.sh <skill.md>
 # Tests tests/run_all_tests.sh itself (under a second) on a fake tree: a copy of the runner, fake test scripts for every name in
-# its TESTS, FULL_TESTS and NOT_TESTS lists (each logs its name, its argument, its PATH and whether a planted variable leaked,
+# its TESTS, FULL_TESTS and NOT_TESTS lists (each logs its name, its first two arguments, its PATH and whether a planted variable leaked,
 # and fails when a flag file says so), fake git executables of chosen versions.
 # Checks: the exact PASS lines and exit 0; a failing suite gives exit 1, "SOME TESTS FAILED" and no PASS line, and the later
 # suites still run; every test of TESTS runs once, in order, with the skill path, under env -i with PATH=[git dir:]/usr/bin:/bin;
-# --full runs FULL_TESTS (default does not, and says SKIPPED); the git version comparison (1.8.3.1, 1.8.4 stop; 1.8.5, 1.10.0,
+# --full runs FULL_TESTS and then prove_mutations.sh in mode rtest (default does neither, and says SKIPPED); the git version comparison (1.8.3.1, 1.8.4 stop; 1.8.5, 1.10.0,
 # 2.49.0 pass); RNASPLICE_REPORT_TEST_GIT_DIR without git; the usage check; an unnamed tests/*.sh.
 # CHECK_RUN_ALL (test hook of prove_mutations.sh, target runall) replaces the runner under test; default: tests/run_all_tests.sh.
 # Prints "RUN ALL PASS (<n>)" or exits 1.
@@ -25,7 +25,7 @@ TESTS=$(lst TESTS); FULL=$(lst FULL_TESTS); NOT=$(lst NOT_TESTS)
 [ -n "$TESTS" ] && [ -n "$FULL" ] || { echo "FAIL: cannot read TESTS or FULL_TESTS from the runner"; exit 1; }
 for t in $TESTS $FULL $NOT; do
   [ "$t" = run_all_tests.sh ] && continue
-  printf '#!/bin/bash\necho "%s|${1:-}|$PATH|${LEAK_PROBE:-unset}" >> "%s"\n[ -e "%s/%s" ] && exit 1\nexit 0\n' "$t" "$L" "$FL" "$t" > "$D/tests/$t"
+  printf '#!/bin/bash\necho "%s|${1:-}|$PATH|${LEAK_PROBE:-unset}|${2:-}" >> "%s"\n[ -e "%s/%s" ] && exit 1\nexit 0\n' "$t" "$L" "$FL" "$t" > "$D/tests/$t"
 done
 mkgit() { mkdir -p "$TEST_TMP/git_$1"; printf '#!/bin/bash\necho "git version %s"\n' "$1" > "$TEST_TMP/git_$1/git"; chmod +x "$TEST_TMP/git_$1/git"; }
 for v in 1.8.3.1 1.8.4 1.8.5 1.10.0 2.49.0; do mkgit "$v"; done
@@ -43,7 +43,7 @@ PASS_FULL="ALL TESTS PASS (full run, proof-tool self-test included)"
 want_list=$(echo $TESTS)
 
 # 1. all pass, default run
-runit 0 -- && { has "$PASS_DEFAULT"; has "== SKIPPED: $FULL (proof-tool self-test and R tests; run with --full)"
+runit 0 -- && { has "$PASS_DEFAULT"; has "== SKIPPED: $FULL and the rtest rows of prove_mutations.sh (proof-tool self-test and R tests; run with --full)"
   [ "$(ran)" = "$want_list" ] || { echo "FAIL: case $n: tests run: '$(ran)', expected every test of TESTS once, in order: '$want_list'"; bad=1; }
   awk -F'|' -v sk="$D/tests/../nfcore-rnasplice-report.md" '$2 != sk || $3 != "/usr/bin:/bin" || $4 != "unset"' "$L" | grep -q . \
     && { echo "FAIL: case $n: a test got another argument, another PATH or the caller's environment (not env -i):"; awk -F'|' -v sk="$D/tests/../nfcore-rnasplice-report.md" '$2 != sk || $3 != "/usr/bin:/bin" || $4 != "unset"' "$L" | head -3; bad=1; }; }
@@ -54,14 +54,20 @@ for t in $TESTS; do
     [ "$(ran)" = "$want_list" ] || { echo "FAIL: case $n: with $t failing, tests run: '$(ran)', expected '$want_list'"; bad=1; }; }
   rm -f "$FL/$t"
 done
-# 3. --full with a new git: the extra suite runs after the others, exact full PASS line; the git dir is first on the PATH of each test
+# 3. --full with a new git: the extra suites run after the others, each with the skill path, then prove_mutations.sh rtest, exact full PASS line; the git dir is first on the PATH of each test
 runit 0 RNASPLICE_REPORT_TEST_GIT_DIR="$TEST_TMP/git_2.49.0" -- --full && { has "$PASS_FULL"; has "git 2.49.0 ($TEST_TMP/git_2.49.0/git)"
-  [ "$(ran)" = "$want_list $FULL" ] || { echo "FAIL: case $n: --full ran '$(ran)', expected '$want_list $FULL'"; bad=1; }
-  grep -q "^$FULL||$TEST_TMP/git_2.49.0:/usr/bin:/bin|unset\$" "$L" || { echo "FAIL: case $n: $FULL did not run without arguments under env -i with the git dir first on PATH"; bad=1; }; }
-# 4. --full, the extra suite fails
-touch "$FL/$FULL"
-runit 1 RNASPLICE_REPORT_TEST_GIT_DIR="$TEST_TMP/git_2.49.0" -- --full && { has "FAIL: $FULL"; hasnot "ALL TESTS PASS"; }
-rm -f "$FL/$FULL"
+  want_full="$want_list $(echo $FULL) prove_mutations.sh"
+  [ "$(ran)" = "$want_full" ] || { echo "FAIL: case $n: --full ran '$(ran)', expected '$want_full'"; bad=1; }
+  for f in $FULL; do
+    grep -qxF "$f|$D/tests/../nfcore-rnasplice-report.md|$TEST_TMP/git_2.49.0:/usr/bin:/bin|unset|" "$L" || { echo "FAIL: case $n: $f did not run with the skill path under env -i with the git dir first on PATH"; bad=1; }
+  done
+  grep -qxF "prove_mutations.sh|$D/tests/../nfcore-rnasplice-report.md|$TEST_TMP/git_2.49.0:/usr/bin:/bin|unset|rtest" "$L" || { echo "FAIL: case $n: --full did not run prove_mutations.sh in mode rtest"; bad=1; }; }
+# 4. --full, each extra suite failing in turn
+for f in $FULL; do
+  touch "$FL/$f"
+  runit 1 RNASPLICE_REPORT_TEST_GIT_DIR="$TEST_TMP/git_2.49.0" -- --full && { has "FAIL: $f"; hasnot "ALL TESTS PASS"; }
+  rm -f "$FL/$f"
+done
 # 5. the git version comparison: too old stops before any test; 1.8.5 and newer (version order, not text order) pass
 for v in 1.8.3.1 1.8.4; do
   runit 1 RNASPLICE_REPORT_TEST_GIT_DIR="$TEST_TMP/git_$v" -- --full && { has "ERROR: the proof-tool self-test needs git 1.8.5 or newer (git -C); found '$v' at '$TEST_TMP/git_$v/git'."; hasnot "ALL TESTS PASS"

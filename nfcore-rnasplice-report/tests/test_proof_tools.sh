@@ -70,7 +70,11 @@ cp "$D/tests/mutations.tsv" "$T/mut.orig"
 printf '%s\t%s\t%s\t%s\t%s\n' T-typo check skill 's/^Stub:/Stub: --x/' 'missing required text: @NO_SUCH_KEY@' >> "$D/tests/mutations.tsv"
 expect 1 "MUTATION T-typo: unknown mutation key" bash "$D/tests/prove_mutations.sh" "$D/nfcore-rnasplice-report.md"
 cp "$T/mut.orig" "$D/tests/mutations.tsv"
-expect 0 "MUTATIONS PASS" env TMPDIR="$T/tmpdir" bash "$D/tests/prove_mutations.sh" "$D/nfcore-rnasplice-report.md"
+# the default mode skips the rtest rows (R tests through sbatch) and says how many; TMPDIR does not move or leak its temp dir
+nr=$(awk -F'\t' '$2 == "rtest"' "$D/tests/mutations.tsv" | grep -c .)
+expect 0 "; $nr rtest rows skipped: run_all_tests.sh --full runs them)" env TMPDIR="$T/tmpdir" bash "$D/tests/prove_mutations.sh" "$D/nfcore-rnasplice-report.md"
 n=$((n + 1)); [ -z "$(ls -A "$T/tmpdir")" ] || { echo "CASE $n: prove_mutations.sh left files in TMPDIR"; bad=1; }
+# an unknown mode is rejected
+expect 1 "usage: prove_mutations.sh <skill.md> [static|rtest]" bash "$D/tests/prove_mutations.sh" "$D/nfcore-rnasplice-report.md" bogus
 
 [ $bad -eq 0 ] && echo "PROOF TOOLS PASS ($n)" || exit 1

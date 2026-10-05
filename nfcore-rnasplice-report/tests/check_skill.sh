@@ -135,7 +135,7 @@ need '(FDR) cutoff for a significant event, gene or transcript. Default: 0.05.'
 need 'Default: 0.1. It is not applied to exon usage or transcript usage'
 need '`{RMATS_TYPE}`: which rMATS count type to read, `JC` (junction counts only) or `JCEC`'
 need 'Default: `JC`.'
-need 'minimum read support of an rMATS event, the sum of `IJC` and `SJC` over the samples of a group'
+need 'minimum read support of an rMATS event: for each group, the mean over its samples of `IJC` plus `SJC`, required in both groups'
 need 'Default: 10. Events below it are dropped from the tests, and their number is reported.'
 need 'applies the Benjamini-Hochberg correction to it and says so'
 need 'a space-separated subset of `events cross topgene enrich`'
@@ -202,6 +202,36 @@ if grep -oE '^#SBATCH -t [0-9]+(-[0-9]+)?:[0-9]+:[0-9]+' "$SKILL" | sed 's/^#SBA
 fi
 # --- end wizard checks (Steps 7-10)
 
+# --- Rmd 01 (import and harmonise)
+need '**Writing the Rmd files.**'
+need 'Write that block with the Write tool to `{REPORT_DIR}/<name>.Rmd` byte for byte, without the two fence lines'
+need '**File `01_import.Rmd`.**'
+# the five sign rules of harmonise_effect, exactly (treatment minus control)
+need '    rmats = value,          # IncLevelDifference: b1 = treatment, already treatment - control'
+need '    suppa = -value,         # SUPPA2 dPSI is control - treatment'
+need '    exon_dexseq = -value,   # log2fold_{CONTROL}_{TREATMENT}'
+need '    dtu = -value,           # log2fold_{CONTROL}_{TREATMENT}'
+need '    exon_edger = value,     # logFC is treatment - control'
+need '  ifelse(is.na(effect) | effect == 0, "none", ifelse(effect > 0, "treatment_up", "control_up"))'
+# a sign flip happens only in those lines: -value nowhere else, and no bare -effect (also - x$effect) anywhere
+if grep -E '(^|[^A-Za-z0-9_])-[[:space:]]*value([^A-Za-z0-9_]|$)' "$SKILL" | grep -vxF -e '    suppa = -value,         # SUPPA2 dPSI is control - treatment' \
+     -e '    exon_dexseq = -value,   # log2fold_{CONTROL}_{TREATMENT}' -e '    dtu = -value,           # log2fold_{CONTROL}_{TREATMENT}' | grep -q .; then
+  echo "FAIL: a sign flip (-value) outside harmonise_effect"; fail=1
+fi
+forbid_re '(^|[^A-Za-z0-9_])-[[:space:]]*([A-Za-z_.][A-Za-z0-9_.]*\$)?effect([^A-Za-z0-9_]|$)' 'a bare -effect (a sign flip outside harmonise_effect)'
+need 'This report applies the Benjamini-Hochberg correction itself, separately for each contrast and for each file (local events, isoforms)'
+need 'harmonised_table(contrast, "suppa", gene, NA_character_, ftype, event, dpsi, bh_adjust(p), NA_real_)'
+need 'qc$suppa_untested[["local"]] <- sum(is.na(parts$local$effect))'
+need 'qc$suppa_untested[["isoform"]] <- sum(is.na(parts$isoform$effect))'
+need 'strip_quotes <- function(x) gsub("^\"|\"$", "", x)'
+need 'names(tab) <- dedupe_names(names(tab))'
+need '# support of a group = mean over its samples of (IJC + SJC); n_support = min(support of group 1, support of group 2).'
+need 'keep <- !is.na(tab$n_support) & tab$n_support >= params$min_reads'
+need 'if (length(miss)) stop("file ", path, ": column not found: ", paste(miss, collapse = ", "),'
+# no network and no installation inside the Rmd (the image is used as it is)
+forbid_re 'download\.file|url\(|install\.packages' 'network access or package installation in an Rmd'
+# --- end Rmd 01
+
 # tests/run_all_tests.sh names every script of tests/ in exactly one list (TESTS, FULL_TESTS or NOT_TESTS), runs each under
 # env -i, and says when the proof-tool self-test was skipped. CHECK_RUN_ALL overrides the file (used by prove_mutations.sh).
 RUN_ALL=${CHECK_RUN_ALL:-$HERE/run_all_tests.sh}
@@ -212,9 +242,14 @@ if [ -s "$RUN_ALL" ]; then
     for l in "$ra_tests" "$ra_full" "$ra_not"; do case " $l " in *" $b "*) c=$((c + 1)) ;; esac; done
     [ $c -eq 1 ] || { echo "FAIL: tests/$b must be named in exactly one list of run_all_tests.sh (TESTS, FULL_TESTS or NOT_TESTS), found in $c"; fail=1; }
   done
-  [ "$ra_not" = "cut_block.sh test_env.sh prove_red.sh run_all_tests.sh" ] \
-    || { echo "FAIL: run_all_tests.sh NOT_TESTS must be exactly the helpers (cut_block.sh test_env.sh prove_red.sh run_all_tests.sh), found: $ra_not"; fail=1; }
+  [ "$ra_not" = "cut_block.sh test_env.sh prove_red.sh run_all_tests.sh run_r_tests.sh" ] \
+    || { echo "FAIL: run_all_tests.sh NOT_TESTS must be exactly the helpers (cut_block.sh test_env.sh prove_red.sh run_all_tests.sh run_r_tests.sh), found: $ra_not"; fail=1; }
   case " $ra_full " in *" test_proof_tools.sh "*) ;; *) echo "FAIL: run_all_tests.sh FULL_TESTS must include test_proof_tools.sh, found: $ra_full"; fail=1 ;; esac
+  # the R tests and the rtest mutation rows run only in the full mode (through sbatch); the default suite stays static
+  for t in test_r.sh test_rtest_runner.sh; do
+    case " $ra_full " in *" $t "*) ;; *) echo "FAIL: run_all_tests.sh FULL_TESTS must include $t, found: $ra_full"; fail=1 ;; esac
+  done
+  grep -qxF '  run prove_mutations.sh "$SK" rtest' "$RUN_ALL" || { echo "FAIL: run_all_tests.sh --full must run prove_mutations.sh in mode rtest"; fail=1; }
   case " $ra_tests " in *" test_proof_tools.sh "*) echo "FAIL: run_all_tests.sh TESTS must not include test_proof_tools.sh (it belongs to FULL_TESTS)"; fail=1 ;; esac
   grep -qF 'env -i HOME="${HOME:-/nonexistent}" PATH="$P" /bin/bash --noprofile --norc "$HERE/$1"' "$RUN_ALL" \
     || { echo "FAIL: run_all_tests.sh must run every test under env -i with an explicit PATH"; fail=1; }

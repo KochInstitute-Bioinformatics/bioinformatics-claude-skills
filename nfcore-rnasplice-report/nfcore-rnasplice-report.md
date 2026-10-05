@@ -228,7 +228,7 @@ Ask one question per value, state the default with each, and store the answers:
 - `{FDR}`: adjusted p-value (FDR) cutoff for a significant event, gene or transcript. Default: 0.05.
 - `{DPSI}`: minimum absolute change in percent spliced in (dPSI) for an rMATS or SUPPA2 event to count as significant, in addition to `{FDR}`. Default: 0.1. It is not applied to exon usage or transcript usage, which are cut by `{FDR}` only; the report states this.
 - `{RMATS_TYPE}`: which rMATS count type to read, `JC` (junction counts only) or `JCEC` (junction counts plus reads on the target exon). Default: `JC`. Asked only when `rmats` is in `{MODULES}`; a type whose files the run did not produce is not offered.
-- `{MIN_READS}`: minimum read support of an rMATS event, the sum of `IJC` and `SJC` over the samples of a group, required in both groups. Default: 10. Events below it are dropped from the tests, and their number is reported. Asked only when `rmats` is in `{MODULES}`.
+- `{MIN_READS}`: minimum read support of an rMATS event: for each group, the mean over its samples of `IJC` plus `SJC`, required in both groups (the smaller of the two group means must reach it). Default: 10. Events below it are dropped from the tests, and their number is reported. Asked only when `rmats` is in `{MODULES}`.
 
 SUPPA2 reports a p-value but no adjusted p-value; the report applies the Benjamini-Hochberg correction to it and says so, and `{FDR}` is applied to the corrected value. Print the thresholds in one line and ask (default: yes): "Use these thresholds?"
 
@@ -274,6 +274,8 @@ The Rmd files have fixed names, and there is one job per Rmd that applies:
 | `run_07.sbatch` | `07_summary.Rmd` (always last) | always |
 
 Default: every job that applies. Write the Rmd files that apply to `{REPORT_DIR}`, then generate the job scripts and `run_all.sh`. Jobs 02 to 06 start when job 01 has finished successfully (`dependency=afterok`, with the option that cancels them when job 01 fails) and run side by side; job 07 starts when jobs 01 to 06 (those that exist) have ended, whatever their outcome (`dependency=afterany`), so the summary also lists the reports that failed.
+
+**Writing the Rmd files.** The content of each Rmd file is the block under its heading **File `<name>.Rmd`.** in the section "Report files" below (a fence of four backticks, language `rmd`). Write that block with the Write tool to `{REPORT_DIR}/<name>.Rmd` byte for byte, without the two fence lines. The Rmd files hold no placeholders: every value of the earlier steps reaches them as a render parameter of the job script (the `params = list(...)` of the block below).
 
 **SLURM scripts.** Paste this block whole into one Bash call, with the placeholders replaced by the literal values of the earlier steps (`{EMAIL}` is `none` when no mail is wanted). It checks the values, refuses a report directory outside `results/` or inside the output of the run, writes one `run_NN.sbatch` per job that applies, and writes `run_all.sh`, which only calls sbatch:
 ```bash
@@ -415,3 +417,364 @@ It submits the jobs in order (each waits for the one it needs). The reports and 
 Check progress with: squeue -u $USER
 ```
 `run_all.sh` calls only sbatch; R runs inside the jobs, on compute nodes. When a job fails, read its log, fix the cause, and submit the jobs that did not run with sbatch from `{REPORT_DIR}`.
+
+---
+
+## Report files
+
+Each block below is the whole content of one Rmd file of `{REPORT_DIR}` (see **Writing the Rmd files.** in Step 10). The values of the wizard reach the Rmd as render parameters; the parameter names are those of the job scripts: `outdir`, `report_dir`, `contrasts`, `samplesheet`, `modules`, `fdr`, `dpsi`, `rmats_type`, `min_reads`, `events`, `cross`, `topgene`, `enrich`, `organism`, `enrich_dbs`, `gtf`, `paired_rmats`, `paired_suppa`.
+
+The import report `01_import.Rmd` reads the table of every module in `{MODULES}` for every contrast, converts each effect to treatment minus control, and writes one RDS per contrast and tool (`rds/{CONTRAST}.{tool}.rds`, tool one of `rmats`, `suppa`, `exon_dexseq`, `exon_edger`, `dtu`) with the columns `contrast, tool, gene_id, gene_symbol, feature_type, feature_id, effect, effect_scale, padj, direction, n_support`, plus `rds/{CONTRAST}.qc.rds` with the counts the report prints. A missing or renamed column stops the import with a message that names the file and the column.
+
+**File `01_import.Rmd`.**
+````rmd
+---
+title: "Import and harmonise the nf-core/rnasplice tables"
+output:
+  html_document:
+    toc: true
+params:
+  outdir: ""
+  report_dir: "."
+  contrasts: ""
+  samplesheet: ""
+  modules: ""
+  fdr: 0.05
+  dpsi: 0.1
+  rmats_type: "JC"
+  min_reads: 10
+  events: true
+  cross: true
+  topgene: true
+  enrich: true
+  organism: "human"
+  enrich_dbs: "GO"
+  gtf: ""
+  paired_rmats: false
+  paired_suppa: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+```
+
+This report reads the result tables of the nf-core/rnasplice run in `r params$outdir` (read only) and writes one table per contrast and tool to `r file.path(params$report_dir, "rds")`. Every effect is stated as **treatment minus control**: a positive effect is higher in the treatment group (more inclusion for rMATS and SUPPA2, higher usage for the exon and transcript usage tools).
+
+## Sign rules
+
+| Tool | Column read | Convention of the tool | Conversion to treatment minus control |
+|---|---|---|---|
+| rMATS | `IncLevelDifference` | IncLevel1 minus IncLevel2, group 1 (b1) is the treatment: treatment minus control | kept |
+| SUPPA2 | `{kind}_{T}-{kind}_{C}_dPSI` | control minus treatment | sign flipped |
+| DEXSeq exon usage | `log2fold_{C}_{T}` | control versus treatment | sign flipped |
+| DEXSeq transcript usage (DTU) | `log2fold_{C}_{T}` | control versus treatment | sign flipped |
+| edgeR exon usage | `logFC` | treatment minus control | kept |
+
+`direction` is `treatment_up` for a positive effect, `control_up` for a negative one and `none` for zero or a missing effect.
+
+SUPPA2 reports a p-value but no adjusted p-value. This report applies the Benjamini-Hochberg correction itself, separately for each contrast and for each file (local events, isoforms). An event whose dPSI is `nan` was not tested: it is kept with a missing effect, counted as untested below, and left out of the correction (SUPPA2 writes a p-value of 1 for it, which is not a test). rMATS events whose read support is below `r params$min_reads` (for each group the mean over its samples of IJC plus SJC; the smaller of the two group means) are removed from the rMATS table, and their number is reported.
+
+```{r functions}
+TOOL_OF_MODULE <- c(rmats = "rmats", suppa = "suppa", dexseq_exon = "exon_dexseq", edger_exon = "exon_edger", dtu = "dtu")
+CONTRACT_COLUMNS <- c("contrast", "tool", "gene_id", "gene_symbol", "feature_type", "feature_id", "effect", "effect_scale",
+                      "padj", "direction", "n_support")
+RMATS_TYPES <- c("SE", "A5SS", "A3SS", "MXE", "RI")
+
+harmonise_effect <- function(tool, value) {
+  # returns the effect as treatment minus control
+  switch(tool,
+    rmats = value,          # IncLevelDifference: b1 = treatment, already treatment - control
+    suppa = -value,         # SUPPA2 dPSI is control - treatment
+    exon_dexseq = -value,   # log2fold_{CONTROL}_{TREATMENT}
+    dtu = -value,           # log2fold_{CONTROL}_{TREATMENT}
+    exon_edger = value,     # logFC is treatment - control
+    stop("unknown tool: ", tool))
+}
+direction_of <- function(effect) {
+  ifelse(is.na(effect) | effect == 0, "none", ifelse(effect > 0, "treatment_up", "control_up"))
+}
+
+# rMATS writes GeneID and geneSymbol in double quotes; the quotes are removed from every text field read here
+strip_quotes <- function(x) gsub("^\"|\"$", "", x)
+
+# a repeated column name gets the suffix _2, _3, ...: rMATS writes the column ID twice (first, and after the coordinates)
+dedupe_names <- function(h) {
+  k <- stats::ave(seq_along(h), h, FUN = seq_along)
+  ifelse(k > 1, paste0(h, "_", k), h)
+}
+
+# reads a delimited file as text columns; a file with a header only gives zero rows with the header's columns.
+# row_label = TRUE: the rows have one field more than the header (SUPPA2 writes the row label without a header cell)
+read_delim_chr <- function(path, sep, row_label = FALSE) {
+  if (!file.exists(path)) stop("file ", path, " not found: none of its columns can be read")
+  l <- sub("\r$", "", readLines(path, warn = FALSE))
+  l <- l[nzchar(l)]
+  if (length(l) == 0) stop("file ", path, " is empty: no header line, so no column can be found")
+  nm <- strsplit(l[1], sep, fixed = TRUE)[[1]]
+  if (row_label) nm <- c("row_label", nm)
+  if (length(l) == 1) {
+    tab <- as.data.frame(stats::setNames(replicate(length(nm), character(0), simplify = FALSE), nm),
+                         check.names = FALSE, stringsAsFactors = FALSE)
+  } else {
+    tab <- tryCatch(utils::read.table(text = l[-1], sep = sep, quote = "", header = FALSE, colClasses = "character",
+                                      na.strings = character(0), comment.char = "", col.names = paste0("V", seq_along(nm)),
+                                      fill = FALSE, stringsAsFactors = FALSE),
+                    error = function(e) stop("file ", path, ": the rows do not match the ", length(nm),
+                                             " columns of the header (", paste(nm, collapse = ", "), "): ", conditionMessage(e)))
+    if (ncol(tab) != length(nm)) stop("file ", path, ": ", ncol(tab), " fields per row, but the header has the ", length(nm),
+                                      " columns ", paste(nm, collapse = ", "))
+    names(tab) <- nm
+  }
+  tab
+}
+
+# stops naming the file and every missing column
+need_cols <- function(tab, cols, path) {
+  miss <- setdiff(cols, names(tab))
+  if (length(miss)) stop("file ", path, ": column not found: ", paste(miss, collapse = ", "),
+                         " (columns present: ", paste(names(tab), collapse = ", "), ")")
+}
+
+# text to number; NA, nan and empty fields are missing values, any other non-number stops naming the file and the column
+to_num <- function(x, path, col) {
+  x <- trimws(strip_quotes(x))
+  miss <- x %in% c("", "NA", "nan", "NaN", "-nan")
+  v <- suppressWarnings(as.numeric(ifelse(miss, NA, x)))
+  bad <- is.na(v) & !miss
+  if (any(bad)) stop("file ", path, ": column ", col, " has a value that is not a number: '", x[bad][1], "'")
+  v
+}
+
+# Benjamini-Hochberg over the non-missing p-values; a missing p-value stays missing
+bh_adjust <- function(p) {
+  out <- rep(NA_real_, length(p))
+  ok <- !is.na(p)
+  out[ok] <- stats::p.adjust(p[ok], method = "BH")
+  out
+}
+
+harmonised_table <- function(contrast, tool, gene_id, gene_symbol, feature_type, feature_id, value, padj, n_support) {
+  n <- length(gene_id)
+  if (n == 0) feature_id <- character(0)   # paste0 over an empty column returns one string, not none
+  effect <- harmonise_effect(tool, value)
+  data.frame(contrast = rep(contrast, n), tool = rep(tool, n), gene_id = as.character(gene_id),
+             gene_symbol = rep_len(as.character(gene_symbol), n), feature_type = rep_len(as.character(feature_type), n),
+             feature_id = as.character(feature_id), effect = as.numeric(effect),
+             effect_scale = rep(if (tool %in% c("rmats", "suppa")) "dPSI" else "log2FC", n), padj = as.numeric(padj),
+             direction = as.character(direction_of(effect)), n_support = rep_len(as.numeric(n_support), n),
+             stringsAsFactors = FALSE)
+}
+
+read_contrasts <- function(path) {
+  tab <- read_delim_chr(path, ",")
+  need_cols(tab, c("contrast", "treatment", "control"), path)
+  tab <- tab[nzchar(tab$contrast), c("contrast", "treatment", "control")]
+  if (nrow(tab) == 0) stop("file ", path, ": no row with a value in the column contrast")
+  rownames(tab) <- NULL
+  tab
+}
+
+# rMATS: per event one count per sample, as a comma-separated list: IJC_SAMPLE_1 and SJC_SAMPLE_1 for group 1 (b1, the
+# treatment), IJC_SAMPLE_2 and SJC_SAMPLE_2 for group 2 (the control).
+# support of a group = mean over its samples of (IJC + SJC); n_support = min(support of group 1, support of group 2).
+# An event is kept for the tests when n_support >= min_reads.
+rmats_support <- function(tab, path) {
+  grp <- function(g) {
+    ci <- paste0("IJC_SAMPLE_", g); cs <- paste0("SJC_SAMPLE_", g)
+    vapply(seq_len(nrow(tab)), function(i) {
+      a <- to_num(strsplit(tab[[ci]][i], ",", fixed = TRUE)[[1]], path, ci)
+      b <- to_num(strsplit(tab[[cs]][i], ",", fixed = TRUE)[[1]], path, cs)
+      if (length(a) != length(b)) stop("file ", path, ": columns ", ci, " and ", cs, " list different numbers of samples in row ", i)
+      mean(a + b)
+    }, numeric(1))
+  }
+  pmin(grp(1), grp(2))
+}
+
+read_rmats_raw <- function(path) {
+  tab <- read_delim_chr(path, "\t")
+  names(tab) <- dedupe_names(names(tab))
+  tab
+}
+
+read_rmats <- function(path, type, contrast) {
+  tab <- read_rmats_raw(path)
+  need_cols(tab, c("ID", "ID_2", "GeneID", "geneSymbol", "IJC_SAMPLE_1", "SJC_SAMPLE_1", "IJC_SAMPLE_2", "SJC_SAMPLE_2",
+                   "FDR", "IncLevelDifference"), path)
+  if (any(tab$ID != tab$ID_2)) stop("file ", path, ": the two ID columns (ID and ID_2, the second ID) differ")
+  harmonised_table(contrast, "rmats", strip_quotes(tab$GeneID), strip_quotes(tab$geneSymbol), type, paste0(type, ":", tab$ID),
+                   to_num(tab$IncLevelDifference, path, "IncLevelDifference"), to_num(tab$FDR, path, "FDR"),
+                   rmats_support(tab, path))
+}
+
+# SUPPA2 column names, built from the contrasts file (kind is local or transcript), never split from file names
+suppa_columns <- function(kind, treatment, control) paste0(kind, "_", treatment, "-", kind, "_", control, c("_dPSI", "_p-val"))
+
+read_suppa <- function(path, kind, treatment, control, contrast) {
+  tab <- read_delim_chr(path, "\t", row_label = TRUE)
+  cols <- suppa_columns(kind, treatment, control)
+  need_cols(tab, cols, path)
+  lab <- strip_quotes(tab$row_label)
+  if (!all(grepl(";", lab, fixed = TRUE)))
+    stop("file ", path, ": the row label column (GENE;EVENT) has a label without ';': ", lab[!grepl(";", lab, fixed = TRUE)][1])
+  gene <- sub(";.*$", "", lab)      # the text before the first ; only
+  event <- sub("^[^;]*;", "", lab)  # the rest, which may hold further ; characters
+  dpsi <- to_num(tab[[cols[1]]], path, cols[1])
+  p <- to_num(tab[[cols[2]]], path, cols[2])
+  p[is.na(dpsi)] <- NA              # dPSI nan: not tested, left out of the correction
+  ftype <- if (kind == "local") sub(":.*$", "", event) else rep("isoform", length(event))
+  harmonised_table(contrast, "suppa", gene, NA_character_, ftype, event, dpsi, bh_adjust(p), NA_real_)
+}
+
+# DEXSeq column of the fold change, built from the contrasts file: log2fold_{CONTROL}_{TREATMENT}
+dexseq_fold_column <- function(treatment, control) paste0("log2fold_", control, "_", treatment)
+
+read_dexseq <- function(path, tool, treatment, control, contrast) {
+  fc <- dexseq_fold_column(treatment, control)
+  if (!tool %in% c("exon_dexseq", "dtu")) stop("file ", path, ": read_dexseq reads exon_dexseq or dtu tables (column ", fc, "), not ", tool)
+  tab <- read_delim_chr(path, if (grepl("\\.csv$", path)) "," else "\t")
+  need_cols(tab, c("groupID", "featureID", "padj", fc), path)
+  gid <- strip_quotes(tab$groupID)
+  fid <- strip_quotes(tab$featureID)
+  feat <- if (tool == "exon_dexseq") paste0(gid, ":", fid) else fid
+  harmonised_table(contrast, tool, gid, NA_character_, if (tool == "exon_dexseq") "exon_bin" else "transcript", feat,
+                   to_num(tab[[fc]], path, fc), to_num(tab$padj, path, "padj"), NA_real_)
+}
+
+read_edger_exon <- function(path, contrast) {
+  tab <- read_delim_chr(path, ",")
+  need_cols(tab, c("Geneid", "Chr", "Start", "End", "logFC", "FDR"), path)
+  gid <- strip_quotes(tab$Geneid)
+  feat <- paste0(gid, ":", strip_quotes(tab$Chr), ":", tab$Start, "-", tab$End)
+  harmonised_table(contrast, "exon_edger", gid, NA_character_, "exon", feat, to_num(tab$logFC, path, "logFC"),
+                   to_num(tab$FDR, path, "FDR"), NA_real_)
+}
+
+# counts per tool: rows, tested (padj present), significant (padj < fdr, and abs(effect) >= dpsi on the dPSI scale)
+count_table <- function(tab, fdr, dpsi) {
+  sig <- !is.na(tab$padj) & tab$padj < fdr & !is.na(tab$effect) & (tab$effect_scale != "dPSI" | abs(tab$effect) >= dpsi)
+  data.frame(rows = nrow(tab), tested = sum(!is.na(tab$padj)), effect_missing = sum(is.na(tab$effect)),
+             treatment_up = sum(tab$direction == "treatment_up"), control_up = sum(tab$direction == "control_up"),
+             none = sum(tab$direction == "none"), significant = sum(sig),
+             significant_treatment_up = sum(sig & tab$direction == "treatment_up"),
+             significant_control_up = sum(sig & tab$direction == "control_up"))
+}
+```
+
+```{r import}
+modules <- strsplit(trimws(params$modules), "[[:space:]]+")[[1]]
+modules <- modules[nzchar(modules)]
+unknown <- setdiff(modules, names(TOOL_OF_MODULE))
+if (length(unknown)) stop("parameter modules: unknown module ", unknown[1], " (known: ", paste(names(TOOL_OF_MODULE), collapse = ", "), ")")
+if (!params$rmats_type %in% c("JC", "JCEC")) stop("parameter rmats_type: ", params$rmats_type, " is not JC or JCEC")
+rds_dir <- file.path(params$report_dir, "rds")
+dir.create(rds_dir, recursive = TRUE, showWarnings = FALSE)
+contrasts <- read_contrasts(params$contrasts)
+path_of <- function(...) file.path(params$outdir, ...)
+results <- list()
+for (i in seq_len(nrow(contrasts))) {
+  C <- contrasts$contrast[i]; Tr <- contrasts$treatment[i]; Co <- contrasts$control[i]
+  qc <- list(contrast = C, treatment = Tr, control = Co,
+             thresholds = c(fdr = params$fdr, dpsi = params$dpsi, min_reads = params$min_reads),
+             rmats_type = params$rmats_type, paired_rmats = params$paired_rmats, paired_suppa = params$paired_suppa,
+             files_read = character(0), files_missing = character(0), rmats_dir = NA_character_,
+             rmats_low_support = NA_integer_, suppa_untested = c(local = NA_integer_, isoform = NA_integer_))
+  out <- list()
+  if ("rmats" %in% modules) {
+    # the directory of the contrast or, for a run with rmats_paired_stats true, the one with the suffix _paired (as in the
+    # module detection); when both hold tables, the one that matches the run's pairing switch is read
+    dirs <- file.path("star", "rmats", c(C, paste0(C, "_paired")))
+    if (isTRUE(params$paired_rmats)) dirs <- rev(dirs)
+    files_in <- function(d) path_of(d, sprintf("%s.MATS.%s.txt", RMATS_TYPES, params$rmats_type))
+    hit <- dirs[vapply(dirs, function(d) any(file.exists(files_in(d))), logical(1))]
+    if (length(hit) == 0) {
+      qc$files_missing <- c(qc$files_missing, files_in(dirs[1]))
+    } else {
+      qc$rmats_dir <- path_of(hit[1])
+      parts <- list()
+      for (ty in RMATS_TYPES) {
+        f <- path_of(hit[1], sprintf("%s.MATS.%s.txt", ty, params$rmats_type))
+        if (file.exists(f)) { parts[[ty]] <- read_rmats(f, ty, C); qc$files_read <- c(qc$files_read, f) }
+        else qc$files_missing <- c(qc$files_missing, f)
+      }
+      tab <- do.call(rbind, unname(parts))
+      keep <- !is.na(tab$n_support) & tab$n_support >= params$min_reads
+      qc$rmats_low_support <- sum(!keep)
+      out$rmats <- tab[keep, , drop = FALSE]
+    }
+  }
+  if ("suppa" %in% modules) {
+    lf <- path_of("salmon", "suppa", "diffsplice", "per_local_event", sprintf("local_%s-%s.dpsi", Tr, Co))
+    tf <- path_of("salmon", "suppa", "diffsplice", "per_isoform", sprintf("transcript_%s-%s.dpsi", Tr, Co))
+    parts <- list()
+    if (file.exists(lf)) {
+      parts$local <- read_suppa(lf, "local", Tr, Co, C); qc$files_read <- c(qc$files_read, lf)
+      qc$suppa_untested[["local"]] <- sum(is.na(parts$local$effect))
+    } else qc$files_missing <- c(qc$files_missing, lf)
+    if (file.exists(tf)) {
+      parts$isoform <- read_suppa(tf, "transcript", Tr, Co, C); qc$files_read <- c(qc$files_read, tf)
+      qc$suppa_untested[["isoform"]] <- sum(is.na(parts$isoform$effect))
+    } else qc$files_missing <- c(qc$files_missing, tf)
+    if (length(parts)) out$suppa <- do.call(rbind, unname(parts))
+  }
+  if ("dexseq_exon" %in% modules) {
+    f <- path_of("star", "dexseq_exon", "results", sprintf("DEXSeqResults.%s.csv", C))
+    if (file.exists(f)) { out$exon_dexseq <- read_dexseq(f, "exon_dexseq", Tr, Co, C); qc$files_read <- c(qc$files_read, f) }
+    else qc$files_missing <- c(qc$files_missing, f)
+  }
+  if ("edger_exon" %in% modules) {
+    f <- path_of("star", "edger", sprintf("contrast_%s.usage.exon.csv", C))
+    if (file.exists(f)) { out$exon_edger <- read_edger_exon(f, C); qc$files_read <- c(qc$files_read, f) }
+    else qc$files_missing <- c(qc$files_missing, f)
+  }
+  if ("dtu" %in% modules) {
+    f <- path_of("salmon", "dexseq_dtu", "results", "dexseq", sprintf("DEXSeqResults.%s-%s.tsv", Tr, Co))
+    if (file.exists(f)) { out$dtu <- read_dexseq(f, "dtu", Tr, Co, C); qc$files_read <- c(qc$files_read, f) }
+    else qc$files_missing <- c(qc$files_missing, f)
+  }
+  for (tool in names(out)) {
+    rownames(out[[tool]]) <- NULL
+    stopifnot(identical(names(out[[tool]]), CONTRACT_COLUMNS))
+    saveRDS(out[[tool]], file.path(rds_dir, sprintf("%s.%s.rds", C, tool)))
+  }
+  qc$counts <- if (length(out)) cbind(tool = names(out), do.call(rbind, lapply(out, count_table, fdr = params$fdr, dpsi = params$dpsi)))
+               else NULL
+  if (!is.null(qc$counts)) rownames(qc$counts) <- NULL
+  saveRDS(qc, file.path(rds_dir, sprintf("%s.qc.rds", C)))
+  results[[C]] <- qc
+}
+```
+
+## Samples and pairing
+
+```{r samples, results="asis"}
+ss <- read_delim_chr(params$samplesheet, ",")
+need_cols(ss, c("sample", "condition"), params$samplesheet)
+cat("Samples per condition in", params$samplesheet, "\n\n")
+cat(knitr::kable(as.data.frame(table(condition = ss$condition), responseName = "samples"), format = "markdown"), sep = "\n")
+cat("\n\nrMATS:", if (isTRUE(params$paired_rmats)) "paired statistics" else "unpaired statistics",
+    "; SUPPA2:", if (isTRUE(params$paired_suppa)) "paired statistics" else "unpaired statistics",
+    "(read from the run's parameters). The exon and transcript usage tools use the design of the sample sheet as it is.\n")
+```
+
+## Per contrast: files, sign and counts
+
+```{r qc, results="asis"}
+for (qc in results) {
+  cat("\n\n### Contrast ", qc$contrast, "\n\n", sep = "")
+  cat("Treatment `", qc$treatment, "`, control `", qc$control, "`: every effect below is `", qc$treatment, "` minus `",
+      qc$control, "`. SUPPA2 dPSI is control minus treatment and DEXSeq `", dexseq_fold_column(qc$treatment, qc$control),
+      "` is control versus treatment: both were sign flipped; rMATS and edgeR were kept.\n\n", sep = "")
+  cat("Thresholds: FDR ", params$fdr, ", abs(dPSI) ", params$dpsi, " (rMATS and SUPPA2 only), rMATS minimum read support ",
+      params$min_reads, ", rMATS counts ", params$rmats_type, ".\n\n", sep = "")
+  if (length(qc$files_read)) cat("Files read:\n\n", paste0("- `", qc$files_read, "`\n"), "\n", sep = "")
+  if (length(qc$files_missing)) cat("Files not found (their section is left out):\n\n", paste0("- `", qc$files_missing, "`\n"), "\n", sep = "")
+  if (!is.na(qc$rmats_dir)) cat("rMATS tables read from `", qc$rmats_dir, "`; events removed for read support below ",
+                                params$min_reads, ": ", qc$rmats_low_support, ".\n\n", sep = "")
+  if (!all(is.na(qc$suppa_untested))) cat("SUPPA2 events not tested (dPSI nan; kept with a missing effect, left out of the Benjamini-Hochberg correction): local events ",
+                                          qc$suppa_untested[["local"]], ", isoforms ", qc$suppa_untested[["isoform"]], ".\n\n", sep = "")
+  if (!is.null(qc$counts)) cat(knitr::kable(qc$counts, format = "markdown"), sep = "\n")
+  else cat("No table was read for this contrast.\n")
+}
+```
+````
