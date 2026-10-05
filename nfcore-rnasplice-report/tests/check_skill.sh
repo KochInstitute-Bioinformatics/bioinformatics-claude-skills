@@ -243,6 +243,58 @@ need 'if (length(miss)) stop("file ", path, ": column not found: ", paste(miss, 
 forbid_re 'download\.file|url\(|install\.packages' 'network access or package installation in an Rmd'
 # --- end Rmd 01
 
+# --- Rmd 02 (rMATS) and Rmd 03 (SUPPA2)
+need '**File `02_rmats.Rmd`.**'
+need '**File `03_suppa.Rmd`.**'
+need 'DIRECTION_WORDING <- c(treatment_up = "more included in treatment", control_up = "more skipped in treatment")'
+need 'none_message <- function(fdr, dpsi) paste0("none at FDR ", format(fdr), ", |dPSI| ", format(dpsi))'
+need '  !is.na(tab$padj) & tab$padj < fdr & !is.na(tab$effect) & abs(tab$effect) >= dpsi & !tab$low_support'
+need '  !is.na(tab$padj) & tab$padj < fdr & !is.na(tab$effect) & abs(tab$effect) >= dpsi'
+need '  cn <- split_counts(tab, params$fdr, params$dpsi, RMATS_TYPES)'
+need '  cn <- split_counts(tab, params$fdr, params$dpsi, types)'
+need '  s1 <- ss$sample[ss$condition == treatment]'
+need '  s2 <- ss$sample[ss$condition == control]'
+need 'psi_legend <- function(treatment, control) c(paste0("treatment (", treatment, ")"), paste0("control (", control, ")"))'
+need '  ev <- sub("^[^;]*;", "", id)'
+need 'The adjusted p-value used here is the Benjamini-Hochberg correction that `01_import.Rmd` applied'
+need '`rds/{CONTRAST}.rmats.rds`'
+need '`rds/{CONTRAST}.suppa.rds`'
+need '`tables/{CONTRAST}.rmats.{type}.significant.csv`'
+need '`figures/{CONTRAST}.rmats.volcano.{type}.png`'
+need '`figures/{CONTRAST}.rmats.psi_top.png`'
+need '`tables/{CONTRAST}.suppa.{type}.significant.csv`'
+need '`figures/{CONTRAST}.suppa.volcano.{type}.png`'
+rmd_block() { awk -v a="**File \`$1\`.**" '$0 == a { seen = 1; next } seen && !inb && $0 == "````rmd" { inb = 1; next } inb && $0 == "````" { exit } inb { print }' "$SKILL"; }
+for n in 02_rmats.Rmd 03_suppa.Rmd; do
+  b=$(rmd_block "$n")
+  [ -n "$b" ] || { echo "FAIL: $n: no rmd block under its heading"; fail=1; continue; }
+  # the sign sentence stands in the text before the first code chunk with functions
+  ls=$(printf '%s\n' "$b" | grep -nF 'Every effect is stated as **treatment minus control**: a positive effect is higher in the treatment group' | head -n1 | cut -d: -f1)
+  lf=$(printf '%s\n' "$b" | grep -n '^```{r functions' | head -n1 | cut -d: -f1)
+  { [ -n "$ls" ] && [ -n "$lf" ] && [ "$ls" -lt "$lf" ]; } || { echo "FAIL: $n: the sign sentence (Every effect is stated as treatment minus control) must stand before the functions chunk"; fail=1; }
+  # the parameters the report switches on are read (the 18 params of the contract; no other name)
+  case "$n" in 02_rmats.Rmd) extra="samplesheet outdir min_reads rmats_type paired_rmats" ;; *) extra="paired_suppa" ;; esac
+  for v in fdr dpsi events topgene report_dir contrasts modules $extra; do
+    printf '%s\n' "$b" | grep -qF "params\$$v" || { echo "FAIL: $n: the parameter params\$$v is not used"; fail=1; }
+  done
+  for v in $(printf '%s\n' "$b" | grep -o 'params\$[A-Za-z_]*' | sort -u | sed 's/params\$//'); do
+    case " outdir report_dir contrasts samplesheet modules fdr dpsi rmats_type min_reads events cross topgene enrich organism enrich_dbs gtf paired_rmats paired_suppa " in
+      *" $v "*) ;; *) echo "FAIL: $n: params\$$v is not one of the 18 parameters of the contract"; fail=1 ;; esac
+  done
+  # the thresholds come from the parameters: no literal 0.05 or 0.1 in the body of the Rmd (the front matter holds the defaults)
+  if printf '%s\n' "$b" | awk 'f >= 2 { print } /^---$/ { f++ }' | grep -qE '(^|[^0-9.])0\.(05|1)([^0-9]|$)'; then
+    echo "FAIL: $n: a literal threshold (0.05 or 0.1) in the body of the Rmd instead of params\$fdr and params\$dpsi"; fail=1
+  fi
+  printf '%s\n' "$b" | grep -qF 'paste0("none at FDR "' || { echo "FAIL: $n: the empty-set message none at FDR is missing"; fail=1; }
+  printf '%s\n' "$b" | grep -qF 'three nearest events by adjusted p-value' || { echo "FAIL: $n: the three nearest events are not printed under the empty-set message"; fail=1; }
+  printf '%s\n' "$b" | grep -qF 'sig_flag(st, params$fdr, params$dpsi)' || { echo "FAIL: $n: the significant events are not selected with params\$fdr and params\$dpsi"; fail=1; }
+done
+b=$(rmd_block 02_rmats.Rmd)
+printf '%s\n' "$b" | grep -qE '^\s+s1 <- ss\$sample\[ss\$condition == treatment\]$' || { echo "FAIL: 02_rmats.Rmd: the PSI plot must take the sample order from the sample sheet (s1 <- ss\$sample[ss\$condition == treatment])"; fail=1; }
+printf '%s\n' "$b" | grep -qF 'psi_long(inc, ss, Tr, Co)' || { echo "FAIL: 02_rmats.Rmd: the PSI plot is not built from the sample sheet (psi_long(inc, ss, Tr, Co))"; fail=1; }
+printf '%s\n' "$b" | grep -qF 'low_support_report(tab, params$fdr, params$dpsi)' || { echo "FAIL: 02_rmats.Rmd: the low_support count is not reported"; fail=1; }
+# --- end Rmd 02 and 03
+
 # tests/run_all_tests.sh names every script of tests/ in exactly one list (TESTS, FULL_TESTS or NOT_TESTS), runs each under
 # env -i, and says when the proof-tool self-test was skipped. CHECK_RUN_ALL overrides the file (used by prove_mutations.sh).
 RUN_ALL=${CHECK_RUN_ALL:-$HERE/run_all_tests.sh}

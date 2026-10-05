@@ -783,3 +783,581 @@ for (qc in results) {
 }
 ```
 ````
+
+The rMATS report `02_rmats.Rmd` reads `rds/{CONTRAST}.rmats.rds` (written by `01_import.Rmd`) for every contrast and writes, per contrast, `tables/{CONTRAST}.rmats.counts.csv`, `tables/{CONTRAST}.rmats.{type}.significant.csv`, `figures/{CONTRAST}.rmats.volcano.{type}.png`, `figures/{CONTRAST}.rmats.effect_hist.png` and `figures/{CONTRAST}.rmats.psi_top.png` (`type` is one of `SE`, `A5SS`, `A3SS`, `MXE`, `RI`). An event is significant when its adjusted p-value is below `{FDR}`, its absolute dPSI is at least `{DPSI}`, and it is not flagged `low_support`. The per-sample PSI of the top events is not in the RDS; the report reads `IncLevel1` and `IncLevel2` again from the rMATS table of the same directory the import used (the contrast's own, or the one with the suffix `_paired`). A contrast whose RDS is missing is reported as missing and the report still renders.
+
+**File `02_rmats.Rmd`.**
+````rmd
+---
+title: "rMATS splicing events"
+output:
+  html_document:
+    toc: true
+params:
+  outdir: ""
+  report_dir: "."
+  contrasts: ""
+  samplesheet: ""
+  modules: ""
+  fdr: 0.05
+  dpsi: 0.1
+  rmats_type: "JC"
+  min_reads: 10
+  events: true
+  cross: true
+  topgene: true
+  enrich: true
+  organism: "human"
+  enrich_dbs: "GO"
+  gtf: ""
+  paired_rmats: false
+  paired_suppa: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, dev = "png", dpi = 150, fig.width = 7, fig.height = 5)
+```
+
+This report shows the rMATS skipped exon (SE), alternative 5' and 3' splice site (A5SS, A3SS), mutually exclusive exons (MXE) and retained intron (RI) events of each contrast, read from the tables that `01_import.Rmd` wrote to `r file.path(params$report_dir, "rds")`. Every effect is stated as **treatment minus control**: a positive effect is higher in the treatment group (more inclusion for rMATS and SUPPA2, higher usage for the exon and transcript usage tools). For an event, a positive dPSI means it is more included in treatment, a negative dPSI means it is more skipped in treatment. The effect is the harmonised column of the RDS and is used as it is.
+
+An event is significant when its adjusted p-value (the FDR written by rMATS) is below `r params$fdr`, its absolute dPSI is at least `r params$dpsi`, and it is not flagged `low_support` (read support below `r params$min_reads`: for each group the mean over its samples of IJC plus SJC, the smaller of the two group means). Flagged events stay in the tables and plots, are counted, and are left out of the significant counts.
+
+```{r functions}
+suppressPackageStartupMessages(library(ggplot2))
+RMATS_TYPES <- c("SE", "A5SS", "A3SS", "MXE", "RI")
+DIRECTION_WORDING <- c(treatment_up = "more included in treatment", control_up = "more skipped in treatment")
+direction_wording <- function(direction) unname(DIRECTION_WORDING[direction])
+none_message <- function(fdr, dpsi) paste0("none at FDR ", format(fdr), ", |dPSI| ", format(dpsi))
+
+# significant: padj below the FDR, absolute effect at least the dPSI threshold, and not flagged low_support
+sig_flag <- function(tab, fdr, dpsi) {
+  !is.na(tab$padj) & tab$padj < fdr & !is.na(tab$effect) & abs(tab$effect) >= dpsi & !tab$low_support
+}
+
+# one row per type: events, tested (padj present), flagged low_support, significant, and the significant ones split by direction
+split_counts <- function(tab, fdr, dpsi, types) {
+  sig <- sig_flag(tab, fdr, dpsi)
+  rows <- lapply(types, function(ty) {
+    i <- tab$feature_type == ty
+    r <- data.frame(type = ty, events = sum(i), tested = sum(i & !is.na(tab$padj)), low_support = sum(i & tab$low_support),
+                    significant = sum(i & sig), stringsAsFactors = FALSE)
+    r[[direction_wording("treatment_up")]] <- sum(i & sig & tab$direction == "treatment_up")
+    r[[direction_wording("control_up")]] <- sum(i & sig & tab$direction == "control_up")
+    r
+  })
+  out <- do.call(rbind, rows)
+  rownames(out) <- NULL
+  out
+}
+
+# flagged events, and how many of them would be significant if they were not flagged
+low_support_report <- function(tab, fdr, dpsi) {
+  would <- sig_flag(transform(tab, low_support = FALSE), fdr, dpsi) & tab$low_support
+  c(flagged = sum(tab$low_support), would_be_significant = sum(would))
+}
+
+# events not flagged and with an adjusted p-value, nearest first (smallest padj, then the larger change)
+nearest_events <- function(tab, n = 3) {
+  ok <- tab[!tab$low_support & !is.na(tab$padj), , drop = FALSE]
+  ok <- ok[order(ok$padj, 1 - abs(ok$effect), ok$feature_id), , drop = FALSE]
+  head(ok, n)
+}
+# the significant events first, then the nearest ones
+top_events <- function(tab, fdr, dpsi, n) {
+  ok <- tab[!tab$low_support & !is.na(tab$padj), , drop = FALSE]
+  ok <- ok[order(!sig_flag(ok, fdr, dpsi), ok$padj, 1 - abs(ok$effect), ok$feature_id), , drop = FALSE]
+  head(ok, n)
+}
+show_events <- function(d) {
+  w <- direction_wording(d$direction)
+  data.frame(gene = d$gene_symbol, event = d$feature_id, effect = round(d$effect, 3), padj = signif(d$padj, 3),
+             direction = ifelse(is.na(w), "no change", w), stringsAsFactors = FALSE)
+}
+
+# a small reader for the rMATS tables (the column ID appears twice; the second one becomes ID_2) and for the sheets
+strip_quotes <- function(x) gsub("^\"|\"$", "", x)
+dedupe_names <- function(h) {
+  k <- stats::ave(seq_along(h), h, FUN = seq_along)
+  ifelse(k > 1, paste0(h, "_", k), h)
+}
+read_delim_chr <- function(path, sep) {
+  if (!file.exists(path)) stop("file ", path, " not found: none of its columns can be read")
+  l <- sub("\r$", "", readLines(path, warn = FALSE))
+  l <- l[nzchar(l)]
+  if (length(l) == 0) stop("file ", path, " is empty: no header line, so no column can be found")
+  nm <- strsplit(l[1], sep, fixed = TRUE)[[1]]
+  if (length(l) == 1) {
+    return(as.data.frame(stats::setNames(replicate(length(nm), character(0), simplify = FALSE), nm),
+                         check.names = FALSE, stringsAsFactors = FALSE))
+  }
+  tab <- utils::read.table(text = l[-1], sep = sep, quote = "", header = FALSE, colClasses = "character", na.strings = character(0),
+                           comment.char = "", col.names = paste0("V", seq_along(nm)), fill = FALSE, stringsAsFactors = FALSE)
+  names(tab) <- nm
+  tab
+}
+need_cols <- function(tab, cols, path) {
+  miss <- setdiff(cols, names(tab))
+  if (length(miss)) stop("file ", path, ": column not found: ", paste(miss, collapse = ", "),
+                         " (columns present: ", paste(names(tab), collapse = ", "), ")")
+}
+read_rmats_raw <- function(path) {
+  tab <- read_delim_chr(path, "\t")
+  names(tab) <- dedupe_names(names(tab))
+  tab
+}
+read_contrasts <- function(path) {
+  tab <- read_delim_chr(path, ",")
+  need_cols(tab, c("contrast", "treatment", "control"), path)
+  tab <- tab[nzchar(tab$contrast), c("contrast", "treatment", "control")]
+  rownames(tab) <- NULL
+  tab
+}
+
+# the directory of the rMATS tables of a contrast: its own, or the one with the suffix _paired (a run with rmats_paired_stats
+# true); when both hold tables of the type, the one that matches the run's pairing switch comes first
+find_rmats_dir <- function(outdir, contrast, paired, type) {
+  dirs <- file.path(outdir, "star", "rmats", c(contrast, paste0(contrast, "_paired")))
+  if (isTRUE(paired)) dirs <- rev(dirs)
+  has <- vapply(dirs, function(d) any(file.exists(file.path(d, sprintf("%s.MATS.%s.txt", RMATS_TYPES, type)))), logical(1))
+  if (any(has)) dirs[has][1] else NA_character_
+}
+
+# IncLevel1 and IncLevel2 (comma lists, one value per sample) of the events with these feature_ids (TYPE:ID), re-read from the tables
+read_inclevels <- function(dir, feature_ids, rmats_type) {
+  out <- list()
+  for (ty in RMATS_TYPES) {
+    want <- sub("^[^:]*:", "", feature_ids[startsWith(feature_ids, paste0(ty, ":"))])
+    f <- file.path(dir, sprintf("%s.MATS.%s.txt", ty, rmats_type))
+    if (length(want) == 0 || !file.exists(f)) next
+    tab <- read_rmats_raw(f)
+    need_cols(tab, c("ID", "ID_2", "IncLevel1", "IncLevel2"), f)
+    k <- tab[match(want, tab$ID), , drop = FALSE]
+    k <- k[!is.na(k$ID), , drop = FALSE]
+    out[[ty]] <- data.frame(feature_id = paste0(ty, ":", k$ID), IncLevel1 = k$IncLevel1, IncLevel2 = k$IncLevel2, stringsAsFactors = FALSE)
+  }
+  if (length(out) == 0) return(data.frame(feature_id = character(0), IncLevel1 = character(0), IncLevel2 = character(0), stringsAsFactors = FALSE))
+  res <- do.call(rbind, unname(out))
+  idx <- match(feature_ids, res$feature_id)
+  res[idx[!is.na(idx)], , drop = FALSE]
+}
+
+psi_values <- function(x) suppressWarnings(as.numeric(strsplit(x, ",", fixed = TRUE)[[1]]))
+# one row per event and sample. IncLevel1 lists the samples of group 1 (the treatment), IncLevel2 those of group 2 (the control),
+# each in the order of the sample sheet
+psi_long <- function(inc, ss, treatment, control) {
+  s1 <- ss$sample[ss$condition == treatment]
+  s2 <- ss$sample[ss$condition == control]
+  rows <- lapply(seq_len(nrow(inc)), function(i) {
+    v1 <- psi_values(inc$IncLevel1[i]); v2 <- psi_values(inc$IncLevel2[i])
+    if (length(v1) != length(s1) || length(v2) != length(s2))
+      stop("event ", inc$feature_id[i], ": IncLevel1 and IncLevel2 list ", length(v1), " and ", length(v2), " samples, the sample sheet has ",
+           length(s1), " samples of ", treatment, " and ", length(s2), " samples of ", control)
+    data.frame(feature_id = inc$feature_id[i], sample = c(s1, s2), condition = rep(c(treatment, control), c(length(s1), length(s2))),
+               role = rep(c("treatment", "control"), c(length(s1), length(s2))), psi = c(v1, v2), stringsAsFactors = FALSE)
+  })
+  do.call(rbind, rows)
+}
+psi_legend <- function(treatment, control) c(paste0("treatment (", treatment, ")"), paste0("control (", control, ")"))
+psi_plot <- function(long, labels, treatment, control, contrast) {
+  long$sample <- factor(long$sample, levels = unique(long$sample))
+  long$role <- factor(long$role, levels = c("treatment", "control"), labels = psi_legend(treatment, control))
+  gs <- labels$gene_symbol[match(long$feature_id, labels$feature_id)]
+  long$event <- ifelse(is.na(gs) | !nzchar(gs), long$feature_id, paste0(gs, " (", long$feature_id, ")"))
+  ggplot(long, aes(x = sample, y = psi, colour = role)) + geom_point(size = 2.5) +
+    facet_wrap(~event, ncol = 3) +
+    scale_colour_manual(values = c("#D55E00", "#0072B2"), name = "condition") +
+    labs(title = paste0("Per-sample PSI of the top rMATS events, ", contrast), x = "sample (order of the sample sheet)", y = "PSI (IncLevel)") +
+    theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+
+# volcano: x = dPSI (treatment minus control), y = -log10 adjusted p-value, thresholds as dashed lines, the top 10 labelled
+volcano_plot <- function(tab, type, fdr, dpsi, contrast, treatment, control) {
+  d <- tab[!is.na(tab$padj) & !is.na(tab$effect), , drop = FALSE]
+  d$nlp <- -log10(pmax(d$padj, 1e-300))
+  d$status <- ifelse(d$low_support, "low support", ifelse(sig_flag(d, fdr, dpsi), "significant", "not significant"))
+  lab <- top_events(d, fdr, dpsi, 10)
+  lab$label <- ifelse(is.na(lab$gene_symbol) | !nzchar(lab$gene_symbol), lab$feature_id, lab$gene_symbol)
+  lab$nlp <- -log10(pmax(lab$padj, 1e-300))
+  p <- ggplot(d, aes(x = effect, y = nlp, colour = status)) + geom_point(alpha = 0.7, size = 1.6) +
+    geom_vline(xintercept = c(-dpsi, dpsi), linetype = "dashed", colour = "grey40") +
+    geom_hline(yintercept = -log10(fdr), linetype = "dashed", colour = "grey40") +
+    scale_colour_manual(values = c("significant" = "#D55E00", "not significant" = "grey60", "low support" = "#56B4E9")) +
+    labs(title = paste0(type, ", ", contrast), x = paste0("dPSI (", treatment, " minus ", control, ")"), y = "-log10 adjusted p-value") +
+    theme_bw()
+  if (nrow(lab) > 0) {
+    p <- if (requireNamespace("ggrepel", quietly = TRUE)) {
+      p + ggrepel::geom_text_repel(data = lab, aes(label = label), colour = "black", size = 3, max.overlaps = Inf)
+    } else {
+      p + geom_text(data = lab, aes(label = label), colour = "black", size = 3, check_overlap = TRUE, vjust = -0.6)
+    }
+  }
+  p
+}
+effect_hist <- function(tab, contrast, treatment, control) {
+  d <- tab[!is.na(tab$effect), , drop = FALSE]
+  ggplot(d, aes(x = effect)) + geom_histogram(bins = 40, fill = "grey55", colour = "white") +
+    geom_vline(xintercept = 0, linetype = "dashed") + facet_wrap(~feature_type, scales = "free_y") +
+    labs(title = paste0("dPSI of all rMATS events, ", contrast), x = paste0("dPSI (", treatment, " minus ", control, ")"), y = "events") +
+    theme_bw()
+}
+save_plot <- function(p, file, width = 7, height = 5) {
+  ggplot2::ggsave(filename = file, plot = p, width = width, height = height, dpi = 150)
+  invisible(file)
+}
+show_image <- function(file, alt) cat("![", alt, "](", file, ")\n\n", sep = "")
+```
+
+```{r report, results="asis"}
+modules <- strsplit(trimws(params$modules), "[[:space:]]+")[[1]]
+fig_dir <- file.path(params$report_dir, "figures"); tab_dir <- file.path(params$report_dir, "tables")
+dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE); dir.create(tab_dir, recursive = TRUE, showWarnings = FALSE)
+contrasts <- read_contrasts(params$contrasts)
+ss <- read_delim_chr(params$samplesheet, ",")
+need_cols(ss, c("sample", "condition"), params$samplesheet)
+if (!"rmats" %in% modules) cat("rMATS is not among the modules of this report (", params$modules, "): there is nothing to show.\n\n", sep = "")
+for (i in seq_len(nrow(contrasts))) {
+  if (!"rmats" %in% modules) break
+  C <- contrasts$contrast[i]; Tr <- contrasts$treatment[i]; Co <- contrasts$control[i]
+  cat("\n\n## Contrast ", C, "\n\n", sep = "")
+  cat("Treatment `", Tr, "`, control `", Co, "`: every effect below is `", Tr, "` minus `", Co, "`. A positive dPSI: ",
+      direction_wording("treatment_up"), "; a negative dPSI: ", direction_wording("control_up"), ".\n\n", sep = "")
+  cat("Thresholds: FDR ", format(params$fdr), ", abs(dPSI) ", format(params$dpsi), "; rMATS minimum read support ", params$min_reads,
+      "; rMATS counts ", params$rmats_type, ". rMATS statistics: ", if (isTRUE(params$paired_rmats)) "paired statistics" else "unpaired statistics",
+      " (read from the run's parameters).\n\n", sep = "")
+  f <- file.path(params$report_dir, "rds", paste0(C, ".rmats.rds"))
+  if (!file.exists(f)) {
+    cat("The file `", f, "` was not found: the import found no rMATS table for this contrast (the files it looked for are listed in `files_missing` of `rds/",
+        C, ".qc.rds`). No rMATS result is shown for this contrast.\n\n", sep = "")
+    qf <- file.path(params$report_dir, "rds", paste0(C, ".qc.rds"))
+    if (file.exists(qf)) { qc <- readRDS(qf); if (length(qc$files_missing)) cat("Files not found:\n\n", paste0("- `", qc$files_missing, "`\n"), "\n", sep = "") }
+    next
+  }
+  tab <- readRDS(f)
+  need_cols(tab, c("gene_id", "gene_symbol", "feature_type", "feature_id", "effect", "padj", "direction", "n_support", "low_support"), f)
+  lr <- low_support_report(tab, params$fdr, params$dpsi)
+  cat("Events flagged low_support (read support below ", params$min_reads, "): ", lr[["flagged"]], "; of these ", lr[["would_be_significant"]],
+      " would be significant at FDR ", format(params$fdr), ", |dPSI| ", format(params$dpsi), " if they were not flagged. Flagged events stay in the tables and plots, ",
+      "are left out of the significant counts below, and keep the FDR that rMATS wrote.\n\n", sep = "")
+  cn <- split_counts(tab, params$fdr, params$dpsi, RMATS_TYPES)
+  utils::write.csv(cn, file.path(tab_dir, paste0(C, ".rmats.counts.csv")), row.names = FALSE)
+  cat("Events per type and significant events split by direction (counts file `tables/", C, ".rmats.counts.csv`):\n\n", sep = "")
+  cat(knitr::kable(cn, format = "markdown"), sep = "\n")
+  cat("\n\n")
+  if (!isTRUE(params$events)) {
+    cat("The event tables and volcano plots are switched off for this report (events = FALSE).\n\n")
+  } else {
+    for (ty in RMATS_TYPES) {
+      cat("\n\n### ", ty, ", ", C, "\n\n", sep = "")
+      st <- tab[tab$feature_type == ty, , drop = FALSE]
+      sig <- st[sig_flag(st, params$fdr, params$dpsi), , drop = FALSE]
+      sig <- sig[order(sig$padj, 1 - abs(sig$effect), sig$feature_id), , drop = FALSE]
+      sig$direction_wording <- direction_wording(sig$direction)
+      utils::write.csv(sig[, c("contrast", "gene_id", "gene_symbol", "feature_type", "feature_id", "effect", "padj", "direction", "direction_wording", "n_support")],
+                       file.path(tab_dir, sprintf("%s.rmats.%s.significant.csv", C, ty)), row.names = FALSE)
+      if (nrow(st) == 0) { cat("No ", ty, " event in the table.\n\n", sep = ""); next }
+      cat(nrow(sig), " significant ", ty, " events: ", sum(sig$direction == "treatment_up"), " ", direction_wording("treatment_up"), ", ",
+          sum(sig$direction == "control_up"), " ", direction_wording("control_up"), " (table `tables/", C, ".rmats.", ty, ".significant.csv`).\n\n", sep = "")
+      if (nrow(sig) == 0) {
+        cat("**", none_message(params$fdr, params$dpsi), "**\n\n", sep = "")
+        nr <- nearest_events(st, 3)
+        cat("The three nearest events by adjusted p-value (events flagged low_support are not listed):\n\n")
+        if (nrow(nr) > 0) cat(knitr::kable(show_events(nr), format = "markdown"), sep = "\n") else cat("No unflagged event of this type has an adjusted p-value.\n")
+        cat("\n\n")
+      } else {
+        cat(knitr::kable(show_events(head(sig, 20)), format = "markdown"), sep = "\n")
+        cat("\n\n")
+      }
+      if (any(!is.na(st$padj) & !is.na(st$effect))) {
+        vf <- file.path(fig_dir, sprintf("%s.rmats.volcano.%s.png", C, ty))
+        save_plot(volcano_plot(st, ty, params$fdr, params$dpsi, C, Tr, Co), vf)
+        show_image(vf, paste0("Volcano plot of the ", ty, " events, ", C))
+      } else cat("No ", ty, " event has both an effect and an adjusted p-value: no volcano plot.\n\n", sep = "")
+    }
+    cat("\n\n### Distribution of the effects, ", C, "\n\n", sep = "")
+    hf <- file.path(fig_dir, paste0(C, ".rmats.effect_hist.png"))
+    save_plot(effect_hist(tab, C, Tr, Co), hf)
+    show_image(hf, paste0("Histogram of the dPSI of all events, ", C))
+  }
+  if (!isTRUE(params$topgene)) {
+    cat("The top-gene plots are switched off for this report (topgene = FALSE).\n\n")
+  } else {
+    cat("\n\n### Per-sample PSI of the top events, ", C, "\n\n", sep = "")
+    top <- top_events(tab, params$fdr, params$dpsi, 6)
+    rdir <- find_rmats_dir(params$outdir, C, params$paired_rmats, params$rmats_type)
+    if (nrow(top) == 0) {
+      cat("No unflagged event with an adjusted p-value: no PSI plot.\n\n")
+    } else if (is.na(rdir)) {
+      cat("No rMATS table of type ", params$rmats_type, " was found for this contrast: no PSI plot.\n\n", sep = "")
+    } else {
+      inc <- read_inclevels(rdir, top$feature_id, params$rmats_type)
+      cat("The six events that are significant, or nearest to significance when fewer than six are (events flagged low_support are left out). ",
+          "IncLevel1 holds the samples of the treatment `", Tr, "` and IncLevel2 those of the control `", Co,
+          "`, read again from the tables in `", rdir, "`; the samples are in the order of the sample sheet.\n\n", sep = "")
+      pf <- file.path(fig_dir, paste0(C, ".rmats.psi_top.png"))
+      save_plot(psi_plot(psi_long(inc, ss, Tr, Co), top[, c("feature_id", "gene_symbol")], Tr, Co, C), pf, width = 9, height = 6)
+      show_image(pf, paste0("Per-sample PSI of the top events, ", C))
+    }
+  }
+}
+```
+````
+
+The SUPPA2 report `03_suppa.Rmd` reads `rds/{CONTRAST}.suppa.rds` for every contrast. The RDS holds the local events and, when the isoform file exists, the isoforms (`feature_type` is `isoform`); the event type of a local event is read from its event identifier `GENE;TYPE:chr:...`, split at the first `;` only (`SE`, `A5`, `A3`, `MX`, `RI`, `AF`, `AL`). It writes, per contrast, `tables/{CONTRAST}.suppa.counts.csv`, `tables/{CONTRAST}.suppa.{type}.significant.csv`, `figures/{CONTRAST}.suppa.volcano.{type}.png`, `figures/{CONTRAST}.suppa.effect_hist.png` and `figures/{CONTRAST}.suppa.top.png` (`type` is an event type or `isoform`). The adjusted p-value is the Benjamini-Hochberg value computed by `01_import.Rmd`. The SUPPA2 difference files hold dPSI and a p-value for each event, not the PSI of each sample, so the top-event plot shows the dPSI of the top events. A contrast whose RDS is missing is reported as missing and the report still renders.
+
+**File `03_suppa.Rmd`.**
+````rmd
+---
+title: "SUPPA2 differential splicing"
+output:
+  html_document:
+    toc: true
+params:
+  outdir: ""
+  report_dir: "."
+  contrasts: ""
+  samplesheet: ""
+  modules: ""
+  fdr: 0.05
+  dpsi: 0.1
+  rmats_type: "JC"
+  min_reads: 10
+  events: true
+  cross: true
+  topgene: true
+  enrich: true
+  organism: "human"
+  enrich_dbs: "GO"
+  gtf: ""
+  paired_rmats: false
+  paired_suppa: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, dev = "png", dpi = 150, fig.width = 7, fig.height = 5)
+```
+
+This report shows the SUPPA2 local events (skipping exon SE, alternative 5' and 3' splice sites A5 and A3, mutually exclusive exons MX, retained intron RI, alternative first and last exons AF and AL) and the transcript isoforms of each contrast, read from the tables that `01_import.Rmd` wrote to `r file.path(params$report_dir, "rds")`. Every effect is stated as **treatment minus control**: a positive effect is higher in the treatment group (more inclusion for rMATS and SUPPA2, higher usage for the exon and transcript usage tools). For an event, a positive dPSI means it is more included in treatment, a negative dPSI means it is more skipped in treatment. The effect is the harmonised column of the RDS and is used as it is.
+
+SUPPA2 reports a p-value and no adjusted p-value. The adjusted p-value used here is the Benjamini-Hochberg correction that `01_import.Rmd` applied, separately for each contrast and for each file (local events, isoforms). An event whose dPSI is `nan` was not tested: it is kept in the table with a missing effect, counted as untested, left out of the correction and not drawn. An event is significant when its adjusted p-value is below `r params$fdr` and its absolute dPSI is at least `r params$dpsi`.
+
+```{r functions}
+suppressPackageStartupMessages(library(ggplot2))
+SUPPA_TYPES <- c("SE", "A5", "A3", "MX", "RI", "AF", "AL", "isoform")
+DIRECTION_WORDING <- c(treatment_up = "more included in treatment", control_up = "more skipped in treatment")
+direction_wording <- function(direction) unname(DIRECTION_WORDING[direction])
+none_message <- function(fdr, dpsi) paste0("none at FDR ", format(fdr), ", |dPSI| ", format(dpsi))
+
+# the event identifier of SUPPA2 is GENE;TYPE:chr:...: the type is the text before the first : after the FIRST ; (a later ; stays in the event)
+suppa_event_type <- function(id) {
+  ev <- sub("^[^;]*;", "", id)
+  sub(":.*$", "", ev)
+}
+# the group of a row: isoform for a row of the isoform file, else the event type read from the identifier
+suppa_group <- function(tab) as.character(ifelse(tab$feature_type == "isoform", "isoform", suppa_event_type(tab$feature_id)))
+
+# significant: padj below the FDR and absolute effect at least the dPSI threshold (untested rows have no padj and no effect)
+sig_flag <- function(tab, fdr, dpsi) {
+  !is.na(tab$padj) & tab$padj < fdr & !is.na(tab$effect) & abs(tab$effect) >= dpsi
+}
+
+# one row per group: events, untested (no effect), tested (padj present), significant, and the significant ones split by direction
+split_counts <- function(tab, fdr, dpsi, types) {
+  sig <- sig_flag(tab, fdr, dpsi)
+  g <- suppa_group(tab)
+  rows <- lapply(types, function(ty) {
+    i <- g == ty
+    r <- data.frame(type = ty, events = sum(i), untested = sum(i & is.na(tab$effect)), tested = sum(i & !is.na(tab$padj)),
+                    significant = sum(i & sig), stringsAsFactors = FALSE)
+    r[[direction_wording("treatment_up")]] <- sum(i & sig & tab$direction == "treatment_up")
+    r[[direction_wording("control_up")]] <- sum(i & sig & tab$direction == "control_up")
+    r
+  })
+  out <- do.call(rbind, rows)
+  rownames(out) <- NULL
+  out
+}
+
+# tested events (with an adjusted p-value), nearest first (smallest padj, then the larger change)
+nearest_events <- function(tab, n = 3) {
+  ok <- tab[!is.na(tab$padj), , drop = FALSE]
+  ok <- ok[order(ok$padj, 1 - abs(ok$effect), ok$feature_id), , drop = FALSE]
+  head(ok, n)
+}
+# the significant events first, then the nearest ones
+top_events <- function(tab, fdr, dpsi, n) {
+  ok <- tab[!is.na(tab$padj), , drop = FALSE]
+  ok <- ok[order(!sig_flag(ok, fdr, dpsi), ok$padj, 1 - abs(ok$effect), ok$feature_id), , drop = FALSE]
+  head(ok, n)
+}
+show_events <- function(d) {
+  w <- direction_wording(d$direction)
+  data.frame(gene = d$gene_id, event = d$feature_id, effect = round(d$effect, 3), padj = signif(d$padj, 3),
+             direction = ifelse(is.na(w), "no change", w), stringsAsFactors = FALSE)
+}
+
+strip_quotes <- function(x) gsub("^\"|\"$", "", x)
+read_delim_chr <- function(path, sep) {
+  if (!file.exists(path)) stop("file ", path, " not found: none of its columns can be read")
+  l <- sub("\r$", "", readLines(path, warn = FALSE))
+  l <- l[nzchar(l)]
+  if (length(l) == 0) stop("file ", path, " is empty: no header line, so no column can be found")
+  nm <- strsplit(l[1], sep, fixed = TRUE)[[1]]
+  if (length(l) == 1) {
+    return(as.data.frame(stats::setNames(replicate(length(nm), character(0), simplify = FALSE), nm),
+                         check.names = FALSE, stringsAsFactors = FALSE))
+  }
+  tab <- utils::read.table(text = l[-1], sep = sep, quote = "", header = FALSE, colClasses = "character", na.strings = character(0),
+                           comment.char = "", col.names = paste0("V", seq_along(nm)), fill = FALSE, stringsAsFactors = FALSE)
+  names(tab) <- nm
+  tab
+}
+need_cols <- function(tab, cols, path) {
+  miss <- setdiff(cols, names(tab))
+  if (length(miss)) stop("file ", path, ": column not found: ", paste(miss, collapse = ", "),
+                         " (columns present: ", paste(names(tab), collapse = ", "), ")")
+}
+read_contrasts <- function(path) {
+  tab <- read_delim_chr(path, ",")
+  need_cols(tab, c("contrast", "treatment", "control"), path)
+  tab <- tab[nzchar(tab$contrast), c("contrast", "treatment", "control")]
+  rownames(tab) <- NULL
+  tab
+}
+
+# volcano: x = dPSI (treatment minus control), y = -log10 adjusted p-value, thresholds as dashed lines, the top 10 labelled
+volcano_plot <- function(tab, type, fdr, dpsi, contrast, treatment, control) {
+  d <- tab[!is.na(tab$padj) & !is.na(tab$effect), , drop = FALSE]
+  d$nlp <- -log10(pmax(d$padj, 1e-300))
+  d$status <- ifelse(sig_flag(d, fdr, dpsi), "significant", "not significant")
+  lab <- top_events(d, fdr, dpsi, 10)
+  lab$label <- lab$gene_id
+  lab$nlp <- -log10(pmax(lab$padj, 1e-300))
+  p <- ggplot(d, aes(x = effect, y = nlp, colour = status)) + geom_point(alpha = 0.7, size = 1.6) +
+    geom_vline(xintercept = c(-dpsi, dpsi), linetype = "dashed", colour = "grey40") +
+    geom_hline(yintercept = -log10(fdr), linetype = "dashed", colour = "grey40") +
+    scale_colour_manual(values = c("significant" = "#D55E00", "not significant" = "grey60")) +
+    labs(title = paste0("SUPPA2 ", type, ", ", contrast), x = paste0("dPSI (", treatment, " minus ", control, ")"), y = "-log10 adjusted p-value") +
+    theme_bw()
+  if (nrow(lab) > 0) {
+    p <- if (requireNamespace("ggrepel", quietly = TRUE)) {
+      p + ggrepel::geom_text_repel(data = lab, aes(label = label), colour = "black", size = 3, max.overlaps = Inf)
+    } else {
+      p + geom_text(data = lab, aes(label = label), colour = "black", size = 3, check_overlap = TRUE, vjust = -0.6)
+    }
+  }
+  p
+}
+effect_hist <- function(tab, contrast, treatment, control) {
+  d <- tab[!is.na(tab$effect), , drop = FALSE]
+  d$group <- suppa_group(d)
+  ggplot(d, aes(x = effect)) + geom_histogram(bins = 40, fill = "grey55", colour = "white") +
+    geom_vline(xintercept = 0, linetype = "dashed") + facet_wrap(~group, scales = "free_y") +
+    labs(title = paste0("dPSI of all tested SUPPA2 events, ", contrast), x = paste0("dPSI (", treatment, " minus ", control, ")"), y = "events") +
+    theme_bw()
+}
+# the dPSI of the top events (the SUPPA2 difference files hold no PSI per sample)
+top_plot <- function(top, treatment, control, contrast) {
+  top$label <- make.unique(paste0(top$gene_id, " ", suppa_group(top)))
+  top$label <- factor(top$label, levels = rev(top$label))
+  w <- direction_wording(top$direction)
+  top$wording <- factor(ifelse(is.na(w), "no change", w), levels = c(unname(DIRECTION_WORDING), "no change"))
+  ggplot(top, aes(x = effect, y = label, fill = wording)) + geom_col() +
+    scale_fill_manual(values = c("#D55E00", "#0072B2", "grey60"), drop = FALSE, name = "direction") +
+    labs(title = paste0("dPSI of the top SUPPA2 events, ", contrast), x = paste0("dPSI (", treatment, " minus ", control, ")"), y = NULL) +
+    theme_bw()
+}
+save_plot <- function(p, file, width = 7, height = 5) {
+  ggplot2::ggsave(filename = file, plot = p, width = width, height = height, dpi = 150)
+  invisible(file)
+}
+show_image <- function(file, alt) cat("![", alt, "](", file, ")\n\n", sep = "")
+```
+
+```{r report, results="asis"}
+modules <- strsplit(trimws(params$modules), "[[:space:]]+")[[1]]
+fig_dir <- file.path(params$report_dir, "figures"); tab_dir <- file.path(params$report_dir, "tables")
+dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE); dir.create(tab_dir, recursive = TRUE, showWarnings = FALSE)
+contrasts <- read_contrasts(params$contrasts)
+if (!"suppa" %in% modules) cat("SUPPA2 is not among the modules of this report (", params$modules, "): there is nothing to show.\n\n", sep = "")
+for (i in seq_len(nrow(contrasts))) {
+  if (!"suppa" %in% modules) break
+  C <- contrasts$contrast[i]; Tr <- contrasts$treatment[i]; Co <- contrasts$control[i]
+  cat("\n\n## Contrast ", C, "\n\n", sep = "")
+  cat("Treatment `", Tr, "`, control `", Co, "`: every effect below is `", Tr, "` minus `", Co, "`. A positive dPSI: ",
+      direction_wording("treatment_up"), "; a negative dPSI: ", direction_wording("control_up"), ".\n\n", sep = "")
+  cat("Thresholds: FDR ", format(params$fdr), ", abs(dPSI) ", format(params$dpsi), ". SUPPA2 statistics: ",
+      if (isTRUE(params$paired_suppa)) "paired statistics" else "unpaired statistics",
+      " (read from the run's parameters). The adjusted p-value is Benjamini-Hochberg, computed by the import for each file.\n\n", sep = "")
+  f <- file.path(params$report_dir, "rds", paste0(C, ".suppa.rds"))
+  if (!file.exists(f)) {
+    cat("The file `", f, "` was not found: the import found no SUPPA2 table for this contrast (the files it looked for are listed in `files_missing` of `rds/",
+        C, ".qc.rds`). No SUPPA2 result is shown for this contrast.\n\n", sep = "")
+    qf <- file.path(params$report_dir, "rds", paste0(C, ".qc.rds"))
+    if (file.exists(qf)) { qc <- readRDS(qf); if (length(qc$files_missing)) cat("Files not found:\n\n", paste0("- `", qc$files_missing, "`\n"), "\n", sep = "") }
+    next
+  }
+  tab <- readRDS(f)
+  need_cols(tab, c("gene_id", "feature_type", "feature_id", "effect", "padj", "direction"), f)
+  tab$group <- suppa_group(tab)
+  types <- c(SUPPA_TYPES, setdiff(unique(tab$group), SUPPA_TYPES))
+  if (!any(tab$group == "isoform")) cat("No isoform table was read for this contrast (`feature_type` isoform is absent from the RDS): the isoform section is empty.\n\n")
+  cat("Rows of the table: ", nrow(tab), "; not tested (dPSI nan, no effect and no adjusted p-value): ", sum(is.na(tab$effect)), ".\n\n", sep = "")
+  cn <- split_counts(tab, params$fdr, params$dpsi, types)
+  utils::write.csv(cn, file.path(tab_dir, paste0(C, ".suppa.counts.csv")), row.names = FALSE)
+  cat("Events per type and significant events split by direction (counts file `tables/", C, ".suppa.counts.csv`):\n\n", sep = "")
+  cat(knitr::kable(cn, format = "markdown"), sep = "\n")
+  cat("\n\n")
+  if (!isTRUE(params$events)) {
+    cat("The event tables and volcano plots are switched off for this report (events = FALSE).\n\n")
+  } else {
+    for (ty in types) {
+      cat("\n\n### ", ty, ", ", C, "\n\n", sep = "")
+      st <- tab[tab$group == ty, , drop = FALSE]
+      sig <- st[sig_flag(st, params$fdr, params$dpsi), , drop = FALSE]
+      sig <- sig[order(sig$padj, 1 - abs(sig$effect), sig$feature_id), , drop = FALSE]
+      sig$direction_wording <- direction_wording(sig$direction)
+      utils::write.csv(sig[, c("contrast", "gene_id", "feature_type", "feature_id", "effect", "padj", "direction", "direction_wording")],
+                       file.path(tab_dir, sprintf("%s.suppa.%s.significant.csv", C, ty)), row.names = FALSE)
+      if (nrow(st) == 0) { cat("No ", ty, " row in the table.\n\n", sep = ""); next }
+      cat(nrow(sig), " significant ", ty, " rows: ", sum(sig$direction == "treatment_up"), " ", direction_wording("treatment_up"), ", ",
+          sum(sig$direction == "control_up"), " ", direction_wording("control_up"), " (table `tables/", C, ".suppa.", ty, ".significant.csv`).\n\n", sep = "")
+      if (nrow(sig) == 0) {
+        cat("**", none_message(params$fdr, params$dpsi), "**\n\n", sep = "")
+        nr <- nearest_events(st, 3)
+        cat("The three nearest events by adjusted p-value:\n\n")
+        if (nrow(nr) > 0) cat(knitr::kable(show_events(nr), format = "markdown"), sep = "\n") else cat("No row of this group was tested (every dPSI is nan).\n")
+        cat("\n\n")
+      } else {
+        cat(knitr::kable(show_events(head(sig, 20)), format = "markdown"), sep = "\n")
+        cat("\n\n")
+      }
+      if (any(!is.na(st$padj) & !is.na(st$effect))) {
+        vf <- file.path(fig_dir, sprintf("%s.suppa.volcano.%s.png", C, ty))
+        save_plot(volcano_plot(st, ty, params$fdr, params$dpsi, C, Tr, Co), vf)
+        show_image(vf, paste0("Volcano plot of the SUPPA2 ", ty, " rows, ", C))
+      } else cat("No ", ty, " row has both an effect and an adjusted p-value: no volcano plot.\n\n", sep = "")
+    }
+    cat("\n\n### Distribution of the effects, ", C, "\n\n", sep = "")
+    if (any(!is.na(tab$effect))) {
+      hf <- file.path(fig_dir, paste0(C, ".suppa.effect_hist.png"))
+      save_plot(effect_hist(tab, C, Tr, Co), hf)
+      show_image(hf, paste0("Histogram of the dPSI of all tested events, ", C))
+    } else cat("No event was tested: no histogram.\n\n")
+  }
+  if (!isTRUE(params$topgene)) {
+    cat("The top-gene plots are switched off for this report (topgene = FALSE).\n\n")
+  } else {
+    cat("\n\n### dPSI of the top events, ", C, "\n\n", sep = "")
+    top <- top_events(tab, params$fdr, params$dpsi, 6)
+    if (nrow(top) == 0) {
+      cat("No event was tested: no plot.\n\n")
+    } else {
+      cat("The six events that are significant, or nearest to significance when fewer than six are. The SUPPA2 difference files hold the dPSI and the p-value of each event, not the PSI of each sample.\n\n")
+      pf <- file.path(fig_dir, paste0(C, ".suppa.top.png"))
+      save_plot(top_plot(top, Tr, Co, C), pf, width = 9, height = 5)
+      show_image(pf, paste0("dPSI of the top SUPPA2 events, ", C))
+    }
+  }
+}
+```
+````
