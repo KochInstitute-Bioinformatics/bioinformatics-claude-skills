@@ -206,7 +206,7 @@ Unlike the bulk skill, **you do not pre-build aligner indexes** — nf-core/scrn
 - GTF `Homo_sapiens.GRCh38.{version}.gtf`
 
 ### Procedure
-1. Fetch latest Ensembl release: `https://ftp.ensembl.org/pub/current_README` (via `WebFetch`).
+1. Fetch latest Ensembl release: `https://ftp.ensembl.org/pub/current/README` (via `WebFetch`; the line "Ensembl Release N Databases." gives `N`; if that fetch fails, use the highest `release-N/` directory in the listing at `https://ftp.ensembl.org/pub/`, or ask the user).
 2. `ls {genome_base}/{organism}/` — find the highest `ens{N}` present.
 3. If the FASTA and GTF already exist, report their paths and proceed.
 4. If missing, generate a small download script (`download_reference_{assembly}_ens{version}.sh`) using `wget -c` and `gunzip -c` (never `gunzip -k` — unavailable on CentOS 7), create the directory with `mkdir -p`, and tell the user to run it before submitting:
