@@ -23,18 +23,97 @@ forbid() { ! grep -qF -- "$1" "$SKILL" || { echo "FAIL: forbidden text present: 
 forbid_re() { ! grep -qE -- "$1" "$SKILL" || { echo "FAIL: forbidden pattern present: $2"; fail=1; }; }
 
 # --- skeleton checks
-# The skill starts with its title line.
-need "# nf-core/rnasplice Report Skill"
-# No command-line flag (--name) outside the #SBATCH header lines of the generated scripts.
-if awk '!/^#SBATCH / && /(^|[[:space:]`(])--[A-Za-z]/ { found = 1 } END { exit !found }' "$SKILL"; then
-  echo "FAIL: a --flag appears outside the #SBATCH header lines"; fail=1
+# The skill starts with its title line (the first line, not any line).
+[ "$(head -n1 "$SKILL")" = "# nf-core/rnasplice Report Skill" ] || { echo "FAIL: missing required text: # nf-core/rnasplice Report Skill"; fail=1; }
+# Command-line flags (--name): prose outside ``` fences never has one. Inside a fence a flag is allowed only on a line that starts
+# with, or continues (the previous line ends with a backslash), singularity exec, sbatch, Rscript or srun, and on #SBATCH lines.
+# A fence is closed by a line of the same number of backticks as the one that opened it (four-backtick Rmd fences hold ``` lines).
+if awk '
+  { t = $0; sub(/^[[:space:]]+/, "", t); n = 0; while (substr(t, n + 1, 1) == "`") n++ }
+  !infence && n >= 3 { infence = 1; flen = n; allowed = 0; next }
+  infence && n == flen && n == length(t) { infence = 0; allowed = 0; next }
+  !infence { if ($0 ~ /(^|[[:space:]`(])--[A-Za-z]/) found = 1; next }
+  { ok = (t ~ /^(singularity exec|sbatch|Rscript|srun)([[:space:]]|$)/) || (t ~ /^#SBATCH /) || allowed
+    if ($0 ~ /(^|[[:space:]`(])--[A-Za-z]/ && !ok) found = 1
+    allowed = (ok && ($0 ~ /\\$/)) }
+  END { exit !found }' "$SKILL"; then
+  echo "FAIL: a --flag appears in prose or outside the allowed commands (singularity exec, sbatch, Rscript, srun, #SBATCH lines)"; fail=1
 fi
-# No process words in the skill or the README.
+# No process words in the skill or the README. "Task [0-9]" is case-sensitive (a lower-case "task 3" is ordinary prose).
 for re in 'Task [0-9]' 'ledger' 'fix round' 'reviewer'; do
-  ! grep -qiE -- "$re" "$SKILL" || { echo "FAIL: forbidden process word in the skill: $re"; fail=1; }
-  ! grep -qiE -- "$re" "$README" 2>/dev/null || { echo "FAIL: forbidden process word in the README: $re"; fail=1; }
+  if [ "$re" = 'Task [0-9]' ]; then gi=-E; else gi=-iE; fi
+  ! grep -q $gi -- "$re" "$SKILL" || { echo "FAIL: forbidden process word in the skill: $re"; fail=1; }
+  ! grep -q $gi -- "$re" "$README" 2>/dev/null || { echo "FAIL: forbidden process word in the README: $re"; fail=1; }
 done
 # --- end skeleton checks
+
+# --- wizard checks (Steps 0-6, the inputs)
+# Every step is numbered and states a default.
+for s in 0 1 2 3 4 5 6; do
+  need "## Step $s — "
+  awk -v s="$s" '/^## Step / { insec = ($3 == s); next } insec && /[Dd]efault/ { f = 1 } END { exit !f }' "$SKILL" || { echo "FAIL: Step $s states no default"; fail=1; }
+done
+need 'ask one question at a time, state the default with each question'
+need 'Shell variables and functions do not persist between Bash tool calls'
+need 'one Bash call per procedure'
+need 'R, Nextflow, Java and every other heavy tool run only on compute nodes'
+need 'never on a login node'
+need 'Default SLURM requests are at most 64 GB and 4 hours'
+need 'Every `module add` is guarded with `|| exit 1`'
+need '`{WD_NAME}` = basename of `{CWD}`'
+need '`{TODAY_ISO}` = today'\''s date as `YYYY-MM-DD`'
+need '`{REPORT_DIR}` = `{CWD}/results/{TODAY_ISO}_{WD_NAME}_report`'
+need 'already exists (a previous report?)'
+need 'Reuse it: files of the same name are replaced and the others are kept'
+need 'A previous report is never overwritten silently'
+need 'Do not pre-fill any address.'
+need 'Store `{EMAIL}`'
+need 'Store `{SIF}`'
+need 'The image is pulled on a compute node, never on the login node'
+need '#SBATCH -p bcc'
+need 'module add singularity/3.10.4 || exit 1'
+need '"DEXSeq", "edgeR", "stageR", "ggplot2", "dplyr", "tidyr", "readr", "knitr", "rmarkdown"'
+need '"ReactomePA", "KEGG.db", "reactome.db"'
+need 'the image must be rebuilt by them'
+need 'packages are never installed at run time'
+need 'KEGG/Reactome require an image rebuild'
+need 'store `{ENRICH_DBS}` = `GO KEGG Reactome`'
+need 'is the default for `{OUTDIR_RNASPLICE}`'
+need 'has more than a header line'
+need 'an empty file or a file with only a header is not found'
+need 'star/rmats/{CONTRAST}/{SE,A5SS,A3SS,MXE,RI}.MATS.{JC,JCEC}.txt'
+need 'salmon/suppa/diffsplice/per_local_event/local_{T}-{C}.dpsi'
+need 'star/dexseq_exon/results/DEXSeqResults.{CONTRAST}.csv'
+need 'star/edger/contrast_{CONTRAST}.usage.exon.csv'
+need 'salmon/dexseq_dtu/results/dexseq/DEXSeqResults.{T}-{C}.tsv'
+need 'never by splitting file names'
+need 'The rMATS tables have the column `ID` twice'
+need 'has no `salmon/` directory, so SUPPA2 and DTU are simply not found'
+need 'Store the modules as `{MODULES}`'
+need 'echo "MODULES=${mods# }"'
+need 'sample,condition,genome_bam,strandedness,single_end'
+need 'the FASTQ or BAM files the sheet points to are never opened'
+need 'Contrast `{CONTRAST}`: is `{T}` the treatment and `{C}` the control'
+need 'This fixes every sign'
+need 'Store `{CONTRASTS}` as the confirmed list'
+need '**Names built from the contrasts file.**'
+need 'contrasts are never mixed'
+need 'Store the GTF path as `{GTF}`'
+need 'ENSMUSG'
+need 'Store `{ORGANISM}` ='
+need 'Store `{PAIRED_RMATS}` and `{PAIRED_SUPPA}`'
+need '`rmats_paired_stats` (rMATS) and `diffsplice_paired` (SUPPA2)'
+need 'never claims unpaired statistics for a paired run'
+# Names of files and groups are built from the contrasts file, never recovered by splitting on - or _.
+forbid_re 'awk -F[-_]|cut -d[-_]|IFS=[-_]' 'file or group names split on - or _'
+# R is started only through singularity exec (sbatch), and packages are never installed at run time.
+forbid_re '^(Rscript|R -e|R -f|R --)' 'R started outside singularity exec'
+forbid_re 'install\.packages|BiocManager|install_github|conda install|pip install' 'a package is installed at run time'
+# The FASTQ or BAM files of the sample sheet are never opened.
+forbid_re 'zcat[^|]*(fastq|fq)' 'a FASTQ file is opened'
+# Every module add is guarded.
+if grep 'module add' "$SKILL" | grep -qv '|| exit 1'; then echo "FAIL: a module add without || exit 1"; fail=1; fi
+# --- end wizard checks
 
 # tests/run_all_tests.sh names every script of tests/ in exactly one list (TESTS, FULL_TESTS or NOT_TESTS), runs each under
 # env -i, and says when the proof-tool self-test was skipped. CHECK_RUN_ALL overrides the file (used by prove_mutations.sh).

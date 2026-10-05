@@ -1,6 +1,6 @@
 # id	runner	target	sed program	expected text
 S1-title	check	skill	\|^@TITLE@$|d	missing required text: @TITLE@
-S1-flag	check	skill	$s/$/\nRun `report --now` here./	a --flag appears outside the #SBATCH header lines
+S1-flag	check	skill	$s/$/\nRun `report --now` here./	a --flag appears in prose or outside the allowed commands
 S1-word-task	check	skill	$s/$/\nAdded in Task 3./	forbidden process word in the skill: Task [0-9]
 S1-word-ledger	check	skill	$s/$/\nSee the ledger./	forbidden process word in the skill: ledger
 S1-word-fix	check	skill	$s/$/\nAfter the fix round./	forbidden process word in the skill: fix round
@@ -18,3 +18,80 @@ S1-skipped	check	runall	s/was SKIPPED; run/was left out; run/	must say when the 
 S1-gitver	check	runall	s/!= 1.8.5 \]; then/!= 1.8.4 ]; then/	must check for git 1.8.5 or newer
 S1-selfrun	check	runall	s/^TESTS="check_skill.sh test_run_all.sh /TESTS="check_skill.sh /	TESTS must run test_run_all.sh
 S1-passline	runtest	runall	s/full run, proof-tool self-test included/full run/	output lacks the line: ALL TESTS PASS (full run, proof-tool self-test included)
+S2-flag-fenced-ls	check	skill	$s/$/\n```bash\nls --color\n```/	a --flag appears in prose or outside the allowed commands
+S2-flag-fenced-cont	check	skill	$s/$/\n```bash\nls \\\n  --color\n```/	a --flag appears in prose or outside the allowed commands
+S2-title-line2	check	skill	1s/^/Intro line\n/	missing required text: @TITLE@
+S2-work-intro	check	skill	s|ask one question at a time, state the default with each question|REMOVED|g	missing required text: ask one question at a time, state the default with each question
+S2-bash-persist	check	skill	s|Shell variables and functions do not persist between Bash tool calls|REMOVED|g	missing required text: Shell variables and functions do not persist between Bash tool calls
+S2-bash-one	check	skill	s|one Bash call per procedure|REMOVED|g	missing required text: one Bash call per procedure
+S2-heavy	check	skill	s|R, Nextflow, Java and every other heavy tool run only on compute nodes|REMOVED|g	missing required text: R, Nextflow, Java and every other heavy tool run only on compute nodes
+S2-login	check	skill	s|never on a login node|REMOVED|g	missing required text: never on a login node
+S2-limits	check	skill	s|Default SLURM requests are at most 64 GB and 4 hours|REMOVED|g	missing required text: Default SLURM requests are at most 64 GB and 4 hours
+S2-module-rule	check	skill	s|Every `module add` is guarded with `\|\| exit 1`|REMOVED|g	missing required text: Every `module add` is guarded with `|| exit 1`
+S2-wdname	check	skill	s|`{WD_NAME}` = basename of `{CWD}`|REMOVED|g	missing required text: `{WD_NAME}` = basename of `{CWD}`
+S2-today	check	skill	s|`{TODAY_ISO}` = today's date as `YYYY-MM-DD`|REMOVED|g	missing required text: `{TODAY_ISO}` = today's date as `YYYY-MM-DD`
+S2-reportdir	check	skill	s|`{REPORT_DIR}` = `{CWD}\/results\/{TODAY_ISO}_{WD_NAME}_report`|REMOVED|g	missing required text: `{REPORT_DIR}` = `{CWD}/results/{TODAY_ISO}_{WD_NAME}_report`
+S2-reuse-ask	check	skill	s|already exists (a previous report?)|REMOVED|g	missing required text: already exists (a previous report?)
+S2-reuse-opt	check	skill	s|Reuse it: files of the same name are replaced and the others are kept|REMOVED|g	missing required text: Reuse it: files of the same name are replaced and the others are kept
+S2-reuse-never	check	skill	s|A previous report is never overwritten silently|REMOVED|g	missing required text: A previous report is never overwritten silently
+S2-email-nofill	check	skill	s|Do not pre-fill any address\.|REMOVED|g	missing required text: Do not pre-fill any address.
+S2-email-store	check	skill	s|Store `{EMAIL}`|REMOVED|g	missing required text: Store `{EMAIL}`
+S2-sif-store	check	skill	s|Store `{SIF}`|REMOVED|g	missing required text: Store `{SIF}`
+S2-pull-sbatch	check	skill	s|The image is pulled on a compute node, never on the login node|REMOVED|g	missing required text: The image is pulled on a compute node, never on the login node
+S2-sbatch-bcc	check	skill	s|#SBATCH -p bcc|REMOVED|g	missing required text: #SBATCH -p bcc
+S2-module-sing	check	skill	s|module add singularity\/3\.10\.4 \|\| exit 1|REMOVED|g	missing required text: module add singularity/3.10.4 || exit 1
+S2-pkg-mandatory	check	skill	s|"DEXSeq", "edgeR", "stageR", "ggplot2", "dplyr", "tidyr", "readr", "knitr", "rmarkdown"|REMOVED|g	missing required text: "DEXSeq", "edgeR", "stageR", "ggplot2", "dplyr", "tidyr", "readr", "knitr", "rmarkdown"
+S2-pkg-reactome	check	skill	s|"ReactomePA", "KEGG\.db", "reactome\.db"|REMOVED|g	missing required text: "ReactomePA", "KEGG.db", "reactome.db"
+S2-pkg-rebuild	check	skill	s|the image must be rebuilt by them|REMOVED|g	missing required text: the image must be rebuilt by them
+S2-pkg-noinstall	check	skill	s|packages are never installed at run time|REMOVED|g	missing required text: packages are never installed at run time
+S2-pkg-goonly	check	skill	s|KEGG\/Reactome require an image rebuild|REMOVED|g	missing required text: KEGG/Reactome require an image rebuild
+S2-pkg-dbs	check	skill	s|store `{ENRICH_DBS}` = `GO KEGG Reactome`|REMOVED|g	missing required text: store `{ENRICH_DBS}` = `GO KEGG Reactome`
+S3-outdir-default	check	skill	s|is the default for `{OUTDIR_RNASPLICE}`|REMOVED|g	missing required text: is the default for `{OUTDIR_RNASPLICE}`
+S3-header	check	skill	s|has more than a header line|REMOVED|g	missing required text: has more than a header line
+S3-header-only	check	skill	s|an empty file or a file with only a header is not found|REMOVED|g	missing required text: an empty file or a file with only a header is not found
+S3-path-rmats	check	skill	s|star\/rmats\/{CONTRAST}\/{SE,A5SS,A3SS,MXE,RI}\.MATS\.{JC,JCEC}\.txt|REMOVED|g	missing required text: star/rmats/{CONTRAST}/{SE,A5SS,A3SS,MXE,RI}.MATS.{JC,JCEC}.txt
+S3-path-suppa	check	skill	s|salmon\/suppa\/diffsplice\/per_local_event\/local_{T}-{C}\.dpsi|REMOVED|g	missing required text: salmon/suppa/diffsplice/per_local_event/local_{T}-{C}.dpsi
+S3-path-dexseq	check	skill	s|star\/dexseq_exon\/results\/DEXSeqResults\.{CONTRAST}\.csv|REMOVED|g	missing required text: star/dexseq_exon/results/DEXSeqResults.{CONTRAST}.csv
+S3-path-edger	check	skill	s|star\/edger\/contrast_{CONTRAST}\.usage\.exon\.csv|REMOVED|g	missing required text: star/edger/contrast_{CONTRAST}.usage.exon.csv
+S3-path-dtu	check	skill	s|salmon\/dexseq_dtu\/results\/dexseq\/DEXSeqResults\.{T}-{C}\.tsv|REMOVED|g	missing required text: salmon/dexseq_dtu/results/dexseq/DEXSeqResults.{T}-{C}.tsv
+S3-nosplit	check	skill	s|never by splitting file names|REMOVED|g	missing required text: never by splitting file names
+S3-id-twice	check	skill	s|The rMATS tables have the column `ID` twice|REMOVED|g	missing required text: The rMATS tables have the column `ID` twice
+S3-bam	check	skill	s|has no `salmon\/` directory, so SUPPA2 and DTU are simply not found|REMOVED|g	missing required text: has no `salmon/` directory, so SUPPA2 and DTU are simply not found
+S3-modules-store	check	skill	s|Store the modules as `{MODULES}`|REMOVED|g	missing required text: Store the modules as `{MODULES}`
+S3-modules-line	check	skill	s|echo "MODULES=\${mods# }"|REMOVED|g	missing required text: echo "MODULES=${mods# }"
+S4-bam-schema	check	skill	s|sample,condition,genome_bam,strandedness,single_end|REMOVED|g	missing required text: sample,condition,genome_bam,strandedness,single_end
+S4-never-open	check	skill	s|the FASTQ or BAM files the sheet points to are never opened|REMOVED|g	missing required text: the FASTQ or BAM files the sheet points to are never opened
+S4-confirm	check	skill	s|Contrast `{CONTRAST}`: is `{T}` the treatment and `{C}` the control|REMOVED|g	missing required text: Contrast `{CONTRAST}`: is `{T}` the treatment and `{C}` the control
+S4-fixes	check	skill	s|This fixes every sign|REMOVED|g	missing required text: This fixes every sign
+S4-contrasts-store	check	skill	s|Store `{CONTRASTS}` as the confirmed list|REMOVED|g	missing required text: Store `{CONTRASTS}` as the confirmed list
+S4-names-anchor	check	skill	s|\*\*Names built from the contrasts file\.\*\*|REMOVED|g	missing required text: **Names built from the contrasts file.**
+S4-per-contrast	check	skill	s|contrasts are never mixed|REMOVED|g	missing required text: contrasts are never mixed
+S5-gtf-store	check	skill	s|Store the GTF path as `{GTF}`|REMOVED|g	missing required text: Store the GTF path as `{GTF}`
+S5-mouse	check	skill	s|ENSMUSG|REMOVED|g	missing required text: ENSMUSG
+S5-organism-store	check	skill	s|Store `{ORGANISM}` =|REMOVED|g	missing required text: Store `{ORGANISM}` =
+S6-pair-store	check	skill	s|Store `{PAIRED_RMATS}` and `{PAIRED_SUPPA}`|REMOVED|g	missing required text: Store `{PAIRED_RMATS}` and `{PAIRED_SUPPA}`
+S6-pair-switches	check	skill	s|`rmats_paired_stats` (rMATS) and `diffsplice_paired` (SUPPA2)|REMOVED|g	missing required text: `rmats_paired_stats` (rMATS) and `diffsplice_paired` (SUPPA2)
+S6-pair-never	check	skill	s|never claims unpaired statistics for a paired run|REMOVED|g	missing required text: never claims unpaired statistics for a paired run
+S2-heading-0	check	skill	s/^## Step 0 — /## Step n0 — /	missing required text: ## Step 0 — 
+S2-default-step0	check	skill	/^## Step 0 — /,/^---$/s/[Dd]efault/usual/g	FAIL: Step 0 states no default
+S2-heading-1	check	skill	s/^## Step 1 — /## Step n1 — /	missing required text: ## Step 1 — 
+S2-default-step1	check	skill	/^## Step 1 — /,/^---$/s/[Dd]efault/usual/g	FAIL: Step 1 states no default
+S2-heading-2	check	skill	s/^## Step 2 — /## Step n2 — /	missing required text: ## Step 2 — 
+S2-default-step2	check	skill	/^## Step 2 — /,/^---$/s/[Dd]efault/usual/g	FAIL: Step 2 states no default
+S2-heading-3	check	skill	s/^## Step 3 — /## Step n3 — /	missing required text: ## Step 3 — 
+S2-default-step3	check	skill	/^## Step 3 — /,/^---$/s/[Dd]efault/usual/g	FAIL: Step 3 states no default
+S2-heading-4	check	skill	s/^## Step 4 — /## Step n4 — /	missing required text: ## Step 4 — 
+S2-default-step4	check	skill	/^## Step 4 — /,/^---$/s/[Dd]efault/usual/g	FAIL: Step 4 states no default
+S2-heading-5	check	skill	s/^## Step 5 — /## Step n5 — /	missing required text: ## Step 5 — 
+S2-default-step5	check	skill	/^## Step 5 — /,/^---$/s/[Dd]efault/usual/g	FAIL: Step 5 states no default
+S2-heading-6	check	skill	s/^## Step 6 — /## Step n6 — /	missing required text: ## Step 6 — 
+S2-default-step6	check	skill	/^## Step 6 — /,/^---$/s/[Dd]efault/usual/g	FAIL: Step 6 states no default
+S2-forbid-split	check	skill	$s/$/\n```bash\ncut -d_ -f1\n```/	forbidden pattern present: file or group names split on - or _
+S2-forbid-split-awk	check	skill	$s/$/\n```bash\nawk -F- {print}\n```/	forbidden pattern present: file or group names split on - or _
+S2-forbid-ifs	check	skill	$s/$/\n```bash\nIFS=- read a b\n```/	forbidden pattern present: file or group names split on - or _
+S2-forbid-rscript	check	skill	$s/$/\n```bash\nRscript x.R\n```/	forbidden pattern present: R started outside singularity exec
+S2-forbid-r-e	check	skill	$s/$/\n```bash\nR -e 1\n```/	forbidden pattern present: R started outside singularity exec
+S2-forbid-install	check	skill	$s/$/\n```r\ninstall.packages("x")\n```/	forbidden pattern present: a package is installed at run time
+S2-forbid-biocmanager	check	skill	$s/$/\n```r\nBiocManager::install("x")\n```/	forbidden pattern present: a package is installed at run time
+S2-forbid-fastq	check	skill	$s/$/\n```bash\nzcat a_1.fastq.gz | head\n```/	forbidden pattern present: a FASTQ file is opened
+S2-module-unguarded	check	skill	s|module add singularity/3.10.4 \|\| exit 1|module add singularity/3.10.4|	a module add without || exit 1

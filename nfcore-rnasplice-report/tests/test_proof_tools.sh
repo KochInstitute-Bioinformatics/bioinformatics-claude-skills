@@ -51,8 +51,8 @@ expect 0 "RED PASS (0 new needs" bash "$D/tests/prove_red.sh" "$C1"
 sed -i 's/^# --- end skeleton checks$/need "SELFTEST_NEW_TEXT"\n&/' "$D/tests/check_skill.sh"; echo "SELFTEST_NEW_TEXT" >> "$D/nfcore-rnasplice-report.md"
 expect 0 "RED PASS (1 new needs fail on $C1)" bash "$D/tests/prove_red.sh" "$C1"
 git -C "$R" checkout -q -- nfcore-rnasplice-report
-# A new need whose text was already in the skill at the base is NOT RED.
-sed -i 's/^# --- end skeleton checks$/need "Stub: the wizard text"\n&/' "$D/tests/check_skill.sh"
+# A new need whose text was already in the skill at the base (a phrase of the title line) is NOT RED.
+sed -i 's/^# --- end skeleton checks$/need "Report Skill"\n&/' "$D/tests/check_skill.sh"
 expect 1 "NOT RED on $C1" bash "$D/tests/prove_red.sh" "$C1"
 cp "$T/check.orig" "$D/tests/check_skill.sh"
 # Added need lines of which none runs: refused.

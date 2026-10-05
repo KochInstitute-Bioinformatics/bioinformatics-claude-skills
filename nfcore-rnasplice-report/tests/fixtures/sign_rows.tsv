@@ -2,6 +2,7 @@
 # expected_sign is the sign of the harmonised treatment-minus-control effect, derived from the rule in the last column.
 # edgeR: the test data have 0 exon rows at FDR < 0.05 and 2 at FDR < 0.5; those 2 are used, and the third row (FDR 0.9999) is included only because it is the first row with a negative logFC.
 # rMATS, DEXSeq exon, DEXSeq DTU: rows with FDR/padj < 0.05. SUPPA2 has no adjusted p-value: rows with p-val < 0.05.
+# SUPPA2: the column name local_GBR-local_YRI_dPSI reads like GBR minus YRI, but the rule is flip: dPSI is control minus treatment (spec section 5), so the harmonised effect is -dPSI.
 tool	feature	raw_value	raw_column_name	treatment	control	expected_sign	rule
 rMATS	SE.JC:ID=213:GEMIN8	0.166	IncLevelDifference	GBR	YRI	+	rMATS IncLevelDifference is treatment minus control (IncLevel1 = treatment): keep the sign
 rMATS	SE.JC:ID=143:PDZD11	-0.274	IncLevelDifference	GBR	YRI	-	rMATS IncLevelDifference is treatment minus control (IncLevel1 = treatment): keep the sign
