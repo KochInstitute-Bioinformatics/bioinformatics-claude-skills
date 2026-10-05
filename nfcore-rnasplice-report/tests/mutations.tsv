@@ -107,7 +107,6 @@ S3-need-06	check	skill	s|Default: 0\.1\. It is not applied to exon usage or tran
 S3-need-07	check	skill	s|`{RMATS_TYPE}`: which rMATS count type to read, `JC` (junction counts only) or `JCEC`|REMOVED|g	missing required text: `{RMATS_TYPE}`: which rMATS count type to read, `JC` (junction counts only) or `JCEC`
 S3-need-08	check	skill	s|Default: `JC`\.|REMOVED|g	missing required text: Default: `JC`.
 S3-need-09	check	skill	s|minimum read support of an rMATS event: for each group, the mean over its samples of `IJC` plus `SJC`, required in both groups|REMOVED|g	missing required text: minimum read support of an rMATS event: for each group, the mean over its samples of `IJC` plus `SJC`, required in both groups
-S3-need-10	check	skill	s|Default: 10\. Events below it are dropped from the tests, and their number is reported\.|REMOVED|g	missing required text: Default: 10. Events below it are dropped from the tests, and their number is reported.
 S3-need-11	check	skill	s|applies the Benjamini-Hochberg correction to it and says so|REMOVED|g	missing required text: applies the Benjamini-Hochberg correction to it and says so
 S3-need-12	check	skill	s|a space-separated subset of `events cross topgene enrich`|REMOVED|g	missing required text: a space-separated subset of `events cross topgene enrich`
 S3-need-13	check	skill	s|two or more of `rmats`, `suppa`, `dexseq_exon`, `edger_exon` and `dtu` are in `{MODULES}` (each counts as a separate tool)|REMOVED|g	missing required text: two or more of `rmats`, `suppa`, `dexseq_exon`, `edger_exon` and `dtu` are in `{MODULES}` (each counts as a separate tool)
@@ -186,7 +185,6 @@ R4-rtest-dupid	rtest	skill	/^  names(tab) <- dedupe_names(names(tab))$/d	FAIL: r
 R4-rtest-stopmsg	rtest	skill	s/column not found: ", paste(miss, collapse = ", "),/column not found",/	FAIL: missing column stop names the file and IncLevelDifference
 R4-rtest-rds-edger	rtest	skill	s/"exon", feat, to_num(tab\$logFC, path, "logFC"),/"exon", feat, -to_num(tab$logFC, path, "logFC"),/	FAIL: rds exon_edger direction equals the raw sign rule, row by row
 R4-rtest-rds-suppa	rtest	skill	s/ftype, event, dpsi, bh_adjust(p)/ftype, event, -dpsi, bh_adjust(p)/	FAIL: rds suppa direction equals the raw sign rule, row by row
-R4-rtest-minreads	rtest	skill	s/tab\$n_support >= params\$min_reads/tab$n_support >= 0/	FAIL: rds rmats: rows = raw events minus the low-support events
 R4-need-sign-rmats	check	skill	s/^    rmats = value, .*/    rmats = value,/	missing required text:     rmats = value,          # IncLevelDifference: b1 = treatment, already treatment - control
 R4-need-sign-suppa	check	skill	s/^    suppa = -value,/    suppa = value, /	missing required text:     suppa = -value,         # SUPPA2 dPSI is control - treatment
 R4-need-sign-dexseq	check	skill	s/^    exon_dexseq = -value,/    exon_dexseq = value, /	missing required text:     exon_dexseq = -value,   # log2fold_{CONTROL}_{TREATMENT}
@@ -207,10 +205,25 @@ R4-need-untested-iso	check	skill	/qc\$suppa_untested\[\["isoform"\]\] <- sum/d	m
 R4-need-strip	check	skill	s/^strip_quotes <- function(x) gsub(.*$/strip_quotes <- function(x) x/	missing required text: strip_quotes <- function(x) gsub(
 R4-need-dedupe	check	skill	/^  names(tab) <- dedupe_names(names(tab))$/d	missing required text: names(tab) <- dedupe_names(names(tab))
 R4-need-support	check	skill	s/support of a group = mean over its samples of (IJC + SJC)/support of a group = sum over its samples of (IJC + SJC)/	missing required text: # support of a group = mean over its samples of (IJC + SJC)
-R4-need-minreads	check	skill	s/tab\$n_support >= params\$min_reads/tab$n_support >= 10/	missing required text: keep <- !is.na(tab$n_support) & tab$n_support >= params$min_reads
 R4-need-stopmsg	check	skill	s/column not found: ", paste(miss, collapse = ", "),/column not found",/	missing required text: if (length(miss)) stop("file ", path, ": column not found: "
 R4-forbid-network	check	skill	s/^modules <- modules\[nzchar(modules)\]$/&\ndownload.file("x", "y")/	forbidden pattern present: network access or package installation in an Rmd
 R4-runall-full-r	check	runall	s/^\(FULL_TESTS=.*\) test_r.sh"$/\1"/	FULL_TESTS must include test_r.sh
 R4-runall-full-stub	check	runall	s/^FULL_TESTS="test_proof_tools.sh test_rtest_runner.sh /FULL_TESTS="test_proof_tools.sh /	FULL_TESTS must include test_rtest_runner.sh
 R4-runall-rtest	check	runall	/^  run prove_mutations.sh "\$SK" rtest$/d	must run prove_mutations.sh in mode rtest
 R4-runall-not	check	runall	s/ run_all_tests.sh run_r_tests.sh"$/ run_all_tests.sh"/	NOT_TESTS must be exactly the helpers
+S3-need-10	check	skill	s/Events below it are flagged (`low_support`), kept in the tables and excluded from the significance counts of the reports, never deleted/Events below it are dropped/	missing required text: Default: 10. Events below it are flagged (`low_support`), kept in the tables and excluded from the significance counts of the reports, never deleted
+S3-need-fdr-not-recomputed	check	skill	s/the rMATS FDR is not recomputed (it stays as rMATS wrote it)/the rMATS FDR is recomputed/	missing required text: the rMATS FDR is not recomputed (it stays as rMATS wrote it)
+S3-need-shallow	check	skill	s/On very shallow data (like the nf-core test data) most events fall below 10; the user may lower it\.//	missing required text: On very shallow data (like the nf-core test data) most events fall below 10; the user may lower it.
+S3-forbid-dropped	check	skill	s/never deleted; their number is reported/never deleted; dropped from the tests; their number is reported/	forbidden text present: dropped from the tests
+R4-rtest-noflag	rtest	skill	s/^  low <- is.na(ns) | ns < min_reads$/  low <- FALSE/	FAIL: rMATS low_support flags n_support below min_reads and keeps the row
+R4-rtest-dropflagged	rtest	skill	s/^      out\$rmats <- tab$/      out$rmats <- tab[!tab$low_support, , drop = FALSE]/	FAIL: rds rmats keeps every raw row
+R4-rtest-sig-lowsupport	rtest	skill	s/^    !tab\$low_support$/    TRUE/	FAIL: qc counts: rMATS low_support and significant (excluding low_support) equal the raw recomputation
+R4-rtest-dexseq-pvalue	rtest	skill	s/to_num(tab\$padj, path, "padj")/to_num(tab$pvalue, path, "padj")/	FAIL: rds exon_dexseq padj equals the raw recomputation, row by row
+R4-rtest-suppa-pooled	rtest	skill	s/ftype, event, dpsi, bh_adjust(p), NA_real_)/ftype, event, dpsi, p, NA_real_)/;s/^    if (length(parts)) out\$suppa <- do.call(rbind, unname(parts))$/&; if (length(parts)) out$suppa$padj <- bh_adjust(out$suppa$padj)/	FAIL: rds suppa padj equals the raw recomputation, row by row
+R4-need-lowflag	check	skill	s/^  low <- is.na(ns) | ns < min_reads$/  low <- FALSE/	missing required text:   low <- is.na(ns) | ns < min_reads
+R4-need-contract-low	check	skill	s/"padj", "direction", "n_support", "low_support")/"padj", "direction", "n_support")/	missing required text: "padj", "direction", "n_support", "low_support")
+R4-need-sig-excl	check	skill	s/^    !tab\$low_support$/    TRUE/	missing required text:     !tab$low_support
+R4-keep-whole	check	skill	s/^      out\$rmats <- tab$/      out$rmats <- tab[!tab$low_support, , drop = FALSE]/	the rMATS table must be kept whole
+R4-need-flag-prose	check	skill	s/are flagged in the column `low_support`: they stay in the table/are removed from the table/	missing required text: are flagged in the column `low_support`
+R4-need-missing-contract	check	skill	s/Rmds 02 to 06 check that each RDS exists before they read it/later reports read it/	missing required text: no RDS is written for that tool and contrast
+R4-need-contract-text	check	skill	s/effect_scale, padj, direction, n_support, low_support`/effect_scale, padj, direction, n_support`/	missing required text: effect_scale, padj, direction, n_support, low_support`

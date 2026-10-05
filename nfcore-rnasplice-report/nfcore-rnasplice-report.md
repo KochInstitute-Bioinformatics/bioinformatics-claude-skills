@@ -228,7 +228,7 @@ Ask one question per value, state the default with each, and store the answers:
 - `{FDR}`: adjusted p-value (FDR) cutoff for a significant event, gene or transcript. Default: 0.05.
 - `{DPSI}`: minimum absolute change in percent spliced in (dPSI) for an rMATS or SUPPA2 event to count as significant, in addition to `{FDR}`. Default: 0.1. It is not applied to exon usage or transcript usage, which are cut by `{FDR}` only; the report states this.
 - `{RMATS_TYPE}`: which rMATS count type to read, `JC` (junction counts only) or `JCEC` (junction counts plus reads on the target exon). Default: `JC`. Asked only when `rmats` is in `{MODULES}`; a type whose files the run did not produce is not offered.
-- `{MIN_READS}`: minimum read support of an rMATS event: for each group, the mean over its samples of `IJC` plus `SJC`, required in both groups (the smaller of the two group means must reach it). Default: 10. Events below it are dropped from the tests, and their number is reported. Asked only when `rmats` is in `{MODULES}`.
+- `{MIN_READS}`: minimum read support of an rMATS event: for each group, the mean over its samples of `IJC` plus `SJC`, required in both groups (the smaller of the two group means must reach it). Default: 10. Events below it are flagged (`low_support`), kept in the tables and excluded from the significance counts of the reports, never deleted; their number is reported, and the rMATS FDR is not recomputed (it stays as rMATS wrote it). On very shallow data (like the nf-core test data) most events fall below 10; the user may lower it. Asked only when `rmats` is in `{MODULES}`.
 
 SUPPA2 reports a p-value but no adjusted p-value; the report applies the Benjamini-Hochberg correction to it and says so, and `{FDR}` is applied to the corrected value. Print the thresholds in one line and ask (default: yes): "Use these thresholds?"
 
@@ -424,7 +424,7 @@ Check progress with: squeue -u $USER
 
 Each block below is the whole content of one Rmd file of `{REPORT_DIR}` (see **Writing the Rmd files.** in Step 10). The values of the wizard reach the Rmd as render parameters; the parameter names are those of the job scripts: `outdir`, `report_dir`, `contrasts`, `samplesheet`, `modules`, `fdr`, `dpsi`, `rmats_type`, `min_reads`, `events`, `cross`, `topgene`, `enrich`, `organism`, `enrich_dbs`, `gtf`, `paired_rmats`, `paired_suppa`.
 
-The import report `01_import.Rmd` reads the table of every module in `{MODULES}` for every contrast, converts each effect to treatment minus control, and writes one RDS per contrast and tool (`rds/{CONTRAST}.{tool}.rds`, tool one of `rmats`, `suppa`, `exon_dexseq`, `exon_edger`, `dtu`) with the columns `contrast, tool, gene_id, gene_symbol, feature_type, feature_id, effect, effect_scale, padj, direction, n_support`, plus `rds/{CONTRAST}.qc.rds` with the counts the report prints. A missing or renamed column stops the import with a message that names the file and the column.
+The import report `01_import.Rmd` reads the table of every module in `{MODULES}` for every contrast, converts each effect to treatment minus control, and writes one RDS per contrast and tool (`rds/{CONTRAST}.{tool}.rds`, tool one of `rmats`, `suppa`, `exon_dexseq`, `exon_edger`, `dtu`) with the columns `contrast, tool, gene_id, gene_symbol, feature_type, feature_id, effect, effect_scale, padj, direction, n_support, low_support`, plus `rds/{CONTRAST}.qc.rds` with the counts the report prints. A missing or renamed column stops the import with a message that names the file and the column. When the file of a module is missing for a contrast, no RDS is written for that tool and contrast and the file is listed in `qc$files_missing`; Rmds 02 to 06 check that each RDS exists before they read it. `low_support` is TRUE for an rMATS event whose read support is below `{MIN_READS}` and FALSE for every other row and tool; flagged rows stay in the RDS, and the reports exclude them from the significant calls but count and report them.
 
 **File `01_import.Rmd`.**
 ````rmd
@@ -472,12 +472,12 @@ This report reads the result tables of the nf-core/rnasplice run in `r params$ou
 
 `direction` is `treatment_up` for a positive effect, `control_up` for a negative one and `none` for zero or a missing effect.
 
-SUPPA2 reports a p-value but no adjusted p-value. This report applies the Benjamini-Hochberg correction itself, separately for each contrast and for each file (local events, isoforms). An event whose dPSI is `nan` was not tested: it is kept with a missing effect, counted as untested below, and left out of the correction (SUPPA2 writes a p-value of 1 for it, which is not a test). rMATS events whose read support is below `r params$min_reads` (for each group the mean over its samples of IJC plus SJC; the smaller of the two group means) are removed from the rMATS table, and their number is reported.
+SUPPA2 reports a p-value but no adjusted p-value. This report applies the Benjamini-Hochberg correction itself, separately for each contrast and for each file (local events, isoforms). An event whose dPSI is `nan` was not tested: it is kept with a missing effect, counted as untested below, and left out of the correction (SUPPA2 writes a p-value of 1 for it, which is not a test). rMATS events whose read support is below `r params$min_reads` (for each group the mean over its samples of IJC plus SJC; the smaller of the two group means) are flagged in the column `low_support`: they stay in the table, are excluded from the significant counts and are counted below; nothing is deleted, and the rMATS FDR is not recomputed.
 
 ```{r functions}
 TOOL_OF_MODULE <- c(rmats = "rmats", suppa = "suppa", dexseq_exon = "exon_dexseq", edger_exon = "exon_edger", dtu = "dtu")
 CONTRACT_COLUMNS <- c("contrast", "tool", "gene_id", "gene_symbol", "feature_type", "feature_id", "effect", "effect_scale",
-                      "padj", "direction", "n_support")
+                      "padj", "direction", "n_support", "low_support")
 RMATS_TYPES <- c("SE", "A5SS", "A3SS", "MXE", "RI")
 
 harmonise_effect <- function(tool, value) {
@@ -553,7 +553,8 @@ bh_adjust <- function(p) {
   out
 }
 
-harmonised_table <- function(contrast, tool, gene_id, gene_symbol, feature_type, feature_id, value, padj, n_support) {
+harmonised_table <- function(contrast, tool, gene_id, gene_symbol, feature_type, feature_id, value, padj, n_support,
+                             low_support = FALSE) {
   n <- length(gene_id)
   if (n == 0) feature_id <- character(0)   # paste0 over an empty column returns one string, not none
   effect <- harmonise_effect(tool, value)
@@ -562,6 +563,7 @@ harmonised_table <- function(contrast, tool, gene_id, gene_symbol, feature_type,
              feature_id = as.character(feature_id), effect = as.numeric(effect),
              effect_scale = rep(if (tool %in% c("rmats", "suppa")) "dPSI" else "log2FC", n), padj = as.numeric(padj),
              direction = as.character(direction_of(effect)), n_support = rep_len(as.numeric(n_support), n),
+             low_support = rep_len(as.logical(low_support), n),
              stringsAsFactors = FALSE)
 }
 
@@ -577,7 +579,7 @@ read_contrasts <- function(path) {
 # rMATS: per event one count per sample, as a comma-separated list: IJC_SAMPLE_1 and SJC_SAMPLE_1 for group 1 (b1, the
 # treatment), IJC_SAMPLE_2 and SJC_SAMPLE_2 for group 2 (the control).
 # support of a group = mean over its samples of (IJC + SJC); n_support = min(support of group 1, support of group 2).
-# An event is kept for the tests when n_support >= min_reads.
+# An event is flagged low_support when n_support < min_reads (or missing); it stays in the table, never deleted.
 rmats_support <- function(tab, path) {
   grp <- function(g) {
     ci <- paste0("IJC_SAMPLE_", g); cs <- paste0("SJC_SAMPLE_", g)
@@ -597,14 +599,15 @@ read_rmats_raw <- function(path) {
   tab
 }
 
-read_rmats <- function(path, type, contrast) {
+read_rmats <- function(path, type, contrast, min_reads) {
   tab <- read_rmats_raw(path)
   need_cols(tab, c("ID", "ID_2", "GeneID", "geneSymbol", "IJC_SAMPLE_1", "SJC_SAMPLE_1", "IJC_SAMPLE_2", "SJC_SAMPLE_2",
                    "FDR", "IncLevelDifference"), path)
   if (any(tab$ID != tab$ID_2)) stop("file ", path, ": the two ID columns (ID and ID_2, the second ID) differ")
+  ns <- rmats_support(tab, path)
+  low <- is.na(ns) | ns < min_reads
   harmonised_table(contrast, "rmats", strip_quotes(tab$GeneID), strip_quotes(tab$geneSymbol), type, paste0(type, ":", tab$ID),
-                   to_num(tab$IncLevelDifference, path, "IncLevelDifference"), to_num(tab$FDR, path, "FDR"),
-                   rmats_support(tab, path))
+                   to_num(tab$IncLevelDifference, path, "IncLevelDifference"), to_num(tab$FDR, path, "FDR"), ns, low)
 }
 
 # SUPPA2 column names, built from the contrasts file (kind is local or transcript), never split from file names
@@ -650,10 +653,12 @@ read_edger_exon <- function(path, contrast) {
                    to_num(tab$FDR, path, "FDR"), NA_real_)
 }
 
-# counts per tool: rows, tested (padj present), significant (padj < fdr, and abs(effect) >= dpsi on the dPSI scale)
+# counts per tool: rows, tested (padj present), low_support (flagged, rMATS only), significant (padj < fdr, abs(effect) >= dpsi
+# on the dPSI scale, and not low_support)
 count_table <- function(tab, fdr, dpsi) {
-  sig <- !is.na(tab$padj) & tab$padj < fdr & !is.na(tab$effect) & (tab$effect_scale != "dPSI" | abs(tab$effect) >= dpsi)
-  data.frame(rows = nrow(tab), tested = sum(!is.na(tab$padj)), effect_missing = sum(is.na(tab$effect)),
+  sig <- !is.na(tab$padj) & tab$padj < fdr & !is.na(tab$effect) & (tab$effect_scale != "dPSI" | abs(tab$effect) >= dpsi) &
+    !tab$low_support
+  data.frame(rows = nrow(tab), tested = sum(!is.na(tab$padj)), low_support = sum(tab$low_support), effect_missing = sum(is.na(tab$effect)),
              treatment_up = sum(tab$direction == "treatment_up"), control_up = sum(tab$direction == "control_up"),
              none = sum(tab$direction == "none"), significant = sum(sig),
              significant_treatment_up = sum(sig & tab$direction == "treatment_up"),
@@ -694,13 +699,12 @@ for (i in seq_len(nrow(contrasts))) {
       parts <- list()
       for (ty in RMATS_TYPES) {
         f <- path_of(hit[1], sprintf("%s.MATS.%s.txt", ty, params$rmats_type))
-        if (file.exists(f)) { parts[[ty]] <- read_rmats(f, ty, C); qc$files_read <- c(qc$files_read, f) }
+        if (file.exists(f)) { parts[[ty]] <- read_rmats(f, ty, C, params$min_reads); qc$files_read <- c(qc$files_read, f) }
         else qc$files_missing <- c(qc$files_missing, f)
       }
       tab <- do.call(rbind, unname(parts))
-      keep <- !is.na(tab$n_support) & tab$n_support >= params$min_reads
-      qc$rmats_low_support <- sum(!keep)
-      out$rmats <- tab[keep, , drop = FALSE]
+      qc$rmats_low_support <- sum(tab$low_support)
+      out$rmats <- tab
     }
   }
   if ("suppa" %in% modules) {
@@ -769,8 +773,9 @@ for (qc in results) {
       params$min_reads, ", rMATS counts ", params$rmats_type, ".\n\n", sep = "")
   if (length(qc$files_read)) cat("Files read:\n\n", paste0("- `", qc$files_read, "`\n"), "\n", sep = "")
   if (length(qc$files_missing)) cat("Files not found (their section is left out):\n\n", paste0("- `", qc$files_missing, "`\n"), "\n", sep = "")
-  if (!is.na(qc$rmats_dir)) cat("rMATS tables read from `", qc$rmats_dir, "`; events removed for read support below ",
-                                params$min_reads, ": ", qc$rmats_low_support, ".\n\n", sep = "")
+  if (!is.na(qc$rmats_dir)) cat("rMATS tables read from `", qc$rmats_dir, "`; events flagged low_support (read support below ",
+                                params$min_reads, "; kept in the table, excluded from the significant counts, FDR as written by rMATS): ",
+                                qc$rmats_low_support, ".\n\n", sep = "")
   if (!all(is.na(qc$suppa_untested))) cat("SUPPA2 events not tested (dPSI nan; kept with a missing effect, left out of the Benjamini-Hochberg correction): local events ",
                                           qc$suppa_untested[["local"]], ", isoforms ", qc$suppa_untested[["isoform"]], ".\n\n", sep = "")
   if (!is.null(qc$counts)) cat(knitr::kable(qc$counts, format = "markdown"), sep = "\n")

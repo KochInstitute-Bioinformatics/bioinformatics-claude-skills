@@ -21,7 +21,7 @@ finish <- function() {
 }
 err_of <- function(expr) tryCatch({ force(expr); "" }, error = function(e) conditionMessage(e))
 COLS <- c("contrast", "tool", "gene_id", "gene_symbol", "feature_type", "feature_id", "effect", "effect_scale", "padj",
-          "direction", "n_support")
+          "direction", "n_support", "low_support")
 work <- tempfile("rsr_test_"); dir.create(work)
 
 # --- extract the Rmd block and its functions chunk
@@ -64,7 +64,7 @@ raw_q <- read.delim(se, quote = "\"", stringsAsFactors = FALSE, colClasses = "ch
 rr <- read_rmats_raw(se)
 check("rMATS raw table has one ID column and the second one renamed ID_2", sum(names(rr) == "ID") == 1 && "ID_2" %in% names(rr))
 check("rMATS raw table: ID and ID_2 hold the same values", identical(rr$ID, rr$ID_2))
-r1 <- read_rmats(se, type = "SE", contrast = "GBR_vs_YRI")
+r1 <- read_rmats(se, type = "SE", contrast = "GBR_vs_YRI", min_reads = 10)
 check("rMATS harmonised table has the contract columns", identical(names(r1), COLS))
 check("rMATS gene_id has no quote characters", !any(grepl("\"", r1$gene_id)))
 check("rMATS gene_symbol has no quote characters", !any(grepl("\"", r1$gene_symbol)))
@@ -77,6 +77,7 @@ check("rMATS effect_scale is dPSI", all(r1$effect_scale == "dPSI"))
 sup <- function(a, b) sapply(seq_along(a), function(i) mean(as.numeric(strsplit(a[i], ",")[[1]]) + as.numeric(strsplit(b[i], ",")[[1]])))
 ns <- pmin(sup(raw_q$IJC_SAMPLE_1, raw_q$SJC_SAMPLE_1), sup(raw_q$IJC_SAMPLE_2, raw_q$SJC_SAMPLE_2))
 check("rMATS n_support is the smaller group mean of IJC + SJC", isTRUE(all.equal(r1$n_support, ns)))
+check("rMATS low_support flags n_support below min_reads and keeps the row", identical(r1$low_support, ns < 10) && any(r1$low_support))
 
 # --- 4. SUPPA2: nan rows kept with effect NA, BH on the tested p-values
 lf <- file.path(rt, "salmon/suppa/diffsplice/per_local_event/local_GBR-YRI.dpsi")
@@ -95,7 +96,7 @@ check("bh_adjust equals p.adjust BH on the non-NA values", isTRUE(all.equal(bh_a
 
 # --- 5. header-only files: zero rows, the full column set
 ho <- function(src, name) { f <- file.path(work, name); writeLines(readLines(src, n = 1), f); f }
-z1 <- read_rmats(ho(se, "SE.MATS.JC.txt"), type = "SE", contrast = "GBR_vs_YRI")
+z1 <- read_rmats(ho(se, "SE.MATS.JC.txt"), type = "SE", contrast = "GBR_vs_YRI", min_reads = 10)
 check("header-only rMATS file gives zero rows and the contract columns", nrow(z1) == 0 && identical(names(z1), COLS))
 z2 <- read_suppa(ho(lf, "local_GBR-YRI.dpsi"), kind = "local", treatment = "GBR", control = "YRI", contrast = "GBR_vs_YRI")
 check("header-only SUPPA2 file gives zero rows and the contract columns", nrow(z2) == 0 && identical(names(z2), COLS))
@@ -108,7 +109,7 @@ check("header-only edgeR file gives zero rows and the contract columns", nrow(z4
 
 # --- 6. a missing column stops with the file and the column named
 mc <- file.path(work, "renamed_SE.MATS.JC.txt"); l <- readLines(se); l[1] <- sub("IncLevelDifference", "IncLevelDiff_renamed", l[1]); writeLines(l, mc)
-m6 <- err_of(read_rmats(mc, type = "SE", contrast = "GBR_vs_YRI"))
+m6 <- err_of(read_rmats(mc, type = "SE", contrast = "GBR_vs_YRI", min_reads = 10))
 check("missing column stop names the file and IncLevelDifference", grepl(mc, m6, fixed = TRUE) && grepl("IncLevelDifference", m6, fixed = TRUE))
 ms <- file.path(work, "renamed_local.dpsi"); l <- readLines(lf); l[1] <- sub("_p-val", "_pvalue", l[1]); writeLines(l, ms)
 m6b <- err_of(read_suppa(ms, kind = "local", treatment = "GBR", control = "YRI", contrast = "GBR_vs_YRI"))
@@ -149,42 +150,53 @@ check("qc$suppa_untested counts the nan rows of the local file (2823)", identica
 check("qc$suppa_untested counts the nan rows of the isoform file (3173)", identical(as.integer(qc$suppa_untested[["isoform"]]), 3173L))
 # expected direction from the raw value by the sign rule, written out here (not through harmonise_effect)
 dir_raw <- function(v, flip) { v <- if (flip) -v else v; ifelse(is.na(v) | v == 0, "none", ifelse(v > 0, "treatment_up", "control_up")) }
-cmp_dir <- function(tool, got, ids, exp) {
+# cmp_dir: per RDS row (matched to its raw row by feature_id) the direction from the raw sign rule and the padj from the raw
+# table (exp_padj, computed here from the raw file); also low_support against exp_low
+cmp_dir <- function(tool, got, ids, exp, exp_padj, exp_low = rep(FALSE, length(ids))) {
   m <- match(got$feature_id, ids)
   check(sprintf("rds %s: every row maps to a raw row", tool), !anyNA(m))
+  check(sprintf("rds %s keeps every raw row (%d)", tool, length(ids)), nrow(got) == length(ids) && !anyNA(m) && !anyDuplicated(m))
   check(sprintf("rds %s direction equals the raw sign rule, row by row", tool), identical(got$direction, exp[m]))
   check(sprintf("rds %s direction counts equal the raw recomputation (both directions present)", tool),
         identical(as.vector(table(factor(got$direction, c("treatment_up", "control_up", "none")))),
                   as.vector(table(factor(exp[m], c("treatment_up", "control_up", "none"))))) &&
         all(c("treatment_up", "control_up") %in% got$direction))
+  check(sprintf("rds %s padj equals the raw recomputation, row by row", tool), isTRUE(all.equal(got$padj, exp_padj[m])))
+  check(sprintf("rds %s low_support flag equals the raw recomputation", tool), identical(got$low_support, exp_low[m]))
 }
-# rMATS: every type of the JC fixtures, events with the smaller group mean of IJC + SJC below 10 removed
-g <- readRDS(rds("rmats")); ids <- character(0); ex <- character(0); n_low <- 0; n_all <- 0
+num <- function(x) suppressWarnings(as.numeric(ifelse(x %in% c("nan", "NA", ""), NA, x)))
+# rMATS: every type of the JC fixtures; every event kept, the ones with the smaller group mean of IJC + SJC below 10 flagged;
+# padj is the file's FDR
+g <- readRDS(rds("rmats")); ids <- character(0); ex <- character(0); pa <- numeric(0); lo <- logical(0); sg <- 0
 for (ty in c("SE", "A5SS", "A3SS", "MXE", "RI")) {
   r <- read.delim(file.path(rt, sprintf("star/rmats/GBR_vs_YRI/%s.MATS.JC.txt", ty)), quote = "\"", stringsAsFactors = FALSE, colClasses = "character")
-  s <- pmin(sup(r$IJC_SAMPLE_1, r$SJC_SAMPLE_1), sup(r$IJC_SAMPLE_2, r$SJC_SAMPLE_2)); keep <- s >= 10
-  n_low <- n_low + sum(!keep); n_all <- n_all + nrow(r)
-  ids <- c(ids, paste0(ty, ":", r$ID[keep])); ex <- c(ex, dir_raw(as.numeric(r$IncLevelDifference[keep]), FALSE))
+  s <- pmin(sup(r$IJC_SAMPLE_1, r$SJC_SAMPLE_1), sup(r$IJC_SAMPLE_2, r$SJC_SAMPLE_2))
+  ids <- c(ids, paste0(ty, ":", r$ID)); ex <- c(ex, dir_raw(num(r$IncLevelDifference), FALSE))
+  pa <- c(pa, num(r$FDR)); lo <- c(lo, s < 10)
+  sg <- sg + sum(num(r$FDR) < 0.05 & abs(num(r$IncLevelDifference)) >= 0.1 & s >= 10, na.rm = TRUE)
 }
-check("rds rmats: rows = raw events minus the low-support events", nrow(g) == n_all - n_low && n_low > 0)
-check("qc rmats_low_support equals the raw recomputation", identical(as.integer(qc$rmats_low_support), as.integer(n_low)))
-check("rds rmats: every row has n_support >= min_reads", all(g$n_support >= 10))
-cmp_dir("rmats", g, ids, ex)
-# SUPPA2: local events and isoforms
+check("rds rmats keeps the low-support events (some flagged, none deleted)", nrow(g) == length(ids) && sum(lo) > 0 && sum(g$low_support) == sum(lo))
+check("qc rmats_low_support equals the raw recomputation", identical(as.integer(qc$rmats_low_support), as.integer(sum(lo))))
+check("qc counts: rMATS low_support and significant (excluding low_support) equal the raw recomputation",
+      qc$counts$low_support[qc$counts$tool == "rmats"] == sum(lo) && qc$counts$significant[qc$counts$tool == "rmats"] == sg)
+cmp_dir("rmats", g, ids, ex, pa, lo)
+# SUPPA2: local events and isoforms; BH computed here separately for each file over the tested rows (dPSI not nan)
 g <- readRDS(rds("suppa")); itf <- file.path(rt, "salmon/suppa/diffsplice/per_isoform/transcript_GBR-YRI.dpsi")
 it <- do.call(rbind, strsplit(readLines(itf)[-1], "\t", fixed = TRUE))
+bh_file <- function(d, p) { ok <- !is.na(d) & !is.na(p); out <- rep(NA_real_, length(p)); out[ok] <- p.adjust(p[ok], method = "BH"); out }
 ids <- c(sub("^[^;]*;", "", lt[, 1]), sub("^[^;]*;", "", it[, 1]))
-ex <- c(dir_raw(dpsi, TRUE), dir_raw(suppressWarnings(as.numeric(ifelse(it[, 2] == "nan", NA, it[, 2]))), TRUE))
+ex <- c(dir_raw(dpsi, TRUE), dir_raw(num(it[, 2]), TRUE))
+pa <- c(bh_file(dpsi, pv), bh_file(num(it[, 2]), num(it[, 3])))
 check("rds suppa: local and isoform rows all kept", nrow(g) == nrow(lt) + nrow(it))
-cmp_dir("suppa", g, ids, ex)
-# DEXSeq exon usage and DTU: flip of log2fold_YRI_GBR
+cmp_dir("suppa", g, ids, ex, pa)
+# DEXSeq exon usage and DTU: flip of log2fold_YRI_GBR; padj is the table's padj
 r <- read.csv(dx, stringsAsFactors = FALSE, check.names = FALSE)
-cmp_dir("exon_dexseq", readRDS(rds("exon_dexseq")), paste0(r$groupID, ":", r$featureID), dir_raw(r$log2fold_YRI_GBR, TRUE))
+cmp_dir("exon_dexseq", readRDS(rds("exon_dexseq")), paste0(r$groupID, ":", r$featureID), dir_raw(r$log2fold_YRI_GBR, TRUE), r$padj)
 r <- read.delim(file.path(rt, "salmon/dexseq_dtu/results/dexseq/DEXSeqResults.GBR-YRI.tsv"), stringsAsFactors = FALSE, check.names = FALSE)
-cmp_dir("dtu", readRDS(rds("dtu")), r$featureID, dir_raw(r$log2fold_YRI_GBR, TRUE))
-# edgeR exon usage: logFC kept
+cmp_dir("dtu", readRDS(rds("dtu")), r$featureID, dir_raw(r$log2fold_YRI_GBR, TRUE), r$padj)
+# edgeR exon usage: logFC kept; padj is the table's FDR
 r <- read.csv(ed, stringsAsFactors = FALSE, check.names = FALSE)
-cmp_dir("exon_edger", readRDS(rds("exon_edger")), paste0(r$Geneid, ":", r$Chr, ":", r$Start, "-", r$End), dir_raw(r$logFC, FALSE))
+cmp_dir("exon_edger", readRDS(rds("exon_edger")), paste0(r$Geneid, ":", r$Chr, ":", r$Start, "-", r$End), dir_raw(r$logFC, FALSE), r$FDR)
 html <- paste(readLines(file.path(rd, "01_import.html"), warn = FALSE), collapse = "\n")
 check("the report prints the sign rule of SUPPA2 and the BH note", grepl("control minus treatment", html, fixed = TRUE) && grepl("Benjamini-Hochberg", html, fixed = TRUE))
 finish()
