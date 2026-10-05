@@ -1,0 +1,1 @@
+ERR188454_chrX_sorted.bam,ERR204916_chrX_sorted.bam

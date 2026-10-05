@@ -12,6 +12,7 @@ FDR/padj < 0.5 (SUPPA2: first 300 rows plus rows with p-val < 0.01). All files b
 | Fixture (under `real_testdata/`) | Source path | Date | Trimming | Bytes |
 |---|---|---|---|---|
 | `star/rmats/GBR_vs_YRI/{SE,A5SS,A3SS,MXE,RI}.MATS.JC.txt` | same path | 2026-10-03 | none | 3441 to 32060 |
+| `star/rmats/bamlist/{GBR,YRI}_bamlist.txt` | same path | 2026-10-03 | none | 52, 52 |
 | `star/rmats/GBR_vs_YRI/SE.MATS.JCEC.txt` | same path | 2026-10-03 | none | 33665 |
 | `salmon/suppa/diffsplice/per_local_event/local_GBR-YRI.dpsi` | same path | 2026-10-03 | none | 386098 |
 | `salmon/suppa/diffsplice/per_isoform/transcript_GBR-YRI.dpsi` | same path | 2026-10-03 | none | 225465 |

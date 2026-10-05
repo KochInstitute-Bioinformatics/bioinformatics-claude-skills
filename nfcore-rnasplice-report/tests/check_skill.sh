@@ -252,8 +252,13 @@ need '  !is.na(tab$padj) & tab$padj < fdr & !is.na(tab$effect) & abs(tab$effect)
 need '  !is.na(tab$padj) & tab$padj < fdr & !is.na(tab$effect) & abs(tab$effect) >= dpsi'
 need '  cn <- split_counts(tab, params$fdr, params$dpsi, RMATS_TYPES)'
 need '  cn <- split_counts(tab, params$fdr, params$dpsi, types)'
-need '  s1 <- ss$sample[ss$condition == treatment]'
-need '  s2 <- ss$sample[ss$condition == control]'
+need '  g1 <- group_samples(ss, treatment, bam_treatment)'
+need '  g2 <- group_samples(ss, control, bam_control)'
+need '  s1 <- g1$samples'
+need '  s2 <- g2$samples'
+need '  f <- file.path(outdir, "star", "rmats", "bamlist", paste0(condition, "_bamlist.txt"))'
+need '  list(samples = bamlist, from = "rMATS sample list", warning = NULL)'
+need 'WARNING: no rMATS sample list found for '
 need 'psi_legend <- function(treatment, control) c(paste0("treatment (", treatment, ")"), paste0("control (", control, ")"))'
 need '  ev <- sub("^[^;]*;", "", id)'
 need 'The adjusted p-value used here is the Benjamini-Hochberg correction that `01_import.Rmd` applied'
@@ -290,8 +295,11 @@ for n in 02_rmats.Rmd 03_suppa.Rmd; do
   printf '%s\n' "$b" | grep -qF 'sig_flag(st, params$fdr, params$dpsi)' || { echo "FAIL: $n: the significant events are not selected with params\$fdr and params\$dpsi"; fail=1; }
 done
 b=$(rmd_block 02_rmats.Rmd)
-printf '%s\n' "$b" | grep -qE '^\s+s1 <- ss\$sample\[ss\$condition == treatment\]$' || { echo "FAIL: 02_rmats.Rmd: the PSI plot must take the sample order from the sample sheet (s1 <- ss\$sample[ss\$condition == treatment])"; fail=1; }
-printf '%s\n' "$b" | grep -qF 'psi_long(inc, ss, Tr, Co)' || { echo "FAIL: 02_rmats.Rmd: the PSI plot is not built from the sample sheet (psi_long(inc, ss, Tr, Co))"; fail=1; }
+printf '%s\n' "$b" | grep -qE '^\s+s1 <- g1\$samples$' || { echo "FAIL: 02_rmats.Rmd: the PSI plot must take the sample order from rMATS's own sample lists (s1 <- g1\$samples, group 1 = the treatment)"; fail=1; }
+printf '%s\n' "$b" | grep -qE '^\s+s2 <- g2\$samples$' || { echo "FAIL: 02_rmats.Rmd: group 2 (the control) must take the sample order of its own sample list (s2 <- g2\$samples)"; fail=1; }
+printf '%s\n' "$b" | grep -qF 'psi_long(inc, ss, Tr, Co, bam_t, bam_c)' || { echo "FAIL: 02_rmats.Rmd: the PSI plot is not built from the rMATS sample lists (psi_long(inc, ss, Tr, Co, bam_t, bam_c))"; fail=1; }
+printf '%s\n' "$b" | grep -qF 'bam_t <- read_bamlist(params$outdir, Tr); bam_c <- read_bamlist(params$outdir, Co)' || { echo "FAIL: 02_rmats.Rmd: the sample lists of the run are not read (read_bamlist)"; fail=1; }
+if printf '%s\n' "$b" | grep -qF 'order of the sample sheet.'; then echo "FAIL: 02_rmats.Rmd: the PSI sample order must not be described as the order of the sample sheet"; fail=1; fi
 printf '%s\n' "$b" | grep -qF 'low_support_report(tab, params$fdr, params$dpsi)' || { echo "FAIL: 02_rmats.Rmd: the low_support count is not reported"; fail=1; }
 # --- end Rmd 02 and 03
 

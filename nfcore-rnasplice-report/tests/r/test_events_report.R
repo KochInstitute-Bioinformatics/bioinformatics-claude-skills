@@ -44,7 +44,7 @@ rmd2 <- get_rmd("02_rmats.Rmd"); rmd3 <- get_rmd("03_suppa.Rmd")
 E2 <- functions_env(rmd2, "02_rmats.Rmd"); E3 <- functions_env(rmd3, "03_suppa.Rmd")
 need_fun <- function(e, nm) all(vapply(nm, exists, logical(1), envir = e, inherits = FALSE))
 if (!check("02 defines its functions", need_fun(E2, c("sig_flag", "split_counts", "direction_wording", "nearest_events", "top_events",
-    "low_support_report", "none_message", "find_rmats_dir", "read_inclevels", "psi_long", "psi_legend", "psi_plot", "volcano_plot")))) finish()
+    "low_support_report", "none_message", "find_rmats_dir", "read_inclevels", "psi_long", "read_bamlist", "group_samples", "psi_legend", "psi_plot", "volcano_plot")))) finish()
 if (!check("03 defines its functions", need_fun(E3, c("sig_flag", "split_counts", "direction_wording", "nearest_events", "top_events",
     "none_message", "suppa_event_type", "suppa_group", "volcano_plot")))) finish()
 txt_of <- function(rmd) paste(rmd, collapse = "\n")
@@ -108,14 +108,37 @@ check("read_inclevels returns the comma lists of IncLevel1 and IncLevel2 of SE:3
 SYNTHETIC_sheet <- data.frame(sample = c("S_B", "S_A", "C_B", "C_A"), condition = c("GBR", "GBR", "YRI", "YRI"), stringsAsFactors = FALSE)
 pl <- E2$psi_long(inc, SYNTHETIC_sheet, "GBR", "YRI")
 p3 <- pl[pl$feature_id == "SE:3", ]
-check("psi_long: the first IncLevel1 value belongs to the FIRST treatment sample of the sheet (S_B), not to the first by name",
+check("psi_long: without bamlists the first IncLevel1 value goes to the FIRST treatment sample of the sheet (S_B), not to the first by name",
       p3$sample[1] == "S_B" && isTRUE(all.equal(p3$psi[1], 0.771)) && p3$sample[2] == "S_A")
-check("psi_long: samples come in the order of the sheet (S_B S_A C_B C_A)", identical(as.character(p3$sample), c("S_B", "S_A", "C_B", "C_A")))
+check("psi_long: without bamlists the samples come in the order of the sheet (S_B S_A C_B C_A)", identical(as.character(p3$sample), c("S_B", "S_A", "C_B", "C_A")))
 check("psi_long: IncLevel1 samples have the role treatment and the condition GBR, IncLevel2 samples control and YRI",
       identical(as.character(p3$role), c("treatment", "treatment", "control", "control")) && identical(as.character(p3$condition), c("GBR", "GBR", "YRI", "YRI")))
 check("psi_long stops when the sheet has another number of samples than the IncLevel list",
       grepl("samples", tryCatch({ E2$psi_long(inc, SYNTHETIC_sheet[-1, ], "GBR", "YRI"); "" }, error = function(e) conditionMessage(e)), fixed = TRUE))
 check("psi_legend names the treatment first and the control second", identical(E2$psi_legend("GBR", "YRI"), c("treatment (GBR)", "control (YRI)")))
+# sample order from rMATS's own sample lists (star/rmats/bamlist/{condition}_bamlist.txt), in an order that differs from the sheet
+syn_out <- file.path(work, "syn_out"); dir.create(file.path(syn_out, "star/rmats/bamlist"), recursive = TRUE)
+writeLines("S_A_sorted.bam,S_B_sorted.bam", file.path(syn_out, "star/rmats/bamlist/GBR_bamlist.txt"))
+writeLines("C_A_sorted.bam,C_B_sorted.bam", file.path(syn_out, "star/rmats/bamlist/YRI_bamlist.txt"))
+check("read_bamlist strips the suffix _sorted.bam and keeps the order of the file", identical(E2$read_bamlist(syn_out, "GBR"), c("S_A", "S_B")))
+check("read_bamlist reads the real bamlist of the fixtures", identical(E2$read_bamlist(rt, "GBR"), c("ERR188383_chrX", "ERR188428_chrX")) && identical(E2$read_bamlist(rt, "YRI"), c("ERR188454_chrX", "ERR204916_chrX")))
+check("read_bamlist gives NULL when the file is absent", is.null(E2$read_bamlist(syn_out, "ABSENT")))
+inc_syn <- data.frame(feature_id = "SE:1", IncLevel1 = "0.1,0.2", IncLevel2 = "0.3,0.4", stringsAsFactors = FALSE)
+pb <- E2$psi_long(inc_syn, SYNTHETIC_sheet, "GBR", "YRI", E2$read_bamlist(syn_out, "GBR"), E2$read_bamlist(syn_out, "YRI"))
+pv <- stats::setNames(pb$psi, pb$sample)
+check("psi_long with the bamlists: each value lands on its own sample (S_A 0.1, S_B 0.2, C_A 0.3, C_B 0.4)",
+      isTRUE(all.equal(pv[["S_A"]], 0.1)) && isTRUE(all.equal(pv[["S_B"]], 0.2)) && isTRUE(all.equal(pv[["C_A"]], 0.3)) && isTRUE(all.equal(pv[["C_B"]], 0.4)))
+check("psi_long with the bamlists: the order is that of the bamlists, not of the sheet (S_A S_B C_A C_B)", identical(as.character(pb$sample), c("S_A", "S_B", "C_A", "C_B")))
+check("psi_long with the bamlists: IncLevel1 samples are the treatment and IncLevel2 samples the control, and no warning",
+      identical(as.character(pb$role), c("treatment", "treatment", "control", "control")) && all(pb$role[pb$sample %in% c("S_A", "S_B")] == "treatment") && all(pb$condition[pb$sample %in% c("C_A", "C_B")] == "YRI") && length(attr(pb, "order_warnings")) == 0)
+pw <- E2$psi_long(inc_syn, SYNTHETIC_sheet, "GBR", "YRI")
+check("psi_long without a bamlist falls back to the sheet order and warns once for each group",
+      identical(as.character(pw$sample), c("S_B", "S_A", "C_B", "C_A")) && length(attr(pw, "order_warnings")) == 2 &&
+      all(grepl("WARNING: no rMATS sample list found for", attr(pw, "order_warnings"), fixed = TRUE)))
+px <- E2$psi_long(inc_syn, SYNTHETIC_sheet, "GBR", "YRI", c("X1", "X2"), E2$read_bamlist(syn_out, "YRI"))
+check("psi_long with a bamlist whose names are not the samples of the sheet falls back and warns, naming the names",
+      identical(as.character(px$sample[1:2]), c("S_B", "S_A")) && length(attr(px, "order_warnings")) == 1 &&
+      grepl("WARNING: the names of the rMATS sample list of GBR (X1, X2)", attr(px, "order_warnings"), fixed = TRUE))
 lab <- data.frame(feature_id = c("SE:3", "SE:5"), gene_symbol = c("VAMP7", "TMLHE"), stringsAsFactors = FALSE)
 pp <- E2$psi_plot(pl, lab, "GBR", "YRI", "GBR_vs_YRI")
 check("psi_plot: the legend levels are treatment (GBR) then control (YRI)", identical(levels(pp$data$role), c("treatment (GBR)", "control (YRI)")))
@@ -195,6 +218,7 @@ if (ok2) {
         all(sapply(TYPES, function(ty) nonempty(file.path(rd10, "figures", sprintf("%s.rmats.volcano.%s.png", C, ty))))) &&
         nonempty(file.path(rd10, "figures", paste0(C, ".rmats.psi_top.png"))))
   check("02 says the rMATS statistics are unpaired for this run", has(h, "unpaired statistics"))
+  check("02 takes the PSI sample order from the rMATS sample lists of the run and prints no warning", has(h, "sample lists rMATS was started with") && !has(h, "WARNING"))
 }
 ok3 <- render(rd10, "03_suppa.Rmd")
 check("03_suppa.Rmd renders on the fixtures with the default thresholds", ok3 && file.exists(file.path(rd10, "03_suppa.html")))
@@ -285,4 +309,16 @@ check("02 and 03 render with events and topgene switched off", oko2 && oko3)
 check("with events and topgene off no volcano, no PSI plot, no top plot and no significant table is written",
       length(list.files(file.path(rdo, "figures"), pattern = "volcano|psi_top|\\.top\\.")) == 0 && length(list.files(file.path(rdo, "tables"), pattern = "significant")) == 0)
 check("02 says the events section is switched off", oko2 && has(html_of(rdo, "02_rmats.html"), "switched off"))
+
+# --- 5. an output directory without the rMATS sample lists: the report falls back to the sheet order and prints the warning
+fb_out <- file.path(work, "fb_out"); dir.create(file.path(fb_out, "star/rmats/GBR_vs_YRI"), recursive = TRUE)
+file.copy(list.files(file.path(rt, "star/rmats/GBR_vs_YRI"), pattern = "MATS.JC.txt$", full.names = TRUE), file.path(fb_out, "star/rmats/GBR_vs_YRI"))
+rdf <- new_dir("rd_fallback"); dir.create(file.path(rdf, "rds")); file.copy(list.files(file.path(rd0, "rds"), full.names = TRUE), file.path(rdf, "rds"))
+okf <- render(rdf, "02_rmats.Rmd", outdir = fb_out, min_reads = 0)
+check("02 renders when the run has no rMATS sample lists", okf)
+if (okf) {
+  h <- html_of(rdf, "02_rmats.html")
+  check("02 prints the warning that the order of the sample sheet is used, for the treatment and the control",
+        has(h, "WARNING: no rMATS sample list found for GBR") && has(h, "WARNING: no rMATS sample list found for YRI") && nonempty(file.path(rdf, "figures", paste0(C, ".rmats.psi_top.png"))))
+}
 finish()

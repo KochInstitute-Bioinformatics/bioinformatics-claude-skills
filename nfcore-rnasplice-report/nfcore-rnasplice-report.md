@@ -784,7 +784,7 @@ for (qc in results) {
 ```
 ````
 
-The rMATS report `02_rmats.Rmd` reads `rds/{CONTRAST}.rmats.rds` (written by `01_import.Rmd`) for every contrast and writes, per contrast, `tables/{CONTRAST}.rmats.counts.csv`, `tables/{CONTRAST}.rmats.{type}.significant.csv`, `figures/{CONTRAST}.rmats.volcano.{type}.png`, `figures/{CONTRAST}.rmats.effect_hist.png` and `figures/{CONTRAST}.rmats.psi_top.png` (`type` is one of `SE`, `A5SS`, `A3SS`, `MXE`, `RI`). An event is significant when its adjusted p-value is below `{FDR}`, its absolute dPSI is at least `{DPSI}`, and it is not flagged `low_support`. The per-sample PSI of the top events is not in the RDS; the report reads `IncLevel1` and `IncLevel2` again from the rMATS table of the same directory the import used (the contrast's own, or the one with the suffix `_paired`). A contrast whose RDS is missing is reported as missing and the report still renders.
+The rMATS report `02_rmats.Rmd` reads `rds/{CONTRAST}.rmats.rds` (written by `01_import.Rmd`) for every contrast and writes, per contrast, `tables/{CONTRAST}.rmats.counts.csv`, `tables/{CONTRAST}.rmats.{type}.significant.csv`, `figures/{CONTRAST}.rmats.volcano.{type}.png`, `figures/{CONTRAST}.rmats.effect_hist.png` and `figures/{CONTRAST}.rmats.psi_top.png` (`type` is one of `SE`, `A5SS`, `A3SS`, `MXE`, `RI`). An event is significant when its adjusted p-value is below `{FDR}`, its absolute dPSI is at least `{DPSI}`, and it is not flagged `low_support`. The per-sample PSI of the top events is not in the RDS; the report reads `IncLevel1` and `IncLevel2` again from the rMATS table of the same directory the import used (the contrast's own, or the one with the suffix `_paired`). The sample order of the two lists is that of rMATS's own sample lists, `star/rmats/bamlist/{CONDITION}_bamlist.txt` (treatment is group 1, control group 2); when a list is missing or its names are not the samples of the sample sheet, the report uses the order of the sample sheet and prints a warning. A contrast whose RDS is missing is reported as missing and the report still renders.
 
 **File `02_rmats.Rmd`.**
 ````rmd
@@ -942,20 +942,46 @@ read_inclevels <- function(dir, feature_ids, rmats_type) {
 }
 
 psi_values <- function(x) suppressWarnings(as.numeric(strsplit(x, ",", fixed = TRUE)[[1]]))
-# one row per event and sample. IncLevel1 lists the samples of group 1 (the treatment), IncLevel2 those of group 2 (the control),
-# each in the order of the sample sheet
-psi_long <- function(inc, ss, treatment, control) {
-  s1 <- ss$sample[ss$condition == treatment]
-  s2 <- ss$sample[ss$condition == control]
+# rMATS lists its samples in the sample lists it was started with: star/rmats/bamlist/{condition}_bamlist.txt, BAM names separated by
+# commas (the sample name followed by _sorted.bam). IncLevel1 and the counts of group 1 follow the list of the treatment (b1),
+# IncLevel2 the list of the control (b2). The order of the sample sheet is not guaranteed to be the same.
+read_bamlist <- function(outdir, condition) {
+  f <- file.path(outdir, "star", "rmats", "bamlist", paste0(condition, "_bamlist.txt"))
+  if (!file.exists(f)) return(NULL)
+  x <- trimws(unlist(strsplit(readLines(f, warn = FALSE), ",", fixed = TRUE)))
+  sub("(_sorted)?\\.bam$", "", basename(x[nzchar(x)]))
+}
+# the samples of a group in the order of its sample list; without a list, or when its names are not the sample names of the group
+# in the sample sheet, the order of the sample sheet with a warning
+group_samples <- function(ss, condition, bamlist) {
+  sheet <- unique(ss$sample[ss$condition == condition])
+  if (is.null(bamlist))
+    return(list(samples = sheet, from = "sample sheet",
+                warning = paste0("WARNING: no rMATS sample list found for ", condition, ": the order of the sample sheet is used, which may differ from the order in IncLevel1 and IncLevel2")))
+  if (anyDuplicated(bamlist) || !setequal(bamlist, sheet))
+    return(list(samples = sheet, from = "sample sheet",
+                warning = paste0("WARNING: the names of the rMATS sample list of ", condition, " (", paste(bamlist, collapse = ", "),
+                                 ") are not the samples of this condition in the sample sheet: the order of the sample sheet is used, which may differ from the order in IncLevel1 and IncLevel2")))
+  list(samples = bamlist, from = "rMATS sample list", warning = NULL)
+}
+# one row per event and sample. IncLevel1 lists the samples of group 1 (the treatment), IncLevel2 those of group 2 (the control)
+psi_long <- function(inc, ss, treatment, control, bam_treatment = NULL, bam_control = NULL) {
+  g1 <- group_samples(ss, treatment, bam_treatment)
+  g2 <- group_samples(ss, control, bam_control)
+  s1 <- g1$samples
+  s2 <- g2$samples
   rows <- lapply(seq_len(nrow(inc)), function(i) {
     v1 <- psi_values(inc$IncLevel1[i]); v2 <- psi_values(inc$IncLevel2[i])
     if (length(v1) != length(s1) || length(v2) != length(s2))
-      stop("event ", inc$feature_id[i], ": IncLevel1 and IncLevel2 list ", length(v1), " and ", length(v2), " samples, the sample sheet has ",
+      stop("event ", inc$feature_id[i], ": IncLevel1 and IncLevel2 list ", length(v1), " and ", length(v2), " samples, the sample order has ",
            length(s1), " samples of ", treatment, " and ", length(s2), " samples of ", control)
     data.frame(feature_id = inc$feature_id[i], sample = c(s1, s2), condition = rep(c(treatment, control), c(length(s1), length(s2))),
                role = rep(c("treatment", "control"), c(length(s1), length(s2))), psi = c(v1, v2), stringsAsFactors = FALSE)
   })
-  do.call(rbind, rows)
+  res <- do.call(rbind, rows)
+  attr(res, "order_from") <- c(treatment = g1$from, control = g2$from)
+  attr(res, "order_warnings") <- c(g1$warning, g2$warning)
+  res
 }
 psi_legend <- function(treatment, control) c(paste0("treatment (", treatment, ")"), paste0("control (", control, ")"))
 psi_plot <- function(long, labels, treatment, control, contrast) {
@@ -966,7 +992,7 @@ psi_plot <- function(long, labels, treatment, control, contrast) {
   ggplot(long, aes(x = sample, y = psi, colour = role)) + geom_point(size = 2.5) +
     facet_wrap(~event, ncol = 3) +
     scale_colour_manual(values = c("#D55E00", "#0072B2"), name = "condition") +
-    labs(title = paste0("Per-sample PSI of the top rMATS events, ", contrast), x = "sample (order of the sample sheet)", y = "PSI (IncLevel)") +
+    labs(title = paste0("Per-sample PSI of the top rMATS events, ", contrast), x = "sample", y = "PSI (IncLevel)") +
     theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
 }
 
@@ -1090,11 +1116,15 @@ for (i in seq_len(nrow(contrasts))) {
       cat("No rMATS table of type ", params$rmats_type, " was found for this contrast: no PSI plot.\n\n", sep = "")
     } else {
       inc <- read_inclevels(rdir, top$feature_id, params$rmats_type)
+      bam_t <- read_bamlist(params$outdir, Tr); bam_c <- read_bamlist(params$outdir, Co)
+      psi <- psi_long(inc, ss, Tr, Co, bam_t, bam_c)
       cat("The six events that are significant, or nearest to significance when fewer than six are (events flagged low_support are left out). ",
           "IncLevel1 holds the samples of the treatment `", Tr, "` and IncLevel2 those of the control `", Co,
-          "`, read again from the tables in `", rdir, "`; the samples are in the order of the sample sheet.\n\n", sep = "")
+          "`, read again from the tables in `", rdir, "`. The samples are in the order of the sample lists rMATS was started with (`star/rmats/bamlist/",
+          Tr, "_bamlist.txt` and `", Co, "_bamlist.txt`).\n\n", sep = "")
+      for (w in attr(psi, "order_warnings")) cat("**", w, "**\n\n", sep = "")
       pf <- file.path(fig_dir, paste0(C, ".rmats.psi_top.png"))
-      save_plot(psi_plot(psi_long(inc, ss, Tr, Co), top[, c("feature_id", "gene_symbol")], Tr, Co, C), pf, width = 9, height = 6)
+      save_plot(psi_plot(psi, top[, c("feature_id", "gene_symbol")], Tr, Co, C), pf, width = 9, height = 6)
       show_image(pf, paste0("Per-sample PSI of the top events, ", C))
     }
   }
