@@ -126,8 +126,6 @@ S3-need-25	check	skill	s|\| `run_04\.sbatch` \| `04_usage\.Rmd` (DEXSeq and edge
 S3-need-26	check	skill	s|\| `run_05\.sbatch` \| `05_cross_tool\.Rmd` \| `cross` in `{SECTIONS}` and two or more tools in `{MODULES}` \||REMOVED|g	missing required text: | `run_05.sbatch` | `05_cross_tool.Rmd` | `cross` in `{SECTIONS}` and two or more tools in `{MODULES}` |
 S3-need-27	check	skill	s|\| `run_06\.sbatch` \| `06_enrichment\.Rmd` \| `enrich` in `{SECTIONS}` \||REMOVED|g	missing required text: | `run_06.sbatch` | `06_enrichment.Rmd` | `enrich` in `{SECTIONS}` |
 S3-need-28	check	skill	s|\| `run_07\.sbatch` \| `07_summary\.Rmd` (always last) \| always \||REMOVED|g	missing required text: | `run_07.sbatch` | `07_summary.Rmd` (always last) | always |
-S3-need-29	check	skill	s|Jobs 02 to 06 start when job 01 has finished successfully (`dependency=afterok`)|REMOVED|g	missing required text: Jobs 02 to 06 start when job 01 has finished successfully (`dependency=afterok`)
-S3-need-30	check	skill	s|job 07 starts when all the others have finished successfully|REMOVED|g	missing required text: job 07 starts when all the others have finished successfully
 S3-need-31	check	skill	s|\*\*SLURM scripts\.\*\*|REMOVED|g	missing required text: **SLURM scripts.**
 S3-need-32	check	skill	s|case "\$R" in \*/results/\*) ;; \*) fail "report directory \$R is not under a results/ directory" ;; esac|REMOVED|g	missing required text: case "$R" in */results/*) ;; *) fail "report directory $R is not under a results/ directory" ;; esac
 S3-need-33	check	skill	s|is inside the pipeline output \$OUT|REMOVED|g	missing required text: is inside the pipeline output $OUT
@@ -143,7 +141,6 @@ S3-need-42	check	skill	s|events = \$EV, cross = \$CR, topgene = \$TG, enrich = \
 S3-need-43	check	skill	s|if sec cross && \[ \$ntools -ge 2 \]; then JOBS="\$JOBS 05:05_cross_tool\.Rmd"; fi|REMOVED|g	missing required text: if sec cross && [ $ntools -ge 2 ]; then JOBS="$JOBS 05:05_cross_tool.Rmd"; fi
 S3-need-44	check	skill	s|if sec enrich; then JOBS="\$JOBS 06:06_enrichment\.Rmd"; fi|REMOVED|g	missing required text: if sec enrich; then JOBS="$JOBS 06:06_enrichment.Rmd"; fi
 S3-need-45	check	skill	s|JOBS="\$JOBS 07:07_summary\.Rmd"|REMOVED|g	missing required text: JOBS="$JOBS 07:07_summary.Rmd"
-S3-need-46	check	skill	s|JOB\$n=\\\$(sbatch --parsable --dependency=afterok:\$DEP run_\$n\.sbatch) \|\| exit 1|REMOVED|g	missing required text: JOB$n=\$(sbatch --parsable --dependency=afterok:$DEP run_$n.sbatch) || exit 1
 S3-need-47	check	skill	s|`run_all\.sh`, which only calls sbatch|REMOVED|g	missing required text: `run_all.sh`, which only calls sbatch
 S3-need-48	check	skill	s|echo "SUBMIT=bash \$R/run_all\.sh"|REMOVED|g	missing required text: echo "SUBMIT=bash $R/run_all.sh"
 S3-need-49	check	skill	s|\*\*Final instructions\.\*\*|REMOVED|g	missing required text: **Final instructions.**
@@ -158,10 +155,22 @@ S3-literal-time-high	check	skill	s|^#SBATCH -t 1:00:00$|#SBATCH -t 5:00:00|	a li
 S3-literal-time-days	check	skill	s|^#SBATCH -t 1:00:00$|#SBATCH -t 1-00:00:00|	a literal time request above 4:00:00
 S3-submit-two	check	skill	s|^  bash {REPORT_DIR}/run_all.sh$|  bash {REPORT_DIR}/run_all.sh\n  sbatch {REPORT_DIR}/run_01.sbatch|	the final instructions must print exactly one submit command
 S3-submit-none	check	skill	s|^  bash {REPORT_DIR}/run_all.sh$|  run the scripts|	the final instructions must print exactly one submit command
-S3-chain-afterany	check	skill	s|afterok|afterany|g	missing required text: Jobs 02 to 06 start when job 01 has finished successfully (`dependency=afterok`)
 S3-flag-segment-semicolon	check	skill	$s/$/\n```bash\nsbatch x; ls --color\n```/	a --flag appears in prose or outside the allowed commands
 S3-flag-segment-and	check	skill	$s/$/\n```bash\nsbatch x \&\& rm --force y\n```/	a --flag appears in prose or outside the allowed commands
 S3-flag-segment-or	check	skill	$s/$/\n```bash\nsbatch x \|\| ls --color\n```/	a --flag appears in prose or outside the allowed commands
 S3-flag-capture-ls	check	skill	$s/$/\n```bash\njid=$(ls --color)\n```/	a --flag appears in prose or outside the allowed commands
 S3-flag-prose-dependency	check	skill	$s/$/\nJobs wait with --dependency=afterok here./	a --flag appears in prose or outside the allowed commands
 S3-runall-in-tests	check	runall	s| test_render_slurm.sh"|"|	tests/test_render_slurm.sh must be named in exactly one list of run_all_tests.sh
+S3-need-29	check	skill	s|Jobs 02 to 06 start when job 01 has finished successfully (`dependency=afterok`, with the option that cancels them when job 01 fails)|REMOVED|g	missing required text: Jobs 02 to 06 start when job 01 has finished successfully (`dependency=afterok`, with the option that cancels them when job 01 fails)
+S3-need-30	check	skill	s|job 07 starts when jobs 01 to 06 (those that exist) have ended, whatever their outcome (`dependency=afterany`)|REMOVED|g	missing required text: job 07 starts when jobs 01 to 06 (those that exist) have ended, whatever their outcome (`dependency=afterany`)
+S3-need-46	check	skill	s|JOB\$n=\\\$(sbatch --parsable --dependency=afterany:\$ALLDEP run_\$n\.sbatch) \|\| exit 1|REMOVED|g	missing required text: JOB$n=\$(sbatch --parsable --dependency=afterany:$ALLDEP run_$n.sbatch) || exit 1
+S3-need-46b	check	skill	s|JOB\$n=\\\$(sbatch --parsable --dependency=afterok:\\\$JOB01 --kill-on-invalid-dep=yes run_\$n\.sbatch) \|\| exit 1|REMOVED|g	missing required text: JOB$n=\$(sbatch --parsable --dependency=afterok:\$JOB01 --kill-on-invalid-dep=yes run_$n.sbatch) || exit 1
+S3-chain-afterok-for-07	check	skill	s|afterany|afterok|g	missing required text: job 07 starts when jobs 01 to 06 (those that exist) have ended
+S3-chain-no-kill	check	skill	s|--kill-on-invalid-dep=yes|--x|g	missing required text: JOB$n=\$(sbatch --parsable --dependency=afterok:\$JOB01 --kill-on-invalid-dep=yes
+S3-param-1	check	skill	s|    outdir = '\$OUT', report_dir = '\$R',|REMOVED|g	missing required text:     outdir = '$OUT', report_dir = '$R',
+S3-param-2	check	skill	s|    contrasts = '\$CONTRASTS_CSV', samplesheet = '\$SAMPLESHEET',|REMOVED|g	missing required text:     contrasts = '$CONTRASTS_CSV', samplesheet = '$SAMPLESHEET',
+S3-param-3	check	skill	s|    modules = '\$MODULES', rmats_type = '\$RMATS_TYPE',|REMOVED|g	missing required text:     modules = '$MODULES', rmats_type = '$RMATS_TYPE',
+S3-param-4	check	skill	s|    fdr = \$FDR, dpsi = \$DPSI, min_reads = \$MIN_READS,|REMOVED|g	missing required text:     fdr = $FDR, dpsi = $DPSI, min_reads = $MIN_READS,
+S3-param-5	check	skill	s|    organism = '\$ORGANISM', gtf = '\$GTF',|REMOVED|g	missing required text:     organism = '$ORGANISM', gtf = '$GTF',
+S3-param-6	check	skill	s|    enrich_dbs = '\$ENRICH_DBS',|REMOVED|g	missing required text:     enrich_dbs = '$ENRICH_DBS',
+S3-param-7	check	skill	s|    paired_rmats = \$PR, paired_suppa = \$PS))|REMOVED|g	missing required text:     paired_rmats = $PR, paired_suppa = $PS))

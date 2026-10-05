@@ -116,25 +116,48 @@ render ex "dexseq_exon edger_exon" "events cross"
 check "two exon tools count as two tools" "01 04 05 07" "$(jobs_of ex)"
 render none "rmats suppa" ""
 check "no sections: jobs" "01 02 03 07" "$(jobs_of none)"
-# --- run_all.sh: chain with afterok, light only
+# --- run_all.sh: chain (02-06 afterok on 01 and cancelled when 01 fails, 07 afterany on 01-06), light only
 f="$tmp/all/run_all.sh"
 has "run_all: dependency afterok" 'dependency=afterok:' "$f"
 has "run_all: 01 has no dependency" 'JOB01=$(sbatch --parsable run_01.sbatch)' "$f"
-has "run_all: 02 after 01" 'JOB02=$(sbatch --parsable --dependency=afterok:$JOB01 run_02.sbatch)' "$f"
-has "run_all: 06 after 01" 'JOB06=$(sbatch --parsable --dependency=afterok:$JOB01 run_06.sbatch)' "$f"
-has "run_all: summary after all others" 'JOB07=$(sbatch --parsable --dependency=afterok:$JOB02:$JOB03:$JOB04:$JOB05:$JOB06 run_07.sbatch)' "$f"
+has "run_all: 02 after 01" 'JOB02=$(sbatch --parsable --dependency=afterok:$JOB01 --kill-on-invalid-dep=yes run_02.sbatch)' "$f"
+has "run_all: 06 after 01" 'JOB06=$(sbatch --parsable --dependency=afterok:$JOB01 --kill-on-invalid-dep=yes run_06.sbatch)' "$f"
+has "run_all: summary after all others (afterany)" 'JOB07=$(sbatch --parsable --dependency=afterany:$JOB01:$JOB02:$JOB03:$JOB04:$JOB05:$JOB06 run_07.sbatch)' "$f"
+hasnt "run_all: 07 not afterok" 'afterok:$JOB01:' "$f"
 hasnt "run_all: no Rscript" 'Rscript' "$f"
 hasnt "run_all: no singularity" 'singularity' "$f"
 hasnt "run_all: no R" 'rmarkdown' "$f"
 hasnt "ev: run_all has no 05" 'run_05' "$tmp/ev/run_all.sh"
-has "ev: summary after 02 03 04" 'dependency=afterok:$JOB02:$JOB03:$JOB04 run_07.sbatch' "$tmp/ev/run_all.sh"
+has "ev: summary after 01 02 03 04" 'dependency=afterany:$JOB01:$JOB02:$JOB03:$JOB04 run_07.sbatch' "$tmp/ev/run_all.sh"
 bash -n "$f" && ok "run_all: bash -n" || bad "run_all: bash -n"
 # run it against the stub: seven submissions, the ids chained
 STUBLOG="$tmp/stub.log"; : > "$STUBLOG"
 env -i PATH="$tmp/stub:$SYS" STUBLOG="$STUBLOG" /bin/bash --noprofile --norc "$f" > "$tmp/runall.out" 2>&1
 check "run_all against the stub: seven sbatch calls" 7 "$(wc -l < "$STUBLOG")"
-has "stub: 02 depends on the id of 01" 'sbatch --parsable --dependency=afterok:1001 run_02.sbatch' "$STUBLOG"
-has "stub: 07 depends on the ids of 02-06" 'sbatch --parsable --dependency=afterok:1002:1003:1004:1005:1006 run_07.sbatch' "$STUBLOG"
+has "stub: 02 depends on the id of 01" 'sbatch --parsable --dependency=afterok:1001 --kill-on-invalid-dep=yes run_02.sbatch' "$STUBLOG"
+has "stub: 07 depends on the ids of 01-06" 'sbatch --parsable --dependency=afterany:1001:1002:1003:1004:1005:1006 run_07.sbatch' "$STUBLOG"
+# --- only 01 and 07 (no module): 01 has no dependency, 07 waits for 01
+render only "" ""
+check "no modules: exit status" 0 "$(cat "$tmp/only.rc")"
+check "no modules: jobs" "01 07" "$(jobs_of only)"
+has "no modules: 01 without dependency" 'JOB01=$(sbatch --parsable run_01.sbatch)' "$tmp/only/run_all.sh"
+has "no modules: 07 after 01 (afterany)" 'JOB07=$(sbatch --parsable --dependency=afterany:$JOB01 run_07.sbatch)' "$tmp/only/run_all.sh"
+# --- all 18 parameters of the Rmd contract are in the render call of every job
+for p in "outdir = '$tmp/wd/out'" "report_dir = '$tmp/wd/results/2026-10-05_wd_report_all'" "contrasts = '$tmp/wd/contrasts.csv'" \
+  "samplesheet = '$tmp/wd/samples.csv'" "modules = '$ALL'" 'fdr = 0.05' 'dpsi = 0.1' "rmats_type = 'JC'" 'min_reads = 10' \
+  'events = TRUE' 'cross = TRUE' 'topgene = TRUE' 'enrich = TRUE' "organism = 'human'" "enrich_dbs = 'GO KEGG'" \
+  "gtf = '$tmp/wd/genes.gtf'" 'paired_rmats = FALSE' 'paired_suppa = TRUE'; do
+  for n in 01 04 07; do has "param $p in run_$n" "$p" "$tmp/all/run_$n.sbatch"; done
+done
+# --- a missing Rmd stops the generator before anything is written
+render norm "rmats" "events"
+rm -f "$tmp/wd/results/2026-10-05_wd_report_norm/02_rmats.Rmd"
+rm -f "$tmp/wd/results/2026-10-05_wd_report_norm"/run_* "$tmp/norm.out"
+nb=$(printf '%s\n' "$block" | sed -e "s|{REPORT_DIR}|$tmp/wd/results/2026-10-05_wd_report_norm|g" -e "s|{OUTDIR_RNASPLICE}|$tmp/wd/out|g" -e "s|{CWD}|$tmp/wd|g" -e "s|{SIF}|/net/bmc-lab3/s.sif|g" -e "s|{EMAIL}|none|g" -e "s|{PROJECT}|wd|g" -e "s|{MEM}|32G|g" -e "s|{TIME}|4:00:00|g" -e "s|{MODULES}|rmats|g" -e "s|{SECTIONS}|events|g" -e "s|{FDR}|0.05|g" -e "s|{DPSI}|0.1|g" -e "s|{RMATS_TYPE}|JC|g" -e "s|{MIN_READS}|10|g" -e "s|{ORGANISM}|human|g" -e "s|{ENRICH_DBS}|GO|g" -e "s|{GTF}|g.gtf|g" -e "s|{CONTRASTS_CSV}|c.csv|g" -e "s|{SAMPLESHEET}|s.csv|g" -e "s|{PAIRED_RMATS}|false|g" -e "s|{PAIRED_SUPPA}|true|g")
+env -i PATH="$SYS" /bin/bash --noprofile --norc -c "$nb" > "$tmp/norm.out" 2>&1; rc=$?
+check "missing Rmd: exit status" 1 "$rc"
+has "missing Rmd: message" "02_rmats.Rmd does not exist: write the Rmd files first" "$tmp/norm.out"
+check "missing Rmd: no run_* file written" "" "$(ls "$tmp/wd/results/2026-10-05_wd_report_norm" | grep '^run_' | tr '\n' ' ')"
 # --- resources stay within the default limits, and the generated scripts hold only the requested values
 for n in 01 02 03 04 05 06 07; do
   m=$(sed -n 's/^#SBATCH --mem=\([0-9]*\)G$/\1/p' "$tmp/all/run_$n.sbatch"); t=$(sed -n 's/^#SBATCH -t \([0-9]*\):.*/\1/p' "$tmp/all/run_$n.sbatch")

@@ -273,7 +273,7 @@ The Rmd files have fixed names, and there is one job per Rmd that applies:
 | `run_06.sbatch` | `06_enrichment.Rmd` | `enrich` in `{SECTIONS}` |
 | `run_07.sbatch` | `07_summary.Rmd` (always last) | always |
 
-Default: every job that applies. Write the Rmd files that apply to `{REPORT_DIR}`, then generate the job scripts and `run_all.sh`. Jobs 02 to 06 start when job 01 has finished successfully (`dependency=afterok`) and run side by side; job 07 starts when all the others have finished successfully.
+Default: every job that applies. Write the Rmd files that apply to `{REPORT_DIR}`, then generate the job scripts and `run_all.sh`. Jobs 02 to 06 start when job 01 has finished successfully (`dependency=afterok`, with the option that cancels them when job 01 fails) and run side by side; job 07 starts when jobs 01 to 06 (those that exist) have ended, whatever their outcome (`dependency=afterany`), so the summary also lists the reports that failed.
 
 **SLURM scripts.** Paste this block whole into one Bash call, with the placeholders replaced by the literal values of the earlier steps (`{EMAIL}` is `none` when no mail is wanted). It checks the values, refuses a report directory outside `results/` or inside the output of the run, writes one `run_NN.sbatch` per job that applies, and writes `run_all.sh`, which only calls sbatch:
 ```bash
@@ -357,10 +357,15 @@ module add singularity/3.10.4 || exit 1
 cd "$R" || exit 1
 singularity exec --bind $BIND "$SIF" Rscript -e "rmarkdown::render('$R/$2',
   output_dir = '$R', knit_root_dir = '$R',
-  params = list(outdir = '$OUT', report_dir = '$R', contrasts = '$CONTRASTS_CSV', samplesheet = '$SAMPLESHEET',
-    modules = '$MODULES', fdr = $FDR, dpsi = $DPSI, rmats_type = '$RMATS_TYPE', min_reads = $MIN_READS,
-    events = $EV, cross = $CR, topgene = $TG, enrich = $EN, organism = '$ORGANISM', enrich_dbs = '$ENRICH_DBS',
-    gtf = '$GTF', paired_rmats = $PR, paired_suppa = $PS))"
+  params = list(
+    outdir = '$OUT', report_dir = '$R',
+    contrasts = '$CONTRASTS_CSV', samplesheet = '$SAMPLESHEET',
+    modules = '$MODULES', rmats_type = '$RMATS_TYPE',
+    fdr = $FDR, dpsi = $DPSI, min_reads = $MIN_READS,
+    events = $EV, cross = $CR, topgene = $TG, enrich = $EN,
+    organism = '$ORGANISM', gtf = '$GTF',
+    enrich_dbs = '$ENRICH_DBS',
+    paired_rmats = $PR, paired_suppa = $PS))"
 EOF
 }
 cat > "$R/run_all.sh" <<EOF
@@ -373,20 +378,23 @@ for j in $JOBS; do
   n=${j%%:*}; rmd=${j#*:}
   write_job "$n" "$rmd"
   case "$n" in
-    01) DEP="" ;;
-    07) DEP=$ALLDEP ;;
-    *) DEP='$JOB01' ;;
-  esac
-  if [ -z "$DEP" ]; then
-    cat >> "$R/run_all.sh" <<EOF
+    01)
+      cat >> "$R/run_all.sh" <<EOF
 JOB$n=\$(sbatch --parsable run_$n.sbatch) || exit 1
 EOF
-  else
-    cat >> "$R/run_all.sh" <<EOF
-JOB$n=\$(sbatch --parsable --dependency=afterok:$DEP run_$n.sbatch) || exit 1
+      ;;
+    07)
+      cat >> "$R/run_all.sh" <<EOF
+JOB$n=\$(sbatch --parsable --dependency=afterany:$ALLDEP run_$n.sbatch) || exit 1
 EOF
-  fi
-  case "$n" in 01|07) ;; *) ALLDEP="${ALLDEP:+$ALLDEP:}\$JOB$n" ;; esac
+      ;;
+    *)
+      cat >> "$R/run_all.sh" <<EOF
+JOB$n=\$(sbatch --parsable --dependency=afterok:\$JOB01 --kill-on-invalid-dep=yes run_$n.sbatch) || exit 1
+EOF
+      ;;
+  esac
+  case "$n" in 07) ;; *) ALLDEP="${ALLDEP:+$ALLDEP:}\$JOB$n" ;; esac
   ALLJ="$ALLJ \$JOB$n"; NUMS="$NUMS $n"
 done
 cat >> "$R/run_all.sh" <<EOF
