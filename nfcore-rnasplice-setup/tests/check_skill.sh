@@ -12,7 +12,7 @@ HERE=$(cd "$(dirname "$0")" && pwd); FIX="$HERE/fixtures"; CUT="$HERE/cut_block.
 README="$(dirname "$SKILL")/README.md"
 fail=0
 [ -s "$SKILL" ] || { echo "FAIL: skill file missing or empty: $SKILL"; exit 1; }
-for f in rnasplice_schema.json config_params.txt gate_values.tsv trace_process_names.txt trace_resources_g3.tsv output_tree.txt test_samplesheet.csv test_contrastsheet.csv schema_input.json schema_input_genome_bam.json; do
+for f in rnasplice_schema.json config_params.txt gate_values.tsv trace_process_names.txt trace_resources_g3.tsv output_tree.txt test_samplesheet.csv test_contrastsheet.csv schema_input.json schema_input_genome_bam.json modules.config realdata_star_align_args.txt realdata_resource_table.txt; do
   [ -s "$FIX/$f" ] || { echo "cannot read fixture $FIX/$f"; exit 2; }
 done
 GATE_KEYS="GATE_OUTCOME PIPELINE_REVISION VERSION_TAG NEXTFLOW_TESTED NEXTFLOW_MIN NEXTFLOW_MAX_EXCL CONDA_ENV_TESTED HAS_MAX_PARAMS HAS_RESOURCE_LIMITS SALMON_ROUTE PSEUDO_OFF_LINE BAM_SHEET_HEADER BAM_RMATS_LIBTYPE BAM_RMATS_READTYPE BAM_DEXSEQ_STRAND BAM_FC_STRAND BAM_NEEDS_BAI RMATS_BAMLIST_ORDER RMATS_B1_GROUP STAR_VERSION_GENOME SALMON_INDEX_VERSION DTU_FILTER_SCOPE TEST_CONTRAST TEST_READ_LENGTH EDGER_DEU_FUNCTION"
@@ -94,6 +94,8 @@ echo "$config_kv" | grep -q "^rmats	" || { echo "config extraction broken: rmats
 
 # (a) no pipeline parameter as a --flag anywhere; only allowlisted tool flags (never a schema name)
 allow="mail-type mail-user mem dependency parsable variable-read-length allow-clipping"
+# STAR options of the STAR_ALIGN ext.args override (Step 10) and its explanation (copied from the pinned conf/modules.config)
+allow="$allow quantMode quantTranscriptomeSAMoutput twopassMode outSAMtype readFilesCommand runRNGseed outFilterMultimapNmax alignSJDBoverhangMin outSAMattributes outSAMattrRGline outReadsUnmapped"
 for a in $allow; do ! echo "$schema_names" | grep -qx -- "$a" || { echo "allowlist contains a pipeline parameter: $a"; exit 2; }; done
 for flag in $(grep -oE '(^|[^A-Za-z0-9_-])--[A-Za-z_][A-Za-z_0-9-]*' "$SKILL" | sed -E 's/^[^-]*--//' | sort -u); do
   echo "$allow" | tr ' ' '\n' | grep -qx -- "$flag" || { echo "FAIL: --$flag is not an allowlisted tool flag (pipeline parameters go in the params file, never as --flags)"; fail=1; }
@@ -188,7 +190,7 @@ case "$(gv BAM_SHEET_HEADER)" in *,strandedness,single_end*)
 # Task 2 review fixes (I1-I3, minors)
 need "*reverse* = read 1 comes from the strand opposite to the transcript"
 need "*forward* = read 1 comes from the transcript strand"
-need "do not continue until they answer 1, 2 or 3"
+need "ask the user to check the kit; do not continue until they answer 1, 2 or 3"  # RSeQC bullet (the Salmon rules repeat the second half)
 need "so Step 8 switches them off"
 need "if the directory mixes paired-end and single-end files, stop"
 need "\`_R1.\`/\`_R2.\`"
@@ -344,7 +346,8 @@ need "(BAM input uses no index: skip this part; \`{STAR_INDEX}\` is empty.)"
 need "FASTA, GTF and the STAR index are reused"
 need "not used: rnasplice always builds its own Salmon index"
 need "SALMON_INDEX: 6 CPUs, 36 GB and 8 h"
-need "likely takes more than an hour (not measured by this skill's verification)"
+forbid "likely takes more than an hour (not measured by this skill's verification)"
+need "in the real-data test (human, Ensembl 116) it took 33 min with a peak of 19.8 GB (a mouse genome was not measured)"
 forbid "{SALMON_DIR}"
 forbid "versionInfo.json"
 forbid "indexVersion"
@@ -367,7 +370,9 @@ forbid "warn before asking"
 need "\`miso_read_len\` belongs to the MISO sashimi plots"
 forbid "rnasplice has no other read-length setting"
 need "copies a given STAR index into its \`work/\` directory before aligning (about 30 GB for a human index, for every run)"
-need "did not exercise the reuse path (unverified)"
+forbid "did not exercise the reuse path (unverified)"
+need "The real-data test exercised the reuse path with a human index from /nfcore-rnaseq-setup (\`versionGenome\` 2.7.4a, \`sjdbOverhang\` 93): the pipeline copied the 28.5 GB index into \`work/\` in about 1 minute (process STAR_GENOMEPARAMS_UPGRADE), and 88.5-92.7% of the reads of each sample mapped uniquely."
+need "STAR_GENOMEGENERATE needs about 32 GB of memory and an hour or more (not measured by this skill: the real-data test reused an index)"
 # --- end Task 4 review fixes
 
 # --- Task 5 (Steps 8-9): module block
@@ -573,23 +578,41 @@ printf '%s\n' "$SUB" | grep -qxF "NF_MIN=\"$(gv NEXTFLOW_MIN)\"; NF_MAX_EXCL=\"$
 printf '%s\n' "$SUB" | grep -qxF '#SBATCH -n 2' && printf '%s\n' "$SUB" | grep -qxF '#SBATCH --mem=8G' && printf '%s\n' "$SUB" | grep -qxF '#SBATCH -p bcc' \
   || { echo "FAIL: the head job must request -n 2, --mem=8G and -p bcc (the head job only coordinates the pipeline)"; fail=1; }
 # nextflow.config: the selector table checked against every process name of the verification runs and the
-# resources the reference run (G3) requested. A row gives '.*:ROW' when every real process name ending in a component that starts
-# with ROW ends in exactly ROW, and '.*:ROW.*' otherwise (Salmon: SALMON_QUANT_SALMON, SALMON_QUANT_STAR); rows that match no
-# process are left out. Nextflow matches withName regexes against the whole process name (grep -Ex here).
+# resources the runs requested and used. A row gives '.*:ROW' when every real process name ending in a component that starts
+# with ROW ends in exactly ROW; '.*:ROW[XY]' when every such component is ROW plus one letter (SUPPA2: DIFFSPLICE_IOE,
+# DIFFSPLICE_IOI); and '.*:ROW.*' otherwise (Salmon: SALMON_QUANT_SALMON, SALMON_QUANT_STAR); rows that match no process are
+# left out. Nextflow matches withName regexes against the whole process name (grep -Ex here).
+# The fifth column of SEL_ROWS is the evidence of the row's values:
+#   gate      unchanged since the verification gate: every process it matches requested exactly these values in the reference
+#             run G3 (trace_resources_g3.tsv) and in the real-data test (realdata_resource_table.txt), so it was applied as written;
+#   realdata  set from the real-data test (2026-10-02, one human dataset, 6 samples; not yet applied in a run): every process it
+#             matches ran in that test, and its observed peak memory and longest run time are below the requested values.
+# Both kinds must cover the real-data observations (peak_rss < memory, realtime < time); the one exception is the DEXSEQ_EXON
+# peak_rss of 187 GB, which counts forked BiocParallel workers separately (the task was not killed at 32 GB; sstat 8.4 GB).
 CFG=$(bash "$CUT" "$SKILL" "**nextflow.config template.**" 2>/dev/null)
 [ -n "$CFG" ] || { echo "FAIL: nextflow.config template not found"; fail=1; }
-SEL_ROWS="STAR_GENOMEGENERATE	8	64 GB	8h
-STAR_ALIGN	8	48 GB	8h
-RMATS_PREP	4	16 GB	8h
-RMATS_POST	8	32 GB	16h
-DEXSEQ_COUNT	2	8 GB	8h
-DEXSEQ_EXON	8	32 GB	8h
-DEXSEQ_DTU	8	32 GB	8h
-SALMON_QUANT	8	36 GB	8h"
+# The resource selectors live in the slurm profile (CFGS); the only other withName block is the STAR_ALIGN ext.args override
+# of the top-level process block (checked in the real-data fix round section below).
+CFGS=$(printf '%s\n' "$CFG" | awk '/^    slurm \{$/ {s = 1} s {print} s && /^    \}$/ {exit}')
+SEL_ROWS="STAR_GENOMEGENERATE	8	64 GB	8h	gate
+STAR_ALIGN	8	48 GB	4h	realdata
+RMATS_PREP	2	8 GB	4h	realdata
+RMATS_POST	8	16 GB	8h	realdata
+DEXSEQ_COUNT	1	4 GB	8h	realdata
+DEXSEQ_EXON	8	32 GB	8h	gate
+DEXSEQ_DTU	8	16 GB	4h	realdata
+SALMON_QUANT	8	32 GB	4h	realdata
+DIFFSPLICE_IO	1	8 GB	16h	realdata
+MAKE_TRANSCRIPTS_FASTA	2	8 GB	2h	realdata"
+RD_OBS="$FIX/realdata_resource_table.txt"
+# realdata_resource_table.txt (copy of the real-data test's evidence/resource_table.txt): process n cpus memGB timeh peakGB mem%
+# maxmin time% meancpu maxcpu att, one row per short process name, plus its header row.
+[ "$(awk 'NF == 12 && $1 != "process" && $2 ~ /^[0-9]+$/ && $6 ~ /^[0-9.]+$/ && $8 ~ /^[0-9.]+$/' "$RD_OBS" | wc -l)" -ge 35 ] \
+  || { echo "fixture realdata_resource_table.txt broken (process n cpus memGB timeh peakGB mem% maxmin time% meancpu maxcpu att)"; exit 2; }
 NAMES="$FIX/trace_process_names.txt"; OBS="$FIX/trace_resources_g3.tsv"
 [ "$(wc -l < "$NAMES")" -eq 75 ] || { echo "fixture trace_process_names.txt must hold the 75 process names of the verification runs"; exit 2; }
 # selector<TAB>cpus<TAB>memory<TAB>time for each withName block of the template
-sels=$(printf '%s\n' "$CFG" | awk -v q="'" '
+sels=$(printf '%s\n' "$CFGS" | awk -v q="'" '
   $0 ~ "^[ \t]*withName: " q "[^" q "]+" q " [{]$" { s = $0; sub("^[ \t]*withName: " q, "", s); sub(q " [{]$", "", s); c = m = t = ""; next }
   s != "" && /^[ \t]*cpus = [0-9]+$/ { c = $3 }
   s != "" && $0 ~ "^[ \t]*memory = " q { m = $0; sub("^[ \t]*memory = " q, "", m); sub(q "$", "", m) }
@@ -598,9 +621,9 @@ sels=$(printf '%s\n' "$CFG" | awk -v q="'" '
 [ -n "$sels" ] || { echo "FAIL: no withName selectors in the nextflow.config template"; fail=1; }
 while IFS=$'\t' read -r re c m t; do
   [ -n "$re" ] || continue
-  row=$(printf '%s\n' "$re" | sed -nE 's/^\.\*:([A-Z0-9_]+)(\.\*)?$/\1/p')
+  row=$(printf '%s\n' "$re" | sed -nE 's/^\.\*:([A-Z0-9_]+)(\.\*|\[[A-Z]+\])?$/\1/p')
   rres=$(printf '%s\n' "$SEL_ROWS" | awk -F'\t' -v r="$row" '$1 == r {print $2 "\t" $3 "\t" $4}')
-  [ -n "$row" ] && [ -n "$rres" ] || { echo "FAIL: selector $re is not a row of the selector table ('.*:ROW' or '.*:ROW.*')"; fail=1; continue; }
+  [ -n "$row" ] && [ -n "$rres" ] || { echo "FAIL: selector $re is not a row of the selector table ('.*:ROW', '.*:ROW[XY]' or '.*:ROW.*')"; fail=1; continue; }
   [ "$c	$m	$t" = "$rres" ] || { echo "FAIL: selector $re requests $c CPUs, $m, $t; the selector table says $(echo "$rres" | tr '\t' ' ')"; fail=1; }
   hits=$(grep -Ex -- "$re" "$NAMES")
   [ -n "$hits" ] || { echo "FAIL: selector $re matches no process of the verification runs ($(wc -l < "$NAMES") names)"; fail=1; continue; }
@@ -608,10 +631,12 @@ while IFS=$'\t' read -r re c m t; do
     case "${h##*:}" in "$row"*) ;; *) echo "FAIL: selector $re also matches $h, which is not a $row process"; fail=1 ;; esac
   done <<< "$hits"
 done <<< "$sels"
-while IFS=$'\t' read -r row c m t; do
+while IFS=$'\t' read -r row c m t ev; do
   comps=$(sed 's/.*://' "$NAMES" | grep -E "^$row" | sort -u)
   [ -n "$comps" ] || continue
-  if [ "$(printf '%s\n' "$comps" | grep -vx -- "$row")" = "" ]; then want=".*:$row"; else want=".*:$row.*"; fi
+  if [ "$(printf '%s\n' "$comps" | grep -vx -- "$row")" = "" ]; then want=".*:$row"
+  elif [ "$(printf '%s\n' "$comps" | grep -vxE -- "$row[A-Z]")" = "" ]; then want=".*:$row[$(printf '%s\n' "$comps" | sed "s/^$row//" | sort | tr -d '\n')]"
+  else want=".*:$row.*"; fi
   printf '%s\n' "$sels" | cut -f1 | grep -qxF -- "$want" \
     || { echo "FAIL: process $(echo $comps | tr ' ' ',') ran in the verification runs but has no withName selector '$want'"; fail=1; }
   while IFS= read -r n; do
@@ -619,22 +644,44 @@ while IFS=$'\t' read -r row c m t; do
     [ "$k" -eq 1 ] || { echo "FAIL: process $n is matched by $k withName selectors (expected exactly 1)"; fail=1; }
   done < <(awk -F: -v r="$row" 'index($NF, r) == 1' "$NAMES")
 done <<< "$SEL_ROWS"
-# Observed resources of the reference run G3 (its config held the '.*:ROW' selectors verbatim; '.*:SALMON_QUANT' matched nothing
-# there, so a '.*:ROW.*' selector is new and its process ran on the pipeline's label): every '.*:ROW' selector must have been applied
-# as written, and no process ran on the bare process default of the template (that would be a process with no label and no selector).
-dflt=$(printf '%s\n' "$CFG" | awk -v q="'" '/withName/ {exit} /^[ \t]*cpus = [0-9]+$/ {c = $3} $0 ~ "^[ \t]*memory = " q {m = $3 " " $4} $0 ~ "^[ \t]*time = " q {t = $3} END {gsub(q, "", m); gsub(q, "", t); print c "\t" m "\t" t}')
+# Requested resources of the reference run G3 and of the real-data test: every 'gate' row must have been applied as written in
+# both (its processes requested exactly the template's values), and no process of G3 ran on the bare process default of the
+# template (that would be a process with no label and no selector). 'realdata' rows are compared with the observations below.
+sel_ev() { printf '%s\n' "$SEL_ROWS" | awk -F'\t' -v r="$(printf '%s\n' "$1" | sed -nE 's/^\.\*:([A-Z0-9_]+)(\.\*|\[[A-Z]+\])?$/\1/p')" '$1 == r {print $5}'; }
+dflt=$(printf '%s\n' "$CFGS" | awk -v q="'" '/withName/ {exit} /^[ \t]*cpus = [0-9]+$/ {c = $3} $0 ~ "^[ \t]*memory = " q {m = $3 " " $4} $0 ~ "^[ \t]*time = " q {t = $3} END {gsub(q, "", m); gsub(q, "", t); print c "\t" m "\t" t}')
 [ "$dflt" = "2	8 GB	4h" ] || { echo "FAIL: the process default of the slurm profile must be 2 CPUs, 8 GB, 4h (found: $(echo "$dflt" | tr '\t' ' '))"; fail=1; }
 [ "$(awk -F'\t' 'NF == 4' "$OBS" | wc -l)" -ge 40 ] || { echo "fixture trace_resources_g3.tsv broken (process<TAB>cpus<TAB>memory<TAB>time)"; exit 2; }
+# selector<TAB>cpus<TAB>memory<TAB>time<TAB>evidence (gate or realdata) for each withName block of the slurm profile
+sels_ev=$(while IFS=$'\t' read -r re c m t; do [ -n "$re" ] && printf '%s\t%s\t%s\t%s\t%s\n' "$re" "$c" "$m" "$t" "$(sel_ev "$re")"; done <<< "$sels")
 while IFS=$'\t' read -r n oc om ot; do
-  while IFS=$'\t' read -r re c m t; do
-    case "$re" in *'.*'*'.*') continue ;; esac
+  while IFS=$'\t' read -r re c m t ev; do
+    [ "$ev" = gate ] || continue
     printf '%s\n' "$n" | grep -Eqx -- "$re" || continue
     [ "$oc	$om	$ot" = "$c	$m	$t" ] || { echo "FAIL: selector $re: the verification run requested $oc CPUs, $om, $ot for $n, the template says $c, $m, $t"; fail=1; }
-  done <<< "$sels"
+  done <<< "$sels_ev"
   [ "$oc	$om	$ot" != "$dflt" ] || { echo "FAIL: process $n ran on the bare process default ($oc CPUs, $om, $ot): no label and no selector"; fail=1; }
 done < "$OBS"
+# The real-data table names processes by their last component; a selector matches it as 'X:<name>' (one awk pass).
+rd_fail=$(printf '%s\n' "$sels_ev" | awk -F'\t' '
+  FNR == NR { if ($1 == "") next; ns++; re[ns] = $1; c[ns] = $2; m[ns] = $3; t[ns] = $4; ev[ns] = $5; next }
+  { split($0, a, " "); if (a[1] == "process" || a[1] == "") next
+    for (s = 1; s <= ns; s++) {
+      if (("X:" a[1]) !~ ("^(" re[s] ")$")) continue
+      nrd++; seen[s] = 1
+      if (ev[s] == "gate" && (a[3] "\t" a[4] " GB\t" a[5] "h") != (c[s] "\t" m[s] "\t" t[s]))
+        print "FAIL: selector " re[s] ": the real-data test requested " a[3] " CPUs, " a[4] " GB, " a[5] "h for " a[1] ", the template says " c[s] ", " m[s] ", " t[s]
+      mg = m[s]; sub(/ GB$/, "", mg); th = t[s]; sub(/h$/, "", th)
+      if (a[1] == "DEXSEQ_EXON") { if (a[6] != "187.44") print "FAIL: the DEXSEQ_EXON peak_rss exception covers the recorded 187.44 GB only (found " a[6] ")" }
+      else if (!(a[6] + 0 < mg + 0)) print "FAIL: selector " re[s] " requests " m[s] ", but " a[1] " used up to " a[6] " GB in the real-data test"
+      if (!(a[8] + 0 < th * 60)) print "FAIL: selector " re[s] " requests " t[s] ", but " a[1] " ran up to " a[8] " min in the real-data test"
+    } }
+  END {
+    for (s = 1; s <= ns; s++) if (ev[s] == "realdata" && !(s in seen)) print "FAIL: selector " re[s] " is a realdata row, but none of its processes ran in the real-data test"
+    if (nrd != 10) print "FAIL: " nrd + 0 " real-data processes are matched by a selector (expected 10)"
+  }' - "$RD_OBS")
+[ -z "$rd_fail" ] || { printf '%s\n' "$rd_fail"; fail=1; }
 [ "$(printf '%s\n' "$CFG" | grep -cE '^(timeline|report|trace|dag) +\{ enabled = true; overwrite = true;')" -eq 4 ] || { echo "FAIL: overwrite = true must be set for timeline, report, trace and dag"; fail=1; }
-printf '%s\n' "$CFG" | grep -qF "fields = 'task_id,hash,native_id,name,status,exit,cpus,memory,time,realtime,peak_rss'" || { echo "FAIL: trace fields must include the requested cpus, memory and time"; fail=1; }
+printf '%s\n' "$CFG" | grep -qF "fields = 'task_id,hash,native_id,name,status,exit,attempt,cpus,memory,time,realtime,%cpu,peak_rss'" || { echo "FAIL: trace fields must include the requested cpus, memory and time, the attempt and %cpu (D4 of the real-data test)"; fail=1; }
 if [ "$(gv HAS_RESOURCE_LIMITS)" = yes ]; then
   printf '%s\n' "$CFG" | grep -qxF "    resourceLimits = [ cpus: 16, memory: '64 GB', time: '24h' ]" || { echo "FAIL: the resourceLimits line is missing"; fail=1; }
 else
@@ -642,12 +689,6 @@ else
 fi
 [ "$(gv HAS_RESOURCE_LIMITS)" = yes ] && need "\`resourceLimits\` caps every task at 16 CPUs, 64 GB and 24 h"
 need "\`SALMON_QUANT_SALMON\` and \`SALMON_QUANT_STAR\`"
-# SALMON_QUANT = 8 CPU / 36 GB / 8h, the pipeline's own tested label values; not measured on real data.
-need "It requests 8 CPUs, 36 GB and 8 h: the memory and time of the pipeline's own tested process label for Salmon quantification"
-# Task 8 review I2: no gate run applied the SALMON_QUANT.* selector (the gate config's .*:SALMON_QUANT matched nothing).
-need "The resources of every selector are judgement: they are not measured on real data."
-# Task 9 U1: the SALMON_QUANT.* selector was applied in the cluster acceptance run (4 SALMON_QUANT_SALMON tasks at 8/36 GB/8 h).
-need "The first seven selectors were applied in this skill's verification run on the nf-core test data. The \`'.*:SALMON_QUANT.*'\` selector was applied in this skill's cluster acceptance run on the nf-core test data: its four SALMON_QUANT_SALMON tasks requested 8 CPUs, 36 GB and 8 h"
 need "no SALMON_QUANT_STAR task runs; the pattern covers both names."
 forbid "selector was only matched against the process names recorded there"
 forbid "is first applied in this skill's cluster acceptance run"
@@ -769,7 +810,8 @@ need "With a paired design (\`rmats_paired_stats: true\`) the rMATS directory is
 need "The wizard does not start the pipeline itself"
 need "squeue -u \$USER"
 need "tail -f nf-core_rnasplice_{VERSION_TAG}.{JOBID}.log"
-need "verified on nf-core's test data only"
+forbid "verified on nf-core's test data only"
+need "it was verified on nf-core's test data and run once on one real human dataset (6 samples, see the README); do not present its settings or outputs as validated beyond these two datasets."
 if [ "$(gv GATE_OUTCOME)" = B ]; then
   need "is an unreleased development commit of nf-core/rnasplice (\`$(gv VERSION_TAG)\`), pinned by this skill"
   need "needs this skill's verification gate to be run again"
@@ -812,7 +854,7 @@ need "print every line that contains one of them once per contrast"
 need "- Shell variables and functions do not persist between Bash tool calls: a procedure defines and calls its functions"
 need "Never pre-fetch the pipeline (no Nextflow \`pull\` command"
 # M3, M4, M8, M9: weak sentences pinned.
-need "The output paths and sign conventions in this step were verified on nf-core's test data only"
+need "The output paths and sign conventions in this step were verified on nf-core's test data (this skill's verification run of the pinned revision) and on one real dataset, the real-data test (human, 6 samples): there every path of the hand-off note existed and every sign statement held on real rows (the edgeR direction on one exon); no other real dataset was run."
 need "first confirm the directory names against the pipeline's \`docs/output.md\` for \`{VERSION}\` with \`WebFetch\`"
 need "(and MultiQC): DTU and SUPPA2 are off."
 need "a \`.MATS.JC.txt\` table (junction-spanning reads only) and a \`.MATS.JCEC.txt\` table (junction and exon-body reads)"
@@ -841,7 +883,8 @@ needr "## Validation status"
 needr "nf-core/rnasplice $(gv PIPELINE_REVISION)"
 needr "Nextflow $(gv NEXTFLOW_TESTED)"
 needr "4 paired-end human chrX samples"
-needr "No real biological data"
+forbidr "No real biological data"
+needr "This is one dataset, not a validation on real data in general."
 needr "## Known limitations"
 needr "## rnasplice or \`/bulk-rnaseq-pipeline\`"
 needr "sashimi_plot"
@@ -865,7 +908,8 @@ needr "| Internet on compute nodes | The job downloads the pinned revision of th
 needr "| Nextflow $(gv NEXTFLOW_MIN) or newer | In a conda environment; verified with Nextflow $(gv NEXTFLOW_TESTED) (env \`$(gv CONDA_ENV_TESTED)\`)"
 # Correction 2: only the STAR index is reused; the Salmon index is always built by the pipeline.
 needr "An existing STAR index is reused only when compatible (\`versionGenome $(gv STAR_VERSION_GENOME)\`); the Salmon index is always built by the pipeline, never reused |"
-needr "a path this skill's verification did not exercise: unverified"
+forbidr "a path this skill's verification did not exercise: unverified"
+needr "at this revision the pipeline copies a given index into its \`work/\` directory: in the real-data test, 28.5 GB in about 1 minute, with 88.5-92.7% of the reads of each sample mapped uniquely)"
 needr "lacks the non-coding transcripts"
 forbidr "Salmon indexes reused"
 forbidr "compatible STAR/Salmon indexes reused"
@@ -882,11 +926,11 @@ esac
 needr "| SUPPA2 | dPSI = mean PSI of the control − mean PSI of the treatment, although the header reads \`local_{TREATMENT}-local_{CONTROL}_dPSI\` | more inclusion in the control |"
 needr "| DEXSeq DTU | \`log2fold_{CONTROL}_{TREATMENT}\` | a larger share of the transcript in the control |"
 needr "| DEXSeq exon usage | \`log2fold_{CONTROL}_{TREATMENT}\` | more usage of the exon bin in the control |"
-needr "| edgeR exon usage | \`logFC\` = treatment − control | more usage of the exon in the treatment | pinned code only, not checked numerically |"
+needr "| edgeR exon usage | \`logFC\` = treatment − control | more usage of the exon in the treatment | pinned code; checked on one exon of the real-data test (logFC −1.59 on the RBPMS2 exon skipped in the KO) |"
 # Correction 5: resources; every selector row of the README table equals the Step 10 template; the head job equals Step 11.
 while IFS= read -r row; do
   needr "$row"
-done < <(printf '%s\n' "$CFG" | awk -v q="'" '
+done < <(printf '%s\n' "$CFGS" | awk -v q="'" '
   /withName:/ { n = $0; sub(/^[^:]*:[ \t]*/, "", n); gsub(q, "", n); sub(/^\.\*:/, "", n); sub(/[ \t]*\{.*$/, "", n) }
   n != "" && /^[ \t]*cpus[ \t]*=/ { c = $NF }
   n != "" && /^[ \t]*memory[ \t]*=/ { m = $0; sub(/^[^=]*=[ \t]*/, "", m); gsub(q, "", m) }
@@ -897,7 +941,7 @@ hj_n=$(printf '%s\n' "$SUB" | sed -n 's/^#SBATCH -n //p'); hj_m=$(printf '%s\n' 
 needr "(\`-n $hj_n --mem=$hj_m -t $hj_t\`)"
 needr "so it asks for more than the 4 h that this repository's skills use by default (a deliberate exception)"
 forbidr "approved by the user"
-needr "are NOT measured on a real genome"
+forbidr "are NOT measured on a real genome"
 # Correction 6: genome-BAM input; single-end and forward verified from code only.
 needr "strandedness and read type are written to the BAM samplesheet (\`$(gv BAM_SHEET_HEADER)\`)"
 needr "single-end BAM input and \`forward\` strandedness were verified from the pipeline code only, not by a run"
@@ -912,8 +956,8 @@ done
 # Correction 8: the test runner (default and --full), the git requirement.
 needr "bash tests/run_all_tests.sh --full"
 needr "RNASPLICE_TEST_GIT_DIR"
-needr "The default run takes about 17 minutes (bash, awk and sed only) and skips the proof-tool self-test (\`test_proof_tools.sh\`, 30 to 35 minutes)"
-needr "\`bash tests/run_all_tests.sh --full\` includes it (about 50 minutes in all)."
+needr "The default run takes about 50 minutes (bash, awk and sed only; measured on 2026-10-02, it varies with the load of the login node) and skips the proof-tool self-test (\`test_proof_tools.sh\`, about 100 minutes)"
+needr "\`bash tests/run_all_tests.sh --full\` includes it (about 2 h 30 min in all)."
 forbidr "about 20 minutes"
 # Correction 9: what was verified: the gate date, every run directory of RUN_DIRS, nf-core test data only.
 needr "Verification gate ($(gv GATE_DATE))"
@@ -967,16 +1011,17 @@ needr "Every other process keeps the resources of the pipeline's own process lab
 needr "sets a process default of 2 CPUs, 8 GB and 4 h, raises the processes below with \`withName\` selectors"
 # I2: the SALMON_QUANT.* selector was never applied in a run.
 forbidr "they were checked on the nf-core test data only"
-needr "The first seven selectors were applied in the verification run on the nf-core test data; the \`SALMON_QUANT.*\` selector was applied in the cluster acceptance run on the same data: its SALMON_QUANT_SALMON tasks requested 8 CPUs, 36 GB and 8 h"
+# (real-data fix round: the selector values changed after the real-data test; their evidence is pinned in that section below)
 needr "With this skill's route no SALMON_QUANT_STAR task runs; the pattern covers both names."
 forbidr "selector was only matched against the recorded process names"
 forbidr "is first applied in the cluster acceptance run"
 # I4: honesty statements (each deletion or inversion fails).
-needr "and nothing in this skill is validated on real data."
+forbidr "and nothing in this skill is validated on real data."
 forbidr "has been validated on real"
 forbidr "validated on real RNA-seq data"
 forbidr "tested on real data"
-needr "A decoy-aware Salmon index of a human or mouse genome likely takes more than an hour to build (unverified)."
+forbidr "likely takes more than an hour to build (unverified)."
+needr "The pipeline's decoy-aware Salmon index of the human genome took 33 min (peak 19.8 GB) in the real-data test; a mouse genome was not measured, and STAR_GENOMEGENERATE was not measured at all (the real-data test reused a STAR index)."
 needr "an unreleased development commit of the pipeline, not a release"
 forbidr "the current release"
 forbidr "mean PSI of the treatment − mean PSI of the control"
@@ -995,7 +1040,8 @@ needr "- One contrast was run with the skill's settings; several contrasts only 
 needr "- With FASTQ input, Salmon (index and quantification) always runs, also when neither DTU nor SUPPA2 is chosen."
 needr "With FASTQ input, Salmon (index build and quantification) runs even in an rMATS-only run"
 needr "(the gate ran paired-end samples only: \`unstranded\` and \`reverse\`, from FASTQ and from genome BAM); single-end FASTQ input was not run either."
-needr "\`star_index\` (reuse of an existing STAR index) was not run either."
+forbidr "\`star_index\` (reuse of an existing STAR index) was not run either."
+needr "\`star_index\` (reuse of an existing STAR index) was first run in the real-data test."
 needr "): run it in one place only."
 forbidr "run it in both places"
 forbidr "no more than 4 h"
@@ -1010,11 +1056,11 @@ needr "which ported the rMATS subworkflow to the nf-core structure"
 needr "a test of the test runner itself on a fake tree (\`test_run_all.sh\`"
 # M8: no row may be added to the README tables: each has exactly the rows the skill defines.
 tbl_rows() { awk -v h="$1" 'index($0, h) == 1 { f = 1; getline; next } f && /^\|/ { n++; next } f { exit } END { print n + 0 }' "$README" 2>/dev/null; }
-want_sel=$(printf '%s\n' "$CFG" | grep -c "withName:")
+want_sel=$(printf '%s\n' "$CFGS" | grep -c "withName:")
 want_ho=$(printf '%s\n' "$HO" | grep -c '^  [^ ]\{1,\}  ')
 want_steps=$(grep -cE '^## Step [0-9]+ ' "$SKILL")
 for spec in "| Selector | CPUs | Memory | Time |:$want_sel" "| Path | Content |:$want_ho" "| Output | Column | Positive value means | Source |:5" \
-            "| File | Description |:7" "| Step | Topic | Asked or detected |:$want_steps"; do
+            "| File | Description |:8" "| Step | Topic | Asked or detected |:$want_steps"; do
   h=${spec%:*}; w=${spec##*:}; got=$(tbl_rows "$h")
   [ "$got" = "$w" ] || { echo "FAIL: README table '$h' has $got rows, expected $w"; fail=1; }
 done
@@ -1037,7 +1083,7 @@ need "**Path style:** if \`{BAM_DIR}\` is inside \`{CWD}\`, use paths relative t
 needr "job 11380326, wall time 11 min 49 s, 80/80 tasks COMPLETED"
 needr "job 11380459, wall time 6 min 16 s, 43/43 tasks COMPLETED"
 needr "the rMATS sign on 202/202 rows of SE.MATS.JC.txt and the SUPPA2 sign on 1098/1098 local and 1854/1854 isoform events"
-needr "- Not exercised: real data; the Ensembl download helper; a paired design; strandedness other than unstranded, and single-end input; a human- or mouse-size genome; the time and memory of any process on real data."
+needr "- Not exercised by these runs (see **Real-data test** below for the real-data run): real data; the Ensembl download helper; a paired design; strandedness other than unstranded, and single-end input; a human- or mouse-size genome; the time and memory of any process on real data."
 # --- end Task 9 fix round
 # --- Final review fixes (I1, I3, M1, M2, M4, M6)
 # I1: custom prefix and custom file names: Step 10's character rule; install_rnasplice_sheets refuses a split or odd name.
@@ -1046,10 +1092,13 @@ need "2. choose another filename (letters, digits, \`.\`, \`_\` and \`-\` only, 
 need "[ \$# -le 6 ] || { echo \"ERROR: \$# arguments, at most 6: a file name was split at a space"
 need "''|*/*|*[!A-Za-z0-9._-]*) echo \"ERROR: target name '\$p' must be a plain file name in the current directory (letters, digits, ., _ and - only)\""
 # I3: no tool that must run on a compute node is invoked in the wizard text outside the submission script (as for nextflow).
+# Salmon may also run inside the strandedness helper script (Step 4, a compute-node job; its block is cut here).
+STRH=$(bash "$CUT" "$SKILL" "**Strandedness helper script.**" 2>/dev/null)
 for spec in 'conda (activate|create|install|run|env)( |$)' '(Rscript|R +(-e|--vanilla|-f|CMD))( |$)' 'STAR +--?[A-Za-z]' 'salmon +(index|quant|--?[A-Za-z])'; do
-  pat="(^|[^A-Za-z_])$spec"
+  pat="(^|[^A-Za-z_])$spec"; also=""
   n_all=$(grep -cE "$pat" "$SKILL"); n_sub=$(printf '%s\n' "$SUB" | grep -cE "$pat")
-  [ "$n_all" -eq "$n_sub" ] || { echo "FAIL: '$spec' is invoked outside the submission script ($n_all lines in the skill, $n_sub in the script); the wizard must never run it on the login node"; fail=1; }
+  case "$spec" in salmon*) n_sub=$((n_sub + $(printf '%s\n' "$STRH" | grep -cE "$pat"))); also=" and the strandedness helper" ;; esac
+  [ "$n_all" -eq "$n_sub" ] || { echo "FAIL: '$spec' is invoked outside the submission script ($n_all lines in the skill, $n_sub in the script$also); the wizard must never run it on the login node"; fail=1; }
 done
 # M1: rMATS prep runs per sample at this revision (gate trace: 4 prep tasks, 1 post task).
 need "At this revision rMATS prepares each sample once and runs one post step per contrast"
@@ -1064,13 +1113,227 @@ need "The FASTA and the GTF must use the same contig names"
 need "tell the user to compare the \`@SQ\` names of \`samtools view -H\` of one BAM with the FASTA headers and the first column of the GTF, on a compute node"
 needr "- FASTA, GTF and BAM contig names must match"
 # M6: executor throttles of the config template.
-printf '%s\n' "$CFG" | grep -qxF '            queueSize = 10' && printf '%s\n' "$CFG" | grep -qxF "            submitRateLimit = '10/1min'" \
-  || { echo "FAIL: the nextflow.config template must keep queueSize = 10 and submitRateLimit = '10/1min'"; fail=1; }
+printf '%s\n' "$CFG" | grep -qxF '            queueSize = 20' && printf '%s\n' "$CFG" | grep -qxF "            submitRateLimit = '10/1min'" \
+  || { echo "FAIL: the nextflow.config template must keep queueSize = 20 and submitRateLimit = '10/1min'"; fail=1; }
 # I2, M7: what the acceptance runs cover at the final skill.
 needr "The runs and the static gate below were made on the skill text of commit bcb63e9."
-needr "\`nextflow.config\` is byte-identical to the Step 10 template, and \`nf-core_rnasplice_dev-1b44723.sh\` and \`261002_{a,b,c}_params.yaml\` match the Step 11 templates (with the Step 8 block) line for line"
+needr "\`nextflow.config\` is byte-identical to the Step 10 template of that commit, and \`nf-core_rnasplice_dev-1b44723.sh\` and \`261002_{a,b,c}_params.yaml\` match the Step 11 templates (with the Step 8 block) line for line"
 needr "- Static gate (commit bcb63e9):"
 needr "its automatic sample names still ended in \`_sorted\` (made before Step 4b strips \`_sorted.bam\`; that fix is unit-tested, run (c) was not repeated)"
 needr "| bash 4 or newer |"
 # --- end Final review fixes
+
+# --- Real-data fix round (real-data test 2026-10-02, human hiPSC-CM, 6 samples)
+# D1: the STAR_ALIGN ext.args override of the top-level process block = the STAR_ALIGN ext.args block of the pinned
+# conf/modules.config (fixture modules.config, byte-identical to the pinned commit) minus '--quantMode TranscriptomeSAM',
+# '--quantTranscriptomeSAMoutput BanSingleEnd' and comment lines. Computed from the fixture, so a pin bump cannot drift silently.
+QM="                '--quantMode TranscriptomeSAM',"; QB="                '--quantTranscriptomeSAMoutput BanSingleEnd',"
+mc_block=$(awk '/^    withName: .STAR_ALIGN. \{$/ {f = 1} f {print} f && /^        \}$/ {exit}' "$FIX/modules.config")
+{ [ "$(printf '%s\n' "$mc_block" | grep -cxF -- "$QM")" -eq 1 ] && [ "$(printf '%s\n' "$mc_block" | grep -cxF -- "$QB")" -eq 1 ] \
+  && [ "$(printf '%s\n' "$mc_block" | sed -n 2p)" = "        ext.args   = {" ]; } \
+  || { echo "fixture modules.config: the STAR_ALIGN ext.args block was not found, or lacks one of the two transcriptome-BAM flags"; exit 2; }
+want_star=$(printf '%s\n' "$mc_block" | grep -vxF -- "$QM" | grep -vxF -- "$QB" | grep -vE '^[ \t]*//'; echo "    }")
+got_star=$(printf '%s\n' "$CFG" | awk '/^process \{$/ {p = 1; next} p && /^\}$/ {p = 0} p && /^    withName: .STAR_ALIGN. \{$/ {f = 1} f {print} f && /^    \}$/ {exit}')
+if [ -z "$got_star" ]; then
+  echo "FAIL: the nextflow.config template must hold the STAR_ALIGN ext.args override (withName: 'STAR_ALIGN' in the top-level process block)"; fail=1
+elif [ "$got_star" != "$want_star" ]; then
+  echo "FAIL: the STAR_ALIGN ext.args override differs from the pinned conf/modules.config block minus --quantMode TranscriptomeSAM and --quantTranscriptomeSAMoutput BanSingleEnd:"
+  diff <(printf '%s\n' "$want_star") <(printf '%s\n' "$got_star") | sed 's/^/    /'; fail=1
+fi
+# The selector string is the pinned one, used once; every other withName block is a resource selector of the slurm profile.
+[ "$(printf '%s\n' "$CFG" | grep -c "withName: 'STAR_ALIGN'")" -eq 1 ] || { echo "FAIL: withName: 'STAR_ALIGN' must appear exactly once in the nextflow.config template"; fail=1; }
+[ "$(printf '%s\n' "$CFG" | grep -c 'withName:')" -eq $(( $(printf '%s\n' "$CFGS" | grep -c 'withName:') + 1 )) ] \
+  || { echo "FAIL: every withName block of the template except the STAR_ALIGN ext.args override belongs to the slurm profile"; fail=1; }
+! printf '%s\n' "$CFG" | grep -qE 'quantMode|quantTranscriptomeSAMoutput' || { echo "FAIL: the nextflow.config template must not set --quantMode or --quantTranscriptomeSAMoutput"; fail=1; }
+# Under this skill's params (seq_center and save_unaligned are never written: pipeline defaults null and false) the list
+# evaluates to its quoted literals: they must equal the STAR arguments of all six STAR_ALIGN tasks of the real-data run
+# (fixture realdata_star_align_args.txt, copied from their .command.sh).
+[ "$(cfg_default seq_center)" = null ] && [ "$(cfg_default save_unaligned)" = false ] || { echo "config extraction broken: seq_center or save_unaligned default changed"; exit 2; }
+for k in seq_center save_unaligned; do
+  ! printf '%s\n%s\n' "$BASEY" "$MOD" | grep -q "^$k:" || { echo "FAIL: $k must not be written (the STAR_ALIGN override is checked for its default)"; fail=1; }
+done
+star_eval=$(printf '%s\n' "$got_star" | sed -n "s/^ *'\(--[^']*\)',\{0,1\}$/\1/p" | tr '\n' ' ' | sed 's/ $//')
+[ "$star_eval" = "$(head -n 1 "$FIX/realdata_star_align_args.txt")" ] \
+  || { echo "FAIL: the STAR_ALIGN override evaluates to '$star_eval', not to the arguments of the real-data run ($(head -n 1 "$FIX/realdata_star_align_args.txt"))"; fail=1; }
+need "**STAR without the transcriptome BAM.**"
+need "The \`withName: 'STAR_ALIGN'\` block of the template therefore repeats the pinned \`ext.args\` without \`--quantMode TranscriptomeSAM\` and \`--quantTranscriptomeSAMoutput BanSingleEnd\`"
+need "it is part of \`nextflow.config\`, so the launch line does not change"
+need "the same selector and arguments, given in a separate config file, were used for the resumed run of the real-data test (22 tasks cached, 0 failed)"
+need "Not verified: an unmodified STAR_ALIGN run to completion at full size"
+need "With BAM input no STAR_ALIGN task runs, so the block changes nothing there."
+need "the \`STAR_ALIGN\` \`ext.args\` block below) so they can compare"
+needr "- **No STAR transcriptome BAM.**"
+needr "repeats the pinned STAR_ALIGN \`ext.args\` without \`--quantMode TranscriptomeSAM\` and \`--quantTranscriptomeSAMoutput BanSingleEnd\`; the launch line is unchanged."
+needr "Verified on the real-data test with the same selector and arguments in a separate config file (resumed run: 22 tasks cached, 0 failed)"
+needr "the form written into \`nextflow.config\` was applied in a run on the nf-core test data (2026-10-03: no STAR_ALIGN task had \`--quantMode\`, no transcriptome BAM was written; see Validation status)"
+needr "Not verified: an unmodified STAR_ALIGN run to completion at full size. BAM input is unaffected (no STAR_ALIGN task)."
+needr "The \`nextflow.config\` template was changed after the real-data test (see **Real-data test** below); these three runs did not use its new form."
+forbidr "\`nextflow.config\` is byte-identical to the Step 10 template, and"
+# Tiers (SEL_ROWS above, evidence = realdata_resource_table.txt), queueSize 20, trace fields (D4), DEXSEQ_EXON peak_rss (D7).
+forbid "The resources of every selector are judgement: they are not measured on real data."
+forbid "It requests 8 CPUs, 36 GB and 8 h"
+need "The SUPPA2 selector \`'.*:DIFFSPLICE_IO[EI]'\` matches its two differential-splicing processes, DIFFSPLICE_IOE and DIFFSPLICE_IOI."
+need "**Where the selector values come from.** \`STAR_GENOMEGENERATE\` and \`DEXSEQ_EXON\` keep the values that this skill's verification run on the nf-core test data applied."
+need "one human dataset (6 samples of about 38 M read pairs of 78 bp, one contrast, all five analyses), so they rest on that one dataset. The new values were applied in a run on the nf-core test data (2026-10-03: every task requested exactly these values), which shows that they are applied, not that they are enough for real data."
+need "- STAR_ALIGN: peak 37.7 GB (79% of 48 GB; the human index takes most of it), at most 15 min: 8 CPUs, 48 GB, 4 h."
+need "- RMATS_PREP: single-threaded, 1.3 GB, 8 min: 2 CPUs, 8 GB, 4 h."
+need "- RMATS_POST: 2.0 GB, 3 min for one contrast: 8 CPUs, 16 GB, 8 h"
+need "- DEXSEQ_COUNT: single-threaded, 1.15 GB, 55 min: 1 CPU, 4 GB, 8 h"
+need "- DEXSEQ_DTU: 11.7 GB, 2 min: 8 CPUs, 16 GB, 4 h."
+need "- SALMON_QUANT_SALMON: 20.2 GB with the pipeline's decoy-aware human index, 13.5 min: 8 CPUs, 32 GB, 4 h."
+need "- DIFFSPLICE_IOE/IOI (SUPPA2): single-threaded, 3.2-4.2 GB, up to 3 h 03 min (the longest task of the run): 1 CPU, 8 GB, 16 h"
+need "- MAKE_TRANSCRIPTS_FASTA: 4.2 GB, 2 min: 2 CPUs, 8 GB, 2 h"
+need "- DEXSEQ_EXON: 83 min; its memory is not known (see below): 8 CPUs, 32 GB, 8 h kept."
+need "- STAR_GENOMEGENERATE: not run in the real-data test (the STAR index was reused): 8 CPUs, 64 GB, 8 h kept."
+need "\`queueSize\` is 20 because with 10, in the real-data test, RMATS_POST waited 11 min and two Salmon tasks about 13 min for a free slot"
+need "\`peak_rss\`, \`realtime\` and \`%cpu\` what it used, and \`attempt\` whether it was retried"
+need "**DEXSEQ_EXON memory:** its \`peak_rss\` in the trace is misleading. In the real-data test the trace reported 187 GB for this task, which requested 32 GB and was not killed; \`sstat\` showed 8.4 GB during its serial phase."
+need "Its true peak was not measured: do not raise its selector because of that column alone; compare with SLURM's MaxRSS"
+needr "| Selector | CPUs | Memory | Time | Evidence |"
+needr "The values marked \"real-data test\" were set from what each process used in the real-data test (below): ONE human dataset, 6 samples of about 38 M read pairs of 78 bp, one contrast, all five analyses. They rest on that one dataset (the test ran with the earlier values); they were then applied in a run on the nf-core test data (2026-10-03), which shows that they are applied, not that they are enough for real data"
+needr "\`STAR_GENOMEGENERATE\` and \`DEXSEQ_EXON\` keep the values of the verification gate."
+needr "The executor's \`queueSize\` is 20"
+needr "for \`DEXSEQ_EXON\`, the trace's \`peak_rss\` is misleading (187 GB reported in the real-data test for a 32 GB task that was not killed; \`sstat\` showed 8.4 GB; probably forked workers counted separately): compare with SLURM's MaxRSS instead."
+# each README selector row names its evidence: real-data test for 'realdata' rows, the verification gate for 'gate' rows
+while IFS=$'\t' read -r re c m t; do
+  [ -n "$re" ] || continue
+  n=${re#.\*:}
+  case "$(sel_ev "$re")" in
+    realdata) needr "| \`$n\` | $c | $m | $t | real-data test: " ;;
+    gate) needr "| \`$n\` | $c | $m | $t | verification gate" ;;
+  esac
+done <<< "$sels"
+# D3: strandedness from a Salmon subsample (FASTQ input): an optional compute-node helper; the parser uses the RSeQC rule's
+# thresholds (tested by test_strand_salmon.sh); the index is never passed to the pipeline; a kit name never decides.
+for a in "**Strandedness from a Salmon subsample** (FASTQ input; optional)." "**Salmon index for the strandedness helper.**" "**Strandedness helper script.**" "**Reading the Salmon results.**"; do anchor_once "$a"; done
+need "A kit name alone does not determine the direction"
+need "in this skill's real-data test the GEO text said \"NEB Ultra II protocol\", without \"Directional\", and the reads were clearly reverse-stranded: Salmon found ISR), so never derive the answer from a kit name"
+forbid_re 'Ultra II[^.]*(implies|means|so it is) (stranded|unstranded|reverse|forward)' "a strandedness derived from a kit name"
+need "without such a directory, with FASTQ input, offer the Salmon helper"
+need "only when a Salmon index of the same organism is available (below). Ask (numbered): 1. Generate the Salmon strandedness helper (default) · 2. I will answer 1, 2 or 3 myself."
+need "The index serves only this detection: the pipeline never receives it (\`{SALMON_INDEX}\` stays empty, Step 7), and the wizard never guesses from the result: it proposes, and the user confirms."
+need "No \`SALMON_INDEX\` line: the helper is not offered"
+need "at least two, one from each condition the user will compare"
+need "if Step 4 already asked the organism and this directory for the strandedness helper, reuse both answers and do not ask again."
+need "applies the rule of the RSeQC block above to Salmon's counts: forward fraction = ISF / (ISF + ISR + IU), reverse fraction = ISR / (ISF + ISR + IU) for paired-end reads (SF, SR and U for single-end reads); forward if the forward fraction is at least 0.8, reverse if the reverse fraction is at least 0.8, unstranded if the two fractions differ by at most 0.1, otherwise unclear."
+need "The result is unclear as well when it disagrees with the library type Salmon detected itself"
+need "when Salmon's compatible-fragment ratio is below 0.8"
+need "any \`unclear\` result, or samples that disagree: show the lines, explain that the library type cannot be read reliably, and ask the user (no proposal); do not continue until they answer 1, 2 or 3"
+need "salmon_strandedness() {"
+need "verify the container URL of the script in this session with a HEAD request"
+STRH_FULL=$(bash "$CUT" "$SKILL" "**Strandedness helper script.**" 2>/dev/null)
+[ -n "$STRH_FULL" ] || { echo "FAIL: strandedness helper script block not found"; fail=1; }
+for l in '#!/bin/bash' '#SBATCH -N 1' '#SBATCH -n 8' '#SBATCH --mem=32G' '#SBATCH -t 2:00:00' '#SBATCH -p bcc' '#SBATCH --mail-type=END,FAIL' '#SBATCH --mail-user={USER_EMAIL}' \
+         '#SBATCH -o infer_strandedness_salmon_{WD_NAME}.%j.log' 'set -u' 'IDX="{STRAND_INDEX}"' \
+         'module add singularity/3.10.4 || { echo "ERROR: cannot load module singularity/3.10.4" >&2; exit 1; }' \
+         'command -v singularity >/dev/null || { echo "ERROR: singularity is not on PATH" >&2; exit 1; }' \
+         'run_sample "{SAMPLE}" "{FASTQ_1}" "{FASTQ_2}"'; do
+  printf '%s\n' "$STRH_FULL" | grep -qxF -- "$l" || { echo "FAIL: the strandedness helper must contain the line: $l"; fail=1; }
+done
+[ "$(printf '%s\n' "$STRH_FULL" | grep -v '^#' | grep -v '^[ \t]*$' | sed -n 2p)" = 'cd "{CWD}" || { echo "ERROR: cannot change to {CWD}" >&2; exit 1; }' ] \
+  || { echo "FAIL: cd \"{CWD}\" must be the first command of the strandedness helper (after set -u)"; fail=1; }
+! printf '%s\n' "$STRH_FULL" | grep -qE '(^|[^A-Za-z_])rm( |$)' || { echo "FAIL: the strandedness helper must not remove files"; fail=1; }
+! printf '%s\n' "$STRH_FULL" | grep -qE 'nextflow|conda' || { echo "FAIL: the strandedness helper must not run nextflow or conda"; fail=1; }
+[ "$(printf '%s\n' "$STRH_FULL" | grep -c 'salmon quant -i "\$IDX" -l A ')" -eq 2 ] || { echo "FAIL: the strandedness helper must run salmon quant -i \"\$IDX\" -l A for paired-end and single-end samples"; fail=1; }
+printf '%s\n' "$STRH_FULL" | grep -qF 'head -n 4000000' || { echo "FAIL: the strandedness helper must subsample the first 1,000,000 reads (head -n 4000000)"; fail=1; }
+# The container: the pipeline's own Salmon (gate SALMON_VERSION), a URL verified at the gate, and its cache file name.
+s_url=$(printf '%s\n' "$STRH_FULL" | grep -oE 'https://depot\.galaxyproject\.org/singularity/salmon:[^"]+' | sort -u)
+[ "$(printf '%s\n' "$s_url" | grep -c .)" -eq 1 ] && case "$s_url" in *"salmon:$(gv SALMON_VERSION)--"*) true ;; *) false ;; esac \
+  || { echo "FAIL: the strandedness helper must download one Salmon $(gv SALMON_VERSION) container (found: $s_url)"; fail=1; }
+grep -qE "^$(printf '%s' "$s_url" | sed 's/[.]/\\./g') 200 " "$FIX/verified_urls.txt" || { echo "FAIL: the Salmon container URL $s_url is not a verified URL of fixtures/verified_urls.txt"; fail=1; }
+s_sif=$(printf '%s' "${s_url#https://}" | tr '/:' '--').img
+printf '%s\n' "$STRH_FULL" | grep -qF "SIF=\"\${NXF_SINGULARITY_CACHEDIR:-\$HOME/.singularity/cache}/$s_sif\"" \
+  || { echo "FAIL: the strandedness helper must look for the cached image $s_sif in the Singularity cache"; fail=1; }
+needr "a Salmon helper that detects the library type from up to 1,000,000 reads of a few samples"
+needr "A kit name alone does not determine the direction"
+needr "The Salmon helper was run by hand in the real-data test (reverse-stranded paired-end data); its generated form was tested with stubs only."
+# D2: disk estimate (review I1, du of the real run: about 70 GB + 18 GB per sample with the STAR_ALIGN override, 38 GB or more per sample without it),
+# where the output directory is asked and in the README prerequisites; work/ is never deleted by the skill.
+need "**Disk space.** When asking for the output directory, tell the user how much space the run needs in \`{CWD}\`"
+need "a run needs about 70 GB plus 18 GB per sample for \`work/\` and the output directory together (6 samples: about 175 GB), with the \`STAR_ALIGN\` block of the \`nextflow.config\` template (about 38 GB or more per sample without it), not counting the FASTQ files."
+need "This is an estimate from one dataset; it grows with the number of reads per sample."
+need "It is needed to resume a run (**Resuming a run**, Step 11); after a successful run the user can delete it to free the space. The wizard and the generated scripts never delete it."
+forbid_re 'rm +-[a-z]*r[a-z]* +[^ ]*work' "a command that deletes work/ (the user deletes it, never the wizard)"
+needr "| Disk space | About 70 GB plus 18 GB per sample for \`work/\` and the results together (6 samples: about 175 GB; FASTQ files not counted), estimated from the disk use of the real-data test on one human dataset of about 38 M read pairs of 78 bp per sample"
+needr "(about 38 GB or more per sample without it); it grows with the reads. The fixed part is mostly the STAR index copy (28.5 GB), the Salmon index (about 22 GB), the transcript FASTA (about 7.4 GB) and the gene-filter step (about 4.4 GB)."
+needr "resuming a run needs it, and after a successful run it can be deleted; the skill never deletes it |"
+# D5: stopping a run without orphan tasks, and without cancelling other runs.
+need "- To stop a run: cancel the head job with \`scancel {JOBID}\`."
+need "Check each one with \`scontrol show job <id>\`: its \`StdOut\` (the task's \`.command.log\`) must be under \`{CWD}/work\`, so that it belongs to this run. Then cancel them one at a time with \`scancel <id>\`."
+need "Never cancel by a name pattern or all of the user's jobs at once: that can stop other runs."
+forbid_re 'scancel +(-[A-Za-z]|--[a-z])' "a scancel command that selects jobs by user or name (it can stop other runs)"
+# D8: the rMATS chr column.
+need "With an Ensembl genome, rMATS writes the \`chr\` column with a \`chr\` prefix that the FASTA and the GTF do not have"
+need "strip it before joining the rMATS tables with the GTF or with other tables."
+# D6: edgeR direction now checked numerically on one exon of the real-data test (report §6(4)).
+need "checked numerically on one exon of the real-data test: the RBPMS2 exon skipped in the knockout has logFC −1.59 for KO vs WT"
+forbid "which builds the contrast as treatment-control; not checked numerically"
+# Item 5: the README record of the real-data test; numbers from the real-data report; honesty (one dataset, the 2.6x difference
+# from the paper not explained), deviations and what was not verified.
+grep -qE '^Real-data test \(one human dataset\): DONE \(2026-[0-9-]+\), with the deviations listed below$' "$README" 2>/dev/null \
+  || { echo "FAIL: README must have the whole line 'Real-data test (one human dataset): DONE (2026-MM-DD), with the deviations listed below'"; fail=1; }
+needr "This is one dataset, not a validation on real data in general."
+needr "Akerberg et al. 2022 (GEO GSE207681)"
+needr "WT_1, WT_2, WT_3 = SRR20021261, SRR20021260, SRR20021259 (GSM6307608-GSM6307610) and KO_1, KO_2, KO_3 = SRR20021257, SRR20021256, SRR20021255 (GSM6307612-GSM6307614)"
+needr "- What ran: all five analyses (rMATS, SUPPA2, DEXSeq and edgeR exon usage, DEXSeq DTU), one contrast (\`KO_vs_WT\`), no paired design."
+needr "81 tasks completed and 22 cached, 0 failed, 0 retried; the resumed run took 4 h 11 min"
+needr "RBPMS2 (ENSG00000166831) expression (Salmon gene TPM) was 67% lower in KO"
+needr "was found by all four splicing analyses"
+needr "PC1 (65.9% of the variance) separated WT from KO"
+needr "rMATS found 7,031 significant events (junction-count tables), about 2.6 times the 2,679 events the paper reports. The reason was not determined"
+needr "every sign statement of Step 12 held on real rows"
+needr "edgeR (logFC = KO − WT) on one exon"
+needr "- Deviations of the test: the first head job was cancelled after 22 min"
+needr "seven of its task jobs, still running, were cancelled by hand"
+needr "The run was resumed with a separate config file (\`-c\`) holding the STAR_ALIGN \`ext.args\` override"
+needr "dead intermediate files (the killed task directories, the unsorted BAM files, the STAR index copy) were deleted by hand during the run."
+needr "- Not verified by this test: STAR_GENOMEGENERATE (the index was reused); an unmodified STAR_ALIGN run to completion; the true memory peak of DEXSEQ_EXON; the new selector values and the new \`nextflow.config\` template (the run used the earlier values and a separate file); a paired design; single-end input; \`forward\` strandedness; genome-BAM input; the Ensembl download helper; the generated Salmon strandedness helper"
+forbidr "validated on several"
+forbidr "validated on multiple"
+forbidr "fully validated"
+forbidr "reproduces the paper's"
+forbidr "matches the paper's"
+forbidr "explained by the sample number"
+needr "the stub dry runs of the submission script, the download helper and the Salmon strandedness helper"
+# --- end Real-data fix round
+# --- Fix round 2 (review realdata-fix-rnasplice-review.md, live re-run 2026-10-03 on the nf-core test data)
+# I1: disk estimate from the real run's disk use (about 70 GB fixed, 18 GB per sample).
+forbid "about 40 GB plus 18 GB per sample"
+forbidr "About 40 GB plus 18 GB per sample"
+need "Most of the fixed part is the copy of the reused STAR index (28.5 GB), the finished Salmon index (about 22 GB), the transcript FASTA (about 7.4 GB) and the gene-filter step (about 4.4 GB)"
+# M3: the transcriptome BAM size is a projection from a partial file.
+forbid "(measured in this skill's real-data test). With this skill's route"
+need "an estimated 20 GB or more per sample of 38 M read pairs (projected in this skill's real-data test from a partial file: 5.57 GB after about 7.5 M of 38 M read pairs, which extrapolates to 20-28 GB)"
+needr "(an estimated 20 GB or more per sample of 38 M read pairs, projected from a partial file in the real-data test)"
+# Live re-run: the template and the tier values were applied on the test data (not proof for real data).
+need "The block as written in this template was then applied in a run on the nf-core test data (2026-10-03, Nextflow 26.04.6): the config was accepted, no STAR_ALIGN task had \`--quantMode\`, and no transcriptome BAM was written."
+forbid "have not yet been applied in a run"
+forbidr "have not yet been applied in a run"
+forbidr "is to be verified by an acceptance re-run"
+grep -qE '^Live re-run of the changed template \(nf-core test data\): DONE \(2026-[0-9-]+\)$' "$README" 2>/dev/null \
+  || { echo "FAIL: README must have the whole line 'Live re-run of the changed template (nf-core test data): DONE (2026-MM-DD)'"; fail=1; }
+needr "- \`nextflow.config\` was byte-identical to the Step 10 template and was accepted by Nextflow 26.04.6; the launch line was unchanged."
+needr "- Run (a), all five analyses: 80/80 tasks COMPLETED; run (b), rMATS only: 51/51; run (c), genome-BAM input from the BAM files of run (a): 43/43; the Salmon strandedness helper: 11 s for two samples of 50,000 read pairs"
+needr "- Every selector was applied: each task requested exactly the values of the Resources table"
+needr "- STAR_ALIGN: no task had \`--quantMode\`, and no transcriptome BAM was written."
+needr "it shows that the template and its values are applied, not that they are enough for real data. Not exercised: \`queueSize\` 20 at scale (at most 6 tasks ran at once), the stop-a-run guidance, the disk estimate at real size."
+# M1: the strandedness helper refuses an existing output directory (no stale results, no rm).
+need "  [ ! -e \"\$OUT/\$s\" ] || { echo \"ERROR: \$s: \$OUT/\$s exists from an earlier run: move or delete it, then submit again\" >&2; rc=1; return 1; }"
+need "a sample whose output directory exists from an earlier run is refused"
+# M2: the verified StdOut field, full job names, never a broad scancel.
+forbid "\`WorkDir\` must be under"
+need "\`squeue -u \$USER -o \"%.12i %.70j\"\` (the default name column shows only 8 characters)"
+# M4 and live-test items: numbered offer, index options, run time depends on the data, unstranded counts.
+need "The genome is chosen only in Step 7, so ask first (numbered): \"Where is a Salmon index of this organism?\" 1. In the shared genome folder of \`/nfcore-rnaseq-setup\` (Ensembl, Step 7 option 1; default) · 2. I will give the path of a Salmon index directory · 3. There is none."
+need "for 2, run the same lines with the given directory (quoted) in place of the \`{genome_base}\` pattern"
+need "Its run time depends on the data size: about 6 minutes for two samples of the real-data test, 11 s for two samples of 50,000 read pairs of the nf-core test data."
+forbid "of a few samples; this was how the real-data test found its library type"
+need "An unstranded library shows ISF about equal to ISR, IU about 0 and \`expected_format\` IU"
+needr "the generated helper took 11 s on two samples of the 50,000-pair nf-core test data and found them unstranded (ISF about equal to ISR, IU 0)."
+# M5: an existing nextflow.config without the STAR_ALIGN block costs disk.
+need "If it has no \`STAR_ALIGN\` \`ext.args\` block like the template's, tell the user that STAR then also writes the transcriptome BAM, an estimated 20 GB or more of extra disk per sample"
+# M8
+needr "a hand-written job with the same Salmon command"
+forbidr "an equivalent hand-written job"
+# --- end Fix round 2
 [ $fail -eq 0 ] && echo "PASS" || exit 1

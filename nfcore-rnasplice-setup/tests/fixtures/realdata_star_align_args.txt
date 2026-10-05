@@ -1,0 +1,1 @@
+--twopassMode Basic --outSAMtype BAM Unsorted --readFilesCommand gunzip -c --runRNGseed 0 --outFilterMultimapNmax 20 --alignSJDBoverhangMin 1 --outSAMattributes NH HI AS NM MD

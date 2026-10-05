@@ -46,7 +46,7 @@ PASS_FULL="ALL TESTS PASS (full run, proof-tool self-test included)"
 want_list=$(echo $TESTS)
 
 # 1. all pass, default run
-runit 0 -- && { has "$PASS_DEFAULT"; has "== SKIPPED: $FULL (proof-tool self-test, 30 to 35 minutes; run with --full)"
+runit 0 -- && { has "$PASS_DEFAULT"; has "== SKIPPED: $FULL (proof-tool self-test, about 100 minutes; run with --full)"
   [ "$(ran)" = "$want_list" ] || { echo "FAIL: case $n: tests run: '$(ran)', expected every test of TESTS once, in order: '$want_list'"; bad=1; }
   awk -F'|' -v sk="$D/tests/../nfcore-rnasplice-setup.md" '$2 != sk || $3 != "/usr/bin:/bin" || $4 != "unset"' "$L" | grep -q . \
     && { echo "FAIL: case $n: a test got another argument, another PATH or the caller's environment (not env -i):"; awk -F'|' -v sk="$D/tests/../nfcore-rnasplice-setup.md" '$2 != sk || $3 != "/usr/bin:/bin" || $4 != "unset"' "$L" | head -3; bad=1; }; }

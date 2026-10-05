@@ -152,9 +152,9 @@ Then run `sample_name_collisions` on the names before sanitisation (one line per
 
 The rows stay in memory: Step 5 adds the condition column (the samplesheet columns are `sample,fastq_1,fastq_2,strandedness,condition`) and writes the file.
 
-**Strandedness is asked, never guessed.** rnasplice has no `auto` strandedness, and rMATS needs one strandedness and one read type for all samples. Ask (numbered): "Which strandedness does the library have?" 1. unstranded · 2. forward · 3. reverse · 4. I don't know. Explain: *reverse* = read 1 comes from the strand opposite to the transcript (dUTP libraries such as Illumina TruSeq Stranded and NEBNext Ultra II Directional — the most common stranded libraries); *forward* = read 1 comes from the transcript strand; *unstranded* = no strand information (for example TruSeq non-stranded). A wrong value makes rMATS discard or misassign junction reads without any error. If the user answers 4, or has an nf-core/rnaseq output directory for the same samples, use the block below. Never continue with "I don't know". Store `{STRANDEDNESS}` (one value for every row).
+**Strandedness is asked, never guessed.** rnasplice has no `auto` strandedness, and rMATS needs one strandedness and one read type for all samples. Ask (numbered): "Which strandedness does the library have?" 1. unstranded · 2. forward · 3. reverse · 4. I don't know. Explain: *reverse* = read 1 comes from the strand opposite to the transcript (dUTP libraries such as Illumina TruSeq Stranded and NEBNext Ultra II Directional — the most common stranded libraries); *forward* = read 1 comes from the transcript strand; *unstranded* = no strand information (for example TruSeq non-stranded). A kit name alone does not determine the direction: public metadata often names a kit without its exact variant (in this skill's real-data test the GEO text said "NEB Ultra II protocol", without "Directional", and the reads were clearly reverse-stranded: Salmon found ISR), so never derive the answer from a kit name; check it on the reads with one of the two blocks below. A wrong value makes rMATS discard or misassign junction reads without any error. If the user answers 4, or has an nf-core/rnaseq output directory for the same samples, use the block below; without such a directory, with FASTQ input, offer the Salmon helper (**Strandedness from a Salmon subsample**, below). Never continue with "I don't know". Store `{STRANDEDNESS}` (one value for every row).
 
-**Strandedness from an existing nf-core/rnaseq run.** Ask for that run's output directory (`{RNASEQ_OUTDIR}`) and count its RSeQC files with `find "{RNASEQ_OUTDIR}" -path "*/work" -prune -o -name "*.infer_experiment.txt" -print | wc -l`. In one Bash call, define the function below and run it on every one of those files, not a subset (a loop over the same `find`; small text files, light work on the login node). Show a table file → result; with many files, show the count per result and list every file whose result differs from the others. The rule is nf-core/rnaseq's: forward if the forward fraction is at least 0.8, reverse if the reverse fraction is at least 0.8, unstranded if the two fractions differ by at most 0.1, otherwise unclear. A missing or unreadable file, a missing line, or a line that appears twice (reports concatenated into one file) gives unclear. No `*.infer_experiment.txt` file (for example a run with RSeQC skipped): tell the user, and ask the strandedness question again without a proposal; continue only with answer 1, 2 or 3.
+**Strandedness from an existing nf-core/rnaseq run.** Ask for that run's output directory (`{RNASEQ_OUTDIR}`) and count its RSeQC files with `find "{RNASEQ_OUTDIR}" -path "*/work" -prune -o -name "*.infer_experiment.txt" -print | wc -l`. In one Bash call, define the function below and run it on every one of those files, not a subset (a loop over the same `find`; small text files, light work on the login node). Show a table file → result; with many files, show the count per result and list every file whose result differs from the others. The rule is nf-core/rnaseq's: forward if the forward fraction is at least 0.8, reverse if the reverse fraction is at least 0.8, unstranded if the two fractions differ by at most 0.1, otherwise unclear. A missing or unreadable file, a missing line, or a line that appears twice (reports concatenated into one file) gives unclear. No `*.infer_experiment.txt` file (for example a run with RSeQC skipped): tell the user, offer the Salmon helper below (FASTQ input), or ask the strandedness question again without a proposal; continue only with answer 1, 2 or 3.
 ```bash
 infer_strandedness() {
   # usage: infer_strandedness <file.infer_experiment.txt>; prints forward, reverse, unstranded or unclear
@@ -175,6 +175,104 @@ infer_strandedness() {
 - All files give the same `forward`, `reverse` or `unstranded`: propose it and ask the user to confirm.
 - Any file gives `unclear`, or the files disagree: show the fractions (`grep "explained by" FILE`), explain that the library type cannot be read reliably, and ask the user to check the kit; do not continue until they answer 1, 2 or 3.
 - The user answered 1-3 and a result disagrees: show both and ask which is right before continuing.
+
+**Strandedness from a Salmon subsample** (FASTQ input; optional). Offer it when the user answered 4 (or wants an answer checked) and has no RSeQC results of an nf-core/rnaseq run, and only when a Salmon index of the same organism is available (below). Ask (numbered): 1. Generate the Salmon strandedness helper (default) · 2. I will answer 1, 2 or 3 myself. A batch job runs Salmon's automatic library-type detection (`-l A`) on at most the first 1,000,000 reads (read pairs) of each chosen sample (a smaller file is used whole). Its run time depends on the data size: about 6 minutes for two samples of the real-data test, 11 s for two samples of 50,000 read pairs of the nf-core test data. The index serves only this detection: the pipeline never receives it (`{SALMON_INDEX}` stays empty, Step 7), and the wizard never guesses from the result: it proposes, and the user confirms.
+
+**Salmon index for the strandedness helper.** The genome is chosen only in Step 7, so ask first (numbered): "Where is a Salmon index of this organism?" 1. In the shared genome folder of `/nfcore-rnaseq-setup` (Ensembl, Step 7 option 1; default) · 2. I will give the path of a Salmon index directory · 3. There is none. For 1, ask the organism and the base directory of the shared genome folder as in Step 7, option 1 (keep both answers: Step 7 does not ask them again), then list the candidate indexes in one Bash call (small files, light work on the login node); for 2, run the same lines with the given directory (quoted) in place of the `{genome_base}` pattern; for 3 (for example a custom reference without any Salmon index), the helper is not offered.
+```bash
+for d in "{genome_base}"/{organism}/*_ens*/index/salmon; do
+  m=""; for f in info.json pos.bin seq.bin mphf.bin ctable.bin; do [ -s "$d/$f" ] || m="$m $f"; done
+  if [ -z "$m" ]; then echo "SALMON_INDEX $d"; else echo "INCOMPLETE $d (missing:$m)"; fi
+done
+```
+`{STRAND_INDEX}` = the `SALMON_INDEX` directory with the highest Ensembl release (any release of the organism will do: only the orientation of the reads matters), or the given directory. No `SALMON_INDEX` line: the helper is not offered; tell the user and ask the strandedness question again (continue only with answer 1, 2 or 3).
+Then show the sample table of Step 4 and ask which samples to check: at least two, one from each condition the user will compare (the conditions are set in Step 5; the user names them now). Paired-end samples are checked as pairs; single-end samples (`fastq_2` empty) as single reads.
+
+**Strandedness helper script.** Write `infer_strandedness_salmon_{WD_NAME}.sh` in `{CWD}` (if it exists, ask: 1. overwrite · 2. choose another filename) from the template below, with one `run_sample` line per chosen sample in place of the template's `run_sample` line: `run_sample "{SAMPLE}" "{FASTQ_1}" "{FASTQ_2}"` for a paired-end sample, `run_sample "{SAMPLE}" "{FASTQ_1}"` for a single-end one, with the sample names and paths of the Step 4 rows (paths relative to `{CWD}` or absolute, as in the samplesheet). Before writing it, verify the container URL of the script in this session with a HEAD request (`curl -sI URL | head -1` must show 200): the job downloads the image only when it is not already in the Singularity cache. Show the file in full and tell the user: "To submit: sbatch infer_strandedness_salmon_{WD_NAME}.sh". It runs on a compute node (8 CPUs, 32 GB, 2 h), writes `strandedness_salmon/` in `{CWD}` (about 120 MB of subsampled reads per paired-end sample of 1,000,000 read pairs, kept for the user to delete), and removes nothing: a sample whose output directory exists from an earlier run is refused (the user moves or deletes that directory, then submits again), so old results are never read as new ones. Wait until the user says the job has finished (its log ends with `ALL DONE` or an `ERROR` line), then read the results.
+```bash
+#!/bin/bash
+#SBATCH -N 1
+#SBATCH -n 8
+#SBATCH --mem=32G
+#SBATCH -t 2:00:00
+#SBATCH -p bcc
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user={USER_EMAIL}
+#SBATCH -o infer_strandedness_salmon_{WD_NAME}.%j.log
+# Library type only (Salmon -l A on at most the first 1,000,000 reads or read pairs of each sample); the pipeline never uses this index.
+set -u
+cd "{CWD}" || { echo "ERROR: cannot change to {CWD}" >&2; exit 1; }
+IDX="{STRAND_INDEX}"
+OUT="{CWD}/strandedness_salmon"
+for f in info.json pos.bin seq.bin mphf.bin ctable.bin; do [ -s "$IDX/$f" ] || { echo "ERROR: $IDX/$f is missing or empty: not a usable Salmon index" >&2; exit 1; }; done
+module add singularity/3.10.4 || { echo "ERROR: cannot load module singularity/3.10.4" >&2; exit 1; }
+command -v singularity >/dev/null || { echo "ERROR: singularity is not on PATH" >&2; exit 1; }
+SIF="${NXF_SINGULARITY_CACHEDIR:-$HOME/.singularity/cache}/depot.galaxyproject.org-singularity-salmon-1.10.3--h6dccd9a_2.img"
+if [ ! -s "$SIF" ]; then
+  mkdir -p "$(dirname "$SIF")" || { echo "ERROR: cannot create $(dirname "$SIF")" >&2; exit 1; }
+  wget -c -O "$SIF.part" "https://depot.galaxyproject.org/singularity/salmon:1.10.3--h6dccd9a_2" && mv -f "$SIF.part" "$SIF" \
+    || { echo "ERROR: could not download the Salmon container to $SIF" >&2; exit 1; }
+fi
+mkdir -p "$OUT" || { echo "ERROR: cannot create $OUT" >&2; exit 1; }
+rc=0
+subsample() {  # subsample <fastq.gz> <output .fq.gz>: the first 1,000,000 reads (4,000,000 lines); prints the line count
+  local n
+  zcat "$1" 2>/dev/null | head -n 4000000 | gzip -1 > "$2"
+  n=$(zcat "$2" | wc -l)
+  [ "$n" -gt 0 ] && [ $((n % 4)) -eq 0 ] || { echo "ERROR: $1 gave $n lines (empty, unreadable or not FASTQ)" >&2; return 1; }
+  echo "$n"
+}
+run_sample() {  # run_sample <sample> <R1 fastq.gz> [<R2 fastq.gz>]
+  local s=$1 f n1 n2
+  [ ! -e "$OUT/$s" ] || { echo "ERROR: $s: $OUT/$s exists from an earlier run: move or delete it, then submit again" >&2; rc=1; return 1; }
+  for f in "${@:2}"; do [ -s "$f" ] || { echo "ERROR: $s: $f is missing or empty" >&2; rc=1; return 1; }; done
+  n1=$(subsample "$2" "$OUT/${s}_sub_1.fq.gz") || { rc=1; return 1; }
+  if [ $# -ge 3 ]; then
+    n2=$(subsample "$3" "$OUT/${s}_sub_2.fq.gz") || { rc=1; return 1; }
+    [ "$n1" = "$n2" ] || { echo "ERROR: $s: the R1 and R2 subsamples differ ($n1 and $n2 lines)" >&2; rc=1; return 1; }
+    singularity exec -B "{CWD},$IDX" "$SIF" salmon quant -i "$IDX" -l A -1 "$OUT/${s}_sub_1.fq.gz" -2 "$OUT/${s}_sub_2.fq.gz" -p 8 -o "$OUT/$s" > "$OUT/$s.salmon.log" 2>&1
+  else
+    singularity exec -B "{CWD},$IDX" "$SIF" salmon quant -i "$IDX" -l A -r "$OUT/${s}_sub_1.fq.gz" -p 8 -o "$OUT/$s" > "$OUT/$s.salmon.log" 2>&1
+  fi || { echo "ERROR: $s: Salmon failed (see $OUT/$s.salmon.log)" >&2; rc=1; return 1; }
+  [ -s "$OUT/$s/lib_format_counts.json" ] || { echo "ERROR: $s: Salmon wrote no lib_format_counts.json" >&2; rc=1; return 1; }
+  echo "DONE $s ($((n1 / 4)) reads)"
+}
+run_sample "{SAMPLE}" "{FASTQ_1}" "{FASTQ_2}"
+if [ $rc -eq 0 ]; then echo "ALL DONE: results in $OUT"; else echo "ERROR: at least one sample failed" >&2; exit 1; fi
+```
+
+**Reading the Salmon results.** In one Bash call, define the function below and run it on `"{CWD}/strandedness_salmon/{SAMPLE}"` for every sample of the job (small JSON files, light work on the login node); show one line per sample. It reads Salmon's `lib_format_counts.json` (and the mapping rate from `aux_info/meta_info.json`) and applies the rule of the RSeQC block above to Salmon's counts: forward fraction = ISF / (ISF + ISR + IU), reverse fraction = ISR / (ISF + ISR + IU) for paired-end reads (SF, SR and U for single-end reads); forward if the forward fraction is at least 0.8, reverse if the reverse fraction is at least 0.8, unstranded if the two fractions differ by at most 0.1, otherwise unclear. The result is unclear as well when it disagrees with the library type Salmon detected itself (`expected_format`: ISR or SR for reverse, ISF or SF for forward, IU or U for unstranded), when Salmon's compatible-fragment ratio is below 0.8, or when a file or a count is missing or repeated. In nf-core terms ISR is reverse (rMATS `fr-firststrand`) and ISF is forward (`fr-secondstrand`). An unstranded library shows ISF about equal to ISR, IU about 0 and `expected_format` IU: Salmon counts each fragment under the orientation it maps in, so IU does not dominate (on the unstranded nf-core test data: forward 0.507 and 0.502, reverse 0.493 and 0.498, IU 0).
+```bash
+salmon_strandedness() {
+  # usage: salmon_strandedness <Salmon output directory of one sample>
+  # prints "<forward|reverse|unstranded|unclear> <directory> expected_format=.. forward=.. reverse=.. compatible_fragment_ratio=.. percent_mapped=.."
+  local d=$1 m=/dev/null
+  [ -f "$d/lib_format_counts.json" ] && [ -r "$d/lib_format_counts.json" ] || { echo "unclear $d (no lib_format_counts.json)"; return 0; }
+  [ -r "$d/aux_info/meta_info.json" ] && m="$d/aux_info/meta_info.json"
+  awk -v d="$d" '
+    FNR == 1 { file++ }
+    { line = $0; gsub(/[",]/, "", line); if (split(line, kv, ":") != 2) next
+      k = kv[1]; v = kv[2]; gsub(/[ \t]/, "", k); gsub(/^[ \t]+|[ \t]+$/, "", v)
+      if (file == 1) { n[k]++; val[k] = v } else if (k == "percent_mapped") pm = v }
+    END {
+      ef = val["expected_format"]; cfr = val["compatible_fragment_ratio"]
+      if (ef ~ /^I(SF|SR|U)$/) { kf = "ISF"; kr = "ISR"; ku = "IU" } else if (ef ~ /^(SF|SR|U)$/) { kf = "SF"; kr = "SR"; ku = "U" } else bad = 1
+      for (k in n) if (n[k] != 1) bad = 1
+      if (!bad) for (i = 1; i <= 3; i++) { k = (i == 1) ? kf : (i == 2) ? kr : ku; if (!(k in val) || val[k] !~ /^[0-9]+$/) bad = 1 }
+      if (cfr !~ /^[0-9.]+$/) bad = 1
+      tot = bad ? 0 : val[kf] + val[kr] + val[ku]
+      f = (tot > 0) ? val[kf] / tot : 0; r = (tot > 0) ? val[kr] / tot : 0; df = f - r; if (df < 0) df = -df
+      res = "unclear"
+      if (tot > 0 && cfr + 0 >= 0.8) {
+        if (f >= 0.8) res = (ef ~ /^I?SF$/) ? "forward" : "unclear"
+        else if (r >= 0.8) res = (ef ~ /^I?SR$/) ? "reverse" : "unclear"
+        else if (df <= 0.1 + 1e-9) res = (ef ~ /^I?U$/) ? "unstranded" : "unclear"
+      }
+      printf "%s %s expected_format=%s forward=%.4f reverse=%.4f compatible_fragment_ratio=%s percent_mapped=%s\n", res, d, (ef == "" ? "NA" : ef), f, r, (cfr == "" ? "NA" : cfr), (pm == "" ? "NA" : pm)
+    }' "$d/lib_format_counts.json" "$m"
+}
+```
+Then apply the three rules of the RSeQC block: all samples give the same `forward`, `reverse` or `unstranded`: propose it and ask the user to confirm; any `unclear` result, or samples that disagree: show the lines, explain that the library type cannot be read reliably, and ask the user (no proposal); do not continue until they answer 1, 2 or 3; the user answered 1-3 and a result disagrees: show both and ask which is right. A low mapping rate (`percent_mapped`) means that the index may not fit the reads: say so when showing the lines.
 
 ### Step 4b — Genome BAM input
 
@@ -498,14 +596,14 @@ Ask, in this order:
 2. (numbered): 1. Ensembl release in the standard folder (default) · 2. Custom reference — I already have a FASTA and GTF.
 3. The option-specific questions below. Ask the base directory only for option 1.
 
-- **Option 1 (Ensembl):** ask "What is the base directory where genome files and indexes are stored?" (`{genome_base}`). Folder convention, shared with `/nfcore-rnaseq-setup` so that FASTA, GTF and the STAR index are reused, never downloaded or built twice:
+- **Option 1 (Ensembl):** ask "What is the base directory where genome files and indexes are stored?" (`{genome_base}`); if Step 4 already asked the organism and this directory for the strandedness helper, reuse both answers and do not ask again. Folder convention, shared with `/nfcore-rnaseq-setup` so that FASTA, GTF and the STAR index are reused, never downloaded or built twice:
   ```
   {genome_base}/{organism}/{assembly}_ens{version}/
   ├── {FASTA}.fa            ← primary assembly FASTA
   ├── {GTF}.gtf             ← annotation GTF
   └── index/
       ├── star/             ← STAR index (as built by /nfcore-rnaseq-setup); reused only if compatible
-      └── salmon/           ← not used: rnasplice always builds its own Salmon index
+      └── salmon/           ← not used: rnasplice always builds its own Salmon index (only the Step 4 strandedness helper reads it)
   ```
   Mouse: GRCm39, FASTA `Mus_musculus.GRCm39.dna.primary_assembly.fa`, GTF `Mus_musculus.GRCm39.{version}.gtf`, directory `{genome_base}/mouse/mm39_ens{version}/`. Human: GRCh38, FASTA `Homo_sapiens.GRCh38.dna.primary_assembly.fa`, GTF `Homo_sapiens.GRCh38.{version}.gtf`, directory `{genome_base}/human/hg38_ens{version}/`. Other organisms: option 2. Version: the highest existing `{assembly}_ens{N}` directory unless the user asks otherwise; if none exists, the latest Ensembl release from `https://ftp.ensembl.org/pub/current/README` (`WebFetch`; its line "Ensembl Release N Databases." gives N). If that fetch fails, use the highest `release-N/` directory in the listing of `https://ftp.ensembl.org/pub/` (`WebFetch`); if both fail, ask the user for the release. Store `{GENOME_DIR}`, `{FASTA_PATH}`, `{GTF_PATH}`, `{ORGANISM}`, `{ASSEMBLY}`, `{ENS_VERSION}` and `{REF_TAG}` = `{ASSEMBLY}_ens{ENS_VERSION}`.
   If the FASTA or the GTF is missing: resolve both download URLs at run time with `WebFetch` on the Ensembl FTP listing of that release (`https://ftp.ensembl.org/pub/release-{version}/fasta/{species}/dna/` and `https://ftp.ensembl.org/pub/release-{version}/gtf/{species}/`), check each with a HEAD request (`curl -sI URL | head -1` must show 200), show them to the user, store `{ENSEMBL_FASTA_URL}` and `{ENSEMBL_GTF_URL}`, and generate `download_genome_{REF_TAG}.sh` (Step 11). Never type a URL from memory.
@@ -519,10 +617,10 @@ Ask, in this order:
   for f in SA SAindex Genome sjdbList.out.tab genomeParameters.txt; do [ -s "{STAR_DIR}/$f" ] || echo "MISSING: $f"; done
   grep -E '^(versionGenome|sjdbOverhang)[[:space:]]' "{STAR_DIR}/genomeParameters.txt"
   ```
-  Any `MISSING` line: there is no usable index; let the pipeline build it. Otherwise offer reuse — (numbered) 1. Reuse (default) · 2. Let the pipeline build its own — only when `versionGenome` is `2.7.4a` (the index format of the STAR inside this pipeline revision); with any other value, say why and let the pipeline build it. If its `sjdbOverhang` is not 100 (the value the pipeline uses when it builds the index itself), add a note (information only; it is not a reason to rebuild, and indexes from /nfcore-rnaseq-setup usually have read length − 1): "This STAR index was built with sjdbOverhang {N}, not the pipeline's 100. STAR aligns with it; the junction database is tuned for reads of {N}+1 bp (your reads: {READ_LENGTH} bp)." Reuse: `{STAR_INDEX}` = that directory; otherwise `{STAR_INDEX}` is empty. Tell the user, when reuse is chosen: at this revision the pipeline copies a given STAR index into its `work/` directory before aligning (about 30 GB for a human index, for every run), and this skill's verification run did not exercise the reuse path (unverified).
+  Any `MISSING` line: there is no usable index; let the pipeline build it. Otherwise offer reuse — (numbered) 1. Reuse (default) · 2. Let the pipeline build its own — only when `versionGenome` is `2.7.4a` (the index format of the STAR inside this pipeline revision); with any other value, say why and let the pipeline build it. If its `sjdbOverhang` is not 100 (the value the pipeline uses when it builds the index itself), add a note (information only; it is not a reason to rebuild, and indexes from /nfcore-rnaseq-setup usually have read length − 1): "This STAR index was built with sjdbOverhang {N}, not the pipeline's 100. STAR aligns with it; the junction database is tuned for reads of {N}+1 bp (your reads: {READ_LENGTH} bp)." Reuse: `{STAR_INDEX}` = that directory; otherwise `{STAR_INDEX}` is empty. Tell the user, when reuse is chosen: at this revision the pipeline copies a given STAR index into its `work/` directory before aligning (about 30 GB for a human index, for every run). The real-data test exercised the reuse path with a human index from /nfcore-rnaseq-setup (`versionGenome` 2.7.4a, `sjdbOverhang` 93): the pipeline copied the 28.5 GB index into `work/` in about 1 minute (process STAR_GENOMEPARAMS_UPGRADE), and 88.5-92.7% of the reads of each sample mapped uniquely.
 - Salmon: `{SALMON_INDEX}` is always empty: the pipeline always builds its own Salmon index from the transcripts it extracts from the GTF. A Salmon index from /nfcore-rnaseq-setup is built from Ensembl cDNA and lacks the GTF's non-coding transcripts, which would get no quantification (DTU, SUPPA2) without any error; its index version cannot show this, so it is never reused.
 
-When the pipeline builds the STAR index of a human or mouse genome, STAR_GENOMEGENERATE needs about 32 GB of memory and an hour or more; the `nextflow.config` of Step 10 gives it 64 GB and 8 h. The pipeline also builds a decoy-aware Salmon index (SALMON_INDEX: 6 CPUs, 36 GB and 8 h from its process label); for a human or mouse genome this likely takes more than an hour (not measured by this skill's verification). Indexes built by the pipeline are not kept (`save_reference: false`), so a later run builds them again.
+When the pipeline builds the STAR index of a human or mouse genome, STAR_GENOMEGENERATE needs about 32 GB of memory and an hour or more (not measured by this skill: the real-data test reused an index); the `nextflow.config` of Step 10 gives it 64 GB and 8 h. The pipeline also builds a decoy-aware Salmon index (SALMON_INDEX: 6 CPUs, 36 GB and 8 h from its process label); in the real-data test (human, Ensembl 116) it took 33 min with a peak of 19.8 GB (a mouse genome was not measured). Indexes built by the pipeline are not kept (`save_reference: false`), so a later run builds them again.
 
 ---
 
@@ -649,8 +747,9 @@ Trimming (Trim Galore) and QC use the pipeline defaults; this skill does not cha
 **MultiQC title** (numbered): 1. `{SEQ_DATE}_{WD_NAME}` · 2. `{TODAY_YYMMDD}_{WD_NAME}` · 3. Custom. Store `{MULTIQC_TITLE}`. When `{SEQ_DATE}` equals `{TODAY_YYMMDD}`, options 1 and 2 are the same: offer only 1. `{TODAY_YYMMDD}_{WD_NAME}` · 2. Custom.
 **Output directory** (numbered): 1. `results/{TODAY_ISO}_{WD_NAME}` (default) · 2. `results/{TODAY_ISO}_{SHEET_PREFIX}` · 3. Custom. Store `{OUTDIR}`. Check it with `cd "{CWD}" && ls -A "{OUTDIR}"` (a relative `{OUTDIR}` is relative to `{CWD}`, where the job starts); if it exists and is not empty, ask (numbered): 1. use it anyway (the pipeline adds to it and may overwrite files) · 2. choose another.
 A custom title or output directory may contain only letters, digits, `.`, `_`, `-` and (in the directory) `/`: a double quote or a backslash would break its double-quoted value in the params file, and a space breaks the shell lines. For any other character, tell the user "⚠️ `{VALUE}` contains a character the params file cannot hold; use only letters, digits, `.`, `_`, `-` (and `/` in the directory)." and ask again.
+**Disk space.** When asking for the output directory, tell the user how much space the run needs in `{CWD}`: in this skill's real-data test (human, Ensembl 116; 6 samples of about 38 M read pairs of 78 bp) a run needs about 70 GB plus 18 GB per sample for `work/` and the output directory together (6 samples: about 175 GB), with the `STAR_ALIGN` block of the `nextflow.config` template (about 38 GB or more per sample without it), not counting the FASTQ files. Most of the fixed part is the copy of the reused STAR index (28.5 GB), the finished Salmon index (about 22 GB), the transcript FASTA (about 7.4 GB) and the gene-filter step (about 4.4 GB); the per-sample part is the trimmed reads, the unsorted and sorted BAM files and the sorted copy in the output directory. This is an estimate from one dataset; it grows with the number of reads per sample. Nextflow's work directory is `{CWD}/work`: every task runs there, and it holds most of that space. It is needed to resume a run (**Resuming a run**, Step 11); after a successful run the user can delete it to free the space. The wizard and the generated scripts never delete it.
 
-Check for an existing config: `ls "{CWD}/nextflow.config"`. If it exists, do not overwrite it: tell the user which selectors matter for rnasplice (the `withName` lines and the `resourceLimits` line below) so they can compare. If it does not exist, write it from the template.
+Check for an existing config: `ls "{CWD}/nextflow.config"`. If it exists, do not overwrite it: tell the user which selectors matter for rnasplice (the `withName` lines, the `resourceLimits` line and the `STAR_ALIGN` `ext.args` block below) so they can compare. If it has no `STAR_ALIGN` `ext.args` block like the template's, tell the user that STAR then also writes the transcriptome BAM, an estimated 20 GB or more of extra disk per sample of 38 M read pairs (**STAR without the transcriptome BAM**, below), and that they can copy the block into their config. If it does not exist, write it from the template.
 
 **nextflow.config template.**
 ```nextflow
@@ -672,21 +771,21 @@ profiles {
             withName: '.*:STAR_ALIGN' {
                 cpus = 8
                 memory = '48 GB'
-                time = '8h'
+                time = '4h'
             }
             withName: '.*:RMATS_PREP' {
-                cpus = 4
-                memory = '16 GB'
-                time = '8h'
+                cpus = 2
+                memory = '8 GB'
+                time = '4h'
             }
             withName: '.*:RMATS_POST' {
                 cpus = 8
-                memory = '32 GB'
-                time = '16h'
+                memory = '16 GB'
+                time = '8h'
             }
             withName: '.*:DEXSEQ_COUNT' {
-                cpus = 2
-                memory = '8 GB'
+                cpus = 1
+                memory = '4 GB'
                 time = '8h'
             }
             withName: '.*:DEXSEQ_EXON' {
@@ -696,17 +795,27 @@ profiles {
             }
             withName: '.*:DEXSEQ_DTU' {
                 cpus = 8
-                memory = '32 GB'
-                time = '8h'
+                memory = '16 GB'
+                time = '4h'
             }
             withName: '.*:SALMON_QUANT.*' {
                 cpus = 8
-                memory = '36 GB'
-                time = '8h'
+                memory = '32 GB'
+                time = '4h'
+            }
+            withName: '.*:DIFFSPLICE_IO[EI]' {
+                cpus = 1
+                memory = '8 GB'
+                time = '16h'
+            }
+            withName: '.*:MAKE_TRANSCRIPTS_FASTA' {
+                cpus = 2
+                memory = '8 GB'
+                time = '2h'
             }
         }
         executor {
-            queueSize = 10
+            queueSize = 20
             submitRateLimit = '10/1min'
             pollInterval = '30s'
         }
@@ -721,15 +830,52 @@ profiles {
 
 process {
     resourceLimits = [ cpus: 16, memory: '64 GB', time: '24h' ]
+
+    // STAR without the transcriptome BAM: the ext.args of conf/modules.config of nf-core/rnasplice dev-1b44723,
+    // minus its two transcriptome-BAM options (see "STAR without the transcriptome BAM" in Step 10 of the skill)
+    withName: 'STAR_ALIGN' {
+        ext.args   = {
+            def prefix = task.ext.prefix ?: meta.id
+            def read_group = params.seq_center ? "--outSAMattrRGline 'ID:${prefix}' 'SM:${prefix}' 'CN:${params.seq_center}'" : ''
+            [
+                '--twopassMode Basic',
+                '--outSAMtype BAM Unsorted',
+                '--readFilesCommand gunzip -c',
+                '--runRNGseed 0',
+                '--outFilterMultimapNmax 20',
+                '--alignSJDBoverhangMin 1',
+                '--outSAMattributes NH HI AS NM MD',
+                read_group,
+                params.save_unaligned ? '--outReadsUnmapped Fastx' : ''
+            ].join(' ').trim()
+        }
+    }
 }
 
 timeline { enabled = true; overwrite = true; file = "${params.outdir}/pipeline_info/execution_timeline.html" }
 report   { enabled = true; overwrite = true; file = "${params.outdir}/pipeline_info/execution_report.html"   }
-trace    { enabled = true; overwrite = true; file = "${params.outdir}/pipeline_info/execution_trace.txt"; fields = 'task_id,hash,native_id,name,status,exit,cpus,memory,time,realtime,peak_rss' }
+trace    { enabled = true; overwrite = true; file = "${params.outdir}/pipeline_info/execution_trace.txt"; fields = 'task_id,hash,native_id,name,status,exit,attempt,cpus,memory,time,realtime,%cpu,peak_rss' }
 dag      { enabled = true; overwrite = true; file = "${params.outdir}/pipeline_info/pipeline_dag.svg"        }
 ```
 
-The selectors (`'.*:NAME'`, matching the process whatever its workflow prefix) use the process names of this skill's verification runs of nf-core/rnasplice dev-1b44723; every other process keeps the resources of the pipeline's own process labels. The Salmon selector ends in `.*` because the pipeline names its Salmon quantification processes `SALMON_QUANT_SALMON` and `SALMON_QUANT_STAR`; `'.*:SALMON_QUANT'` matched neither in the verification run. It requests 8 CPUs, 36 GB and 8 h: the memory and time of the pipeline's own tested process label for Salmon quantification (the label gives 6 CPUs; the decoy-aware Salmon index of a human or mouse genome is large). The resources of every selector are judgement: they are not measured on real data. The first seven selectors were applied in this skill's verification run on the nf-core test data. The `'.*:SALMON_QUANT.*'` selector was applied in this skill's cluster acceptance run on the nf-core test data: its four SALMON_QUANT_SALMON tasks requested 8 CPUs, 36 GB and 8 h (in the verification run, whose config used `'.*:SALMON_QUANT'`, which matched no process, Salmon quantification ran with its label's 6 CPUs, 36 GB and 8 h). With this skill's route (`aligner: "star"`, `pseudo_aligner: "salmon"`) no SALMON_QUANT_STAR task runs; the pattern covers both names. Fixed `withName` resources do not grow when the pipeline retries a task: if a task of a process with a selector fails with exit status 137 or 140 (memory or time limit), raise that selector's `memory` or `time` in nextflow.config (up to the `resourceLimits` caps) and resubmit as described under **Resuming a run** (Step 11). After the first real run, compare the selectors with `{OUTDIR}/pipeline_info/execution_trace.txt`, whose `cpus`, `memory` and `time` columns show what each task requested. `resourceLimits` caps every task at 16 CPUs, 64 GB and 24 h; this revision has no `max_cpus`, `max_memory` or `max_time` parameters (Step 8), so the caps live only here. `overwrite = true` on the four report files lets a run that failed early be started again.
+The selectors (`'.*:NAME'`, matching the process whatever its workflow prefix) use the process names of this skill's verification runs of nf-core/rnasplice dev-1b44723; every other process keeps the resources of the pipeline's own process labels. The Salmon selector ends in `.*` because the pipeline names its Salmon quantification processes `SALMON_QUANT_SALMON` and `SALMON_QUANT_STAR`; `'.*:SALMON_QUANT'` matched neither in the verification run. With this skill's route (`aligner: "star"`, `pseudo_aligner: "salmon"`) no SALMON_QUANT_STAR task runs; the pattern covers both names. The SUPPA2 selector `'.*:DIFFSPLICE_IO[EI]'` matches its two differential-splicing processes, DIFFSPLICE_IOE and DIFFSPLICE_IOI.
+
+**Where the selector values come from.** `STAR_GENOMEGENERATE` and `DEXSEQ_EXON` keep the values that this skill's verification run on the nf-core test data applied. Every other selector, and `queueSize = 20`, was set from this skill's real-data test: one human dataset (6 samples of about 38 M read pairs of 78 bp, one contrast, all five analyses), so they rest on that one dataset. The new values were applied in a run on the nf-core test data (2026-10-03: every task requested exactly these values), which shows that they are applied, not that they are enough for real data. What each process used there:
+- STAR_ALIGN: peak 37.7 GB (79% of 48 GB; the human index takes most of it), at most 15 min: 8 CPUs, 48 GB, 4 h.
+- RMATS_PREP: single-threaded, 1.3 GB, 8 min: 2 CPUs, 8 GB, 4 h.
+- RMATS_POST: 2.0 GB, 3 min for one contrast: 8 CPUs, 16 GB, 8 h (it grows with the contrasts and events).
+- DEXSEQ_COUNT: single-threaded, 1.15 GB, 55 min: 1 CPU, 4 GB, 8 h (deeper libraries take longer).
+- DEXSEQ_DTU: 11.7 GB, 2 min: 8 CPUs, 16 GB, 4 h.
+- SALMON_QUANT_SALMON: 20.2 GB with the pipeline's decoy-aware human index, 13.5 min: 8 CPUs, 32 GB, 4 h.
+- DIFFSPLICE_IOE/IOI (SUPPA2): single-threaded, 3.2-4.2 GB, up to 3 h 03 min (the longest task of the run): 1 CPU, 8 GB, 16 h (its process label would reserve 12 CPUs and 64 GB; the time grows with the number of events).
+- MAKE_TRANSCRIPTS_FASTA: 4.2 GB, 2 min: 2 CPUs, 8 GB, 2 h (label: 12 CPUs, 64 GB, 16 h).
+- DEXSEQ_EXON: 83 min; its memory is not known (see below): 8 CPUs, 32 GB, 8 h kept.
+- STAR_GENOMEGENERATE: not run in the real-data test (the STAR index was reused): 8 CPUs, 64 GB, 8 h kept.
+`queueSize` is 20 because with 10, in the real-data test, RMATS_POST waited 11 min and two Salmon tasks about 13 min for a free slot while six DEXSEQ_COUNT tasks held six of the ten slots for about 50 min.
+
+Fixed `withName` resources do not grow when the pipeline retries a task: if a task of a process with a selector fails with exit status 137 or 140 (memory or time limit), raise that selector's `memory` or `time` in nextflow.config (up to the `resourceLimits` caps) and resubmit as described under **Resuming a run** (Step 11). After the first real run, compare the selectors with `{OUTDIR}/pipeline_info/execution_trace.txt`: its `cpus`, `memory` and `time` columns show what each task requested, `peak_rss`, `realtime` and `%cpu` what it used, and `attempt` whether it was retried. **DEXSEQ_EXON memory:** its `peak_rss` in the trace is misleading. In the real-data test the trace reported 187 GB for this task, which requested 32 GB and was not killed; `sstat` showed 8.4 GB during its serial phase. The pinned DEXSeq script forks BiocParallel workers, and their shared memory is probably counted once per worker. Its true peak was not measured: do not raise its selector because of that column alone; compare with SLURM's MaxRSS (`sstat` while the task runs, `sacct` afterwards). `resourceLimits` caps every task at 16 CPUs, 64 GB and 24 h; this revision has no `max_cpus`, `max_memory` or `max_time` parameters (Step 8), so the caps live only here. `overwrite = true` on the four report files lets a run that failed early be started again.
+
+**STAR without the transcriptome BAM.** At this revision the pipeline's `conf/modules.config` always gives STAR_ALIGN `--quantMode TranscriptomeSAM`, so STAR also writes a transcriptome BAM (`*.Aligned.toTranscriptome.out.bam`) of an estimated 20 GB or more per sample of 38 M read pairs (projected in this skill's real-data test from a partial file: 5.57 GB after about 7.5 M of 38 M read pairs, which extrapolates to 20-28 GB). With this skill's route (`aligner: "star"`, Step 8) nothing reads it: the pipeline uses it only with `aligner: "star_salmon"`, and it is not published. The `withName: 'STAR_ALIGN'` block of the template therefore repeats the pinned `ext.args` without `--quantMode TranscriptomeSAM` and `--quantTranscriptomeSAMoutput BanSingleEnd` (and without the pinned block's comment line); it is part of `nextflow.config`, so the launch line does not change. Evidence: the same selector and arguments, given in a separate config file, were used for the resumed run of the real-data test (22 tasks cached, 0 failed): all six STAR_ALIGN tasks ran with exactly these arguments, and every later task completed. The block as written in this template was then applied in a run on the nf-core test data (2026-10-03, Nextflow 26.04.6): the config was accepted, no STAR_ALIGN task had `--quantMode`, and no transcriptome BAM was written. Not verified: an unmodified STAR_ALIGN run to completion at full size (the first run of the real-data test was stopped for disk). With BAM input no STAR_ALIGN task runs, so the block changes nothing there. When the pin moves, compare this block with that revision's `conf/modules.config` again; with `aligner: "star_salmon"` (not offered by this skill) the transcriptome BAM is needed and the block must go.
 
 ---
 
@@ -851,6 +997,7 @@ Show the user what was written as a table (file, purpose): the samplesheet, the 
 - `tail -f nf-core_rnasplice_{VERSION_TAG}.{JOBID}.log` shows the Nextflow progress and, on failure, the failed process. The name comes from the `#SBATCH -o` line of the submission script (`{JOBID}` is the number `sbatch` printed); SLURM writes this log in the directory where `sbatch` was run, which is `{CWD}` when the user submits from there as in Step 11.
 - SLURM emails `{USER_EMAIL}` when the head job ends or fails.
 - A task that failed on memory or time: raise its selector in nextflow.config (Step 10) and resubmit as described under **Resuming a run** (Step 11).
+- To stop a run: cancel the head job with `scancel {JOBID}`. Nextflow can be killed before it cancels its own task jobs (in the real-data test, seven task jobs kept running after the head job was cancelled). Then list the jobs with full names, `squeue -u $USER -o "%.12i %.70j"` (the default name column shows only 8 characters); the pipeline's task jobs are named `nf-NFCORE_RNASPLICE_…`. Check each one with `scontrol show job <id>`: its `StdOut` (the task's `.command.log`) must be under `{CWD}/work`, so that it belongs to this run. Then cancel them one at a time with `scancel <id>`. Never cancel by a name pattern or all of the user's jobs at once: that can stop other runs. The finished tasks stay in `work/`; the run can be continued later as described under **Resuming a run** (Step 11).
 
 **Pipeline revision.** When `{VERSION}` is 1b447239488097651d8eac44bca2c1556865eb0f, tell the user that this is an unreleased development commit of nf-core/rnasplice (`dev-1b44723`), pinned by this skill because it is the revision its verification ran on; any other revision (a later commit or a release) needs this skill's verification gate to be run again before the settings and the output paths below can be relied on (see the README).
 
@@ -871,15 +1018,15 @@ Outputs under {OUTDIR}/ :
 ```
 With a paired design (`rmats_paired_stats: true`) the rMATS directory is `star/rmats/{CONTRAST}_paired/` (seen in this skill's verification runs); write that path instead. `pipeline_info/` holds the execution report, the timeline and the trace (requested and used resources per task). `star/` also keeps a sorted copy of every BAM file (disk use).
 
-**Reading the rMATS tables.** Each event type (SE, A5SS, A3SS, MXE, RI) has a `.MATS.JC.txt` table (junction-spanning reads only) and a `.MATS.JCEC.txt` table (junction and exon-body reads). `IncLevelDifference` = mean(`IncLevel1`) - mean(`IncLevel2`) = inclusion level of the treatment group minus that of the control group (in this pipeline the treatment samples are rMATS's `b1`); positive values mean more inclusion in the treatment. `IncLevel1`, `IJC_SAMPLE_1` and `SJC_SAMPLE_1` hold one comma-separated value per treatment sample, in samplesheet order (the `_2` columns: the control samples); the test columns are `PValue` and `FDR`. This skill sets no cut-offs: choose your own. As an example, Step 8 lists what Akerberg et al. 2022 used (FDR, |IncLevelDifference| and the number of uncalled replicates, from the accessible parts of its Methods).
+**Reading the rMATS tables.** Each event type (SE, A5SS, A3SS, MXE, RI) has a `.MATS.JC.txt` table (junction-spanning reads only) and a `.MATS.JCEC.txt` table (junction and exon-body reads). `IncLevelDifference` = mean(`IncLevel1`) - mean(`IncLevel2`) = inclusion level of the treatment group minus that of the control group (in this pipeline the treatment samples are rMATS's `b1`); positive values mean more inclusion in the treatment. `IncLevel1`, `IJC_SAMPLE_1` and `SJC_SAMPLE_1` hold one comma-separated value per treatment sample, in samplesheet order (the `_2` columns: the control samples); the test columns are `PValue` and `FDR`. This skill sets no cut-offs: choose your own. As an example, Step 8 lists what Akerberg et al. 2022 used (FDR, |IncLevelDifference| and the number of uncalled replicates, from the accessible parts of its Methods). With an Ensembl genome, rMATS writes the `chr` column with a `chr` prefix that the FASTA and the GTF do not have (`chr15` for the contig `15`, `chrKI270711.1` for `KI270711.1`, seen in the real-data test): strip it before joining the rMATS tables with the GTF or with other tables.
 
 **Reading the DTU and SUPPA2 tables.** DTU and SUPPA2 files are named `{TREATMENT}-{CONTROL}` (for example `KO-WT`), not after the contrast name, and are under `salmon/`. SUPPA2 dPSI = mean PSI of the control minus mean PSI of the treatment, although the column header reads `local_{TREATMENT}-local_{CONTROL}_dPSI` (isoforms: `transcript_{TREATMENT}-transcript_{CONTROL}_dPSI`); this was checked on every event of this skill's verification run, so a positive dPSI means more inclusion in the control. In the DTU tables the fold-change column is `log2fold_{CONTROL}_{TREATMENT}` (control over treatment), so a positive value means a larger share of the transcript in the control.
 
-**Reading the exon-usage tables.** DEXSeq exon usage (`DEXSeqResults.{CONTRAST}.csv`): the fold-change column is `log2fold_{CONTROL}_{TREATMENT}` (control relative to treatment, like DTU; column name seen in the verification run, and the pinned `run_dexseq_exon.R` makes the treatment the reference level), so a positive value means more usage of the exon bin in the control. edgeR exon usage (`contrast_{CONTRAST}.usage.exon.csv`): `logFC` = treatment minus control (exon usage relative to its gene; from the pinned `run_edger_exon.R`, which builds the contrast as treatment-control; not checked numerically), so a positive value means more usage of the exon in the treatment.
+**Reading the exon-usage tables.** DEXSeq exon usage (`DEXSeqResults.{CONTRAST}.csv`): the fold-change column is `log2fold_{CONTROL}_{TREATMENT}` (control relative to treatment, like DTU; column name seen in the verification run, and the pinned `run_dexseq_exon.R` makes the treatment the reference level), so a positive value means more usage of the exon bin in the control. edgeR exon usage (`contrast_{CONTRAST}.usage.exon.csv`): `logFC` = treatment minus control (exon usage relative to its gene; from the pinned `run_edger_exon.R`, which builds the contrast as treatment-control; checked numerically on one exon of the real-data test: the RBPMS2 exon skipped in the knockout has logFC −1.59 for KO vs WT), so a positive value means more usage of the exon in the treatment.
 
 ⚠️ The sign is reversed relative to rMATS: DTU fold changes, SUPPA2 dPSI and DEXSeq exon fold changes are positive when the control has more; rMATS `IncLevelDifference` and edgeR `logFC` are positive when the treatment has more.
 
-The output paths and sign conventions in this step were verified on nf-core's test data only (this skill's verification run of the pinned revision; the edgeR direction from the pinned code), not on a real data set.
+The output paths and sign conventions in this step were verified on nf-core's test data (this skill's verification run of the pinned revision) and on one real dataset, the real-data test (human, 6 samples): there every path of the hand-off note existed and every sign statement held on real rows (the edgeR direction on one exon); no other real dataset was run.
 
 **Which output answers which question.** Only the analyses that were switched on have outputs.
 
@@ -914,4 +1061,4 @@ The output paths and sign conventions in this step were verified on nf-core's te
 - Never overwrite an existing `nextflow.config`; ask before overwriting any other file.
 - Never embed a download URL that was not verified in this session.
 - Every `module add` in a generated script is guarded (`|| { ...; exit 1; }`): under Lmod a failed `module add` silently breaks every later one.
-- This skill is pinned to nf-core/rnasplice dev-1b44723 and was verified on nf-core's test data only; do not present its settings or outputs as tested on real data.
+- This skill is pinned to nf-core/rnasplice dev-1b44723; it was verified on nf-core's test data and run once on one real human dataset (6 samples, see the README); do not present its settings or outputs as validated beyond these two datasets.
