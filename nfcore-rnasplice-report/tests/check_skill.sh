@@ -302,6 +302,54 @@ printf '%s\n' "$b" | grep -qF 'bam_t <- read_bamlist(params$outdir, Tr); bam_c <
 if printf '%s\n' "$b" | grep -qF 'order of the sample sheet.'; then echo "FAIL: 02_rmats.Rmd: the PSI sample order must not be described as the order of the sample sheet"; fail=1; fi
 printf '%s\n' "$b" | grep -qF 'low_support_report(tab, params$fdr, params$dpsi)' || { echo "FAIL: 02_rmats.Rmd: the low_support count is not reported"; fail=1; }
 # --- end Rmd 02 and 03
+# --- Rmd 04 (exon and transcript usage) and Rmd 05 (cross-tool)
+need '**File `04_usage.Rmd`.**'
+need '**File `05_cross_tool.Rmd`.**'
+need 'USAGE_WORDING <- c(treatment_up = "more used in treatment", control_up = "more used in control")'
+need 'none_message <- function(fdr) paste0("none at FDR ", format(fdr))'
+need '  s <- s[order(s$padj, 1 - abs(s$effect), s$feature_id), , drop = FALSE]'
+need 'pg <- read_gene_table(pgf, ",", "groupID", "padj")'
+need 'sf <- path_of("star", "edger", sprintf("contrast_%s.usage.simes.csv", C))'
+need '  data.frame(gene_id = g$gene_id, padj = g$gene, stringsAsFactors = FALSE)'
+need '  txsig <- !is.na(s$transcript) & s$transcript < fdr'
+need '  make_calls(s$gene_id[!is.na(s$gene) & s$gene < fdr], s$gene_id[!is.na(s$gene)], f, sigf)'
+need '  make_calls(tab$gene_id[sig], tab$gene_id[!is.na(tab$padj)], tab, sig)'
+need '    same <- sum(known & da == db)'
+need '    opposite <- sum(known & da != db)'
+need 'a gene is significant when `gene` is below the FDR and a transcript when `transcript` is'
+need 'the column `gene` holds the screened adjusted p-value at the gene level and the column `transcript` the screened adjusted p-value at the transcript level'
+need "stageR's own overall alpha is the run's setting"
+need 'the report prints it when the `stageRTx` object is readable with the stageR package of the image'
+need 'directions compared only, never effect sizes across scales'
+need 'Background: the tools do not test the same genes'
+need 'cat("**none**: no gene is called by two or more tools at FDR '
+need 'The cross-tool report `05_cross_tool.Rmd` is generated only when two or more tools ran (Step 10).'
+need 'ComplexUpset when the image has it, otherwise UpSetR'
+need 'Gene identifiers are Ensembl identifiers in every tool; a version suffix is removed only where one is present'
+forbid 'compare effect sizes across tools'
+for n in 04_usage.Rmd 05_cross_tool.Rmd; do
+  b=$(rmd_block "$n")
+  [ -n "$b" ] || { echo "FAIL: $n: no rmd block under its heading"; fail=1; continue; }
+  # the sign sentence stands in the text before the first code chunk with functions
+  ls=$(printf '%s\n' "$b" | grep -nF 'Every effect is stated as **treatment minus control**: a positive effect is higher in the treatment group' | head -n1 | cut -d: -f1)
+  lf=$(printf '%s\n' "$b" | grep -n '^```{r functions' | head -n1 | cut -d: -f1)
+  { [ -n "$ls" ] && [ -n "$lf" ] && [ "$ls" -lt "$lf" ]; } || { echo "FAIL: $n: the sign sentence (Every effect is stated as treatment minus control) must stand before the functions chunk"; fail=1; }
+  # the parameters it switches on are read, and no parameter outside the 18 of the contract
+  case "$n" in 04_usage.Rmd) extra="fdr events topgene outdir" ;; *) extra="fdr dpsi cross min_reads outdir" ;; esac
+  for v in report_dir contrasts modules $extra; do
+    printf '%s\n' "$b" | grep -qF "params\$$v" || { echo "FAIL: $n: the parameter params\$$v is not used"; fail=1; }
+  done
+  for v in $(printf '%s\n' "$b" | grep -o 'params\$[A-Za-z_]*' | sort -u | sed 's/params\$//'); do
+    case " outdir report_dir contrasts samplesheet modules fdr dpsi rmats_type min_reads events cross topgene enrich organism enrich_dbs gtf paired_rmats paired_suppa " in
+      *" $v "*) ;; *) echo "FAIL: $n: params\$$v is not one of the 18 parameters of the contract"; fail=1 ;; esac
+  done
+  # the thresholds come from the parameters: no literal 0.05 or 0.1 in the body of the Rmd
+  if printf '%s\n' "$b" | awk 'f >= 2 { print } /^---$/ { f++ }' | grep -qE '(^|[^0-9.])0\.(05|1)([^0-9]|$)'; then
+    echo "FAIL: $n: a literal threshold (0.05 or 0.1) in the body of the Rmd instead of params\$fdr and params\$dpsi"; fail=1
+  fi
+done
+# --- end Rmd 04 and 05
+
 
 # tests/run_all_tests.sh names every script of tests/ in exactly one list (TESTS, FULL_TESTS or NOT_TESTS), runs each under
 # env -i, and says when the proof-tool self-test was skipped. CHECK_RUN_ALL overrides the file (used by prove_mutations.sh).

@@ -22,6 +22,7 @@ FDR/padj < 0.5 (SUPPA2: first 300 rows plus rows with p-val < 0.01). All files b
 | `salmon/dexseq_dtu/results/dexseq/DEXSeqResults.GBR-YRI.tsv` | same path | 2026-10-03 | none | 40247 |
 | `salmon/dexseq_dtu/results/dexseq/perGeneQValue.GBR-YRI.tsv` | same path | 2026-10-03 | none | 1999 |
 | `salmon/dexseq_dtu/results/stager/getAdjustedPValues.GBR-YRI.tsv` | same path | 2026-10-03 | none | 9114 |
+| `salmon/dexseq_dtu/results/stager/stageRTx.GBR-YRI.rds` | same path | 2026-10-03 | none | 6437 |
 | `261003_a_samplesheet.csv` | `261003_a_samplesheet.csv` in the run directory | 2026-10-03 | none | 806 |
 | `261003_a_contrasts.csv` | `261003_a_contrasts.csv` in the run directory | 2026-10-03 | none | 46 |
 

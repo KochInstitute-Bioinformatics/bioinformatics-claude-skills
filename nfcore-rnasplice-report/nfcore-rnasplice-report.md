@@ -1391,3 +1391,734 @@ for (i in seq_len(nrow(contrasts))) {
 }
 ```
 ````
+
+The exon and transcript usage report `04_usage.Rmd` reads `rds/{CONTRAST}.exon_dexseq.rds`, `rds/{CONTRAST}.exon_edger.rds` and `rds/{CONTRAST}.dtu.rds` (written by `01_import.Rmd`) for every contrast and the gene-level files of the run, which the RDS does not hold and which the report reads again (read only): `star/dexseq_exon/results/perGeneQValue.{CONTRAST}.csv` (columns `groupID`, `padj`), `star/edger/contrast_{CONTRAST}.usage.simes.csv` and `.usage.gene.csv` (columns `Geneid`, `FDR`), `salmon/dexseq_dtu/results/stager/getAdjustedPValues.{T}-{C}.tsv` (columns `geneID`, `txID`, `gene`, `transcript`), the stageR object `stageRTx.{T}-{C}.rds` next to it and `salmon/dexseq_dtu/results/dexseq/DEXSeqResults.{T}-{C}.tsv` (for the two group columns, named by the treatment and the control). It writes, per contrast, `tables/{CONTRAST}.usage.counts.csv`, `tables/{CONTRAST}.exon_dexseq.genes.csv` and `.exon_dexseq.bins.csv`, `tables/{CONTRAST}.exon_edger.genes.csv` and `.exon_edger.exons.csv`, `tables/{CONTRAST}.dtu.genes.csv` and `.dtu.transcripts.csv`, `figures/{CONTRAST}.usage.volcano.{exon_dexseq,exon_edger,dtu}.png`, `figures/{CONTRAST}.usage.exon_top.png` and `figures/{CONTRAST}.usage.dtu_top.png`. Exon bins, exons, genes and transcripts are significant when their adjusted p-value is below `{FDR}`; `{DPSI}` is not applied. For DEXSeq exon usage a gene is significant when its `perGeneQValue` is below `{FDR}`; for edgeR exon usage when its Simes FDR is below `{FDR}`; for DTU, stageR's `gene` column (the screened adjusted p-value at the gene level) is compared with `{FDR}` for the genes and its `transcript` column (the screened adjusted p-value at the transcript level, `NA` where the gene was not screened in) for the transcripts. stageR's own overall alpha is the run's setting: the report prints it when the `stageRTx` object is readable with the stageR package of the image and otherwise says that it is not recorded in the table. `params$events` switches the tables and the volcano plots, `params$topgene` the top-gene plots. A tool whose RDS is missing is reported as missing and the report still renders.
+
+**File `04_usage.Rmd`.**
+````rmd
+---
+title: "Exon and transcript usage"
+output:
+  html_document:
+    toc: true
+params:
+  outdir: ""
+  report_dir: "."
+  contrasts: ""
+  samplesheet: ""
+  modules: ""
+  fdr: 0.05
+  dpsi: 0.1
+  rmats_type: "JC"
+  min_reads: 10
+  events: true
+  cross: true
+  topgene: true
+  enrich: true
+  organism: "human"
+  enrich_dbs: "GO"
+  gtf: ""
+  paired_rmats: false
+  paired_suppa: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, dev = "png", dpi = 150, fig.width = 7, fig.height = 5)
+```
+
+This report shows the exon usage results of DEXSeq and edgeR and the transcript usage (DTU) results of DEXSeq with stageR screening for each contrast, read from the tables that `01_import.Rmd` wrote to `r file.path(params$report_dir, "rds")` and from the gene-level files of the run (read only). Every effect is stated as **treatment minus control**: a positive effect is higher in the treatment group (more inclusion for rMATS and SUPPA2, higher usage for the exon and transcript usage tools). For an exon bin, an exon or a transcript, a positive log2 fold change means it is more used in treatment and a negative one that it is more used in control. The effect is the harmonised column of the RDS and is used as it is.
+
+Exon usage and transcript usage are cut by the adjusted p-value only: a gene, an exon bin or a transcript is significant when its adjusted p-value is below `r params$fdr` (the dPSI threshold of the rMATS and SUPPA2 reports is not applied here). DEXSeq exon usage: a gene is significant when its per-gene q-value (`perGeneQValue`, read from the run's file) is below the FDR, an exon bin when its adjusted p-value is. edgeR exon usage: a gene is significant when its Simes FDR is below the FDR, an exon when its exon-level FDR is; the F-test gene table is counted as well. DTU: stageR screening. In the stageR table the column `gene` holds the screened adjusted p-value at the gene level and the column `transcript` the screened adjusted p-value at the transcript level (`NA` where the gene was not screened in); a gene is significant when `gene` is below the FDR and a transcript when `transcript` is. The direction of a gene is the sign of the effect of its most significant feature (smallest adjusted p-value among the significant bins, exons or transcripts of the gene); it is empty when the gene is significant but none of its features is.
+
+```{r functions}
+suppressPackageStartupMessages(library(ggplot2))
+USAGE_WORDING <- c(treatment_up = "more used in treatment", control_up = "more used in control")
+usage_wording <- function(direction) unname(USAGE_WORDING[direction])
+none_message <- function(fdr) paste0("none at FDR ", format(fdr))
+
+# significant: adjusted p-value present and below the FDR
+sig_usage <- function(tab, fdr) !is.na(tab$padj) & tab$padj < fdr
+
+# per gene: the significant features, the one with the smallest adjusted p-value (then the larger change, then the identifier) and its direction
+top_by_gene <- function(feat, sig) {
+  s <- feat[sig & !is.na(feat$padj), c("gene_id", "feature_id", "padj", "effect", "direction"), drop = FALSE]
+  s <- s[order(s$padj, 1 - abs(s$effect), s$feature_id), , drop = FALSE]
+  n <- table(s$gene_id)
+  top <- s[!duplicated(s$gene_id), , drop = FALSE]
+  data.frame(gene_id = top$gene_id, n_sig_features = as.integer(n[top$gene_id]), top_feature = top$feature_id, top_effect = top$effect,
+             top_padj = top$padj, direction = ifelse(top$direction %in% c("treatment_up", "control_up"), top$direction, NA_character_),
+             stringsAsFactors = FALSE)
+}
+# the significant genes of a gene-level table (gene_id, padj), with their top feature and direction
+gene_summary <- function(gene_tab, feat, sig_feat, fdr) {
+  g <- gene_tab[sig_usage(gene_tab, fdr), , drop = FALSE]
+  g <- g[order(g$padj, g$gene_id), , drop = FALSE]
+  tp <- top_by_gene(feat, sig_feat)
+  k <- match(g$gene_id, tp$gene_id)
+  out <- data.frame(gene_id = g$gene_id, gene_padj = g$padj, n_sig_features = tp$n_sig_features[k], top_feature = tp$top_feature[k],
+                    top_effect = tp$top_effect[k], top_padj = tp$top_padj[k], direction = tp$direction[k], stringsAsFactors = FALSE)
+  out$n_sig_features[is.na(out$n_sig_features)] <- 0L
+  out$direction_wording <- usage_wording(out$direction)
+  out
+}
+# the three rows with the smallest adjusted p-value
+nearest_rows <- function(tab, n = 3) {
+  ok <- tab[!is.na(tab$padj), , drop = FALSE]
+  head(ok[order(ok$padj, ok$gene_id), , drop = FALSE], n)
+}
+# one row of the counts table: tested (adjusted p-value present), significant, and the significant ones by direction (NA at gene level)
+usage_counts <- function(tool, level, p, sig, direction = NULL) {
+  r <- data.frame(tool = tool, level = level, tested = sum(!is.na(p)), significant = sum(sig), stringsAsFactors = FALSE)
+  r[[usage_wording("treatment_up")]] <- if (is.null(direction)) NA_integer_ else sum(sig & direction %in% "treatment_up")
+  r[[usage_wording("control_up")]] <- if (is.null(direction)) NA_integer_ else sum(sig & direction %in% "control_up")
+  r
+}
+# the exon number of a DEXSeq bin identifier (GENE:E001); a merged group GENE1+GENE2 has the same form
+bin_number <- function(feature_id) as.integer(sub("^.*:E", "", feature_id))
+
+strip_quotes <- function(x) gsub("^\"|\"$", "", x)
+read_delim_chr <- function(path, sep) {
+  if (!file.exists(path)) stop("file ", path, " not found: none of its columns can be read")
+  l <- sub("\r$", "", readLines(path, warn = FALSE))
+  l <- l[nzchar(l)]
+  if (length(l) == 0) stop("file ", path, " is empty: no header line, so no column can be found")
+  nm <- strsplit(l[1], sep, fixed = TRUE)[[1]]
+  if (length(l) == 1) {
+    return(as.data.frame(stats::setNames(replicate(length(nm), character(0), simplify = FALSE), nm),
+                         check.names = FALSE, stringsAsFactors = FALSE))
+  }
+  tab <- utils::read.table(text = l[-1], sep = sep, quote = "", header = FALSE, colClasses = "character", na.strings = character(0),
+                           comment.char = "", col.names = paste0("V", seq_along(nm)), fill = FALSE, stringsAsFactors = FALSE)
+  names(tab) <- nm
+  tab
+}
+need_cols <- function(tab, cols, path) {
+  miss <- setdiff(cols, names(tab))
+  if (length(miss)) stop("file ", path, ": column not found: ", paste(miss, collapse = ", "),
+                         " (columns present: ", paste(names(tab), collapse = ", "), ")")
+}
+to_num <- function(x, path, col) {
+  x <- trimws(strip_quotes(x))
+  miss <- x %in% c("", "NA", "nan", "NaN", "-nan")
+  v <- suppressWarnings(as.numeric(ifelse(miss, NA, x)))
+  bad <- is.na(v) & !miss
+  if (any(bad)) stop("file ", path, ": column ", col, " has a value that is not a number: '", x[bad][1], "'")
+  v
+}
+read_contrasts <- function(path) {
+  tab <- read_delim_chr(path, ",")
+  need_cols(tab, c("contrast", "treatment", "control"), path)
+  tab <- tab[nzchar(tab$contrast), c("contrast", "treatment", "control")]
+  rownames(tab) <- NULL
+  tab
+}
+
+# a gene-level table: the gene identifier and the adjusted p-value (DEXSeq perGeneQValue: groupID, padj; edgeR: Geneid, FDR)
+read_gene_table <- function(path, sep, id_col, p_col) {
+  tab <- read_delim_chr(path, sep)
+  need_cols(tab, c(id_col, p_col), path)
+  data.frame(gene_id = strip_quotes(tab[[id_col]]), padj = to_num(tab[[p_col]], path, p_col), stringsAsFactors = FALSE)
+}
+# stageR: gene and transcript are the screened adjusted p-values at the two levels, NA where not screened
+read_stager <- function(path) {
+  tab <- read_delim_chr(path, "\t")
+  need_cols(tab, c("geneID", "txID", "gene", "transcript"), path)
+  data.frame(gene_id = strip_quotes(tab$geneID), tx_id = strip_quotes(tab$txID), gene = to_num(tab$gene, path, "gene"),
+             transcript = to_num(tab$transcript, path, "transcript"), stringsAsFactors = FALSE)
+}
+# one row per gene of the stageR table (the gene-level value is repeated on every transcript row)
+stager_genes <- function(st) {
+  g <- st[!duplicated(st$gene_id), , drop = FALSE]
+  data.frame(gene_id = g$gene_id, padj = g$gene, stringsAsFactors = FALSE)
+}
+# the overall alpha stageR was run with, read from the stageRTx object; NA when the file is absent or cannot be read
+stager_alpha <- function(path) {
+  if (!file.exists(path) || !requireNamespace("stageR", quietly = TRUE)) return(NA_real_)
+  tryCatch(as.numeric(methods::slot(readRDS(path), "alpha"))[1], error = function(e) NA_real_)
+}
+# the two group columns of the DEXSeq transcript table are named by the conditions of the contrast
+read_dtu_groups <- function(path, treatment, control) {
+  tab <- read_delim_chr(path, "\t")
+  need_cols(tab, c("groupID", "featureID", treatment, control), path)
+  data.frame(gene_id = strip_quotes(tab$groupID), feature_id = strip_quotes(tab$featureID), treatment = to_num(tab[[treatment]], path, treatment),
+             control = to_num(tab[[control]], path, control), stringsAsFactors = FALSE)
+}
+
+# volcano: x = log2 fold change (treatment minus control), y = -log10 adjusted p-value, the FDR as a dashed line, the top 10 significant labelled
+volcano_usage <- function(tab, sig, title, fdr, treatment, control) {
+  keep <- !is.na(tab$padj) & !is.na(tab$effect)
+  d <- tab[keep, , drop = FALSE]
+  d$sig <- sig[keep]
+  d$nlp <- -log10(pmax(d$padj, 1e-300))
+  d$status <- ifelse(d$sig, "significant", "not significant")
+  lab <- d[d$sig, , drop = FALSE]
+  lab <- head(lab[order(lab$padj, lab$gene_id), , drop = FALSE], 10)
+  p <- ggplot(d, aes(x = effect, y = nlp, colour = status)) + geom_point(alpha = 0.7, size = 1.6) +
+    geom_vline(xintercept = 0, linetype = "dotted", colour = "grey40") +
+    geom_hline(yintercept = -log10(fdr), linetype = "dashed", colour = "grey40") +
+    scale_colour_manual(values = c("significant" = "#D55E00", "not significant" = "grey60")) +
+    labs(title = title, x = paste0("log2 fold change (", treatment, " minus ", control, ")"), y = "-log10 adjusted p-value") +
+    theme_bw()
+  if (nrow(lab) > 0) {
+    p <- if (requireNamespace("ggrepel", quietly = TRUE)) {
+      p + ggrepel::geom_text_repel(data = lab, aes(label = gene_id), colour = "black", size = 3, max.overlaps = Inf)
+    } else {
+      p + geom_text(data = lab, aes(label = gene_id), colour = "black", size = 3, check_overlap = TRUE, vjust = -0.6)
+    }
+  }
+  p
+}
+# exon usage along the exon number for some genes: one panel per gene, the bars are the log2 fold change of each bin
+exon_usage_plot <- function(feat, genes, fdr, treatment, control, contrast) {
+  d <- feat[feat$gene_id %in% genes & !is.na(feat$effect), , drop = FALSE]
+  d$bin <- bin_number(d$feature_id)
+  d$status <- ifelse(sig_usage(d, fdr), "significant", "not significant")
+  d$gene_id <- factor(d$gene_id, levels = genes)
+  ggplot(d, aes(x = bin, y = effect, fill = status)) + geom_col(width = 0.8) + geom_hline(yintercept = 0) +
+    facet_wrap(~gene_id, scales = "free_x", ncol = 2) +
+    scale_fill_manual(values = c("significant" = "#D55E00", "not significant" = "grey60")) +
+    labs(title = paste0("Exon usage of the top DEXSeq genes, ", contrast), x = "exon bin number",
+         y = paste0("log2 fold change in exon usage (", treatment, " minus ", control, ")")) +
+    theme_bw()
+}
+# the two group columns of the DEXSeq transcript table for some genes, treatment next to control; confirmed = keys "gene transcript" kept by stageR
+dtu_group_plot <- function(grp, genes, confirmed, treatment, control, contrast) {
+  d <- grp[grp$gene_id %in% genes, , drop = FALSE]
+  d$label <- paste0(d$feature_id, ifelse(paste(d$gene_id, d$feature_id) %in% confirmed, " *", ""))
+  long <- rbind(data.frame(gene_id = d$gene_id, label = d$label, role = "treatment", value = d$treatment, stringsAsFactors = FALSE),
+                data.frame(gene_id = d$gene_id, label = d$label, role = "control", value = d$control, stringsAsFactors = FALSE))
+  long <- long[!is.na(long$value), , drop = FALSE]
+  long$role <- factor(long$role, levels = c("treatment", "control"), labels = c(paste0("treatment (", treatment, ")"), paste0("control (", control, ")")))
+  long$gene_id <- factor(long$gene_id, levels = genes)
+  ggplot(long, aes(x = label, y = value, fill = role)) + geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+    facet_wrap(~gene_id, scales = "free_x", ncol = 2) +
+    scale_fill_manual(values = c("#D55E00", "#0072B2"), name = "group") +
+    labs(title = paste0("Transcripts of the top DTU genes, ", contrast), x = "transcript (* confirmed by stageR)",
+         y = "value of the group column of the DEXSeq table") +
+    theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+save_plot <- function(p, file, width = 7, height = 5) {
+  ggplot2::ggsave(filename = file, plot = p, width = width, height = height, dpi = 150)
+  invisible(file)
+}
+show_image <- function(file, alt) cat("![", alt, "](", file, ")\n\n", sep = "")
+```
+
+```{r report, results="asis"}
+modules <- strsplit(trimws(params$modules), "[[:space:]]+")[[1]]
+usage_modules <- c("dexseq_exon", "edger_exon", "dtu")
+fig_dir <- file.path(params$report_dir, "figures"); tab_dir <- file.path(params$report_dir, "tables")
+dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE); dir.create(tab_dir, recursive = TRUE, showWarnings = FALSE)
+contrasts <- read_contrasts(params$contrasts)
+path_of <- function(...) file.path(params$outdir, ...)
+write_tab <- function(d, name) utils::write.csv(d, file.path(tab_dir, paste0(C, ".", name, ".csv")), row.names = FALSE)
+show_tab <- function(d, n = 20) { if (nrow(d) > 0) cat(knitr::kable(head(d, n), format = "markdown"), sep = "\n"); cat("\n\n") }
+load_rds <- function(tool, label) {
+  f <- file.path(params$report_dir, "rds", paste0(C, ".", tool, ".rds"))
+  if (!file.exists(f)) {
+    cat("The file `", f, "` was not found: the import found no ", label, " table for this contrast (the files it looked for are listed in `files_missing` of `rds/",
+        C, ".qc.rds`). No ", label, " result is shown for this contrast.\n\n", sep = "")
+    return(NULL)
+  }
+  tab <- readRDS(f)
+  need_cols(tab, c("gene_id", "feature_id", "effect", "padj", "direction"), f)
+  tab
+}
+missing_file <- function(f, what) cat("The file `", f, "` was not found: ", what, "\n\n", sep = "")
+# the empty-set message with the three nearest rows by adjusted p-value
+none_block <- function(d, what) {
+  cat("**", none_message(params$fdr), "** (", what, ")\n\n", sep = "")
+  nr <- nearest_rows(d, 3)
+  cat("The three nearest by adjusted p-value:\n\n")
+  if (nrow(nr) > 0) show_tab(data.frame(id = nr$gene_id, padj = signif(nr$padj, 3), stringsAsFactors = FALSE)) else cat("Nothing was tested.\n\n")
+}
+if (!any(usage_modules %in% modules)) cat("None of the modules dexseq_exon, edger_exon and dtu is among the modules of this report (", params$modules, "): there is nothing to show.\n\n", sep = "")
+for (i in seq_len(nrow(contrasts))) {
+  if (!any(usage_modules %in% modules)) break
+  C <- contrasts$contrast[i]; Tr <- contrasts$treatment[i]; Co <- contrasts$control[i]
+  cat("\n\n## Contrast ", C, "\n\n", sep = "")
+  cat("Treatment `", Tr, "`, control `", Co, "`: every effect below is `", Tr, "` minus `", Co, "`. A positive log2 fold change: ",
+      usage_wording("treatment_up"), "; a negative log2 fold change: ", usage_wording("control_up"), ".\n\n", sep = "")
+  cat("Threshold: FDR ", format(params$fdr), " (exon and transcript usage are cut by the adjusted p-value only). The exon and transcript usage tools use the design of the sample sheet as it is; this report does not change it.\n\n", sep = "")
+  cnt <- list(); lost <- FALSE
+
+  if ("dexseq_exon" %in% modules) {
+    cat("\n\n### DEXSeq exon usage, ", C, "\n\n", sep = "")
+    tab <- load_rds("exon_dexseq", "DEXSeq exon usage")
+    if (is.null(tab)) lost <- TRUE else {
+      sigb <- sig_usage(tab, params$fdr)
+      cnt$dex_bin <- usage_counts("exon_dexseq", "exon_bin", tab$padj, sigb, tab$direction)
+      pgf <- path_of("star", "dexseq_exon", "results", sprintf("perGeneQValue.%s.csv", C))
+      pg <- NULL
+      if (file.exists(pgf)) pg <- read_gene_table(pgf, ",", "groupID", "padj") else missing_file(pgf, "no gene-level result is shown for DEXSeq exon usage.")
+      cat(sum(sigb), " exon bins with an adjusted p-value below ", format(params$fdr), " (of ", sum(!is.na(tab$padj)), " tested).\n\n", sep = "")
+      if (!is.null(pg)) {
+        cnt$dex_gene <- usage_counts("exon_dexseq", "gene", pg$padj, sig_usage(pg, params$fdr))
+        gt <- gene_summary(pg, tab, sigb, params$fdr)
+        cat(nrow(gt), " genes with a per-gene q-value (`perGeneQValue`) below ", format(params$fdr), " (of ", sum(!is.na(pg$padj)), " tested; table `tables/", C, ".exon_dexseq.genes.csv`).\n\n", sep = "")
+        if (isTRUE(params$events)) {
+          write_tab(gt, "exon_dexseq.genes")
+          if (nrow(gt) > 0) show_tab(gt[, c("gene_id", "gene_padj", "n_sig_features", "top_feature", "top_effect", "direction_wording")]) else none_block(pg, "genes by per-gene q-value")
+        }
+      }
+      if (isTRUE(params$events)) {
+        bins <- tab[sigb, c("gene_id", "feature_id", "padj", "effect", "direction"), drop = FALSE]
+        bins <- bins[order(bins$padj, bins$feature_id), , drop = FALSE]
+        bins$direction_wording <- usage_wording(bins$direction)
+        write_tab(bins, "exon_dexseq.bins")
+        cat("Exon bins below the FDR (table `tables/", C, ".exon_dexseq.bins.csv`):\n\n", sep = "")
+        if (nrow(bins) > 0) show_tab(transform(bins, padj = signif(padj, 3), effect = round(effect, 3))[, c("feature_id", "padj", "effect", "direction_wording")]) else
+          none_block(data.frame(gene_id = tab$feature_id, padj = tab$padj, stringsAsFactors = FALSE), "exon bins")
+        if (any(!is.na(tab$padj) & !is.na(tab$effect))) {
+          vf <- file.path(fig_dir, sprintf("%s.usage.volcano.exon_dexseq.png", C))
+          save_plot(volcano_usage(tab, sigb, paste0("DEXSeq exon usage, ", C), params$fdr, Tr, Co), vf)
+          show_image(vf, paste0("Volcano plot of the DEXSeq exon bins, ", C))
+        } else cat("No exon bin has both an effect and an adjusted p-value: no volcano plot.\n\n")
+      } else cat("The tables and the volcano plot are switched off for this report (events = FALSE).\n\n")
+      if (isTRUE(params$topgene)) {
+        if (is.null(pg)) cat("No gene-level table: no exon usage plot.\n\n") else {
+          cand <- pg[pg$gene_id %in% tab$gene_id[!is.na(tab$effect)] & !is.na(pg$padj), , drop = FALSE]
+          top <- head(cand$gene_id[order(cand$padj, cand$gene_id)], 6)
+          if (length(top) == 0) cat("No gene with a tested exon bin: no exon usage plot.\n\n") else {
+            cat("Exon usage of the six genes with the smallest per-gene q-value (the significant genes first); the bars are the log2 fold change of each tested exon bin, coloured when the bin is below the FDR.\n\n")
+            ef <- file.path(fig_dir, paste0(C, ".usage.exon_top.png"))
+            save_plot(exon_usage_plot(tab, top, params$fdr, Tr, Co, C), ef, width = 9, height = 2 + 2 * ceiling(length(top) / 2))
+            show_image(ef, paste0("Exon usage of the top DEXSeq genes, ", C))
+          }
+        }
+      } else cat("The top-gene plots are switched off for this report (topgene = FALSE).\n\n")
+    }
+  }
+
+  if ("edger_exon" %in% modules) {
+    cat("\n\n### edgeR exon usage, ", C, "\n\n", sep = "")
+    tab <- load_rds("exon_edger", "edgeR exon usage")
+    if (is.null(tab)) lost <- TRUE else {
+      sige <- sig_usage(tab, params$fdr)
+      cnt$edger_exon <- usage_counts("exon_edger", "exon", tab$padj, sige, tab$direction)
+      sf <- path_of("star", "edger", sprintf("contrast_%s.usage.simes.csv", C)); gf <- path_of("star", "edger", sprintf("contrast_%s.usage.gene.csv", C))
+      simes <- NULL
+      if (file.exists(sf)) simes <- read_gene_table(sf, ",", "Geneid", "FDR") else missing_file(sf, "no Simes gene-level result is shown for edgeR exon usage.")
+      if (file.exists(gf)) {
+        ft <- read_gene_table(gf, ",", "Geneid", "FDR")
+        cnt$edger_ftest <- usage_counts("exon_edger", "gene_ftest", ft$padj, sig_usage(ft, params$fdr))
+        cat(sum(sig_usage(ft, params$fdr)), " genes with an F-test FDR below ", format(params$fdr), " (gene-level F-test table, of ", sum(!is.na(ft$padj)), " tested).\n\n", sep = "")
+      } else missing_file(gf, "the gene-level F-test table is not counted.")
+      cat(sum(sige), " exons with an exon-level FDR below ", format(params$fdr), " (of ", sum(!is.na(tab$padj)), " tested).\n\n", sep = "")
+      if (!is.null(simes)) {
+        cnt$edger_simes <- usage_counts("exon_edger", "gene_simes", simes$padj, sig_usage(simes, params$fdr))
+        gt <- gene_summary(simes, tab, sige, params$fdr)
+        cat(nrow(gt), " genes with a Simes FDR below ", format(params$fdr), " (of ", sum(!is.na(simes$padj)), " tested; table `tables/", C, ".exon_edger.genes.csv`).\n\n", sep = "")
+        if (isTRUE(params$events)) {
+          write_tab(gt, "exon_edger.genes")
+          if (nrow(gt) > 0) show_tab(gt[, c("gene_id", "gene_padj", "n_sig_features", "top_feature", "top_effect", "direction_wording")]) else none_block(simes, "genes by Simes FDR")
+        }
+      }
+      if (isTRUE(params$events)) {
+        ex <- tab[sige, c("gene_id", "feature_id", "padj", "effect", "direction"), drop = FALSE]
+        ex <- ex[order(ex$padj, ex$feature_id), , drop = FALSE]
+        ex$direction_wording <- usage_wording(ex$direction)
+        write_tab(ex, "exon_edger.exons")
+        cat("Exons below the FDR (table `tables/", C, ".exon_edger.exons.csv`):\n\n", sep = "")
+        if (nrow(ex) > 0) show_tab(transform(ex, padj = signif(padj, 3), effect = round(effect, 3))[, c("feature_id", "padj", "effect", "direction_wording")]) else
+          none_block(data.frame(gene_id = tab$feature_id, padj = tab$padj, stringsAsFactors = FALSE), "exons")
+        if (any(!is.na(tab$padj) & !is.na(tab$effect))) {
+          vf <- file.path(fig_dir, sprintf("%s.usage.volcano.exon_edger.png", C))
+          save_plot(volcano_usage(tab, sige, paste0("edgeR exon usage, ", C), params$fdr, Tr, Co), vf)
+          show_image(vf, paste0("Volcano plot of the edgeR exons, ", C))
+        } else cat("No exon has both an effect and an adjusted p-value: no volcano plot.\n\n")
+      } else cat("The tables and the volcano plot are switched off for this report (events = FALSE).\n\n")
+    }
+  }
+
+  if ("dtu" %in% modules) {
+    cat("\n\n### Transcript usage (DEXSeq DTU with stageR screening), ", C, "\n\n", sep = "")
+    tab <- load_rds("dtu", "DEXSeq transcript usage")
+    if (is.null(tab)) lost <- TRUE else {
+      sf <- path_of("salmon", "dexseq_dtu", "results", "stager", sprintf("getAdjustedPValues.%s-%s.tsv", Tr, Co))
+      if (!file.exists(sf)) {
+        missing_file(sf, "no stageR result is shown. The DEXSeq transcript adjusted p-values alone are counted below.")
+        cnt$dtu_dexseq <- usage_counts("dtu", "transcript_dexseq", tab$padj, sig_usage(tab, params$fdr), tab$direction)
+      } else {
+        st <- read_stager(sf)
+        alpha <- stager_alpha(path_of("salmon", "dexseq_dtu", "results", "stager", sprintf("stageRTx.%s-%s.rds", Tr, Co)))
+        if (is.na(alpha)) cat("stageR's overall alpha is the run's setting; it is not recorded in the table `getAdjustedPValues.", Tr, "-", Co, ".tsv`, and the `stageRTx` object was not found or could not be read, so it is not shown here. ", sep = "")
+        else cat("stageR was run with an overall alpha of ", format(alpha), " (read from the `stageRTx` object of the run). The screened adjusted p-values below are compared with the FDR of this report, ", format(params$fdr),
+                 "; the stageR guarantee on the overall false discovery rate holds at its own alpha. ", sep = "")
+        cat("The column `gene` of the stageR table is the screened adjusted p-value at the gene level and the column `transcript` the screened adjusted p-value at the transcript level (`NA` where the gene was not screened in).\n\n")
+        sg <- stager_genes(st)
+        txsig <- !is.na(st$transcript) & st$transcript < params$fdr
+        confirmed <- paste(st$gene_id, st$tx_id)[txsig]
+        sigt <- paste(tab$gene_id, tab$feature_id) %in% confirmed
+        k <- match(paste(st$gene_id, st$tx_id), paste(tab$gene_id, tab$feature_id))
+        cnt$dtu_gene <- usage_counts("dtu", "gene_stager", sg$padj, sig_usage(sg, params$fdr))
+        cnt$dtu_tx <- usage_counts("dtu", "transcript_stager", st$transcript, txsig, tab$direction[k])
+        cnt$dtu_dexseq <- usage_counts("dtu", "transcript_dexseq", tab$padj, sig_usage(tab, params$fdr), tab$direction)
+        gt <- gene_summary(sg, tab, sigt, params$fdr)
+        cat(nrow(gt), " genes with the stageR gene-level adjusted p-value (`gene`) below ", format(params$fdr), " (of ", sum(!is.na(sg$padj)), " screened; table `tables/", C, ".dtu.genes.csv`). ",
+            sum(txsig), " transcripts with the stageR transcript-level adjusted p-value (`transcript`) below ", format(params$fdr), " (table `tables/", C, ".dtu.transcripts.csv`). ",
+            "For comparison, ", sum(sig_usage(tab, params$fdr)), " transcripts have a DEXSeq adjusted p-value below ", format(params$fdr), " before the screening.\n\n", sep = "")
+        if (isTRUE(params$events)) {
+          tx <- data.frame(gene_id = st$gene_id[txsig], transcript_id = st$tx_id[txsig], stager_transcript_padj = st$transcript[txsig], dexseq_padj = tab$padj[k][txsig],
+                           effect = tab$effect[k][txsig], direction = tab$direction[k][txsig], stringsAsFactors = FALSE)
+          tx <- tx[order(tx$stager_transcript_padj, tx$dexseq_padj, tx$transcript_id), , drop = FALSE]
+          tx$direction_wording <- usage_wording(tx$direction)
+          write_tab(gt, "dtu.genes"); write_tab(tx, "dtu.transcripts")
+          if (nrow(gt) > 0) show_tab(gt[, c("gene_id", "gene_padj", "n_sig_features", "top_feature", "top_effect", "direction_wording")]) else none_block(sg, "genes by the stageR gene-level adjusted p-value")
+          if (nrow(tx) > 0) show_tab(transform(tx, effect = round(effect, 3), stager_transcript_padj = signif(stager_transcript_padj, 3), dexseq_padj = signif(dexseq_padj, 3))[, c("gene_id", "transcript_id", "stager_transcript_padj", "effect", "direction_wording")]) else
+            none_block(data.frame(gene_id = tab$feature_id, padj = tab$padj, stringsAsFactors = FALSE), "transcripts by the stageR transcript-level adjusted p-value")
+          if (any(!is.na(tab$padj) & !is.na(tab$effect))) {
+            vf <- file.path(fig_dir, sprintf("%s.usage.volcano.dtu.png", C))
+            save_plot(volcano_usage(tab, sigt, paste0("DEXSeq transcript usage, ", C), params$fdr, Tr, Co), vf)
+            cat("Volcano plot of the transcripts: the y axis is the DEXSeq adjusted p-value of the transcript; the transcripts confirmed by stageR (`transcript` below the FDR) are coloured.\n\n")
+            show_image(vf, paste0("Volcano plot of the DTU transcripts, ", C))
+          } else cat("No transcript has both an effect and an adjusted p-value: no volcano plot.\n\n")
+        } else cat("The tables and the volcano plot are switched off for this report (events = FALSE).\n\n")
+        if (isTRUE(params$topgene)) {
+          dxf <- path_of("salmon", "dexseq_dtu", "results", "dexseq", sprintf("DEXSeqResults.%s-%s.tsv", Tr, Co))
+          cand <- sg[!is.na(sg$padj), , drop = FALSE]
+          top <- head(cand$gene_id[order(cand$padj, cand$gene_id)], 6)
+          if (!file.exists(dxf)) missing_file(dxf, "no transcript plot of the top genes.") else if (length(top) == 0) cat("No gene was screened: no transcript plot.\n\n") else {
+            grp <- read_dtu_groups(dxf, Tr, Co)
+            cat("The six genes with the smallest stageR gene-level adjusted p-value. The bars are the two group columns of the DEXSeq table, `", Tr, "` (treatment) and `", Co,
+                "` (control), as they stand in the table; transcripts confirmed by stageR are marked with *.\n\n", sep = "")
+            pf <- file.path(fig_dir, paste0(C, ".usage.dtu_top.png"))
+            save_plot(dtu_group_plot(grp, top, confirmed, Tr, Co, C), pf, width = 9, height = 2 + 2 * ceiling(length(top) / 2))
+            show_image(pf, paste0("Transcripts of the top DTU genes, ", C))
+          }
+        } else cat("The top-gene plots are switched off for this report (topgene = FALSE).\n\n")
+      }
+    }
+  }
+
+  cat("\n\n### Counts, ", C, "\n\n", sep = "")
+  cn <- if (length(cnt)) do.call(rbind, unname(cnt)) else usage_counts("none", "none", numeric(0), logical(0))[0, ]
+  rownames(cn) <- NULL
+  write_tab(cn, "usage.counts")
+  cat("Tested and significant counts of every level (counts file `tables/", C, ".usage.counts.csv`); the direction columns are empty for the gene-level rows:\n\n", sep = "")
+  cat(knitr::kable(cn, format = "markdown"), sep = "\n")
+  cat("\n\n")
+  if (lost) {
+    qf <- file.path(params$report_dir, "rds", paste0(C, ".qc.rds"))
+    if (file.exists(qf)) { qc <- readRDS(qf); if (length(qc$files_missing)) cat("Files the import did not find:\n\n", paste0("- `", qc$files_missing, "`\n"), "\n", sep = "") }
+  }
+}
+```
+````
+
+The cross-tool report `05_cross_tool.Rmd` is generated only when two or more tools ran (Step 10). It compares, for every contrast, the genes called by each tool that has a result. It reads `rds/{CONTRAST}.{tool}.rds` (written by `01_import.Rmd`) and, for the gene-level calls of DEXSeq exon usage, edgeR exon usage and DTU, the same gene-level files of the run as `04_usage.Rmd` (`perGeneQValue.{CONTRAST}.csv`, `usage.simes.csv`, stageR's `getAdjustedPValues.{T}-{C}.tsv`), read only. A gene is called by rMATS or SUPPA2 when at least one of its events is significant (adjusted p-value below `{FDR}`, absolute dPSI at least `{DPSI}`, and for rMATS not flagged `low_support`); by DEXSeq exon usage when its `perGeneQValue` is below `{FDR}`; by edgeR exon usage when its Simes FDR is below `{FDR}`; by DTU when stageR's `gene` column is below `{FDR}`. Gene identifiers are Ensembl identifiers in every tool; a version suffix is removed only where one is present, and a DEXSeq group of overlapping genes (`GENE1+GENE2`) counts for each of its genes. The direction of a gene in a tool is the sign of the effect of the feature with the smallest adjusted p-value among that tool's significant features in the gene (rMATS and SUPPA2 on dPSI, the other tools on log2 fold change): `treatment_up`, `control_up`, or empty when the gene is called at gene level and none of its features is significant. The concordance table counts, for each pair of tools, the genes called by both with the same direction and with the opposite direction; directions compared only, never effect sizes across scales. The background is stated in the report: a gene outside a tool's set was either not significant or not tested by that tool. It writes, per contrast, `tables/{CONTRAST}.cross_tool.sets.csv`, `.cross_tool.membership.csv`, `.cross_tool.intersections.csv`, `.cross_tool.genes.csv` (the genes called by two or more tools, with the direction of each tool), `.cross_tool.concordance.csv` and `figures/{CONTRAST}.upset.png` (ComplexUpset when the image has it, otherwise UpSetR). A tool whose RDS or gene-level file is missing is left out and named; fewer than two tools left means no comparison, and the report still renders.
+
+**File `05_cross_tool.Rmd`.**
+````rmd
+---
+title: "Cross-tool comparison"
+output:
+  html_document:
+    toc: true
+params:
+  outdir: ""
+  report_dir: "."
+  contrasts: ""
+  samplesheet: ""
+  modules: ""
+  fdr: 0.05
+  dpsi: 0.1
+  rmats_type: "JC"
+  min_reads: 10
+  events: true
+  cross: true
+  topgene: true
+  enrich: true
+  organism: "human"
+  enrich_dbs: "GO"
+  gtf: ""
+  paired_rmats: false
+  paired_suppa: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, dev = "png", dpi = 150, fig.width = 8, fig.height = 5)
+```
+
+This report compares the genes called by each tool that ran, for each contrast, from the tables that `01_import.Rmd` wrote to `r file.path(params$report_dir, "rds")` and from the gene-level files of the run (read only). Every effect is stated as **treatment minus control**: a positive effect is higher in the treatment group (more inclusion for rMATS and SUPPA2, higher usage for the exon and transcript usage tools). The direction of a gene is `treatment_up` for a positive effect and `control_up` for a negative one, as in the harmonised column `direction` of the RDS, which is used as it is.
+
+A gene is called by a tool when: rMATS and SUPPA2, at least one event of the gene has an adjusted p-value below `r params$fdr`, an absolute dPSI of at least `r params$dpsi`, and (rMATS) is not flagged `low_support`; DEXSeq exon usage, the per-gene q-value (`perGeneQValue`) is below the FDR; edgeR exon usage, the Simes FDR is below the FDR; DTU, the stageR column `gene` (the screened adjusted p-value at the gene level) is below the FDR. Gene identifiers are Ensembl identifiers in every tool; a version suffix is removed only where one is present, and a DEXSeq group of overlapping genes (`GENE1+GENE2`) counts for each of its genes.
+
+The direction of a gene in a tool is the sign of the effect of the feature with the smallest adjusted p-value among that tool's significant features in the gene (dPSI for rMATS and SUPPA2, log2 fold change for the other tools); it is empty when the gene is called at gene level but none of its features is significant. The concordance table counts, for each pair of tools, the genes called by both with the same direction and with the opposite direction (directions compared only, never effect sizes across scales: dPSI and log2 fold change are not on one scale); genes without a direction in one of the two tools are counted separately.
+
+Background: the tools do not test the same genes. A gene outside the set of a tool was either not significant or not tested by that tool, so the overlaps describe the genes called and say nothing about genes a tool could not test; the number of genes each tool tested is in the sets table.
+
+```{r functions}
+suppressPackageStartupMessages(library(ggplot2))
+TOOL_LABELS <- c(rmats = "rMATS", suppa = "SUPPA2", exon_dexseq = "DEXSeq exon", exon_edger = "edgeR exon", dtu = "DEXSeq DTU")
+MODULE_OF_TOOL <- c(rmats = "rmats", suppa = "suppa", exon_dexseq = "dexseq_exon", exon_edger = "edger_exon", dtu = "dtu")
+
+# an Ensembl gene identifier loses its version suffix (.5) only when it has one
+strip_version <- function(x) sub("^(ENS[A-Z]*G[0-9]+)\\.[0-9]+$", "\\1", x)
+# a DEXSeq group of overlapping genes (GENE1+GENE2) becomes one row per gene
+expand_genes <- function(df) {
+  parts <- strsplit(df$gene_id, "+", fixed = TRUE)
+  out <- df[rep(seq_len(nrow(df)), lengths(parts)), , drop = FALSE]
+  out$gene_id <- as.character(unlist(parts))
+  rownames(out) <- NULL
+  out
+}
+tidy_ids <- function(df) { df$gene_id <- strip_version(df$gene_id); df }
+
+# significant: adjusted p-value below the FDR; for events also the absolute dPSI threshold and not low_support
+sig_usage <- function(tab, fdr) !is.na(tab$padj) & tab$padj < fdr
+sig_events <- function(tab, fdr, dpsi) {
+  !is.na(tab$padj) & tab$padj < fdr & !is.na(tab$effect) & abs(tab$effect) >= dpsi & !tab$low_support
+}
+
+# per gene: the significant features, the one with the smallest adjusted p-value (then the larger change, then the identifier) and its direction
+top_by_gene <- function(feat, sig) {
+  s <- feat[sig & !is.na(feat$padj), c("gene_id", "feature_id", "padj", "effect", "direction"), drop = FALSE]
+  s <- s[order(s$padj, 1 - abs(s$effect), s$feature_id), , drop = FALSE]
+  n <- table(s$gene_id)
+  top <- s[!duplicated(s$gene_id), , drop = FALSE]
+  data.frame(gene_id = top$gene_id, n_sig_features = as.integer(n[top$gene_id]), top_feature = top$feature_id, top_effect = top$effect,
+             top_padj = top$padj, direction = ifelse(top$direction %in% c("treatment_up", "control_up"), top$direction, NA_character_),
+             stringsAsFactors = FALSE)
+}
+# the calls of one tool: the genes called, the genes tested, and the direction of every gene that has a significant feature
+make_calls <- function(genes, tested, feat, sig_feat) {
+  list(genes = sort(unique(as.character(genes))), tested = sort(unique(as.character(tested))), dir = top_by_gene(feat, sig_feat))
+}
+# rMATS and SUPPA2: a gene is called when one of its events is significant
+calls_from_events <- function(tab, fdr, dpsi) {
+  tab <- tidy_ids(tab)
+  sig <- sig_events(tab, fdr, dpsi)
+  make_calls(tab$gene_id[sig], tab$gene_id[!is.na(tab$padj)], tab, sig)
+}
+# DEXSeq and edgeR exon usage: a gene is called by the gene-level table (gene_id, padj); the features are the exon bins or exons of the RDS
+calls_from_gene_table <- function(gene_tab, feat, fdr) {
+  g <- tidy_ids(expand_genes(gene_tab))
+  f <- tidy_ids(expand_genes(feat))
+  make_calls(g$gene_id[sig_usage(g, fdr)], g$gene_id[!is.na(g$padj)], f, sig_usage(f, fdr))
+}
+# DTU: a gene is called when stageR's gene is below the FDR; its significant features are the transcripts with stageR's transcript below the FDR
+calls_from_stager <- function(st, feat, fdr) {
+  s <- tidy_ids(st)
+  f <- tidy_ids(feat)
+  txsig <- !is.na(s$transcript) & s$transcript < fdr
+  confirmed <- paste(s$gene_id, s$tx_id)[txsig]
+  sigf <- paste(f$gene_id, f$feature_id) %in% confirmed
+  make_calls(s$gene_id[!is.na(s$gene) & s$gene < fdr], s$gene_id[!is.na(s$gene)], f, sigf)
+}
+
+# one row per gene of the union, one logical column per tool
+membership_table <- function(calls) {
+  genes <- sort(unique(as.character(unlist(lapply(calls, function(x) x$genes)))))
+  out <- data.frame(gene_id = genes, stringsAsFactors = FALSE)
+  for (t in names(calls)) out[[t]] <- out$gene_id %in% calls[[t]]$genes
+  out
+}
+# the UpSet intersections: the number of genes for each exact combination of tools
+intersection_counts <- function(calls) {
+  m <- membership_table(calls)
+  tools <- names(calls)
+  if (nrow(m) == 0) return(data.frame(combination = character(0), n_genes = integer(0), stringsAsFactors = FALSE))
+  mat <- as.matrix(m[tools])
+  combo <- vapply(seq_len(nrow(mat)), function(i) paste(tools[mat[i, ]], collapse = "&"), character(1))
+  tb <- table(combo)
+  out <- data.frame(combination = names(tb), n_genes = as.integer(tb), stringsAsFactors = FALSE)
+  out <- out[order(out$n_genes, out$combination, decreasing = c(TRUE, FALSE), method = "radix"), , drop = FALSE]
+  rownames(out) <- NULL
+  out
+}
+# the genes called by min_tools or more tools, with the direction of each tool (empty when the tool did not call the gene or has no direction)
+cross_table <- function(calls, min_tools = 2) {
+  m <- membership_table(calls)
+  tools <- names(calls)
+  mat <- as.matrix(m[tools])
+  n <- rowSums(mat)
+  keep <- n >= min_tools
+  out <- data.frame(gene_id = m$gene_id[keep], n_tools = as.integer(n[keep]),
+                    tools = vapply(which(keep), function(i) paste(tools[mat[i, ]], collapse = "; "), character(1)), stringsAsFactors = FALSE)
+  for (t in tools) {
+    d <- calls[[t]]$dir
+    out[[paste0("direction_", t)]] <- ifelse(out$gene_id %in% calls[[t]]$genes, d$direction[match(out$gene_id, d$gene_id)], NA_character_)
+  }
+  out <- out[order(out$n_tools, out$gene_id, decreasing = c(TRUE, FALSE), method = "radix"), , drop = FALSE]
+  rownames(out) <- NULL
+  out
+}
+# for each pair of tools: the genes called by both, with the same direction, with the opposite direction, and without a direction in one of them
+# (directions are compared, never the sizes of the effects: dPSI and log2 fold change are not on one scale)
+concordance_table <- function(calls) {
+  tools <- names(calls)
+  rows <- list()
+  if (length(tools) >= 2) for (i in seq_len(length(tools) - 1)) for (j in (i + 1):length(tools)) {
+    a <- tools[i]; b <- tools[j]
+    both <- intersect(calls[[a]]$genes, calls[[b]]$genes)
+    da <- calls[[a]]$dir$direction[match(both, calls[[a]]$dir$gene_id)]
+    db <- calls[[b]]$dir$direction[match(both, calls[[b]]$dir$gene_id)]
+    known <- !is.na(da) & !is.na(db)
+    same <- sum(known & da == db)
+    opposite <- sum(known & da != db)
+    rows[[length(rows) + 1]] <- data.frame(tool_a = a, tool_b = b, genes_in_both = length(both), same_direction = same, opposite_direction = opposite,
+                                           no_direction = length(both) - same - opposite, stringsAsFactors = FALSE)
+  }
+  if (length(rows)) do.call(rbind, rows) else
+    data.frame(tool_a = character(0), tool_b = character(0), genes_in_both = integer(0), same_direction = integer(0), opposite_direction = integer(0),
+               no_direction = integer(0), stringsAsFactors = FALSE)
+}
+
+# the UpSet plot of the sets that are not empty: ComplexUpset when the image has it, otherwise UpSetR; FALSE when fewer than two sets have a gene
+upset_engine <- function() {
+  if (requireNamespace("ComplexUpset", quietly = TRUE)) "ComplexUpset" else if (requireNamespace("UpSetR", quietly = TRUE)) "UpSetR" else "none"
+}
+make_upset <- function(calls, file, engine = upset_engine()) {
+  sets <- lapply(calls, function(x) x$genes)
+  names(sets) <- unname(TOOL_LABELS[names(calls)])
+  sets <- sets[vapply(sets, length, integer(1)) > 0]
+  if (length(sets) < 2 || engine == "none") return(FALSE)
+  if (engine == "ComplexUpset") {
+    genes <- sort(unique(unlist(sets)))
+    m <- data.frame(gene_id = genes, stringsAsFactors = FALSE)
+    for (s in names(sets)) m[[s]] <- genes %in% sets[[s]]
+    ggplot2::ggsave(filename = file, plot = ComplexUpset::upset(m, names(sets), name = "genes", width_ratio = 0.2), width = 8, height = 5, dpi = 150)
+  } else {
+    grDevices::png(file, width = 8, height = 5, units = "in", res = 150)
+    print(UpSetR::upset(UpSetR::fromList(sets), nsets = length(sets), order.by = "freq"))
+    grDevices::dev.off()
+  }
+  TRUE
+}
+
+strip_quotes <- function(x) gsub("^\"|\"$", "", x)
+read_delim_chr <- function(path, sep) {
+  if (!file.exists(path)) stop("file ", path, " not found: none of its columns can be read")
+  l <- sub("\r$", "", readLines(path, warn = FALSE))
+  l <- l[nzchar(l)]
+  if (length(l) == 0) stop("file ", path, " is empty: no header line, so no column can be found")
+  nm <- strsplit(l[1], sep, fixed = TRUE)[[1]]
+  if (length(l) == 1) {
+    return(as.data.frame(stats::setNames(replicate(length(nm), character(0), simplify = FALSE), nm),
+                         check.names = FALSE, stringsAsFactors = FALSE))
+  }
+  tab <- utils::read.table(text = l[-1], sep = sep, quote = "", header = FALSE, colClasses = "character", na.strings = character(0),
+                           comment.char = "", col.names = paste0("V", seq_along(nm)), fill = FALSE, stringsAsFactors = FALSE)
+  names(tab) <- nm
+  tab
+}
+need_cols <- function(tab, cols, path) {
+  miss <- setdiff(cols, names(tab))
+  if (length(miss)) stop("file ", path, ": column not found: ", paste(miss, collapse = ", "),
+                         " (columns present: ", paste(names(tab), collapse = ", "), ")")
+}
+to_num <- function(x, path, col) {
+  x <- trimws(strip_quotes(x))
+  miss <- x %in% c("", "NA", "nan", "NaN", "-nan")
+  v <- suppressWarnings(as.numeric(ifelse(miss, NA, x)))
+  bad <- is.na(v) & !miss
+  if (any(bad)) stop("file ", path, ": column ", col, " has a value that is not a number: '", x[bad][1], "'")
+  v
+}
+read_contrasts <- function(path) {
+  tab <- read_delim_chr(path, ",")
+  need_cols(tab, c("contrast", "treatment", "control"), path)
+  tab <- tab[nzchar(tab$contrast), c("contrast", "treatment", "control")]
+  rownames(tab) <- NULL
+  tab
+}
+# a gene-level table: the gene identifier and the adjusted p-value (DEXSeq perGeneQValue: groupID, padj; edgeR Simes: Geneid, FDR)
+read_gene_table <- function(path, sep, id_col, p_col) {
+  tab <- read_delim_chr(path, sep)
+  need_cols(tab, c(id_col, p_col), path)
+  data.frame(gene_id = strip_quotes(tab[[id_col]]), padj = to_num(tab[[p_col]], path, p_col), stringsAsFactors = FALSE)
+}
+# stageR: gene and transcript are the screened adjusted p-values at the two levels, NA where not screened
+read_stager <- function(path) {
+  tab <- read_delim_chr(path, "\t")
+  need_cols(tab, c("geneID", "txID", "gene", "transcript"), path)
+  data.frame(gene_id = strip_quotes(tab$geneID), tx_id = strip_quotes(tab$txID), gene = to_num(tab$gene, path, "gene"),
+             transcript = to_num(tab$transcript, path, "transcript"), stringsAsFactors = FALSE)
+}
+show_image <- function(file, alt) cat("![", alt, "](", file, ")\n\n", sep = "")
+```
+
+```{r report, results="asis"}
+modules <- strsplit(trimws(params$modules), "[[:space:]]+")[[1]]
+fig_dir <- file.path(params$report_dir, "figures"); tab_dir <- file.path(params$report_dir, "tables")
+dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE); dir.create(tab_dir, recursive = TRUE, showWarnings = FALSE)
+contrasts <- read_contrasts(params$contrasts)
+path_of <- function(...) file.path(params$outdir, ...)
+write_tab <- function(d, name) utils::write.csv(d, file.path(tab_dir, paste0(C, ".cross_tool.", name, ".csv")), row.names = FALSE)
+if (!isTRUE(params$cross)) cat("The cross-tool comparison is switched off for this report (cross = FALSE).\n\n")
+for (i in seq_len(nrow(contrasts))) {
+  if (!isTRUE(params$cross)) break
+  C <- contrasts$contrast[i]; Tr <- contrasts$treatment[i]; Co <- contrasts$control[i]
+  cat("\n\n## Contrast ", C, "\n\n", sep = "")
+  cat("Treatment `", Tr, "`, control `", Co, "`: every effect and direction below is `", Tr, "` minus `", Co, "`; `treatment_up` is higher in `", Tr,
+      "`, `control_up` is higher in `", Co, "`.\n\n", sep = "")
+  cat("Thresholds: FDR ", format(params$fdr), ", abs(dPSI) ", format(params$dpsi), " (rMATS and SUPPA2 events only); rMATS minimum read support ", params$min_reads, ".\n\n", sep = "")
+  calls <- list(); notfound <- character(0)
+  for (tool in names(TOOL_LABELS)) {
+    if (!MODULE_OF_TOOL[[tool]] %in% modules) next
+    f <- file.path(params$report_dir, "rds", paste0(C, ".", tool, ".rds"))
+    if (!file.exists(f)) { notfound <- c(notfound, f); next }
+    tab <- readRDS(f)
+    need_cols(tab, c("gene_id", "feature_id", "effect", "padj", "direction", "low_support"), f)
+    cl <- NULL
+    if (tool %in% c("rmats", "suppa")) {
+      cl <- calls_from_events(tab, params$fdr, params$dpsi)
+    } else if (tool == "exon_dexseq") {
+      pgf <- path_of("star", "dexseq_exon", "results", sprintf("perGeneQValue.%s.csv", C))
+      if (file.exists(pgf)) { pg <- read_gene_table(pgf, ",", "groupID", "padj"); cl <- calls_from_gene_table(pg, tab, params$fdr) } else notfound <- c(notfound, pgf)
+    } else if (tool == "exon_edger") {
+      sf <- path_of("star", "edger", sprintf("contrast_%s.usage.simes.csv", C))
+      if (file.exists(sf)) { sm <- read_gene_table(sf, ",", "Geneid", "FDR"); cl <- calls_from_gene_table(sm, tab, params$fdr) } else notfound <- c(notfound, sf)
+    } else if (tool == "dtu") {
+      gf <- path_of("salmon", "dexseq_dtu", "results", "stager", sprintf("getAdjustedPValues.%s-%s.tsv", Tr, Co))
+      if (file.exists(gf)) { st <- read_stager(gf); cl <- calls_from_stager(st, tab, params$fdr) } else notfound <- c(notfound, gf)
+    }
+    if (!is.null(cl)) calls[[tool]] <- cl
+  }
+  if (length(notfound)) cat("Files not found (the tool is left out of the comparison):\n\n", paste0("- `", notfound, "`\n"), "\n", sep = "")
+  if (length(calls) < 2) {
+    cat("There are fewer than two tools with a result for this contrast", if (length(calls) == 1) paste0(" (only ", TOOL_LABELS[[names(calls)]], ")") else "",
+        ": no comparison is made.\n\n", sep = "")
+    next
+  }
+  sets <- data.frame(tool = names(calls), label = unname(TOOL_LABELS[names(calls)]), tested_genes = vapply(calls, function(x) length(x$tested), integer(1)),
+                     significant_genes = vapply(calls, function(x) length(x$genes), integer(1)), stringsAsFactors = FALSE)
+  rownames(sets) <- NULL
+  write_tab(sets, "sets")
+  write_tab(membership_table(calls), "membership")
+  ic <- intersection_counts(calls)
+  write_tab(ic, "intersections")
+  cat("### Genes called by each tool, ", C, "\n\n", sep = "")
+  cat("Tested genes and significant genes per tool (sets file `tables/", C, ".cross_tool.sets.csv`):\n\n", sep = "")
+  cat(knitr::kable(sets, format = "markdown"), sep = "\n")
+  cat("\n\n")
+  uf <- file.path(fig_dir, paste0(C, ".upset.png"))
+  engine <- upset_engine()
+  cat("### UpSet plot, ", C, "\n\n", sep = "")
+  if (isTRUE(make_upset(calls, uf, engine))) {
+    cat("Intersections of the gene sets of the tools with at least one gene, drawn with ", engine, " (figure `figures/", C, ".upset.png`).\n\n", sep = "")
+    show_image(uf, paste0("UpSet plot of the significant genes of each tool, ", C))
+  } else cat("Fewer than two tools have a significant gene (or neither ComplexUpset nor UpSetR is in the image): no UpSet plot.\n\n")
+  cat("Exact intersections (genes in exactly these tools; table `tables/", C, ".cross_tool.intersections.csv`):\n\n", sep = "")
+  if (nrow(ic) > 0) cat(knitr::kable(ic, format = "markdown"), sep = "\n") else cat("No gene is called by any tool.\n")
+  cat("\n\n### Genes called by two or more tools, ", C, "\n\n", sep = "")
+  xt <- cross_table(calls)
+  write_tab(xt, "genes")
+  if (nrow(xt) == 0) {
+    cat("**none**: no gene is called by two or more tools at FDR ", format(params$fdr), ", |dPSI| ", format(params$dpsi), ".\n\n", sep = "")
+  } else {
+    cat(nrow(xt), " genes are called by two or more tools, with the direction of each tool (table `tables/", C, ".cross_tool.genes.csv`):\n\n", sep = "")
+    cat(knitr::kable(head(xt, 30), format = "markdown"), sep = "\n")
+    cat("\n\n")
+  }
+  cat("### Direction concordance, ", C, "\n\n", sep = "")
+  cc <- concordance_table(calls)
+  write_tab(cc, "concordance")
+  cat("For each pair of tools, the genes called by both with the same direction and with the opposite direction (directions compared only, never effect sizes across scales; counts file `tables/",
+      C, ".cross_tool.concordance.csv`). `no_direction` counts the genes called by both for which at least one tool has no direction.\n\n", sep = "")
+  cat(knitr::kable(cc, format = "markdown"), sep = "\n")
+  cat("\n\n")
+}
+```
+````

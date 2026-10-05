@@ -6,7 +6,7 @@
 #   sbatch -p bcc -o <scratch>/logs/rsr_r_%j.out <tests dir>/r/run_r_tests.sh <skill.md> <tests dir>
 # Both paths absolute and on the shared file system (the job runs on a compute node). tests/test_r.sh submits this script with
 # sbatch and waits for it; prove_mutations.sh (mode rtest) does the same on a mutated copy of the skill.
-# Runs tests/r/test_harmonise.R and tests/r/test_events_report.R in the R image, one after the other. It refuses to run outside a SLURM job: R never runs on a login node.
+# Runs tests/r/test_harmonise.R, tests/r/test_events_report.R and tests/r/test_usage_cross.R in the R image, one after the other. It refuses to run outside a SLURM job: R never runs on a login node.
 # The log holds one "R TESTS PASS (<n>)" or "R TESTS FAIL (...)" line per script, then "EXIT <code>".
 set -uo pipefail
 [ -n "${SLURM_JOB_ID:-}" ] || { echo "ERROR: run_r_tests.sh runs R: submit it with sbatch, never run it on a login node"; exit 1; }
@@ -20,7 +20,7 @@ fi
 module add singularity/3.10.4 || exit 1
 SIF=/net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif
 rc=0
-for t in test_harmonise.R test_events_report.R; do
+for t in test_harmonise.R test_events_report.R test_usage_cross.R; do
   echo "== $t"
   singularity exec --bind /net/bmc-lab3 "$SIF" Rscript "$TESTS/r/$t" "$SKILL" "$TESTS/fixtures" || rc=1
 done
