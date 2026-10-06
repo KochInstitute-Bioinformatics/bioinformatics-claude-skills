@@ -213,17 +213,45 @@ need "  OUTF=\"\"; if [ \"\$n\" = 07 ]; then OUTF=\"output_file = 'report_summar
 need '**Absolute output directory.**'
 need 'else echo "no pairs file in {CWD}"; fi'
 need 'the first thing written into `{REPORT_DIR}` at all is the `image_check/` directory of Step 2, after this answer'
-# No Bash block of the skill is long or nests a heredoc: a long script, or a heredoc inside a function inside a heredoc, is refused
-# by the safety check of the Claude Code harness. A Bash fence (language bash or sh) has at most 60 lines, at most two heredocs, and
-# no heredoc together with a function definition. Four-backtick (Rmd) fences are not Bash fences.
+need 'the value of $1 holds a line break'
+need 'v=$(printf '\''%s'\'' "$2" | sed '\''s/[\\&|]/\\&/g'\'')'
+need 'printf '\''s|__%s__|%s|g\n'\'' "$1" "$v"; shift 2'
+need 'is empty or still holds a template marker'
+need 'holds a space or a comma and cannot be bound into the container'
+# No code block of the skill is long or nests a heredoc: a long script, or a heredoc inside a function inside a heredoc, is refused
+# by the safety check of the Claude Code harness. Every fenced block is checked (fences of ``` or ~~~, up to three leading spaces,
+# any info string) except the blocks whose info string is explicitly r, rmd, yaml, md, markdown, text, console, json, csv or tsv.
+# A checked fence has at most 60 lines, at most two heredocs, and no heredoc together with a function definition (name() or
+# function name). A fence closes on a line of the same character, at least as long as the opener, with nothing after it.
 fence=$(awk '
-  /^```(bash|sh)$/ { inb = 1; n = 0; hd = 0; fn = 0; start = NR; next }
-  inb && /^```$/ { inb = 0
-    if (n > 60) { print "FAIL: a Bash fence of " n " lines (line " start "); at most 60 lines" }
-    if (hd > 2 || (hd > 0 && fn > 0)) { print "FAIL: a Bash fence with a nested heredoc (line " start "): more than two heredocs, or a heredoc and a function definition" }
-    next }
-  inb { n++; if ($0 ~ /<<-?[[:space:]]*["'\'']?[A-Za-z_]+/ && $0 !~ /<<</) hd++
-        if ($0 ~ /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\)/) fn++ }' "$SKILL")
+  function info(s,   w) { w = s; sub(/^[[:space:]]+/, "", w); sub(/[[:space:]{].*$/, "", w); return tolower(w) }
+  {
+    line = $0; t = line; sub(/^ {0,3}/, "", t)
+    if (!inb && !skip && (t ~ /^```/ || t ~ /^~~~/) && line !~ /^    /) {
+      ch = substr(t, 1, 1); n = 0; while (substr(t, n + 1, 1) == ch) n++
+      rest = substr(t, n + 1)
+      if (ch == "`" && index(rest, "`")) next
+      flen = n; fch = ch; inb = 1; n = 0; hd = 0; fn = 0; start = NR
+      lang = info(rest); skip = (lang == "r" || lang == "rmd" || lang == "yaml" || lang == "md" || lang == "markdown" || lang == "text" || lang == "console" || lang == "json" || lang == "csv" || lang == "tsv")
+      if (skip) { inb = 0 }
+      next
+    }
+    if (skip || inb) {
+      c = 0; while (substr(t, c + 1, 1) == fch) c++
+      if (c >= flen && c == length(t) && line !~ /^    /) {
+        if (inb) {
+          if (n > 60) print "FAIL: a code fence of " n " lines (line " start "); at most 60 lines"
+          if (hd > 2 || (hd > 0 && fn > 0)) print "FAIL: a code fence with a nested heredoc (line " start "): more than two heredocs, or a heredoc and a function definition"
+        }
+        inb = 0; skip = 0; next
+      }
+      if (inb) {
+        n++
+        if (line ~ /<<-?[[:space:]]*["'\'']?[A-Za-z_]+/ && line !~ /<<</) hd++
+        if (line ~ /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\)/ || line ~ /^[[:space:]]*function[[:space:]]+[A-Za-z_]/) fn++
+      }
+    }
+  }' "$SKILL")
 [ -z "$fence" ] || { printf '%s\n' "$fence"; fail=1; }
 # The final instructions print exactly one submit command (a bash or sbatch line naming a run script of the report directory).
 n_submit=$(grep -cE '^[[:space:]]*(bash|sbatch)[[:space:]].*\{REPORT_DIR\}.*run_' "$SKILL")

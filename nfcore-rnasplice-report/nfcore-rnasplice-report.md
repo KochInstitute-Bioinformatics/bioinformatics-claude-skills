@@ -364,6 +364,7 @@ b() { case " {SECTIONS} " in *" $1 "*) echo TRUE ;; *) echo FALSE ;; esac; }
 pr() { case "$1" in true) echo TRUE ;; *) echo FALSE ;; esac; }
 BIND=/net/bmc-lab3
 for p in "$R" "{OUTDIR_RNASPLICE}" "{CWD}" "{SIF}" "{GTF}" "{CONTRASTS_CSV}" "{SAMPLESHEET}"; do
+  case "$p" in /net/bmc-lab3/*) ;; *[[:space:],]*) echo "ERROR: $p holds a space or a comma and cannot be bound into the container"; exit 1 ;; esac
   case "$p" in /net/bmc-lab3/*) ;; /*) q=$(dirname "$p"); case ",$BIND," in *",$q,"*) ;; *) BIND="$BIND,$q" ;; esac ;; esac
 done
 set -- R "$R" OUT "{OUTDIR_RNASPLICE}" SIF "{SIF}" EMAIL "{EMAIL}" JOBNAME "{PROJECT}_report" MEM "{MEM}" TIME "{TIME}" \
@@ -371,7 +372,11 @@ set -- R "$R" OUT "{OUTDIR_RNASPLICE}" SIF "{SIF}" EMAIL "{EMAIL}" JOBNAME "{PRO
   FDR "{FDR}" DPSI "{DPSI}" MIN_READS "{MIN_READS}" ORGANISM "{ORGANISM}" GTF "{GTF}" ENRICH_DBS "{ENRICH_DBS}" BIND "$BIND" \
   EVENTS "$(b events)" CROSS "$(b cross)" TOPGENE "$(b topgene)" ENRICH "$(b enrich)" \
   PAIRED_RMATS "$(pr "{PAIRED_RMATS}")" PAIRED_SUPPA "$(pr "{PAIRED_SUPPA}")"
-while [ $# -gt 0 ]; do printf 's|__%s__|%s|g\n' "$1" "$2"; shift 2; done > "$T/settings.sed"
+while [ $# -gt 0 ]; do
+  case "$2" in *$'\n'*) echo "ERROR: the value of $1 holds a line break"; exit 1 ;; esac
+  v=$(printf '%s' "$2" | sed 's/[\\&|]/\\&/g')
+  printf 's|__%s__|%s|g\n' "$1" "$v"; shift 2
+done > "$T/settings.sed"
 [ -s "$T/settings.sed" ] || { echo "ERROR: $T/settings.sed was not written"; exit 1; }
 echo "wrote $T/settings.sed"
 ```
@@ -397,6 +402,9 @@ while IFS=: read -r n rmd; do
   ALLJ="$ALLJ \$JOB$n"; NUMS="$NUMS $n"
 done < "$T/jobs.txt"
 grep '^echo' "$T/run_all.tpl" | sed "s|__ALLJ__|$ALLJ|" >> "$R/run_all.sh"
+for f in "$R"/run_[0-9][0-9].sbatch "$R/run_all.sh"; do
+  if [ ! -s "$f" ] || grep -q '__[A-Z_]*__' "$f"; then echo "ERROR: $f is empty or still holds a template marker"; exit 1; fi
+done
 ls -la "$R"
 echo "JOBS=${NUMS# }"
 echo "SUBMIT=bash $R/run_all.sh"

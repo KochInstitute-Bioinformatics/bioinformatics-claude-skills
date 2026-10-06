@@ -41,13 +41,15 @@ STUB
 chmod +x "$tmp/stub/sbatch"
 [ "$(env -i PATH="$tmp/stub:$SYS" /bin/bash -c 'type -P sbatch')" = "$tmp/stub/sbatch" ] || { bad "stub sbatch is not first on the PATH"; exit 1; }
 # subst <text>: replaces the placeholders of the skill by the test values (the variables of render).
+CWDP=$tmp/wd; GTFP=$tmp/wd/genes.gtf; CSVP=$tmp/wd/contrasts.csv
+se() { printf '%s' "$1" | sed 's/[\\&|]/\\&/g'; }
 subst() {
   printf '%s\n' "$1" | sed \
-    -e "s|{REPORT_DIR}|$RD|g" -e "s|{OUTDIR_RNASPLICE}|$tmp/wd/out|g" -e "s|{CWD}|$tmp/wd|g" \
-    -e "s|{SIF}|/net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif|g" -e "s|{EMAIL}|$EMAIL|g" \
+    -e "s|{REPORT_DIR}|$RD|g" -e "s|{OUTDIR_RNASPLICE}|$tmp/wd/out|g" -e "s|{CWD}|$(se "$CWDP")|g" \
+    -e "s|{SIF}|/net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif|g" -e "s|{EMAIL}|$(se "$EMAIL")|g" \
     -e "s|{PROJECT}|wd|g" -e "s|{MEM}|$MEM|g" -e "s|{TIME}|$TIME|g" -e "s|{MODULES}|$mods|g" -e "s|{SECTIONS}|$secs|g" \
     -e "s|{FDR}|0.05|g" -e "s|{DPSI}|0.1|g" -e "s|{RMATS_TYPE}|JC|g" -e "s|{MIN_READS}|10|g" -e "s|{ORGANISM}|human|g" \
-    -e "s|{ENRICH_DBS}|GO KEGG|g" -e "s|{GTF}|$tmp/wd/genes.gtf|g" -e "s|{CONTRASTS_CSV}|$tmp/wd/contrasts.csv|g" \
+    -e "s|{ENRICH_DBS}|GO KEGG|g" -e "s|{GTF}|$(se "$GTFP")|g" -e "s|{CONTRASTS_CSV}|$(se "$CSVP")|g" \
     -e "s|{SAMPLESHEET}|$tmp/wd/samples.csv|g" -e "s|{PAIRED_RMATS}|false|g" -e "s|{PAIRED_SUPPA}|true|g"
 }
 runb() { env -i PATH="$SYS" /bin/bash --noprofile --norc -c "$1"; }
@@ -57,7 +59,7 @@ runb() { env -i PATH="$SYS" /bin/bash --noprofile --norc -c "$1"; }
 render() {
   local name=$1 mods=$2 secs=$3; shift 3
   local R="$tmp/wd/results/2026-10-05_wd_report_$name"
-  local MEM=32G TIME=4:00:00 EMAIL=x@y.z RD=$R DROP="" kv f prog rc=0
+  local MEM=32G TIME=4:00:00 EMAIL=x@y.z RD=$R DROP="" kv f prog rc=0 CWDP=$tmp/wd GTFP=$tmp/wd/genes.gtf CSVP=$tmp/wd/contrasts.csv
   for kv in "$@"; do printf -v "${kv%%=*}" %s "${kv#*=}"; done
   for prog in "$B_CHECK" "$B_SET" "$B_REND"; do
     subst "$prog" | grep -o "[^$]{[A-Z][A-Z_]*}" | sort -u
@@ -202,6 +204,27 @@ check "report directory inside the pipeline output is refused" 1 "$(cat "$tmp/in
 # --- the final line names the one submit command, and the pipeline output is unchanged
 has "ev: one submit command" "SUBMIT=bash $tmp/wd/results/2026-10-05_wd_report_ev/run_all.sh" "$tmp/ev.out"
 check "nothing written to the pipeline output" "$tmp/wd/out/star/keep.txt" "$(find "$tmp/wd/out" -type f | tr '\n' ' ' | sed 's/ $//')"
+# --- special characters in values: either the scripts hold the value exactly, or the generator fails loudly (never a broken script)
+render amp "rmats" "events" EMAIL='a&b@c.d' GTFP="$tmp/wd/g&h.gtf"
+check "ampersand in the e-mail and the gtf path: exit status" 0 "$(cat "$tmp/amp.rc")"
+has "ampersand in the e-mail" '#SBATCH --mail-user=a&b@c.d' "$tmp/amp/run_01.sbatch"
+has "ampersand in the gtf path" "gtf = '$tmp/wd/g&h.gtf'" "$tmp/amp/run_07.sbatch"
+render pipe "rmats" "events" CSVP="$tmp/wd/c|d.csv"
+check "pipe in a path: exit status" 0 "$(cat "$tmp/pipe.rc")"
+has "pipe in the contrasts path" "contrasts = '$tmp/wd/c|d.csv'" "$tmp/pipe/run_01.sbatch"
+render bsl "rmats" "events" CSVP="$tmp/wd/c\\d.csv"
+check "backslash in a path: exit status" 0 "$(cat "$tmp/bsl.rc")"
+has "backslash in the contrasts path" "contrasts = '$tmp/wd/c\\d.csv'" "$tmp/bsl/run_02.sbatch"
+render spc "rmats" "events" CWDP="$tmp/wd sp"
+check "space in the working directory (it would be bound): exit status" 1 "$(cat "$tmp/spc.rc")"
+has "space in the working directory: message" "ERROR" "$tmp/spc.out"
+check "space in the working directory: no run script written" "" "$(ls "$tmp/wd/results/2026-10-05_wd_report_spc" | grep '^run_' | tr '\n' ' ')"
+# a value that would break a script, whatever the cause, stops the rendering: an empty script or a leftover marker is an error
+render emptyv "rmats" "events"
+printf 's|__R__|x|g\n' > "$tmp/wd/results/2026-10-05_wd_report_emptyv/templates/settings.sed"
+RD=$tmp/wd/results/2026-10-05_wd_report_emptyv mods=rmats secs=events MEM=32G TIME=4:00:00 EMAIL=x@y.z
+runb "$(subst "$B_REND")" > "$tmp/emptyv2.out" 2>&1; check "leftover marker in a rendered script: exit status" 1 "$?"
+has "leftover marker: message" "ERROR" "$tmp/emptyv2.out"
 # --- no __PLACEHOLDER__ of the templates is left in a generated script
 left=$(cat "$tmp"/all/run_*.sbatch "$tmp"/all/run_all.sh "$tmp"/only/run_all.sh | grep -o '__[A-Z_]*__' | sort -u | tr '\n' ' ')
 check "no __PLACEHOLDER__ left in the generated scripts" "" "$left"
