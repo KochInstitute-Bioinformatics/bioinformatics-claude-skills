@@ -19,6 +19,7 @@ bad()   { echo "FAIL $1"; fail=1; }
 check() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1: expected '$2' got '$3'"; fi; }
 has()   { if grep -qF -- "$2" "$3" 2>/dev/null; then ok "$1"; else bad "$1: '$2' not found in $3"; fi; }
 hasnt() { if grep -qF -- "$2" "$3" 2>/dev/null; then bad "$1: '$2' found in $3"; else ok "$1"; fi; }
+SIFP=/net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif
 SYS=/usr/bin:/bin
 blk() { bash "$here/cut_block.sh" "$skill" "$1"; }
 B_CHECK=$(blk '**Checks and job list.**') && B_SET=$(blk '**Settings.**') && B_REND=$(blk '**Rendering the scripts.**') \
@@ -46,7 +47,7 @@ se() { printf '%s' "$1" | sed 's/[\\&|]/\\&/g'; }
 subst() {
   printf '%s\n' "$1" | sed \
     -e "s|{REPORT_DIR}|$RD|g" -e "s|{OUTDIR_RNASPLICE}|$tmp/wd/out|g" -e "s|{CWD}|$(se "$CWDP")|g" \
-    -e "s|{SIF}|/net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif|g" -e "s|{EMAIL}|$(se "$EMAIL")|g" \
+    -e "s|{SIF}|$(se "$SIFP")|g" -e "s|{EMAIL}|$(se "$EMAIL")|g" \
     -e "s|{PROJECT}|wd|g" -e "s|{MEM}|$MEM|g" -e "s|{TIME}|$TIME|g" -e "s|{MODULES}|$mods|g" -e "s|{SECTIONS}|$secs|g" \
     -e "s|{FDR}|0.05|g" -e "s|{DPSI}|0.1|g" -e "s|{RMATS_TYPE}|JC|g" -e "s|{MIN_READS}|10|g" -e "s|{ORGANISM}|human|g" \
     -e "s|{ENRICH_DBS}|GO KEGG|g" -e "s|{GTF}|$(se "$GTFP")|g" -e "s|{CONTRASTS_CSV}|$(se "$CSVP")|g" \
@@ -59,7 +60,7 @@ runb() { env -i PATH="$SYS" /bin/bash --noprofile --norc -c "$1"; }
 render() {
   local name=$1 mods=$2 secs=$3; shift 3
   local R="$tmp/wd/results/2026-10-05_wd_report_$name"
-  local MEM=32G TIME=4:00:00 EMAIL=x@y.z RD=$R DROP="" kv f prog rc=0 CWDP=$tmp/wd GTFP=$tmp/wd/genes.gtf CSVP=$tmp/wd/contrasts.csv
+  local MEM=32G TIME=4:00:00 EMAIL=x@y.z RD=$R DROP="" kv f prog rc=0 CWDP=$tmp/wd GTFP=$tmp/wd/genes.gtf CSVP=$tmp/wd/contrasts.csv SIFP=$SIFP
   for kv in "$@"; do printf -v "${kv%%=*}" %s "${kv#*=}"; done
   for prog in "$B_CHECK" "$B_SET" "$B_REND"; do
     subst "$prog" | grep -o "[^$]{[A-Z][A-Z_]*}" | sort -u
@@ -105,19 +106,19 @@ for n in 01 02 03 04 05 06 07; do
   has "run_$n: mail user" '#SBATCH --mail-user=x@y.z' "$f"
   has "run_$n: mail type" '#SBATCH --mail-type=END,FAIL' "$f"
   has "run_$n: module guarded" 'module add singularity/3.10.4 || exit 1' "$f"
-  has "run_$n: container" 'singularity exec --bind /net/bmc-lab3' "$f"
-  has "run_$n: Rscript render" 'Rscript -e "rmarkdown::render(' "$f"
-  has "run_$n: output_dir under results" "output_dir = '$tmp/wd/results/2026-10-05_wd_report_all'" "$f"
+  has "run_$n: container" "singularity exec --bind '/net/bmc-lab3" "$f"
+  has "run_$n: Rscript render" "Rscript -e 'rmarkdown::render(" "$f"
+  has "run_$n: output_dir under results" "output_dir = \"$tmp/wd/results/2026-10-05_wd_report_all\"" "$f"
   bash -n "$f" && ok "run_$n: bash -n" || bad "run_$n: bash -n"
 done
 for pair in 01:01_import 02:02_rmats 03:03_suppa 04:04_usage 05:05_cross_tool 06:06_enrichment 07:07_summary; do
   has "run_${pair%%:*}: its Rmd" "${pair#*:}.Rmd" "$tmp/all/run_${pair%%:*}.sbatch"
 done
-has "run_07: the summary page is written to report_summary.html" "output_file = 'report_summary.html'" "$tmp/all/run_07.sbatch"
+has "run_07: the summary page is written to report_summary.html" "output_file = \"report_summary.html\"" "$tmp/all/run_07.sbatch"
 hasnt "run_01: no output_file" "output_file" "$tmp/all/run_01.sbatch"
 has "params: fdr" 'fdr = 0.05' "$tmp/all/run_02.sbatch"
 has "params: dpsi" 'dpsi = 0.1' "$tmp/all/run_02.sbatch"
-has "params: rmats type" "rmats_type = 'JC'" "$tmp/all/run_02.sbatch"
+has "params: rmats type" "rmats_type = \"JC\"" "$tmp/all/run_02.sbatch"
 has "params: min reads" 'min_reads = 10' "$tmp/all/run_02.sbatch"
 has "params: events on" 'events = TRUE' "$tmp/all/run_02.sbatch"
 has "params: topgene on" 'topgene = TRUE' "$tmp/all/run_02.sbatch"
@@ -166,10 +167,10 @@ check "no modules: jobs" "01 07" "$(jobs_of only)"
 has "no modules: 01 without dependency" 'JOB01=$(sbatch --parsable run_01.sbatch)' "$tmp/only/run_all.sh"
 has "no modules: 07 after 01 (afterany)" 'JOB07=$(sbatch --parsable --dependency=afterany:$JOB01 run_07.sbatch)' "$tmp/only/run_all.sh"
 # --- all 18 parameters of the Rmd contract are in the render call of every job
-for p in "outdir = '$tmp/wd/out'" "report_dir = '$tmp/wd/results/2026-10-05_wd_report_all'" "contrasts = '$tmp/wd/contrasts.csv'" \
-  "samplesheet = '$tmp/wd/samples.csv'" "modules = '$ALL'" 'fdr = 0.05' 'dpsi = 0.1' "rmats_type = 'JC'" 'min_reads = 10' \
-  'events = TRUE' 'cross = TRUE' 'topgene = TRUE' 'enrich = TRUE' "organism = 'human'" "enrich_dbs = 'GO KEGG'" \
-  "gtf = '$tmp/wd/genes.gtf'" 'paired_rmats = FALSE' 'paired_suppa = TRUE'; do
+for p in "outdir = \"$tmp/wd/out\"" "report_dir = \"$tmp/wd/results/2026-10-05_wd_report_all\"" "contrasts = \"$tmp/wd/contrasts.csv\"" \
+  "samplesheet = \"$tmp/wd/samples.csv\"" "modules = \"$ALL\"" 'fdr = 0.05' 'dpsi = 0.1' "rmats_type = \"JC\"" 'min_reads = 10' \
+  'events = TRUE' 'cross = TRUE' 'topgene = TRUE' 'enrich = TRUE' "organism = \"human\"" "enrich_dbs = \"GO KEGG\"" \
+  "gtf = \"$tmp/wd/genes.gtf\"" 'paired_rmats = FALSE' 'paired_suppa = TRUE'; do
   for n in 01 04 07; do has "param $p in run_$n" "$p" "$tmp/all/run_$n.sbatch"; done
 done
 # --- a missing Rmd stops the checks before anything is written (only the directories are created)
@@ -208,13 +209,17 @@ check "nothing written to the pipeline output" "$tmp/wd/out/star/keep.txt" "$(fi
 render amp "rmats" "events" EMAIL='a&b@c.d' GTFP="$tmp/wd/g&h.gtf"
 check "ampersand in the e-mail and the gtf path: exit status" 0 "$(cat "$tmp/amp.rc")"
 has "ampersand in the e-mail" '#SBATCH --mail-user=a&b@c.d' "$tmp/amp/run_01.sbatch"
-has "ampersand in the gtf path" "gtf = '$tmp/wd/g&h.gtf'" "$tmp/amp/run_07.sbatch"
+has "ampersand in the gtf path" "gtf = \"$tmp/wd/g&h.gtf\"" "$tmp/amp/run_07.sbatch"
 render pipe "rmats" "events" CSVP="$tmp/wd/c|d.csv"
 check "pipe in a path: exit status" 0 "$(cat "$tmp/pipe.rc")"
-has "pipe in the contrasts path" "contrasts = '$tmp/wd/c|d.csv'" "$tmp/pipe/run_01.sbatch"
+has "pipe in the contrasts path" "contrasts = \"$tmp/wd/c|d.csv\"" "$tmp/pipe/run_01.sbatch"
 render bsl "rmats" "events" CSVP="$tmp/wd/c\\d.csv"
-check "backslash in a path: exit status" 0 "$(cat "$tmp/bsl.rc")"
-has "backslash in the contrasts path" "contrasts = '$tmp/wd/c\\d.csv'" "$tmp/bsl/run_02.sbatch"
+check "backslash in a value is refused: exit status" 1 "$(cat "$tmp/bsl.rc")"
+has "backslash in a value: message" "ERROR" "$tmp/bsl.out"
+check "backslash in a value: no run script written" "" "$(ls "$tmp/wd/results/2026-10-05_wd_report_bsl" | grep '^run_' | tr '\n' ' ')"
+render dqv "rmats" "events" GTFP="$tmp/wd/g\"h.gtf"
+check "double quote in a value is refused: exit status" 1 "$(cat "$tmp/dqv.rc")"
+check "double quote in a value: no run script written" "" "$(ls "$tmp/wd/results/2026-10-05_wd_report_dqv" | grep '^run_' | tr '\n' ' ')"
 render spc "rmats" "events" CWDP="$tmp/wd sp"
 check "space in the working directory (it would be bound): exit status" 1 "$(cat "$tmp/spc.rc")"
 has "space in the working directory: message" "ERROR" "$tmp/spc.out"
@@ -223,13 +228,36 @@ check "space in the working directory: no run script written" "" "$(ls "$tmp/wd/
 render lit1 "rmats" "events" EMAIL='a$HOME@b.c' GTFP="$tmp/wd/g\`>$tmp/CANARY1\`.gtf" CSVP="$tmp/wd/\$(>$tmp/CANARY2).csv"
 check "dollar, backtick and command substitution in values: exit status" 0 "$(cat "$tmp/lit1.rc")"
 has "dollar sign kept in the e-mail" '#SBATCH --mail-user=a$HOME@b.c' "$tmp/lit1/run_01.sbatch"
-has "backtick command kept in the gtf path" "gtf = '$tmp/wd/g\`>$tmp/CANARY1\`.gtf'" "$tmp/lit1/run_01.sbatch"
-has "command substitution kept in the contrasts path" "contrasts = '$tmp/wd/\$(>$tmp/CANARY2).csv'" "$tmp/lit1/run_01.sbatch"
+has "backtick command kept in the gtf path" "gtf = \"$tmp/wd/g\`>$tmp/CANARY1\`.gtf\"" "$tmp/lit1/run_01.sbatch"
+has "command substitution kept in the contrasts path" "contrasts = \"$tmp/wd/\$(>$tmp/CANARY2).csv\"" "$tmp/lit1/run_01.sbatch"
 [ ! -e "$tmp/CANARY1" ] && [ ! -e "$tmp/CANARY2" ] && ok "no command of a value was run" || bad "a command inside a value was run (canary file exists)"
-render lit2 "rmats" "events" CSVP="$tmp/wd/c\\\\d.csv" EMAIL="a\$(>$tmp/CANARY3)@b.c"
-has "two backslashes kept" "contrasts = '$tmp/wd/c\\\\d.csv'" "$tmp/lit2/run_01.sbatch"
+render lit2 "rmats" "events" EMAIL="a\$(>$tmp/CANARY3)@b.c"
 has "command substitution kept in the e-mail" "--mail-user=a\$(>$tmp/CANARY3)@b.c" "$tmp/lit2/run_01.sbatch"
 [ ! -e "$tmp/CANARY3" ] && ok "no command of the e-mail was run" || bad "the e-mail command was run"
+# --- the generated scripts are run (stubbed sbatch, module and singularity): values with $HOME, a backtick command and $(...) in the
+# report directory, the image, the gtf and the contrasts path reach the Rscript command line byte for byte, and no command of a value runs
+printf '#!/bin/bash\nexit 0\n' > "$tmp/stub/module"
+printf '#!/bin/bash\nprintf "%%s\\n" "$@" > "$SLOG"\n' > "$tmp/stub/singularity"
+chmod +x "$tmp/stub/module" "$tmp/stub/singularity"
+for t in module singularity sbatch; do [ "$(env -i PATH="$tmp/stub:$SYS" /bin/bash -c "type -P $t")" = "$tmp/stub/$t" ] || bad "stub $t is not first on the PATH"; done
+XRD="$tmp/wd/results/r\$HOME\`>$tmp/CANARY4\`"
+XSIF="/net/bmc-lab3/s\$HOME\$(>$tmp/CANARY5).sif"
+XGTF="$tmp/wd/g\`>$tmp/CANARY6\`&|.gtf"
+XCSV="$tmp/wd/\$(>$tmp/CANARY7).csv"
+render exec "rmats suppa" "events" RD="$XRD" SIFP="$XSIF" GTFP="$XGTF" CSVP="$XCSV"
+check "values with shell syntax: exit status" 0 "$(cat "$tmp/exec.rc")"
+STUBLOG="$tmp/exec.stub.log"; : > "$STUBLOG"
+env -i PATH="$tmp/stub:$SYS" STUBLOG="$STUBLOG" /bin/bash --noprofile --norc "$tmp/exec/run_all.sh" > "$tmp/exec.runall.out" 2>&1
+check "run_all.sh with shell syntax in the report directory: exit status" 0 "$?"
+check "run_all.sh submitted the four jobs" 4 "$(wc -l < "$STUBLOG")"
+SLOG="$tmp/exec.sing.log"; : > "$SLOG"
+env -i PATH="$tmp/stub:$SYS" SLOG="$SLOG" /bin/bash --noprofile --norc "$tmp/exec/run_01.sbatch" > "$tmp/exec.job.out" 2>&1
+check "run_01.sbatch with shell syntax in the values: exit status" 0 "$?"
+has "image argument byte-exact" "$XSIF" "$SLOG"
+has "report directory byte-exact in the render call" "rmarkdown::render(\"$XRD/01_import.Rmd\"," "$SLOG"
+has "gtf byte-exact in the params" "gtf = \"$XGTF\"" "$SLOG"
+has "contrasts path byte-exact in the params" "contrasts = \"$XCSV\"" "$SLOG"
+for c in CANARY4 CANARY5 CANARY6 CANARY7; do [ ! -e "$tmp/$c" ] && ok "no command of a value ran ($c)" || bad "a command inside a value ran: $c exists"; done
 # a value that would break a script, whatever the cause, stops the rendering: an empty script or a leftover marker is an error
 render emptyv "rmats" "events"
 printf 's|__R__|x|g\n' > "$tmp/wd/results/2026-10-05_wd_report_emptyv/templates/settings.sed"

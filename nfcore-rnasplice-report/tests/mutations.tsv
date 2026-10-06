@@ -156,7 +156,6 @@ S3-flag-prose-dependency	check	skill	$s/$/\nJobs wait with --dependency=afterok 
 S3-runall-in-tests	check	runall	s| test_render_slurm.sh"|"|	tests/test_render_slurm.sh must be named in exactly one list of run_all_tests.sh
 S3-need-29	check	skill	s|Jobs 02 to 06 start when job 01 has finished successfully (`dependency=afterok`, with the option that cancels them when job 01 fails)|REMOVED|g	missing required text: Jobs 02 to 06 start when job 01 has finished successfully (`dependency=afterok`, with the option that cancels them when job 01 fails)
 S3-need-30	check	skill	s|job 07 starts when jobs 01 to 06 (those that exist) have ended, whatever their outcome (`dependency=afterany`)|REMOVED|g	missing required text: job 07 starts when jobs 01 to 06 (those that exist) have ended, whatever their outcome (`dependency=afterany`)
-S3-chain-afterok-for-07	check	skill	s|afterany|afterok|g	missing required text: job 07 starts when jobs 01 to 06 (those that exist) have ended
 R4-rtest-sign-rmats	rtest	skill	s/^    rmats = value, /    rmats = -value,/	FAIL: harmonise_effect rmats 0.3 gives 0.3
 R4-rtest-sign-suppa	rtest	skill	s/^    suppa = -value,/    suppa = value, /	FAIL: harmonise_effect suppa 0.3 gives -0.3
 R4-rtest-sign-dexseq	rtest	skill	s/^    exon_dexseq = -value,/    exon_dexseq = value, /	FAIL: harmonise_effect exon_dexseq 0.3 gives -0.3
@@ -392,21 +391,13 @@ T3b-fence-three-heredocs	check	skill	$s/$/\n```bash\ncat > a <<EOF\nx\nEOF\ncat 
 T3b-fence-sh-long	check	skill	$s/$/\n```sh\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\n```/	a code fence of 70 lines
 T3b-need-01	check	skill	s|\*\*Absolute output directory\.\*\*|REMOVED|g	missing required text: **Absolute output directory.**
 T3b-need-02	check	skill	s|\*\*Checks and job list\.\*\*|REMOVED|g	missing required text: **Checks and job list.**
-T3b-need-03	check	skill	s|    contrasts = '__CONTRASTS__', samplesheet = '__SAMPLESHEET__',|REMOVED|g	missing required text:     contrasts = '__CONTRASTS__', samplesheet = '__SAMPLESHEET__',
 T3b-need-04	check	skill	s|else echo 'no pairs file in {CWD}'; fi|REMOVED|g	missing required text: else echo 'no pairs file in {CWD}'; fi
-T3b-need-05	check	skill	s|    enrich_dbs = '__ENRICH_DBS__',|REMOVED|g	missing required text:     enrich_dbs = '__ENRICH_DBS__',
 T3b-need-06	check	skill	s|    events = __EVENTS__, cross = __CROSS__, topgene = __TOPGENE__, enrich = __ENRICH__,|REMOVED|g	missing required text:     events = __EVENTS__, cross = __CROSS__, topgene = __TOPGENE__, enrich = __ENRICH__,
 T3b-need-07	check	skill	s|    fdr = __FDR__, dpsi = __DPSI__, min_reads = __MIN_READS__,|REMOVED|g	missing required text:     fdr = __FDR__, dpsi = __DPSI__, min_reads = __MIN_READS__,
 T3b-need-08	check	skill	s|JOB__N__=\$(sbatch --parsable --dependency=afterany:__DEPS__ run___N__\.sbatch) \|\| exit 1|REMOVED|g	missing required text: JOB__N__=$(sbatch --parsable --dependency=afterany:__DEPS__ run___N__.sbatch) || exit 1
 T3b-need-09	check	skill	s|JOB__N__=\$(sbatch --parsable --dependency=afterok:\$JOB01 --kill-on-invalid-dep=yes run___N__\.sbatch) \|\| exit 1|REMOVED|g	missing required text: JOB__N__=$(sbatch --parsable --dependency=afterok:$JOB01 --kill-on-invalid-dep=yes run___N__.sbatch) || exit 1
 T3b-need-10	check	skill	s|JOB__N__=\$(sbatch --parsable run___N__\.sbatch) \|\| exit 1|REMOVED|g	missing required text: JOB__N__=$(sbatch --parsable run___N__.sbatch) || exit 1
 T3b-need-11	check	skill	s|\*\*Job script template\.\*\*|REMOVED|g	missing required text: **Job script template.**
-T3b-need-12	check	skill	s|    modules = '__MODULES__', rmats_type = '__RMATS_TYPE__',|REMOVED|g	missing required text:     modules = '__MODULES__', rmats_type = '__RMATS_TYPE__',
-T3b-need-13	check	skill	s|    organism = '__ORGANISM__', gtf = '__GTF__',|REMOVED|g	missing required text:     organism = '__ORGANISM__', gtf = '__GTF__',
-T3b-need-14	check	skill	s|    outdir = '__OUT__', report_dir = '__R__',|REMOVED|g	missing required text:     outdir = '__OUT__', report_dir = '__R__',
-T3b-need-15	check	skill	s|  OUTF=""; if \[ "\$n" = 07 \]; then OUTF="output_file = 'report_summary\.html', "; fi|REMOVED|g	missing required text:   OUTF=""; if [ "$n" = 07 ]; then OUTF="output_file = 'report_summary.html', "; fi
-T3b-need-16	check	skill	s|  output_dir = '__R__', __OUTFILE__knit_root_dir = '__R__',|REMOVED|g	missing required text:   output_dir = '__R__', __OUTFILE__knit_root_dir = '__R__',
-T3b-need-17	check	skill	s|    paired_rmats = __PAIRED_RMATS__, paired_suppa = __PAIRED_SUPPA__))"|REMOVED|g	missing required text:     paired_rmats = __PAIRED_RMATS__, paired_suppa = __PAIRED_SUPPA__))"
 T3b-need-18	check	skill	s|refuses to continue when an Rmd of a job that applies is missing|REMOVED|g	missing required text: refuses to continue when an Rmd of a job that applies is missing
 T3b-need-19	check	skill	s|\*\*Rendering the scripts\.\*\*|REMOVED|g	missing required text: **Rendering the scripts.**
 T3b-need-20	check	skill	s|run_all\.tpl|REMOVED|g	missing required text: run_all.tpl
@@ -414,7 +405,6 @@ T3b-need-21	check	skill	s|run_job\.sbatch\.tpl|REMOVED|g	missing required text: 
 T3b-need-22	check	skill	s|#SBATCH --mem=__MEM__|REMOVED|g	missing required text: #SBATCH --mem=__MEM__
 T3b-need-23	check	skill	s|#SBATCH -t __TIME__|REMOVED|g	missing required text: #SBATCH -t __TIME__
 T3b-need-24	check	skill	s|\*\*Settings\.\*\*|REMOVED|g	missing required text: **Settings.**
-T3b-need-25	check	skill	s|singularity exec --bind __BIND__ "__SIF__" Rscript -e "rmarkdown::render('__R__/__RMD__',|REMOVED|g	missing required text: singularity exec --bind __BIND__ "__SIF__" Rscript -e "rmarkdown::render('__R__/__RMD__',
 T3b-need-26	check	skill	s|\*\*Submit script template\.\*\*|REMOVED|g	missing required text: **Submit script template.**
 T3b-need-27	check	skill	s|the first thing written into `{REPORT_DIR}` at all is the `image_check/` directory of Step 2, after this answer|REMOVED|g	missing required text: the first thing written into `{REPORT_DIR}` at all is the `image_check/` directory of Step 2, after this answer
 T3b-need-28	check	skill	s|When a block prints a line that begins with `ERROR`, stop, tell the user, and run none of the later blocks\.|REMOVED|g	missing required text: When a block prints a line that begins with `ERROR`, stop, tell the user, and run none of the later blocks.
@@ -433,13 +423,33 @@ T3c-fence-indented	check	skill	$s/$/\n  ```bash\necho x\necho x\necho x\necho x\
 T3c-fence-rmd-exempt-not-bypass	check	skill	$s/$/\n```text2\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\n```/	a code fence of 70 lines
 T3c-fence-plain-function-heredocs	check	skill	$s/$/\n```\nf() { :; }\ncat > a <<EOF\nx\nEOF\ncat > b <<EOF\nx\nEOF\ncat > c <<EOF\nx\nEOF\n```/	a code fence with a nested heredoc
 T3d-need-1	check	skill	s|\*\*Free-text values\.\*\*|REMOVED|g	missing required text: **Free-text values.**
-T3d-need-2	check	skill	s|so that a `\$`, a backtick or a backslash in a value is taken literally and nothing in it is run|REMOVED|g	missing required text: so that a `$`, a backtick or a backslash in a value is taken literally and nothing in it is run
-T3d-need-3	check	skill	s|that contains a single quote (`'`) or a line break is therefore not accepted: ask again|REMOVED|g	missing required text: that contains a single quote (`'`) or a line break is therefore not accepted: ask again
 T3d-need-4	check	skill	s|EMAIL '{EMAIL}' JOBNAME '{PROJECT}_report'|REMOVED|g	missing required text: EMAIL '{EMAIL}' JOBNAME '{PROJECT}_report'
 T3d-need-5	check	skill	s|R='{REPORT_DIR}'; OUT='{OUTDIR_RNASPLICE}'; MEM='{MEM}'; TIME='{TIME}'|REMOVED|g	missing required text: R='{REPORT_DIR}'; OUT='{OUTDIR_RNASPLICE}'; MEM='{MEM}'; TIME='{TIME}'
 T3d-dq-email	check	skill	s|EMAIL='{EMAIL}'$|EMAIL="{EMAIL}"|	a wizard value in double quotes in a Bash block
 T3d-dq-gtf	check	skill	s|^G='{GTF}'|G="{GTF}"|	a wizard value in double quotes in a Bash block
 T3d-dq-settings	check	skill	s|EMAIL '{EMAIL}' JOBNAME|EMAIL "{EMAIL}" JOBNAME|	a wizard value in double quotes in a Bash block
 T3d-dq-checks	check	skill	s|^R='{REPORT_DIR}'; OUT=|R="{REPORT_DIR}"; OUT=|	a wizard value in double quotes in a Bash block
-T3d-ref-project	check	skill	s|Default: `{WD_NAME}`. The rule on free-text values in Step 0 applies\.|Default: `{WD_NAME}`.|	the rule on free-text values must be referenced
-T3d-ref-email	check	skill	s|Do not pre-fill any address. The rule on free-text values in Step 0 applies\.|Do not pre-fill any address.|	the rule on free-text values must be referenced
+T3e-need-01	check	skill	s|singularity exec --bind '__BIND__' '__SIF__' Rscript -e 'rmarkdown::render("__R__/__RMD__",|REMOVED|g	missing required text: singularity exec --bind '__BIND__' '__SIF__' Rscript -e 'rmarkdown::render("__R__/__RMD__",
+T3e-need-02	check	skill	s|  output_dir = "__R__", __OUTFILE__knit_root_dir = "__R__",|REMOVED|g	missing required text:   output_dir = "__R__", __OUTFILE__knit_root_dir = "__R__",
+T3e-need-03	check	skill	s|    outdir = "__OUT__", report_dir = "__R__",|REMOVED|g	missing required text:     outdir = "__OUT__", report_dir = "__R__",
+T3e-need-04	check	skill	s|    contrasts = "__CONTRASTS__", samplesheet = "__SAMPLESHEET__",|REMOVED|g	missing required text:     contrasts = "__CONTRASTS__", samplesheet = "__SAMPLESHEET__",
+T3e-need-05	check	skill	s|    modules = "__MODULES__", rmats_type = "__RMATS_TYPE__",|REMOVED|g	missing required text:     modules = "__MODULES__", rmats_type = "__RMATS_TYPE__",
+T3e-need-06	check	skill	s|    organism = "__ORGANISM__", gtf = "__GTF__",|REMOVED|g	missing required text:     organism = "__ORGANISM__", gtf = "__GTF__",
+T3e-need-07	check	skill	s|    enrich_dbs = "__ENRICH_DBS__",|REMOVED|g	missing required text:     enrich_dbs = "__ENRICH_DBS__",
+T3e-need-08	check	skill	s|    paired_rmats = __PAIRED_RMATS__, paired_suppa = __PAIRED_SUPPA__))'|REMOVED|g	missing required text:     paired_rmats = __PAIRED_RMATS__, paired_suppa = __PAIRED_SUPPA__))'
+T3e-need-09	check	skill	s|cd '__R__' \|\| exit 1|REMOVED|g	missing required text: cd '__R__' || exit 1
+T3e-need-10	check	skill	s|  OUTF=""; if \[ "\$n" = 07 \]; then OUTF='output_file = "report_summary\.html", '; fi|REMOVED|g	missing required text:   OUTF=""; if [ "$n" = 07 ]; then OUTF='output_file = "report_summary.html", '; fi
+T3e-need-11	check	skill	s|so that a `\$`, a backtick or `\$(\.\.\.)` in a value is taken literally and no command in it is run, neither by the blocks nor by the generated scripts when the user runs them|REMOVED|g	missing required text: so that a `$`, a backtick or `$(...)` in a value is taken literally and no command in it is run, neither by the blocks nor by the generated scripts when the user runs them
+T3e-need-12	check	skill	s|that contains a single quote (`'`), a double quote (`"`), a backslash (`\\`) or a line break is therefore not accepted: ask again|REMOVED|g	missing required text: that contains a single quote (`'`), a double quote (`"`), a backslash (`\`) or a line break is therefore not accepted: ask again
+T3e-need-13	check	skill	s|holds a line break, a backslash or a double quote|REMOVED|g	missing required text: holds a line break, a backslash or a double quote
+T3e-need-14	check	skill	s|The questions that collect free text are the other report path (below), the e-mail address (Step 1), the image path (Step 2), the run, sheet and contrasts paths and the output directory (Step 3), the GTF path (Step 5) and the project name (Step 9); each says so\.|REMOVED|g	missing required text: The questions that collect free text are the other report path (below), the e-mail address (Step 1), the image path (Step 2), the run, sheet and contrasts paths and the output directory (Step 3), the GTF path (Step 5) and the project name (Step 9); each says so.
+T3e-dq-cd-job	check	skill	1,/Submit script template/ s|^cd '__R__' \|\| exit 1|cd "__R__" \|\| exit 1|	forbidden text present: cd "__R__"
+T3e-dq-cd-all	check	skill	/Submit script template/,$ s|^cd '__R__' \|\| exit 1|cd "__R__" \|\| exit 1|	forbidden text present: cd "__R__"
+T3e-dq-sif	check	skill	s|'__SIF__'|"__SIF__"|	forbidden text present: "__SIF__"
+T3e-dq-bind	check	skill	s|'__BIND__'|"__BIND__"|	forbidden text present: "__BIND__"
+T3e-dq-rscript	check	skill	s|Rscript -e 'rmarkdown|Rscript -e "rmarkdown|	forbidden text present: Rscript -e "
+T3e-ref-gtf	check	skill	s|^\(Store the GTF path as `{GTF}` .*\) The rule on free-text values in Step 0 applies\.|\1|	does not reference the rule on free-text values
+T3e-ref-another-path	check	skill	s|3\. Give another path\." The rule on free-text values in Step 0 applies\.|3. Give another path."|	does not reference the rule on free-text values
+T3e-ref-absolute	check	skill	s|\(Absolute output directory\.\*\* .*is `{OUTDIR_GIVEN}`\.\) The rule on free-text values in Step 0 applies\.|\1|	does not reference the rule on free-text values
+T3e-ref-email	check	skill	s|Do not pre-fill any address. The rule on free-text values in Step 0 applies\.|Do not pre-fill any address.|	does not reference the rule on free-text values
+T3e-ref-project	check	skill	s|Default: `{WD_NAME}`. The rule on free-text values in Step 0 applies\.|Default: `{WD_NAME}`.|	does not reference the rule on free-text values

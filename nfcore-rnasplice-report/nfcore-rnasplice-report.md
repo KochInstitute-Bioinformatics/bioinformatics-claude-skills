@@ -24,11 +24,11 @@ Also derive:
 ```bash
 if [ -e '{REPORT_DIR}' ]; then echo 'EXISTS {REPORT_DIR}'; ls -la '{REPORT_DIR}' | head -n 20; else echo 'NEW {REPORT_DIR}'; fi
 ```
-When it exists, ask before using it (numbered; default 1): "`{REPORT_DIR}` already exists (a previous report?). 1. Use a new directory with a numbered suffix, `{REPORT_DIR}_2` (default) · 2. Reuse it: files of the same name are replaced and the others are kept · 3. Give another path." A previous report is never overwritten silently: nothing is written into an existing directory before the user has answered, and the first thing written into `{REPORT_DIR}` at all is the `image_check/` directory of Step 2, after this answer. The answer sets `{REPORT_DIR}`; Step 3 checks that it is not inside the pipeline output directory.
+When it exists, ask before using it (numbered; default 1): "`{REPORT_DIR}` already exists (a previous report?). 1. Use a new directory with a numbered suffix, `{REPORT_DIR}_2` (default) · 2. Reuse it: files of the same name are replaced and the others are kept · 3. Give another path." The rule on free-text values in Step 0 applies. A previous report is never overwritten silently: nothing is written into an existing directory before the user has answered, and the first thing written into `{REPORT_DIR}` at all is the `image_check/` directory of Step 2, after this answer. The answer sets `{REPORT_DIR}`; Step 3 checks that it is not inside the pipeline output directory.
 
 Tell the user: "Working directory: `{CWD}`; report directory: `{REPORT_DIR}`".
 
-**Free-text values.** Every block below receives the values of the wizard inside single quotes, so that a `$`, a backtick or a backslash in a value is taken literally and nothing in it is run. A value the user types (an e-mail address, a path, the project name) that contains a single quote (`'`) or a line break is therefore not accepted: ask again, and never put such a value into a block, because the quote would end the quoted value early. Choices from a numbered list are not free text.
+**Free-text values.** Every block below receives the values of the wizard inside single quotes, and the generated scripts hold them inside single quotes (shell) or double quotes (R strings), so that a `$`, a backtick or `$(...)` in a value is taken literally and no command in it is run, neither by the blocks nor by the generated scripts when the user runs them. A value the user types (an e-mail address, a path, the project name) that contains a single quote (`'`), a double quote (`"`), a backslash (`\`) or a line break is therefore not accepted: ask again, and never put such a value into a block, because the quote would end the quoted value early. The questions that collect free text are the other report path (below), the e-mail address (Step 1), the image path (Step 2), the run, sheet and contrasts paths and the output directory (Step 3), the GTF path (Step 5) and the project name (Step 9); each says so. Choices from a numbered list are not free text.
 
 ---
 
@@ -109,7 +109,7 @@ grep -E '^(input|contrasts|source|outdir|gtf|genome|rmats|suppa|dexseq_exon|edge
 ```
 One params file found: its `outdir` (relative to `{CWD}` when it is not absolute) is the default for `{OUTDIR_RNASPLICE}`, its `contrasts` file is `{CONTRASTS_CSV}` and its `input` file is `{SAMPLESHEET}` (relative paths are relative to `{CWD}`; write the absolute paths). Several or none: ask which params file, or for the paths of the three files. The rule on free-text values in Step 0 applies. The output directory must exist, and `{REPORT_DIR}` must not lie inside it.
 
-**Absolute output directory.** Whatever the user answers (a path relative to `{CWD}` or an absolute one) is `{OUTDIR_GIVEN}`. The report jobs run from the report directory, where a relative path does not exist, so resolve it, in one Bash call, and store the printed path as `{OUTDIR_RNASPLICE}` (absolute) for every later step and every job script:
+**Absolute output directory.** Whatever the user answers (a path relative to `{CWD}` or an absolute one) is `{OUTDIR_GIVEN}`. The rule on free-text values in Step 0 applies. The report jobs run from the report directory, where a relative path does not exist, so resolve it, in one Bash call, and store the printed path as `{OUTDIR_RNASPLICE}` (absolute) for every later step and every job script:
 ```bash
 cd '{CWD}' 2>/dev/null && cd '{OUTDIR_GIVEN}' 2>/dev/null && echo "OUTDIR_RNASPLICE=$(pwd)" || { echo 'ERROR: output directory {OUTDIR_GIVEN} not found from {CWD}'; exit 1; }
 ```
@@ -204,7 +204,7 @@ The GTF the run used gives the gene identifiers and the organism. Default: the `
 ```bash
 grep -E '^(gtf|genome|fasta):' '{CWD}'/*_params.yaml 2>/dev/null
 ```
-Store the GTF path as `{GTF}` (ask for it when the params file has none, for example a run that used `genome`). Then guess the organism from the identifiers in the GTF, in one Bash call (light work; replace `{GTF}`):
+Store the GTF path as `{GTF}` (ask for it when the params file has none, for example a run that used `genome`). The rule on free-text values in Step 0 applies. Then guess the organism from the identifiers in the GTF, in one Bash call (light work; replace `{GTF}`):
 ```bash
 G='{GTF}'
 [ -f "$G" ] || { echo "ERROR: $G is not a file"; exit 1; }
@@ -334,25 +334,25 @@ echo "JOBS=$(printf '%s\n' $JOBS | cut -d: -f1 | tr '\n' ' ' | sed 's/ $//')"
 #SBATCH --mail-user=__EMAIL__
 #SBATCH --mail-type=END,FAIL
 module add singularity/3.10.4 || exit 1
-cd "__R__" || exit 1
-singularity exec --bind __BIND__ "__SIF__" Rscript -e "rmarkdown::render('__R__/__RMD__',
-  output_dir = '__R__', __OUTFILE__knit_root_dir = '__R__',
+cd '__R__' || exit 1
+singularity exec --bind '__BIND__' '__SIF__' Rscript -e 'rmarkdown::render("__R__/__RMD__",
+  output_dir = "__R__", __OUTFILE__knit_root_dir = "__R__",
   params = list(
-    outdir = '__OUT__', report_dir = '__R__',
-    contrasts = '__CONTRASTS__', samplesheet = '__SAMPLESHEET__',
-    modules = '__MODULES__', rmats_type = '__RMATS_TYPE__',
+    outdir = "__OUT__", report_dir = "__R__",
+    contrasts = "__CONTRASTS__", samplesheet = "__SAMPLESHEET__",
+    modules = "__MODULES__", rmats_type = "__RMATS_TYPE__",
     fdr = __FDR__, dpsi = __DPSI__, min_reads = __MIN_READS__,
     events = __EVENTS__, cross = __CROSS__, topgene = __TOPGENE__, enrich = __ENRICH__,
-    organism = '__ORGANISM__', gtf = '__GTF__',
-    enrich_dbs = '__ENRICH_DBS__',
-    paired_rmats = __PAIRED_RMATS__, paired_suppa = __PAIRED_SUPPA__))"
+    organism = "__ORGANISM__", gtf = "__GTF__",
+    enrich_dbs = "__ENRICH_DBS__",
+    paired_rmats = __PAIRED_RMATS__, paired_suppa = __PAIRED_SUPPA__))'
 ```
 
 **Submit script template.** Write this block with the Write tool, byte for byte and without the two fence lines, to `{REPORT_DIR}/templates/run_all.tpl`. The rendering block takes the three `JOB` lines as the line of job 01, of jobs 02 to 06 and of job 07:
 ```
 #!/bin/bash
 # Submits the report jobs of __R__ in order; light work only, every job runs R on a compute node.
-cd "__R__" || exit 1
+cd '__R__' || exit 1
 JOB__N__=$(sbatch --parsable run___N__.sbatch) || exit 1
 JOB__N__=$(sbatch --parsable --dependency=afterok:$JOB01 --kill-on-invalid-dep=yes run___N__.sbatch) || exit 1
 JOB__N__=$(sbatch --parsable --dependency=afterany:__DEPS__ run___N__.sbatch) || exit 1
@@ -375,7 +375,7 @@ set -- R "$R" OUT '{OUTDIR_RNASPLICE}' SIF '{SIF}' EMAIL '{EMAIL}' JOBNAME '{PRO
   EVENTS "$(b events)" CROSS "$(b cross)" TOPGENE "$(b topgene)" ENRICH "$(b enrich)" \
   PAIRED_RMATS "$(pr '{PAIRED_RMATS}')" PAIRED_SUPPA "$(pr '{PAIRED_SUPPA}')"
 while [ $# -gt 0 ]; do
-  case "$2" in *$'\n'*) echo "ERROR: the value of $1 holds a line break"; exit 1 ;; esac
+  case "$2" in *$'\n'*|*\\*|*'"'*) echo "ERROR: the value of $1 holds a line break, a backslash or a double quote" >&2; exit 1 ;; esac
   v=$(printf '%s' "$2" | sed 's/[\\&|]/\\&/g')
   printf 's|__%s__|%s|g\n' "$1" "$v"; shift 2
 done > "$T/settings.sed"
@@ -395,7 +395,7 @@ last=$(grep '^JOB' "$T/run_all.tpl" | grep afterany)
 grep -v '^JOB\|^echo' "$T/run_all.tpl" | sed -f "$T/settings.sed" > "$R/run_all.sh"
 ALLDEP=""; ALLJ=""; NUMS=""
 while IFS=: read -r n rmd; do
-  OUTF=""; if [ "$n" = 07 ]; then OUTF="output_file = 'report_summary.html', "; fi
+  OUTF=""; if [ "$n" = 07 ]; then OUTF='output_file = "report_summary.html", '; fi
   sed -f "$T/settings.sed" -e "s|__N__|$n|g" -e "s|__RMD__|$rmd|g" -e "s|__OUTFILE__|$OUTF|g" "$T/run_job.sbatch.tpl" > "$R/run_$n.sbatch"
   case "$EMAIL" in ""|none) sed -i '/^#SBATCH ..mail-/d' "$R/run_$n.sbatch" ;; esac
   case "$n" in 01) l=$first ;; 07) l=$last ;; *) l=$after ;; esac

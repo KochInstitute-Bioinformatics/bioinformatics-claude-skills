@@ -196,20 +196,11 @@ need 'When a block prints a line that begins with `ERROR`, stop, tell the user, 
 need 'refuses to continue when an Rmd of a job that applies is missing'
 need '#SBATCH --mem=__MEM__'
 need '#SBATCH -t __TIME__'
-need 'singularity exec --bind __BIND__ "__SIF__" Rscript -e "rmarkdown::render('\''__R__/__RMD__'\'','
-need "  output_dir = '__R__', __OUTFILE__knit_root_dir = '__R__',"
 need '    events = __EVENTS__, cross = __CROSS__, topgene = __TOPGENE__, enrich = __ENRICH__,'
 need 'JOB__N__=$(sbatch --parsable run___N__.sbatch) || exit 1'
 need 'JOB__N__=$(sbatch --parsable --dependency=afterok:$JOB01 --kill-on-invalid-dep=yes run___N__.sbatch) || exit 1'
 need 'JOB__N__=$(sbatch --parsable --dependency=afterany:__DEPS__ run___N__.sbatch) || exit 1'
-need '    outdir = '\''__OUT__'\'', report_dir = '\''__R__'\'','
-need '    contrasts = '\''__CONTRASTS__'\'', samplesheet = '\''__SAMPLESHEET__'\'','
-need '    modules = '\''__MODULES__'\'', rmats_type = '\''__RMATS_TYPE__'\'','
 need '    fdr = __FDR__, dpsi = __DPSI__, min_reads = __MIN_READS__,'
-need '    organism = '\''__ORGANISM__'\'', gtf = '\''__GTF__'\'','
-need '    enrich_dbs = '\''__ENRICH_DBS__'\'','
-need '    paired_rmats = __PAIRED_RMATS__, paired_suppa = __PAIRED_SUPPA__))"'
-need "  OUTF=\"\"; if [ \"\$n\" = 07 ]; then OUTF=\"output_file = 'report_summary.html', \"; fi"
 need '**Absolute output directory.**'
 need 'else echo '\''no pairs file in {CWD}'\''; fi'
 need 'the first thing written into `{REPORT_DIR}` at all is the `image_check/` directory of Step 2, after this answer'
@@ -219,13 +210,31 @@ need 'printf '\''s|__%s__|%s|g\n'\'' "$1" "$v"; shift 2'
 need 'is empty or still holds a template marker'
 need 'holds a space or a comma and cannot be bound into the container'
 need '**Free-text values.**'
-need 'so that a `$`, a backtick or a backslash in a value is taken literally and nothing in it is run'
-need 'that contains a single quote (`'\''`) or a line break is therefore not accepted: ask again'
 need 'EMAIL '\''{EMAIL}'\'' JOBNAME '\''{PROJECT}_report'\'''
 need 'R='\''{REPORT_DIR}'\''; OUT='\''{OUTDIR_RNASPLICE}'\''; MEM='\''{MEM}'\''; TIME='\''{TIME}'\'''
-# The rule on free-text values is referenced where the user types a value (e-mail, image path, paths of the run, project name).
-n_ref=$(grep -c 'The rule on free-text values in Step 0 applies' "$SKILL")
-[ "$n_ref" -ge 4 ] || { echo "FAIL: the rule on free-text values must be referenced by the e-mail, image, path and project name questions, found $n_ref references"; fail=1; }
+need 'singularity exec --bind '\''__BIND__'\'' '\''__SIF__'\'' Rscript -e '\''rmarkdown::render("__R__/__RMD__",'
+need '  output_dir = "__R__", __OUTFILE__knit_root_dir = "__R__",'
+need '    outdir = "__OUT__", report_dir = "__R__",'
+need '    contrasts = "__CONTRASTS__", samplesheet = "__SAMPLESHEET__",'
+need '    modules = "__MODULES__", rmats_type = "__RMATS_TYPE__",'
+need '    organism = "__ORGANISM__", gtf = "__GTF__",'
+need '    enrich_dbs = "__ENRICH_DBS__",'
+need '    paired_rmats = __PAIRED_RMATS__, paired_suppa = __PAIRED_SUPPA__))'\'''
+need 'cd '\''__R__'\'' || exit 1'
+need '  OUTF=""; if [ "$n" = 07 ]; then OUTF='\''output_file = "report_summary.html", '\''; fi'
+need 'so that a `$`, a backtick or `$(...)` in a value is taken literally and no command in it is run, neither by the blocks nor by the generated scripts when the user runs them'
+need 'that contains a single quote (`'\''`), a double quote (`"`), a backslash (`\`) or a line break is therefore not accepted: ask again'
+need 'holds a line break, a backslash or a double quote'
+# The templates hold the values inside single quotes (shell) and double quotes only inside the single-quoted R program.
+forbid 'cd "__R__"'
+forbid '"__SIF__"'
+forbid '"__BIND__"'
+forbid 'Rscript -e "'
+# Every free-text question names the rule on free-text values (Step 0); the rule lists the questions.
+for a in '3. Give another path.' 'Do not pre-fill any address.' 'Store `{SIF}`.' 'Several or none: ask which params file' '**Absolute output directory.**' 'Store the GTF path as `{GTF}`' 'the name used in the job names.'; do
+  grep -F -- "$a" "$SKILL" | grep -qF -- 'The rule on free-text values in Step 0 applies.' || { echo "FAIL: the question with '$a' does not reference the rule on free-text values"; fail=1; }
+done
+need 'The questions that collect free text are the other report path (below), the e-mail address (Step 1), the image path (Step 2), the run, sheet and contrasts paths and the output directory (Step 3), the GTF path (Step 5) and the project name (Step 9); each says so.'
 # A value of the wizard is never put in double quotes in a Bash block (a $, a backtick or a backslash in it would be interpreted).
 dq=$(awk '/^```bash$/ { inb = 1; next } inb && /^```$/ { inb = 0 } inb && /"[^"$`]*\{[A-Z_]+\}[^"$`]*"/ { print NR ": " $0 }' "$SKILL")
 [ -z "$dq" ] || { echo "FAIL: a wizard value in double quotes in a Bash block (use single quotes):"; printf '%s\n' "$dq" | head -n 3; fail=1; }
