@@ -22,11 +22,13 @@ Also derive:
 
 **Report directory.** Check whether `{REPORT_DIR}` exists, in one Bash call:
 ```bash
-if [ -e "{REPORT_DIR}" ]; then echo "EXISTS {REPORT_DIR}"; ls -la "{REPORT_DIR}" | head -n 20; else echo "NEW {REPORT_DIR}"; fi
+if [ -e '{REPORT_DIR}' ]; then echo 'EXISTS {REPORT_DIR}'; ls -la '{REPORT_DIR}' | head -n 20; else echo 'NEW {REPORT_DIR}'; fi
 ```
 When it exists, ask before using it (numbered; default 1): "`{REPORT_DIR}` already exists (a previous report?). 1. Use a new directory with a numbered suffix, `{REPORT_DIR}_2` (default) · 2. Reuse it: files of the same name are replaced and the others are kept · 3. Give another path." A previous report is never overwritten silently: nothing is written into an existing directory before the user has answered, and the first thing written into `{REPORT_DIR}` at all is the `image_check/` directory of Step 2, after this answer. The answer sets `{REPORT_DIR}`; Step 3 checks that it is not inside the pipeline output directory.
 
 Tell the user: "Working directory: `{CWD}`; report directory: `{REPORT_DIR}`".
+
+**Free-text values.** Every block below receives the values of the wizard inside single quotes, so that a `$`, a backtick or a backslash in a value is taken literally and nothing in it is run. A value the user types (an e-mail address, a path, the project name) that contains a single quote (`'`) or a line break is therefore not accepted: ask again, and never put such a value into a block, because the quote would end the quoted value early. Choices from a numbered list are not free text.
 
 ---
 
@@ -34,20 +36,20 @@ Tell the user: "Working directory: `{CWD}`; report directory: `{REPORT_DIR}`".
 
 Ask the user: "What email address should SLURM use for notifications (completion and failure of the report jobs)? Default: none, no mail is sent."
 
-Do not pre-fill any address. Wait for the answer before Step 2. Store `{EMAIL}`. When the user wants no mail, the two `#SBATCH` mail lines are left out of every script.
+Do not pre-fill any address. The rule on free-text values in Step 0 applies. Wait for the answer before Step 2. Store `{EMAIL}`. When the user wants no mail, the two `#SBATCH` mail lines are left out of every script.
 
 ---
 
 ## Step 2 — R container image
 
-The reports run R inside the Singularity image `{SIF}`. Ask (default 1): "Which R image? 1. `/net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif` (default) · 2. another image path." Store `{SIF}`.
+The reports run R inside the Singularity image `{SIF}`. Ask (default 1): "Which R image? 1. `/net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif` (default) · 2. another image path." Store `{SIF}`. The rule on free-text values in Step 0 applies.
 
-**Image present.** Check, in one Bash call: `ls -la "{SIF}"`.
+**Image present.** Check, in one Bash call: `ls -la '{SIF}'`.
 
 **Image missing.** The image is pulled on a compute node, never on the login node. Write and submit this job (replace `{SIF}`, `{REPORT_DIR}` and `{EMAIL}`; the job stops with an error when the module or the pull fails), tell the user the job id, wait until the job has left the queue (`squeue -u $USER`), then continue:
 ```bash
-mkdir -p "{REPORT_DIR}/image_check"
-cat > "{REPORT_DIR}/image_check/pull_image.sbatch" <<'EOF'
+mkdir -p '{REPORT_DIR}/image_check'
+cat > '{REPORT_DIR}/image_check/pull_image.sbatch' <<'EOF'
 #!/bin/bash
 #SBATCH -p bcc
 #SBATCH -c 2
@@ -57,24 +59,24 @@ cat > "{REPORT_DIR}/image_check/pull_image.sbatch" <<'EOF'
 #SBATCH --mail-type=END,FAIL
 #SBATCH -o {REPORT_DIR}/image_check/pull_image.%j.log
 module add singularity/3.10.4 || exit 1
-cd "$(dirname "{SIF}")" || exit 1
-singularity pull "$(basename "{SIF}")" docker://yannvrb56/bulkrnaseq:latest || exit 1
-ls -la "{SIF}"
+cd "$(dirname '{SIF}')" || exit 1
+singularity pull "$(basename '{SIF}')" docker://yannvrb56/bulkrnaseq:latest || exit 1
+ls -la '{SIF}'
 EOF
-sbatch "{REPORT_DIR}/image_check/pull_image.sbatch"
+sbatch '{REPORT_DIR}/image_check/pull_image.sbatch'
 ```
 
 **Package check.** The image must hold the packages the reports load. The check runs on a compute node (R is never started on the login node). Write and submit it, wait for the job to leave the queue, then read its log:
 ```bash
-mkdir -p "{REPORT_DIR}/image_check"
-cat > "{REPORT_DIR}/image_check/check_packages.R" <<'EOF'
+mkdir -p '{REPORT_DIR}/image_check'
+cat > '{REPORT_DIR}/image_check/check_packages.R' <<'EOF'
 need <- c("DEXSeq", "edgeR", "stageR", "ggplot2", "dplyr", "tidyr", "readr", "knitr", "rmarkdown")
 opt  <- c("UpSetR", "ComplexUpset", "clusterProfiler", "org.Hs.eg.db", "org.Mm.eg.db", "enrichplot", "ggrepel", "scales",
           "jsonlite", "yaml", "msigdbr", "KEGGREST", "GO.db", "AnnotationDbi", "ReactomePA", "KEGG.db", "reactome.db")
 for (p in need) cat(sprintf("MANDATORY %s %s\n", p, requireNamespace(p, quietly = TRUE)))
 for (p in opt)  cat(sprintf("OPTIONAL %s %s\n", p, requireNamespace(p, quietly = TRUE)))
 EOF
-cat > "{REPORT_DIR}/image_check/check_packages.sbatch" <<'EOF'
+cat > '{REPORT_DIR}/image_check/check_packages.sbatch' <<'EOF'
 #!/bin/bash
 #SBATCH -p bcc
 #SBATCH -c 1
@@ -84,9 +86,9 @@ cat > "{REPORT_DIR}/image_check/check_packages.sbatch" <<'EOF'
 #SBATCH --mail-type=END,FAIL
 #SBATCH -o {REPORT_DIR}/image_check/check_packages.%j.log
 module add singularity/3.10.4 || exit 1
-singularity exec --bind /net/bmc-lab3 "{SIF}" Rscript "{REPORT_DIR}/image_check/check_packages.R"
+singularity exec --bind /net/bmc-lab3 '{SIF}' Rscript '{REPORT_DIR}/image_check/check_packages.R'
 EOF
-sbatch "{REPORT_DIR}/image_check/check_packages.sbatch"
+sbatch '{REPORT_DIR}/image_check/check_packages.sbatch'
 ```
 Read the lines `MANDATORY <package> TRUE|FALSE` and `OPTIONAL <package> TRUE|FALSE` of the log:
 - A mandatory package is FALSE: stop. Tell the user which packages are missing and that the image must be rebuilt by them; packages are never installed at run time (not in a job, not by the wizard), because the reports must run from the image as it is.
@@ -102,20 +104,20 @@ Default: the shared image, which holds all nine mandatory packages. Tell the use
 
 Ask (default: the `outdir` of the params file): "Where is the output directory of the rnasplice run?" First look for the params file, in one Bash call:
 ```bash
-ls "{CWD}"/*_params.yaml 2>/dev/null
-grep -E '^(input|contrasts|source|outdir|gtf|genome|rmats|suppa|dexseq_exon|edger_exon|dexseq_dtu|rmats_paired_stats|diffsplice_paired):' "{CWD}"/*_params.yaml 2>/dev/null
+ls '{CWD}'/*_params.yaml 2>/dev/null
+grep -E '^(input|contrasts|source|outdir|gtf|genome|rmats|suppa|dexseq_exon|edger_exon|dexseq_dtu|rmats_paired_stats|diffsplice_paired):' '{CWD}'/*_params.yaml 2>/dev/null
 ```
-One params file found: its `outdir` (relative to `{CWD}` when it is not absolute) is the default for `{OUTDIR_RNASPLICE}`, its `contrasts` file is `{CONTRASTS_CSV}` and its `input` file is `{SAMPLESHEET}` (relative paths are relative to `{CWD}`; write the absolute paths). Several or none: ask which params file, or for the paths of the three files. The output directory must exist, and `{REPORT_DIR}` must not lie inside it.
+One params file found: its `outdir` (relative to `{CWD}` when it is not absolute) is the default for `{OUTDIR_RNASPLICE}`, its `contrasts` file is `{CONTRASTS_CSV}` and its `input` file is `{SAMPLESHEET}` (relative paths are relative to `{CWD}`; write the absolute paths). Several or none: ask which params file, or for the paths of the three files. The rule on free-text values in Step 0 applies. The output directory must exist, and `{REPORT_DIR}` must not lie inside it.
 
 **Absolute output directory.** Whatever the user answers (a path relative to `{CWD}` or an absolute one) is `{OUTDIR_GIVEN}`. The report jobs run from the report directory, where a relative path does not exist, so resolve it, in one Bash call, and store the printed path as `{OUTDIR_RNASPLICE}` (absolute) for every later step and every job script:
 ```bash
-cd "{CWD}" 2>/dev/null && cd "{OUTDIR_GIVEN}" 2>/dev/null && echo "OUTDIR_RNASPLICE=$(pwd)" || { echo "ERROR: output directory {OUTDIR_GIVEN} not found from {CWD}"; exit 1; }
+cd '{CWD}' 2>/dev/null && cd '{OUTDIR_GIVEN}' 2>/dev/null && echo "OUTDIR_RNASPLICE=$(pwd)" || { echo 'ERROR: output directory {OUTDIR_GIVEN} not found from {CWD}'; exit 1; }
 ```
 
 **Module detection.** A module counts as found only when its main result file exists and has more than a header line; an empty file or a file with only a header is not found. The files are named from the contrasts file (treatment `{T}`, control `{C}`, contrast name `{CONTRAST}`), never by splitting file names: rMATS `star/rmats/{CONTRAST}/{SE,A5SS,A3SS,MXE,RI}.MATS.{JC,JCEC}.txt`, or `star/rmats/{CONTRAST}_paired/` with the same file names when the run used `rmats_paired_stats: true` (either directory counts); SUPPA2 `salmon/suppa/diffsplice/per_local_event/local_{T}-{C}.dpsi`; DEXSeq exon `star/dexseq_exon/results/DEXSeqResults.{CONTRAST}.csv`; edgeR exon `star/edger/contrast_{CONTRAST}.usage.exon.csv`; DTU `salmon/dexseq_dtu/results/dexseq/DEXSeqResults.{T}-{C}.tsv`. SUPPA2 and DTU file names use `{T}-{C}` (treatment, hyphen, control); the other three use the contrast name. A BAM-input run has no `salmon/` directory, so SUPPA2 and DTU are simply not found. The rMATS tables have the column `ID` twice (first column, and again after the coordinate columns); detection only counts lines and never reads columns, so this does not matter here, but every reader of these tables must account for it. Run, in one Bash call (replace `{OUTDIR_RNASPLICE}` and `{CONTRASTS_CSV}` with the literal paths):
 ```bash
-OUT="{OUTDIR_RNASPLICE}"
-CSV="{CONTRASTS_CSV}"
+OUT='{OUTDIR_RNASPLICE}'
+CSV='{CONTRASTS_CSV}'
 [ -d "$OUT" ] || { echo "ERROR: output directory $OUT does not exist"; exit 1; }
 [ -s "$CSV" ] || { echo "ERROR: contrasts file $CSV is missing or empty"; exit 1; }
 [ "$(head -n1 "$CSV" | tr -d '\r')" = "contrast,treatment,control" ] || { echo "ERROR: header of $CSV is not contrast,treatment,control"; exit 1; }
@@ -151,8 +153,8 @@ Default: all modules found are reported on. Ask (default: yes): "Report on these
 
 Read the pipeline's own sample sheet `{SAMPLESHEET}` and contrasts file `{CONTRASTS_CSV}` and print them. This reads the two sheets only; the FASTQ or BAM files the sheet points to are never opened. The sheet has either the FASTQ schema (`sample,fastq_1,fastq_2,strandedness,condition`) or the genome BAM schema (`sample,condition,genome_bam,strandedness,single_end`); the block finds the `condition` column by its header name. Run, in one Bash call:
 ```bash
-SS="{SAMPLESHEET}"
-CSV="{CONTRASTS_CSV}"
+SS='{SAMPLESHEET}'
+CSV='{CONTRASTS_CSV}'
 [ -s "$SS" ] || { echo "ERROR: sample sheet $SS is missing or empty"; exit 1; }
 [ -s "$CSV" ] || { echo "ERROR: contrasts file $CSV is missing or empty"; exit 1; }
 echo "== sample sheet $SS"; cat "$SS"
@@ -172,7 +174,7 @@ A group of the contrasts file that is absent from the `condition` column of the 
 
 **Names built from the contrasts file.** The expected file and column names of each contrast are built from its treatment and control; file names are never split to recover them (a group name may contain `-` and `_`). Print them, in one Bash call (replace `{CONTRASTS_CSV}`):
 ```bash
-CSV="{CONTRASTS_CSV}"
+CSV='{CONTRASTS_CSV}'
 [ -s "$CSV" ] || { echo "ERROR: contrasts file $CSV is missing or empty"; exit 1; }
 [ "$(head -n1 "$CSV" | tr -d '\r')" = "contrast,treatment,control" ] || { echo "ERROR: header of $CSV is not contrast,treatment,control"; exit 1; }
 n=0
@@ -200,11 +202,11 @@ The paths are relative to `{OUTDIR_RNASPLICE}`. Several contrasts give one block
 
 The GTF the run used gives the gene identifiers and the organism. Default: the `gtf` key of the params file. Run, in one Bash call (replace `{CWD}`):
 ```bash
-grep -E '^(gtf|genome|fasta):' "{CWD}"/*_params.yaml 2>/dev/null
+grep -E '^(gtf|genome|fasta):' '{CWD}'/*_params.yaml 2>/dev/null
 ```
 Store the GTF path as `{GTF}` (ask for it when the params file has none, for example a run that used `genome`). Then guess the organism from the identifiers in the GTF, in one Bash call (light work; replace `{GTF}`):
 ```bash
-G="{GTF}"
+G='{GTF}'
 [ -f "$G" ] || { echo "ERROR: $G is not a file"; exit 1; }
 case "$G" in *.gz) rd=zcat ;; *) rd=cat ;; esac
 $rd "$G" | head -n 5000 | grep -m1 -o 'ENS[A-Z]*G[0-9]\{6,\}' || echo "no Ensembl gene identifier found in the first 5000 lines"
@@ -217,8 +219,8 @@ $rd "$G" | head -n 5000 | grep -m1 -o 'ENS[A-Z]*G[0-9]\{6,\}' || echo "no Ensemb
 
 The report states the pairing of the run and never claims unpaired statistics for a paired run. The pairing is read from the run, not asked for: the params file holds the switches `rmats_paired_stats` (rMATS) and `diffsplice_paired` (SUPPA2), and a paired design has a pairs file (header `sample,subject`) next to the sheets. Run, in one Bash call (replace `{CWD}`):
 ```bash
-grep -E '^(rmats_paired_stats|diffsplice_paired):' "{CWD}"/*_params.yaml 2>/dev/null
-if ls "{CWD}"/*_pairs.csv > /dev/null 2>&1; then cat "{CWD}"/*_pairs.csv; else echo "no pairs file in {CWD}"; fi
+grep -E '^(rmats_paired_stats|diffsplice_paired):' '{CWD}'/*_params.yaml 2>/dev/null
+if ls '{CWD}'/*_pairs.csv > /dev/null 2>&1; then cat '{CWD}'/*_pairs.csv; else echo 'no pairs file in {CWD}'; fi
 ```
 Store `{PAIRED_RMATS}` and `{PAIRED_SUPPA}` (`true` or `false`) from the two switches. A switch that the params file does not name has the pinned pipeline's default: `rmats_paired_stats` false, `diffsplice_paired` true; say that the value is a default. Print the pairing to the user in one line per tool ("rMATS: unpaired statistics; SUPPA2: paired statistics" or the reverse) and, when a pairs file exists, its sample and subject columns. The two switches can differ; each report section states the pairing of its own tool. The DEXSeq and edgeR exon and DTU analyses use the sample sheet design of the run as it is; the report does not change it.
 
@@ -256,7 +258,7 @@ Which Rmd and job each switch controls is fixed in Step 10. `events` and `topgen
 Ask one question per value and state the default:
 - Memory `{MEM}`: default 32G (at most 64G).
 - Time `{TIME}`: default 4:00:00 (at most 4:00:00).
-- `{PROJECT}`: the name used in the job names. Default: `{WD_NAME}`.
+- `{PROJECT}`: the name used in the job names. Default: `{WD_NAME}`. The rule on free-text values in Step 0 applies.
 
 Every generated script uses partition `bcc`, one node, one task and four CPUs (`-N 1 -n 1 -c 4`). A value above 64G or 4:00:00 is written only when the user asks for it by name; the generator then prints a note that the value is above the default limits. Tell the user the values in one line.
 
@@ -286,8 +288,8 @@ The job scripts are made in four short steps, each a separate block: the checks,
 
 **Checks and job list.** It checks the values, refuses a report directory outside `results/` or inside the output of the run, refuses to continue when an Rmd of a job that applies is missing (nothing but the directories is created), and writes the job list `templates/jobs.txt`:
 ```bash
-R="{REPORT_DIR}"; OUT="{OUTDIR_RNASPLICE}"; MEM="{MEM}"; TIME="{TIME}"; MODULES="{MODULES}"; SECTIONS="{SECTIONS}"
-FDR="{FDR}"; DPSI="{DPSI}"; MIN_READS="{MIN_READS}"; RMATS_TYPE="{RMATS_TYPE}"
+R='{REPORT_DIR}'; OUT='{OUTDIR_RNASPLICE}'; MEM='{MEM}'; TIME='{TIME}'; MODULES='{MODULES}'; SECTIONS='{SECTIONS}'
+FDR='{FDR}'; DPSI='{DPSI}'; MIN_READS='{MIN_READS}'; RMATS_TYPE='{RMATS_TYPE}'
 fail() { echo "ERROR: $1"; exit 1; }
 case "$R" in */results/*) ;; *) fail "report directory $R is not under a results/ directory" ;; esac
 case "$R/" in "$OUT"/*) fail "report directory $R is inside the pipeline output $OUT" ;; esac
@@ -359,19 +361,19 @@ echo "submitted:__ALLJ__"
 
 **Settings.** It writes `templates/settings.sed`, one substitution per value of the templates:
 ```bash
-R="{REPORT_DIR}"; T="$R/templates"
-b() { case " {SECTIONS} " in *" $1 "*) echo TRUE ;; *) echo FALSE ;; esac; }
+R='{REPORT_DIR}'; T="$R/templates"
+b() { case ' {SECTIONS} ' in *" $1 "*) echo TRUE ;; *) echo FALSE ;; esac; }
 pr() { case "$1" in true) echo TRUE ;; *) echo FALSE ;; esac; }
 BIND=/net/bmc-lab3
-for p in "$R" "{OUTDIR_RNASPLICE}" "{CWD}" "{SIF}" "{GTF}" "{CONTRASTS_CSV}" "{SAMPLESHEET}"; do
+for p in "$R" '{OUTDIR_RNASPLICE}' '{CWD}' '{SIF}' '{GTF}' '{CONTRASTS_CSV}' '{SAMPLESHEET}'; do
   case "$p" in /net/bmc-lab3/*) ;; *[[:space:],]*) echo "ERROR: $p holds a space or a comma and cannot be bound into the container"; exit 1 ;; esac
   case "$p" in /net/bmc-lab3/*) ;; /*) q=$(dirname "$p"); case ",$BIND," in *",$q,"*) ;; *) BIND="$BIND,$q" ;; esac ;; esac
 done
-set -- R "$R" OUT "{OUTDIR_RNASPLICE}" SIF "{SIF}" EMAIL "{EMAIL}" JOBNAME "{PROJECT}_report" MEM "{MEM}" TIME "{TIME}" \
-  CONTRASTS "{CONTRASTS_CSV}" SAMPLESHEET "{SAMPLESHEET}" MODULES "{MODULES}" RMATS_TYPE "{RMATS_TYPE}" \
-  FDR "{FDR}" DPSI "{DPSI}" MIN_READS "{MIN_READS}" ORGANISM "{ORGANISM}" GTF "{GTF}" ENRICH_DBS "{ENRICH_DBS}" BIND "$BIND" \
+set -- R "$R" OUT '{OUTDIR_RNASPLICE}' SIF '{SIF}' EMAIL '{EMAIL}' JOBNAME '{PROJECT}_report' MEM '{MEM}' TIME '{TIME}' \
+  CONTRASTS '{CONTRASTS_CSV}' SAMPLESHEET '{SAMPLESHEET}' MODULES '{MODULES}' RMATS_TYPE '{RMATS_TYPE}' \
+  FDR '{FDR}' DPSI '{DPSI}' MIN_READS '{MIN_READS}' ORGANISM '{ORGANISM}' GTF '{GTF}' ENRICH_DBS '{ENRICH_DBS}' BIND "$BIND" \
   EVENTS "$(b events)" CROSS "$(b cross)" TOPGENE "$(b topgene)" ENRICH "$(b enrich)" \
-  PAIRED_RMATS "$(pr "{PAIRED_RMATS}")" PAIRED_SUPPA "$(pr "{PAIRED_SUPPA}")"
+  PAIRED_RMATS "$(pr '{PAIRED_RMATS}')" PAIRED_SUPPA "$(pr '{PAIRED_SUPPA}')"
 while [ $# -gt 0 ]; do
   case "$2" in *$'\n'*) echo "ERROR: the value of $1 holds a line break"; exit 1 ;; esac
   v=$(printf '%s' "$2" | sed 's/[\\&|]/\\&/g')
@@ -383,7 +385,7 @@ echo "wrote $T/settings.sed"
 
 **Rendering the scripts.** It writes one `run_NN.sbatch` per job of the list and `run_all.sh`, which only calls sbatch:
 ```bash
-R="{REPORT_DIR}"; T="$R/templates"; EMAIL="{EMAIL}"
+R='{REPORT_DIR}'; T="$R/templates"; EMAIL='{EMAIL}'
 for f in jobs.txt settings.sed run_job.sbatch.tpl run_all.tpl; do
   [ -s "$T/$f" ] || { echo "ERROR: $T/$f is missing or empty: run the earlier blocks and write the templates first"; exit 1; }
 done

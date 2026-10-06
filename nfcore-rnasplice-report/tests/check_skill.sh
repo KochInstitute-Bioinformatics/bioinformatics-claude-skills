@@ -211,13 +211,24 @@ need '    enrich_dbs = '\''__ENRICH_DBS__'\'','
 need '    paired_rmats = __PAIRED_RMATS__, paired_suppa = __PAIRED_SUPPA__))"'
 need "  OUTF=\"\"; if [ \"\$n\" = 07 ]; then OUTF=\"output_file = 'report_summary.html', \"; fi"
 need '**Absolute output directory.**'
-need 'else echo "no pairs file in {CWD}"; fi'
+need 'else echo '\''no pairs file in {CWD}'\''; fi'
 need 'the first thing written into `{REPORT_DIR}` at all is the `image_check/` directory of Step 2, after this answer'
 need 'the value of $1 holds a line break'
 need 'v=$(printf '\''%s'\'' "$2" | sed '\''s/[\\&|]/\\&/g'\'')'
 need 'printf '\''s|__%s__|%s|g\n'\'' "$1" "$v"; shift 2'
 need 'is empty or still holds a template marker'
 need 'holds a space or a comma and cannot be bound into the container'
+need '**Free-text values.**'
+need 'so that a `$`, a backtick or a backslash in a value is taken literally and nothing in it is run'
+need 'that contains a single quote (`'\''`) or a line break is therefore not accepted: ask again'
+need 'EMAIL '\''{EMAIL}'\'' JOBNAME '\''{PROJECT}_report'\'''
+need 'R='\''{REPORT_DIR}'\''; OUT='\''{OUTDIR_RNASPLICE}'\''; MEM='\''{MEM}'\''; TIME='\''{TIME}'\'''
+# The rule on free-text values is referenced where the user types a value (e-mail, image path, paths of the run, project name).
+n_ref=$(grep -c 'The rule on free-text values in Step 0 applies' "$SKILL")
+[ "$n_ref" -ge 4 ] || { echo "FAIL: the rule on free-text values must be referenced by the e-mail, image, path and project name questions, found $n_ref references"; fail=1; }
+# A value of the wizard is never put in double quotes in a Bash block (a $, a backtick or a backslash in it would be interpreted).
+dq=$(awk '/^```bash$/ { inb = 1; next } inb && /^```$/ { inb = 0 } inb && /"[^"$`]*\{[A-Z_]+\}[^"$`]*"/ { print NR ": " $0 }' "$SKILL")
+[ -z "$dq" ] || { echo "FAIL: a wizard value in double quotes in a Bash block (use single quotes):"; printf '%s\n' "$dq" | head -n 3; fail=1; }
 # No code block of the skill is long or nests a heredoc: a long script, or a heredoc inside a function inside a heredoc, is refused
 # by the safety check of the Claude Code harness. Every fenced block is checked (fences of ``` or ~~~, up to three leading spaces,
 # any info string) except the blocks whose info string is explicitly r, rmd, yaml, md, markdown, text, console, json, csv or tsv.

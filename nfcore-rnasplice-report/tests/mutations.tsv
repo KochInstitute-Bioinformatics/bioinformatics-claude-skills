@@ -393,7 +393,7 @@ T3b-fence-sh-long	check	skill	$s/$/\n```sh\necho x\necho x\necho x\necho x\necho
 T3b-need-01	check	skill	s|\*\*Absolute output directory\.\*\*|REMOVED|g	missing required text: **Absolute output directory.**
 T3b-need-02	check	skill	s|\*\*Checks and job list\.\*\*|REMOVED|g	missing required text: **Checks and job list.**
 T3b-need-03	check	skill	s|    contrasts = '__CONTRASTS__', samplesheet = '__SAMPLESHEET__',|REMOVED|g	missing required text:     contrasts = '__CONTRASTS__', samplesheet = '__SAMPLESHEET__',
-T3b-need-04	check	skill	s|else echo "no pairs file in {CWD}"; fi|REMOVED|g	missing required text: else echo "no pairs file in {CWD}"; fi
+T3b-need-04	check	skill	s|else echo 'no pairs file in {CWD}'; fi|REMOVED|g	missing required text: else echo 'no pairs file in {CWD}'; fi
 T3b-need-05	check	skill	s|    enrich_dbs = '__ENRICH_DBS__',|REMOVED|g	missing required text:     enrich_dbs = '__ENRICH_DBS__',
 T3b-need-06	check	skill	s|    events = __EVENTS__, cross = __CROSS__, topgene = __TOPGENE__, enrich = __ENRICH__,|REMOVED|g	missing required text:     events = __EVENTS__, cross = __CROSS__, topgene = __TOPGENE__, enrich = __ENRICH__,
 T3b-need-07	check	skill	s|    fdr = __FDR__, dpsi = __DPSI__, min_reads = __MIN_READS__,|REMOVED|g	missing required text:     fdr = __FDR__, dpsi = __DPSI__, min_reads = __MIN_READS__,
@@ -432,3 +432,14 @@ T3c-fence-tilde	check	skill	$s/$/\n~~~bash\necho x\necho x\necho x\necho x\necho
 T3c-fence-indented	check	skill	$s/$/\n  ```bash\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\n  ```/	a code fence of 70 lines
 T3c-fence-rmd-exempt-not-bypass	check	skill	$s/$/\n```text2\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\n```/	a code fence of 70 lines
 T3c-fence-plain-function-heredocs	check	skill	$s/$/\n```\nf() { :; }\ncat > a <<EOF\nx\nEOF\ncat > b <<EOF\nx\nEOF\ncat > c <<EOF\nx\nEOF\n```/	a code fence with a nested heredoc
+T3d-need-1	check	skill	s|\*\*Free-text values\.\*\*|REMOVED|g	missing required text: **Free-text values.**
+T3d-need-2	check	skill	s|so that a `\$`, a backtick or a backslash in a value is taken literally and nothing in it is run|REMOVED|g	missing required text: so that a `$`, a backtick or a backslash in a value is taken literally and nothing in it is run
+T3d-need-3	check	skill	s|that contains a single quote (`'`) or a line break is therefore not accepted: ask again|REMOVED|g	missing required text: that contains a single quote (`'`) or a line break is therefore not accepted: ask again
+T3d-need-4	check	skill	s|EMAIL '{EMAIL}' JOBNAME '{PROJECT}_report'|REMOVED|g	missing required text: EMAIL '{EMAIL}' JOBNAME '{PROJECT}_report'
+T3d-need-5	check	skill	s|R='{REPORT_DIR}'; OUT='{OUTDIR_RNASPLICE}'; MEM='{MEM}'; TIME='{TIME}'|REMOVED|g	missing required text: R='{REPORT_DIR}'; OUT='{OUTDIR_RNASPLICE}'; MEM='{MEM}'; TIME='{TIME}'
+T3d-dq-email	check	skill	s|EMAIL='{EMAIL}'$|EMAIL="{EMAIL}"|	a wizard value in double quotes in a Bash block
+T3d-dq-gtf	check	skill	s|^G='{GTF}'|G="{GTF}"|	a wizard value in double quotes in a Bash block
+T3d-dq-settings	check	skill	s|EMAIL '{EMAIL}' JOBNAME|EMAIL "{EMAIL}" JOBNAME|	a wizard value in double quotes in a Bash block
+T3d-dq-checks	check	skill	s|^R='{REPORT_DIR}'; OUT=|R="{REPORT_DIR}"; OUT=|	a wizard value in double quotes in a Bash block
+T3d-ref-project	check	skill	s|Default: `{WD_NAME}`. The rule on free-text values in Step 0 applies\.|Default: `{WD_NAME}`.|	the rule on free-text values must be referenced
+T3d-ref-email	check	skill	s|Do not pre-fill any address. The rule on free-text values in Step 0 applies\.|Do not pre-fill any address.|	the rule on free-text values must be referenced
