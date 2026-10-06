@@ -42,13 +42,13 @@ STUB
 chmod +x "$tmp/stub/sbatch"
 [ "$(env -i PATH="$tmp/stub:$SYS" /bin/bash -c 'type -P sbatch')" = "$tmp/stub/sbatch" ] || { bad "stub sbatch is not first on the PATH"; exit 1; }
 # subst <text>: replaces the placeholders of the skill by the test values (the variables of render).
-CWDP=$tmp/wd; GTFP=$tmp/wd/genes.gtf; CSVP=$tmp/wd/contrasts.csv
+PROJP=wd; CWDP=$tmp/wd; GTFP=$tmp/wd/genes.gtf; CSVP=$tmp/wd/contrasts.csv
 se() { printf '%s' "$1" | sed 's/[\\&|]/\\&/g'; }
 subst() {
   printf '%s\n' "$1" | sed \
     -e "s|{REPORT_DIR}|$RD|g" -e "s|{OUTDIR_RNASPLICE}|$tmp/wd/out|g" -e "s|{CWD}|$(se "$CWDP")|g" \
     -e "s|{SIF}|$(se "$SIFP")|g" -e "s|{EMAIL}|$(se "$EMAIL")|g" \
-    -e "s|{PROJECT}|wd|g" -e "s|{MEM}|$MEM|g" -e "s|{TIME}|$TIME|g" -e "s|{MODULES}|$mods|g" -e "s|{SECTIONS}|$secs|g" \
+    -e "s|{PROJECT}|$(se "$PROJP")|g" -e "s|{MEM}|$MEM|g" -e "s|{TIME}|$TIME|g" -e "s|{MODULES}|$mods|g" -e "s|{SECTIONS}|$secs|g" \
     -e "s|{FDR}|0.05|g" -e "s|{DPSI}|0.1|g" -e "s|{RMATS_TYPE}|JC|g" -e "s|{MIN_READS}|10|g" -e "s|{ORGANISM}|human|g" \
     -e "s|{ENRICH_DBS}|GO KEGG|g" -e "s|{GTF}|$(se "$GTFP")|g" -e "s|{CONTRASTS_CSV}|$(se "$CSVP")|g" \
     -e "s|{SAMPLESHEET}|$tmp/wd/samples.csv|g" -e "s|{PAIRED_RMATS}|false|g" -e "s|{PAIRED_SUPPA}|true|g"
@@ -60,7 +60,7 @@ runb() { env -i PATH="$SYS" /bin/bash --noprofile --norc -c "$1"; }
 render() {
   local name=$1 mods=$2 secs=$3; shift 3
   local R="$tmp/wd/results/2026-10-05_wd_report_$name"
-  local MEM=32G TIME=4:00:00 EMAIL=x@y.z RD=$R DROP="" kv f prog rc=0 CWDP=$tmp/wd GTFP=$tmp/wd/genes.gtf CSVP=$tmp/wd/contrasts.csv SIFP=$SIFP
+  local MEM=32G TIME=4:00:00 EMAIL=x@y.z RD=$R DROP="" kv f prog rc=0 PROJP=$PROJP CWDP=$tmp/wd GTFP=$tmp/wd/genes.gtf CSVP=$tmp/wd/contrasts.csv SIFP=$SIFP
   for kv in "$@"; do printf -v "${kv%%=*}" %s "${kv#*=}"; done
   for prog in "$B_CHECK" "$B_SET" "$B_REND"; do
     subst "$prog" | grep -o "[^$]{[A-Z][A-Z_]*}" | sort -u
@@ -264,6 +264,59 @@ printf 's|__R__|x|g\n' > "$tmp/wd/results/2026-10-05_wd_report_emptyv/templates/
 RD=$tmp/wd/results/2026-10-05_wd_report_emptyv mods=rmats secs=events MEM=32G TIME=4:00:00 EMAIL=x@y.z
 runb "$(subst "$B_REND")" > "$tmp/emptyv2.out" 2>&1; check "leftover marker in a rendered script: exit status" 1 "$?"
 has "leftover marker: message" "ERROR" "$tmp/emptyv2.out"
+# --- a project name or path with two underscores and capitals is a legitimate value, not a leftover marker
+render legit "rmats" "events" PROJP='my__PROJECT__x' CSVP="$tmp/wd/a__B__c.csv"
+check "value with __CAPITALS__: exit status" 0 "$(cat "$tmp/legit.rc")"
+has "value with __CAPITALS__: job name" '#SBATCH -J my__PROJECT__x_report_01' "$tmp/legit/run_01.sbatch"
+has "value with __CAPITALS__: contrasts path" "contrasts = \"$tmp/wd/a__B__c.csv\"" "$tmp/legit/run_01.sbatch"
+# --- Step 2: the scripts carry the mail lines only when mail is wanted
+for em in none x@y.z; do
+  for pair in "**Image missing.**:pull_image" "**Package check.**:check_packages"; do
+    anc=${pair%%:*}; nm=${pair#*:}
+    blkx=$(blk "$anc") || { bad "Step 2 block after $anc not found"; continue; }
+    RD="$tmp/wd/results/2026-10-05_wd_report_s2_${nm}_$em"; mods=rmats; secs=events; MEM=32G; TIME=4:00:00; EMAIL=$em
+    STUBLOG="$tmp/s2.stub.log"; : > "$STUBLOG"
+    env -i PATH="$tmp/stub:$SYS" STUBLOG="$STUBLOG" /bin/bash --noprofile --norc -c "$(subst "$blkx")" > "$tmp/s2.out" 2>&1; rc=$?
+    check "Step 2 $nm with mail=$em: exit status" 0 "$rc"
+    if [ "$em" = none ]; then
+      hasnt "Step 2 $nm without mail: no mail-user line" 'mail-user' "$RD/image_check/$nm.sbatch"
+      hasnt "Step 2 $nm without mail: no mail-type line" 'mail-type' "$RD/image_check/$nm.sbatch"
+    else
+      has "Step 2 $nm with mail: mail-user line" "#SBATCH --mail-user=$em" "$RD/image_check/$nm.sbatch"
+    fi
+  done
+done
+# --- Extracting the Rmd files: the seven blocks of the skill are cut out into the report directory, byte for byte
+ex=$(blk '**Extracting the Rmd files.**') || bad "block after the heading Extracting the Rmd files not found"
+runex() { env -i PATH="$SYS" /bin/bash --noprofile --norc -c "$(printf '%s\n' "$ex" | sed -e "s|{REPORT_DIR}|$1|g" -e "s|{SKILL_FILE}|$2|g")"; }
+refrmd() { sed -n "/^\*\*File \`$1\.Rmd\`\.\*\*\$/,/^\`\`\`\`\$/p" "$skill" | sed '1,2d;$d'; }
+EX="$tmp/wd/results/2026-10-05_wd_report_rmdx"
+runex "$EX" "$skill" > "$tmp/ex.out" 2>&1; check "extraction: exit status" 0 "$?"
+check "extraction: seven Rmd files and nothing else" "01_import.Rmd 02_rmats.Rmd 03_suppa.Rmd 04_usage.Rmd 05_cross_tool.Rmd 06_enrichment.Rmd 07_summary.Rmd" "$(ls -A "$EX" | tr '\n' ' ' | sed 's/ $//')"
+for n in 01_import 02_rmats 03_suppa 04_usage 05_cross_tool 06_enrichment 07_summary; do
+  refrmd "$n" > "$tmp/ref.$n"
+  if cmp -s "$tmp/ref.$n" "$EX/$n.Rmd" && [ -s "$tmp/ref.$n" ]; then ok "extraction: $n.Rmd identical to the block"; else bad "extraction: $n.Rmd differs from the block"; fi
+  has "extraction: line count of $n.Rmd printed" "$n.Rmd: $(wc -l < "$tmp/ref.$n") lines" "$tmp/ex.out"
+done
+runex "$tmp/wd/results/2026-10-05_wd_report_ex_nofile" "$tmp/no_such_skill.md" > "$tmp/ex2.out" 2>&1; check "extraction: missing skill file: exit status" 1 "$?"
+has "extraction: missing skill file: the path is named" "$tmp/no_such_skill.md" "$tmp/ex2.out"
+check "extraction: missing skill file: nothing written" "" "$(ls -A "$tmp/wd/results/2026-10-05_wd_report_ex_nofile" 2>/dev/null)"
+awk '/^\*\*File `07_summary.Rmd`\.\*\*$/ { exit } { print }' "$skill" > "$tmp/skill6.md"
+runex "$tmp/wd/results/2026-10-05_wd_report_ex6" "$tmp/skill6.md" > "$tmp/ex3.out" 2>&1; check "extraction: a skill file with six Rmd blocks: exit status" 1 "$?"
+has "extraction: six blocks: the message" "ERROR" "$tmp/ex3.out"
+check "extraction: six blocks: nothing written" "" "$(ls -A "$tmp/wd/results/2026-10-05_wd_report_ex6" 2>/dev/null)"
+sed '/^\*\*File `03_suppa.Rmd`\.\*\*$/{n;n;s/^---$/--/}' "$skill" > "$tmp/skillh.md"
+runex "$tmp/wd/results/2026-10-05_wd_report_exh" "$tmp/skillh.md" > "$tmp/ex4.out" 2>&1; check "extraction: a block that does not start with --- : exit status" 1 "$?"
+check "extraction: bad header: nothing written" "" "$(ls -A "$tmp/wd/results/2026-10-05_wd_report_exh" 2>/dev/null)"
+awk '/^\*\*File `04_usage.Rmd`\.\*\*$/ { print; getline; print; getline; skip = 1 } skip && /^````$/ { skip = 0 } !skip { print }' "$skill" > "$tmp/skille.md"
+runex "$tmp/wd/results/2026-10-05_wd_report_exe" "$tmp/skille.md" > "$tmp/ex5.out" 2>&1; check "extraction: an empty block: exit status" 1 "$?"
+check "extraction: empty block: nothing written" "" "$(ls -A "$tmp/wd/results/2026-10-05_wd_report_exe" 2>/dev/null)"
+# --- the marker list of the rendering block names every marker of the templates
+mk=$(printf '%s\n' "$B_REND" | sed -n "s/^MK='\(.*\)'\$/\1/p; s/^MK=\"\$MK|\(.*\)\"\$/|\1/p" | tr -d '\n')
+tplm=$(cat "$tmp/run_job.sbatch.tpl" "$tmp/run_all.tpl" | grep -oE '__[A-Z]+(_[A-Z]+)*__' | sort -u)
+check "the templates hold markers (the list is not empty)" 29 "$(printf "%s\n" $tplm | wc -l)"
+miss=""; for m in $tplm; do case "|$mk|" in *"|$m|"*) ;; *) miss="$miss $m" ;; esac; done
+check "every template marker is in the marker list of the rendering block" "" "$miss"
 # --- no __PLACEHOLDER__ of the templates is left in a generated script
 left=$(cat "$tmp"/all/run_*.sbatch "$tmp"/all/run_all.sh "$tmp"/only/run_all.sh | grep -o '__[A-Z_]*__' | sort -u | tr '\n' ' ')
 check "no __PLACEHOLDER__ left in the generated scripts" "" "$left"
@@ -274,7 +327,7 @@ printf '%s\n' "$s10" | awk '
   /^```bash$/ { inb = 1; n = 0; next }
   inb && /^```$/ { inb = 0; print n; next }
   inb { n++ }' > "$tmp/s10.lens"
-check "Step 10 has three Bash blocks" 3 "$(wc -l < "$tmp/s10.lens")"
+check "Step 10 has four Bash blocks" 4 "$(wc -l < "$tmp/s10.lens")"
 check "no Bash block of Step 10 has more than 40 lines" 0 "$(awk '$1 > 40' "$tmp/s10.lens" | wc -l)"
 check "no heredoc in a Bash block of Step 10" 0 "$(printf '%s\n' "$s10" | awk '/^```bash$/{inb=1; next} /^```$/{inb=0} inb && /<</' | wc -l)"
 # --- Step 3: the output directory is made absolute (the default of the params file is relative to the working directory)

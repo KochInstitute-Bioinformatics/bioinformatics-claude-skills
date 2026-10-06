@@ -376,9 +376,6 @@ R8-readme-sign-table	check	readme	s/^| Tool | Value read | Conversion | Result |
 R8-readme-kegg	check	readme	s|KEGG/Reactome require an image rebuild|KEGG and Reactome need more work|	README missing required text: KEGG/Reactome require an image rebuild
 R8-readme-low-support	check	readme	s/`low_support`/the flag/g	README missing required text: `low_support`
 R8-root-row	check	rootreadme	/^| nf-core\/rnasplice report |/d	root README row missing
-R8-readme-not-run-all	check	readme	s/: not yet run/: run/	README missing required text: The wizard end to end on the test data: not yet run.
-R8-readme-not-run-wizard	check	readme	s/^- The wizard end to end on the test data: not yet run\./- The wizard end to end on the test data: run./	README missing required text: The wizard end to end on the test data: not yet run.
-R8-readme-not-run-slurm	check	readme	s/^- The SLURM scripts submitted on the cluster: not yet run\./- The SLURM scripts submitted on the cluster: run./	README missing required text: The SLURM scripts submitted on the cluster: not yet run.
 R8-readme-not-run-real	check	readme	s/^- Real data: not yet run\./- Real data: run./	README missing required text: Real data: not yet run.
 R8-readme-suppa-flip	check	readme	s/^| SUPPA2 | `dPSI` (control minus treatment) | flipped |/| SUPPA2 | `dPSI` (control minus treatment) | none |/	README missing required text: | SUPPA2 | `dPSI` (control minus treatment) | flipped | treatment minus control |
 R8-readme-dexseq-flip	check	readme	s/^| DEXSeq exon usage | \(.*\) | flipped |/| DEXSeq exon usage | \1 | none |/	README missing required text: | DEXSeq exon usage |
@@ -453,3 +450,32 @@ T3e-ref-another-path	check	skill	s|3\. Give another path\." The rule on free-tex
 T3e-ref-absolute	check	skill	s|\(Absolute output directory\.\*\* .*is `{OUTDIR_GIVEN}`\.\) The rule on free-text values in Step 0 applies\.|\1|	does not reference the rule on free-text values
 T3e-ref-email	check	skill	s|Do not pre-fill any address. The rule on free-text values in Step 0 applies\.|Do not pre-fill any address.|	does not reference the rule on free-text values
 T3e-ref-project	check	skill	s|Default: `{WD_NAME}`. The rule on free-text values in Step 0 applies\.|Default: `{WD_NAME}`.|	does not reference the rule on free-text values
+T9b-readme-01	check	readme	s|The wizard end to end and the generated SLURM scripts on the cluster (2026-10-06), on the output of the nf-core test-data run (4 samples, chrX, 50,000 read pairs), in four runs: all modules; rMATS only; BAM input; all modules with `min_reads` 0\.|REMOVED|g	README missing required text: The wizard end to end and the generated SLURM scripts on the cluster (2026-10-06), on the output of the nf-core test-data run (4 samples, chrX, 50,000 read pairs), in four runs: all modules; rMATS only; BAM input; all modules with `min_reads` 0.
+T9b-readme-02	check	readme	s|every Bash block was accepted by the Claude Code safety check|REMOVED|g	README missing required text: every Bash block was accepted by the Claude Code safety check
+T9b-readme-03	check	readme	s|The 24 report jobs of the four runs all completed|REMOVED|g	README missing required text: The 24 report jobs of the four runs all completed
+T9b-readme-04	check	readme	s|jobs 02 to 06 `afterok` on job 01 with cancellation when job 01 fails, job 07 `afterany` on every earlier job|REMOVED|g	README missing required text: jobs 02 to 06 `afterok` on job 01 with cancellation when job 01 fails, job 07 `afterany` on every earlier job
+T9b-readme-05	check	readme	s|(SE 5, A5SS 3, A3SS 2, MXE 3, RI 1) equal an independent recomputation with awk from the raw tables|REMOVED|g	README missing required text: (SE 5, A5SS 3, A3SS 2, MXE 3, RI 1) equal an independent recomputation with awk from the raw tables
+T9b-readme-06	check	readme	s|the pipeline output directories were not modified|REMOVED|g	README missing required text: the pipeline output directories were not modified
+T9b-readme-07	check	readme	s|Chain wall times were 23 s, 17 s, 18 s and 71 s|REMOVED|g	README missing required text: Chain wall times were 23 s, 17 s, 18 s and 71 s
+T9b-readme-08	check	readme	s|the four reports take 26 MB of output in total|REMOVED|g	README missing required text: the four reports take 26 MB of output in total
+T9b-readme-09	check	readme	s|Peak memory of the report jobs: not measured\.|REMOVED|g	README missing required text: Peak memory of the report jobs: not measured.
+T9b-readme-10	check	readme	s|The behaviour when a report job fails: not yet run\.|REMOVED|g	README missing required text: The behaviour when a report job fails: not yet run.
+T9b-readme-11	check	readme	s|### How the scripts are made|REMOVED|g	README missing required text: ### How the scripts are made
+T9b-readme-12	check	readme	s|writes two small template files to `templates/` there|REMOVED|g	README missing required text: writes two small template files to `templates/` there
+T9b-readme-13	check	readme	s|The wizard refuses typed values (e-mail address, paths, project name) that contain a single quote, a double quote, a backslash or a line break|REMOVED|g	README missing required text: The wizard refuses typed values (e-mail address, paths, project name) that contain a single quote, a double quote, a backslash or a line break
+T9b-need-01	check	skill	s|\*\*Extracting the Rmd files\.\*\*|REMOVED|g	missing required text: **Extracting the Rmd files.**
+T9b-need-02	check	skill	s|R='{REPORT_DIR}'; SK='{SKILL_FILE}'|REMOVED|g	missing required text: R='{REPORT_DIR}'; SK='{SKILL_FILE}'
+T9b-need-03	check	skill	s|ERROR: the skill file \$SK does not exist: give the path of the skill file, or write the Rmd files one at a time with the Write tool|REMOVED|g	missing required text: ERROR: the skill file $SK does not exist: give the path of the skill file, or write the Rmd files one at a time with the Write tool
+T9b-need-04	check	skill	s|closed = 1; exit } s == 2 { print } END { exit !closed }|REMOVED|g	missing required text: closed = 1; exit } s == 2 { print } END { exit !closed }
+T9b-need-05	check	skill	s|\[ "\$(head -n 1 "\$D/\$n\.Rmd")" = "---" \]|REMOVED|g	missing required text: [ "$(head -n 1 "$D/$n.Rmd")" = "---" ]
+T9b-need-06	check	skill	s|\[ "\$(ls "\$D" \| wc -l)" -eq 7 \]|REMOVED|g	missing required text: [ "$(ls "$D" | wc -l)" -eq 7 ]
+T9b-need-07	check	skill	s|and only then moves them to `{REPORT_DIR}`|REMOVED|g	missing required text: and only then moves them to `{REPORT_DIR}`
+T9b-need-08	check	skill	s|writing them one at a time with the Write tool is the fallback when that block cannot read the skill file|REMOVED|g	missing required text: writing them one at a time with the Write tool is the fallback when that block cannot read the skill file
+T9b-need-09	check	skill	s|case '{EMAIL}' in none\|'') sed -i '/\^#SBATCH \.\.mail-/d' '{REPORT_DIR}/image_check/pull_image\.sbatch' ;; esac|REMOVED|g	missing required text: case '{EMAIL}' in none|'') sed -i '/^#SBATCH ..mail-/d' '{REPORT_DIR}/image_check/pull_image.sbatch' ;; esac
+T9b-need-10	check	skill	s|case '{EMAIL}' in none\|'') sed -i '/\^#SBATCH \.\.mail-/d' '{REPORT_DIR}/image_check/check_packages\.sbatch' ;; esac|REMOVED|g	missing required text: case '{EMAIL}' in none|'') sed -i '/^#SBATCH ..mail-/d' '{REPORT_DIR}/image_check/check_packages.sbatch' ;; esac
+T9b-need-11	check	skill	s|MK='__R__\|__OUT__\|__SIF__\|__EMAIL__\|__JOBNAME__|REMOVED|g	missing required text: MK='__R__|__OUT__|__SIF__|__EMAIL__|__JOBNAME__
+T9b-need-12	check	skill	s|grep -Eq "(\$MK)" "\$f"|REMOVED|g	missing required text: grep -Eq "($MK)" "$f"
+T9b-awk-range	check	skill	s|s == 2 { print } END|s == 3 { print } END|	missing required text: closed = 1; exit } s == 2 { print } END { exit !closed }
+T9b-header-check	check	skill	s|= "---" ]|= "--" ]|	missing required text: [ "$(head -n 1 "$D/$n.Rmd")" = "---" ]
+T9b-count-check	check	skill	s|-eq 7 ]|-eq 6 ]|	missing required text: [ "$(ls "$D" | wc -l)" -eq 7 ]
+T9b-block-removed	check	skill	s|\*\*Extracting the Rmd files\.\*\*|Extracting the Rmd files.|	missing required text: **Extracting the Rmd files.**

@@ -63,6 +63,7 @@ cd "$(dirname '{SIF}')" || exit 1
 singularity pull "$(basename '{SIF}')" docker://yannvrb56/bulkrnaseq:latest || exit 1
 ls -la '{SIF}'
 EOF
+case '{EMAIL}' in none|'') sed -i '/^#SBATCH ..mail-/d' '{REPORT_DIR}/image_check/pull_image.sbatch' ;; esac
 sbatch '{REPORT_DIR}/image_check/pull_image.sbatch'
 ```
 
@@ -88,6 +89,7 @@ cat > '{REPORT_DIR}/image_check/check_packages.sbatch' <<'EOF'
 module add singularity/3.10.4 || exit 1
 singularity exec --bind /net/bmc-lab3 '{SIF}' Rscript '{REPORT_DIR}/image_check/check_packages.R'
 EOF
+case '{EMAIL}' in none|'') sed -i '/^#SBATCH ..mail-/d' '{REPORT_DIR}/image_check/check_packages.sbatch' ;; esac
 sbatch '{REPORT_DIR}/image_check/check_packages.sbatch'
 ```
 Read the lines `MANDATORY <package> TRUE|FALSE` and `OPTIONAL <package> TRUE|FALSE` of the log:
@@ -282,9 +284,27 @@ The Rmd files have fixed names, and there is one job per Rmd that applies:
 
 Default: every job that applies. Write the Rmd files that apply to `{REPORT_DIR}`, then generate the job scripts and `run_all.sh`. Jobs 02 to 06 start when job 01 has finished successfully (`dependency=afterok`, with the option that cancels them when job 01 fails) and run side by side; job 07 starts when jobs 01 to 06 (those that exist) have ended, whatever their outcome (`dependency=afterany`), so the summary also lists the reports that failed.
 
-**Writing the Rmd files.** The content of each Rmd file is the block under its heading **File `<name>.Rmd`.** in the section "Report files" below (a fence of four backticks, language `rmd`). Write that block with the Write tool to `{REPORT_DIR}/<name>.Rmd` byte for byte, without the two fence lines. The Rmd files hold no placeholders: every value of the earlier steps reaches them as a render parameter of the job script (the `params = list(...)` of the block below).
+**Writing the Rmd files.** The content of each Rmd file is the block under its heading **File `<name>.Rmd`.** in the section "Report files" below (a fence of four backticks, language `rmd`). Write that block with the Write tool to `{REPORT_DIR}/<name>.Rmd` byte for byte, without the two fence lines. The Rmd files hold no placeholders: every value of the earlier steps reaches them as a render parameter of the job script (the `params = list(...)` of the block below). Writing seven long files by hand is slow and error-prone, so the files are normally cut out of the installed skill file by the next block; writing them one at a time with the Write tool is the fallback when that block cannot read the skill file.
 
-The job scripts are made in four short steps, each a separate block: the checks, two template files written with the Write tool, the settings, and the rendering. No block is long, and none holds a heredoc inside a function, so each can be pasted whole into one Bash call. Replace the placeholders (`{...}`) of every block with the literal values of the earlier steps (`{EMAIL}` is `none` when no mail is wanted). When a block prints a line that begins with `ERROR`, stop, tell the user, and run none of the later blocks.
+**Extracting the Rmd files.** `{SKILL_FILE}` is the absolute path of the installed skill file, `$HOME/.claude/commands/nfcore-rnasplice-report.md` with `$HOME` written out (the skill is installed there). The block copies each block between its fence lines, line by line (every line ends with a line break), to a temporary directory, checks that there are exactly seven non-empty files and that each starts with the YAML header line `---`, and only then moves them to `{REPORT_DIR}`; on any error it prints a line that begins with `ERROR` and nothing is written to `{REPORT_DIR}`. When the skill file does not exist, it names the path it looked for: give the path of the skill file, or use the Write tool as above.
+```bash
+R='{REPORT_DIR}'; SK='{SKILL_FILE}'
+NAMES='01_import 02_rmats 03_suppa 04_usage 05_cross_tool 06_enrichment 07_summary'
+[ -f "$SK" ] || { echo "ERROR: the skill file $SK does not exist: give the path of the skill file, or write the Rmd files one at a time with the Write tool"; exit 1; }
+D=$(mktemp -d "${TMPDIR:-/tmp}/rmd_extract.XXXXXX") || { echo "ERROR: cannot create a temporary directory"; exit 1; }
+for n in $NAMES; do
+  awk -v n="$n.Rmd" 'BEGIN { h = "**File `" n "`.**" } $0 == h { s = 1; next } s == 1 && $0 == "````rmd" { s = 2; next } s == 2 && $0 == "````" { closed = 1; exit } s == 2 { print } END { exit !closed }' "$SK" > "$D/$n.Rmd" \
+    || { echo "ERROR: the block of $n.Rmd was not found or is not closed in $SK; nothing was written to $R"; exit 1; }
+  [ -s "$D/$n.Rmd" ] && [ "$(head -n 1 "$D/$n.Rmd")" = "---" ] \
+    || { echo "ERROR: $n.Rmd is empty or does not start with the YAML header line; nothing was written to $R"; exit 1; }
+done
+[ "$(ls "$D" | wc -l)" -eq 7 ] || { echo "ERROR: expected 7 files, found $(ls "$D" | wc -l); nothing was written to $R"; exit 1; }
+mkdir -p "$R" && mv "$D"/*.Rmd "$R"/ || { echo "ERROR: cannot move the files to $R"; exit 1; }
+rmdir "$D"
+for n in $NAMES; do echo "$n.Rmd: $(wc -l < "$R/$n.Rmd") lines"; done
+```
+
+The job scripts are made in short steps, each a separate block (or a template file written with the Write tool): the checks, two template files written with the Write tool, the settings, and the rendering. No block is long, and none holds a heredoc inside a function, so each can be pasted whole into one Bash call. Replace the placeholders (`{...}`) of every block with the literal values of the earlier steps (`{EMAIL}` is `none` when no mail is wanted). When a block prints a line that begins with `ERROR`, stop, tell the user, and run none of the later blocks.
 
 **Checks and job list.** It checks the values, refuses a report directory outside `results/` or inside the output of the run, refuses to continue when an Rmd of a job that applies is missing (nothing but the directories is created), and writes the job list `templates/jobs.txt`:
 ```bash
@@ -404,8 +424,10 @@ while IFS=: read -r n rmd; do
   ALLJ="$ALLJ \$JOB$n"; NUMS="$NUMS $n"
 done < "$T/jobs.txt"
 grep '^echo' "$T/run_all.tpl" | sed "s|__ALLJ__|$ALLJ|" >> "$R/run_all.sh"
+MK='__R__|__OUT__|__SIF__|__EMAIL__|__JOBNAME__|__MEM__|__TIME__|__CONTRASTS__|__SAMPLESHEET__|__MODULES__|__RMATS_TYPE__|__FDR__|__DPSI__|__MIN_READS__'
+MK="$MK|__ORGANISM__|__GTF__|__ENRICH_DBS__|__BIND__|__EVENTS__|__CROSS__|__TOPGENE__|__ENRICH__|__PAIRED_RMATS__|__PAIRED_SUPPA__|__N__|__RMD__|__OUTFILE__|__DEPS__|__ALLJ__"
 for f in "$R"/run_[0-9][0-9].sbatch "$R/run_all.sh"; do
-  if [ ! -s "$f" ] || grep -q '__[A-Z_]*__' "$f"; then echo "ERROR: $f is empty or still holds a template marker"; exit 1; fi
+  if [ ! -s "$f" ] || grep -Eq "($MK)" "$f"; then echo "ERROR: $f is empty or still holds a template marker"; exit 1; fi
 done
 ls -la "$R"
 echo "JOBS=${NUMS# }"
