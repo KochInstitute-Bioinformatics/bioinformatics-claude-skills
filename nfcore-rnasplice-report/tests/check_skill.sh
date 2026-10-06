@@ -170,7 +170,7 @@ need '#SBATCH -c 4'
 need '#SBATCH --mem=$MEM'
 need '#SBATCH -t $TIME'
 need 'singularity exec --bind $BIND "$SIF" Rscript -e "rmarkdown::render('\''$R/$2'\'','
-need "output_dir = '\$R', knit_root_dir = '\$R',"
+need 'output_dir = '"'"'$R'"'"', ${OUTF}knit_root_dir = '"'"'$R'"'"','
 need 'events = $EV, cross = $CR, topgene = $TG, enrich = $EN'
 need 'if sec cross && [ $ntools -ge 2 ]; then JOBS="$JOBS 05:05_cross_tool.Rmd"; fi'
 need 'if sec enrich; then JOBS="$JOBS 06:06_enrichment.Rmd"; fi'
@@ -360,6 +360,62 @@ for n in 04_usage.Rmd 05_cross_tool.Rmd; do
   fi
 done
 # --- end Rmd 04 and 05
+# --- Rmd 06 (GO enrichment) and Rmd 07 (summary page)
+need '**File `06_enrichment.Rmd`.**'
+need '**File `07_summary.Rmd`.**'
+need 'The universe (the background) of each enrichment is the set of genes that were testable in that tool'
+need 'A group is tested only when it has at least 10 genes.'
+need 'MIN_GENES <- 10'
+need 'if (length(ids) < MIN_GENES) {'
+need 'cat("skipped: fewer than ", MIN_GENES, " genes (n=", length(ids), ")\n\n", sep = "")'
+need '    uni <- to_entrez(cl$tested, pkg)'
+need '       treatment_up = intersect(cl$genes, d$gene_id[d$direction %in% "treatment_up"]),'
+need '       control_up = intersect(cl$genes, d$gene_id[d$direction %in% "control_up"]))'
+need 'KEGG/Reactome require an image rebuild (ReactomePA, KEGG.db and reactome.db are not in this image). GO only.'
+need '**organism not supported**'
+need 'pAdjustMethod = "BH", pvalueCutoff = ENRICH_CUTOFF, qvalueCutoff = ENRICH_CUTOFF'
+need 'ENRICH_CUTOFF <- 0.05'
+need 'Only GO is run: KEGG and Reactome are never run by this report'
+need 'a group needs at least 10 genes), with the genes that were testable in that tool as the background'
+need 'never downloads or installs anything'
+need '  if (file.exists(file.path(rd, f))) cat("- <a href=\"", html_escape(f), "\">'
+need '  else cat("- ", REPORTS$title[i], ": not produced\n", sep = "")'
+need 'cat("- FDR (adjusted p-value cutoff): ", format(params$fdr), "\n", sep = "")'
+need 'cat("- dPSI (minimum absolute dPSI of an rMATS or SUPPA2 event; not applied to exon or transcript usage): ", format(params$dpsi), "\n", sep = "")'
+need 'cat("- rMATS count type: ", params$rmats_type, "\n", sep = "")'
+need 'cat("- rMATS minimum read support (mean of IJC plus SJC per group, smaller of the two groups): ", params$min_reads, "\n", sep = "")'
+need 'recovered from the HTML of those reports'
+# no network, download or installation in the code chunks of any Rmd (r fences)
+if awk '/^```\{r/ { inr = 1; next } inr && /^```$/ { inr = 0; next } inr && /KEGGREST|download|url\(|install\.packages|curl|httr|RCurl/ { found = 1 } END { exit !found }' "$SKILL"; then
+  echo "FAIL: a network call, download or installation (KEGGREST, download, url(, install.packages) in an r code chunk"; fail=1
+fi
+# the old promise of KEGG and Reactome enrichment is gone from the wizard
+forbid 'plus KEGG and Reactome as far as'
+for n in 06_enrichment.Rmd 07_summary.Rmd; do
+  b=$(rmd_block "$n")
+  [ -n "$b" ] || { echo "FAIL: $n: no rmd block under its heading"; fail=1; continue; }
+  ls=$(printf '%s\n' "$b" | grep -nF 'Every effect is stated as **treatment minus control**: a positive effect is higher in the treatment group' | head -n1 | cut -d: -f1)
+  lf=$(printf '%s\n' "$b" | grep -n '^```{r functions' | head -n1 | cut -d: -f1)
+  { [ -n "$ls" ] && [ -n "$lf" ] && [ "$ls" -lt "$lf" ]; } || { echo "FAIL: $n: the sign sentence (Every effect is stated as **treatment minus control**) must stand before the functions chunk"; fail=1; }
+  case "$n" in 06_enrichment.Rmd) extra="fdr dpsi enrich organism enrich_dbs outdir" ;; *) extra="fdr dpsi rmats_type min_reads paired_rmats paired_suppa organism enrich_dbs outdir" ;; esac
+  for v in report_dir contrasts modules $extra; do
+    printf '%s\n' "$b" | grep -qF "params\$$v" || { echo "FAIL: $n: the parameter params\$$v is not used"; fail=1; }
+  done
+  for v in $(printf '%s\n' "$b" | grep -o 'params\$[A-Za-z_]*' | sort -u | sed 's/params\$//'); do
+    case " outdir report_dir contrasts samplesheet modules fdr dpsi rmats_type min_reads events cross topgene enrich organism enrich_dbs gtf paired_rmats paired_suppa " in
+      *" $v "*) ;; *) echo "FAIL: $n: params\$$v is not one of the 18 parameters of the contract"; fail=1 ;; esac
+  done
+  # no literal 0.05 or 0.1 in the body (the one enrichment cutoff constant ENRICH_CUTOFF <- 0.05 is the exception)
+  if printf '%s\n' "$b" | awk 'f >= 2 { print } /^---$/ { f++ }' | grep -vxF 'ENRICH_CUTOFF <- 0.05' | grep -qE '(^|[^0-9.])0\.(05|1)([^0-9]|$)'; then
+    echo "FAIL: $n: a literal threshold (0.05 or 0.1) in the body of the Rmd instead of the parameters"; fail=1
+  fi
+done
+# the summary page is the entry point: written to report_summary.html by job 07 and named in the final instructions
+need "  OUTF=\"\"; if [ \"\$1\" = 07 ]; then OUTF=\"output_file = 'report_summary.html', \"; fi"
+need '  output_dir = '"'"'$R'"'"', ${OUTF}knit_root_dir = '"'"'$R'"'"','
+need 'Start with the summary page, the index of every report, figure and table: {REPORT_DIR}/report_summary.html'
+need 'The page is written to `report_summary.html`, the entry point of the report directory.'
+# --- end Rmd 06 and 07
 
 
 # tests/run_all_tests.sh names every script of tests/ in exactly one list (TESTS, FULL_TESTS or NOT_TESTS), runs each under

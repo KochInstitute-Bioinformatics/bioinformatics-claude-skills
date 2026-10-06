@@ -91,7 +91,7 @@ sbatch "{REPORT_DIR}/image_check/check_packages.sbatch"
 Read the lines `MANDATORY <package> TRUE|FALSE` and `OPTIONAL <package> TRUE|FALSE` of the log:
 - A mandatory package is FALSE: stop. Tell the user which packages are missing and that the image must be rebuilt by them; packages are never installed at run time (not in a job, not by the wizard), because the reports must run from the image as it is.
 - ReactomePA, KEGG.db or reactome.db is FALSE (and no mandatory package is): enrichment is offered with GO only; tell the user "KEGG/Reactome require an image rebuild". Store `{ENRICH_DBS}` = `GO`.
-- All three are TRUE: store `{ENRICH_DBS}` = `GO KEGG Reactome`.
+- All three are TRUE: store `{ENRICH_DBS}` = `GO KEGG Reactome` (the enrichment report runs GO only; Step 8 says so).
 - Also note which of UpSetR, ComplexUpset and the organism packages (org.Hs.eg.db, org.Mm.eg.db) are FALSE; the cross-tool comparison and the enrichment for that organism are not offered without them.
 
 Default: the shared image, which holds all nine mandatory packages. Tell the user the result in one line.
@@ -240,7 +240,7 @@ Offer only the sections the run supports; a section that cannot be produced is n
 - `events`: event and result tables with a volcano plot for each module in `{MODULES}`. Default: yes. This is the content of the rMATS, SUPPA2 and exon and transcript usage reports.
 - `cross`: cross-tool comparison (UpSet plot of the significant genes of each tool and the direction concordance). Offered only when two or more of `rmats`, `suppa`, `dexseq_exon`, `edger_exon` and `dtu` are in `{MODULES}` (each counts as a separate tool) and UpSetR or ComplexUpset is in the image (Step 2). Default: yes when offered.
 - `topgene`: top-gene plots (per-sample PSI of the top events, exon usage and isoform proportions), drawn from the pipeline's own tables only, never from BAM files. Default: yes.
-- `enrich`: GO enrichment, plus KEGG and Reactome as far as `{ENRICH_DBS}` (Step 2) allows, of the significant genes, with the genes that could be tested as the background. Offered only when `{ORGANISM}` is `human` or `mouse`. Default: yes when offered.
+- `enrich`: GO enrichment (biological process, molecular function, cellular component) of the significant genes of each tool, in the groups treatment_up, control_up and all significant genes (a group needs at least 10 genes), with the genes that were testable in that tool as the background. Only GO is run: KEGG and Reactome are never run by this report, and when they are asked for in `{ENRICH_DBS}` the report prints "KEGG/Reactome require an image rebuild". Offered only when `{ORGANISM}` is `human` or `mouse` (any other organism is answered in the report with "organism not supported"). Default: yes when offered.
 
 Which Rmd and job each switch controls is fixed in Step 10. `events` and `topgene` are both passed to the module reports as parameters. Ask (default: yes): "Generate these sections: `{SECTIONS}`?"
 
@@ -337,6 +337,7 @@ for p in "$R" "$OUT" "$WORK" "$SIF" "$GTF" "$CONTRASTS_CSV" "$SAMPLESHEET"; do
 done
 write_job() {
   f="$R/run_$1.sbatch"
+  OUTF=""; if [ "$1" = 07 ]; then OUTF="output_file = 'report_summary.html', "; fi
   cat > "$f" <<EOF
 #!/bin/bash
 #SBATCH -J ${JOBNAME}_$1
@@ -358,7 +359,7 @@ EOF
 module add singularity/3.10.4 || exit 1
 cd "$R" || exit 1
 singularity exec --bind $BIND "$SIF" Rscript -e "rmarkdown::render('$R/$2',
-  output_dir = '$R', knit_root_dir = '$R',
+  output_dir = '$R', ${OUTF}knit_root_dir = '$R',
   params = list(
     outdir = '$OUT', report_dir = '$R',
     contrasts = '$CONTRASTS_CSV', samplesheet = '$SAMPLESHEET',
@@ -414,6 +415,7 @@ The block prints the files written, `JOBS=` with the job numbers, and `SUBMIT=` 
 Reports are ready to submit. Run this one command:
   bash {REPORT_DIR}/run_all.sh
 It submits the jobs in order (each waits for the one it needs). The reports and the summary page appear in {REPORT_DIR}; the logs are in {REPORT_DIR}/logs.
+  Start with the summary page, the index of every report, figure and table: {REPORT_DIR}/report_summary.html
 Check progress with: squeue -u $USER
 ```
 `run_all.sh` calls only sbatch; R runs inside the jobs, on compute nodes. When a job fails, read its log, fix the cause, and submit the jobs that did not run with sbatch from `{REPORT_DIR}`.
@@ -2249,5 +2251,565 @@ for (i in seq_len(nrow(contrasts))) {
   cat(knitr::kable(cc, format = "markdown"), sep = "\n")
   cat("\n\n")
 }
+```
+````
+
+The enrichment report `06_enrichment.Rmd` runs a GO enrichment (biological process, molecular function, cellular component) with clusterProfiler on the significant genes of each tool, for each contrast. It reads `rds/{CONTRAST}.{tool}.rds` (written by `01_import.Rmd`) and, for DEXSeq exon usage, edgeR exon usage and DTU, the same gene-level files of the run as `05_cross_tool.Rmd` (read only), and builds the same gene sets: rMATS and SUPPA2 genes with a significant event (adjusted p-value below `{FDR}`, absolute dPSI at least `{DPSI}`, and for rMATS not flagged `low_support`), DEXSeq exon usage genes with a `perGeneQValue` below `{FDR}`, edgeR exon usage genes with a Simes FDR below `{FDR}`, DTU genes with stageR's `gene` below `{FDR}` (re-run at the report's FDR when the run's alpha differs, as in `04_usage.Rmd`). Gene identifiers are Ensembl identifiers (versions removed, groups of overlapping genes split as in `05_cross_tool.Rmd`) and are mapped to Entrez identifiers with `org.Hs.eg.db` (`{ORGANISM}` human) or `org.Mm.eg.db` (mouse); the identifiers that cannot be mapped are counted and reported for every gene list and every universe. The universe of an enrichment is the set of genes that were testable in that tool (an adjusted p-value present in the harmonised table, or in the gene-level table), never the whole genome. There is one enrichment per tool and per group: the genes whose direction in the tool is `treatment_up`, those whose direction is `control_up` (the direction of a gene as defined in `05_cross_tool.Rmd`), and all significant genes; a group is tested only when it has at least 10 genes, and otherwise the report prints `skipped: fewer than 10 genes (n=...)`. Terms are kept at a Benjamini-Hochberg adjusted p-value and q-value of 0.05. It writes, per contrast, `tables/{CONTRAST}.enrich.{tool}.{group}.{go_bp,go_mf,go_cc}.csv` (`tool` as in the RDS names, `group` one of `all`, `treatment_up`, `control_up`), `tables/{CONTRAST}.enrich.summary.csv` (genes, mapped and unmapped counts, universe size, status) and `figures/{CONTRAST}.enrich.dotplot.png` (the top terms of the groups that ran; no figure when none ran). The report needs no network: it reads only the annotation packages of the image and never downloads or installs anything. `{ENRICH_DBS}` is `GO` unless the user asked for more; a request for KEGG or Reactome is answered in the report with `KEGG/Reactome require an image rebuild` (the packages ReactomePA, KEGG.db and reactome.db are not in the image), an organism other than human or mouse with `organism not supported`, and in both cases the report still renders and the job ends with exit code 0. A tool whose RDS or gene-level file is missing is named and left out.
+
+**File `06_enrichment.Rmd`.**
+````rmd
+---
+title: "GO enrichment of the significant genes"
+output:
+  html_document:
+    toc: true
+params:
+  outdir: ""
+  report_dir: "."
+  contrasts: ""
+  samplesheet: ""
+  modules: ""
+  fdr: 0.05
+  dpsi: 0.1
+  rmats_type: "JC"
+  min_reads: 10
+  events: true
+  cross: true
+  topgene: true
+  enrich: true
+  organism: "human"
+  enrich_dbs: "GO"
+  gtf: ""
+  paired_rmats: false
+  paired_suppa: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, dev = "png", dpi = 150, fig.width = 8, fig.height = 5)
+```
+
+This report tests the significant genes of each tool for enriched Gene Ontology terms, for each contrast, from the tables that `01_import.Rmd` wrote to `r file.path(params$report_dir, "rds")` and from the gene-level files of the run (read only). Every effect is stated as **treatment minus control**: a positive effect is higher in the treatment group (more inclusion for rMATS and SUPPA2, higher usage for the exon and transcript usage tools). The direction of a gene in a tool is the sign of the effect of its most significant feature, as in `05_cross_tool.Rmd`: `treatment_up` for a positive effect, `control_up` for a negative one.
+
+The gene lists are the genes called by each tool at FDR `r params$fdr` (rMATS and SUPPA2: a significant event with an absolute dPSI of at least `r params$dpsi`, and for rMATS not flagged `low_support`; DEXSeq exon usage: `perGeneQValue`; edgeR exon usage: Simes FDR; DTU: stageR's `gene`, re-run at the FDR of this report when the alpha of the run differs). Each tool is tested on its own, in three groups: the genes with direction `treatment_up`, the genes with direction `control_up`, and all significant genes. A group is tested only when it has at least 10 genes. The universe (the background) of each enrichment is the set of genes that were testable in that tool, the genes with an adjusted p-value in the harmonised table or in the gene-level table, and not the whole genome: a gene that the tool could not test cannot be a hit, so it is not in the background. Ensembl identifiers are mapped to Entrez identifiers with the annotation package of the organism (`r params$organism`); the identifiers that cannot be mapped are counted and left out. No network access is used: the report reads only the packages of the image.
+
+```{r functions}
+suppressPackageStartupMessages(library(ggplot2))
+TOOL_LABELS <- c(rmats = "rMATS", suppa = "SUPPA2", exon_dexseq = "DEXSeq exon", exon_edger = "edgeR exon", dtu = "DEXSeq DTU")
+MODULE_OF_TOOL <- c(rmats = "rmats", suppa = "suppa", exon_dexseq = "dexseq_exon", exon_edger = "edger_exon", dtu = "dtu")
+GROUP_LABELS <- c(all = "all significant genes", treatment_up = "treatment_up (higher in treatment)", control_up = "control_up (higher in control)")
+ONTOLOGIES <- c(go_bp = "BP", go_mf = "MF", go_cc = "CC")
+ORGDB <- c(human = "org.Hs.eg.db", mouse = "org.Mm.eg.db")
+MIN_GENES <- 10
+ENRICH_CUTOFF <- 0.05
+
+# the databases asked for in enrich_dbs (GO by default), lower case, separated by commas, semicolons or spaces
+requested_dbs <- function(x) { v <- tolower(trimws(unlist(strsplit(as.character(x), "[,; ]+")))); v[nzchar(v)] }
+
+# an Ensembl gene identifier loses its version suffix (.5) only when it has one
+strip_version <- function(x) sub("^(ENS[A-Z]*G[0-9]+)\\.[0-9]+$", "\\1", x)
+# a transcript identifier loses a trailing version in the same way (the pipeline strips the versions of the stageR identifiers, not those of the DEXSeq table: both sides of a join are stripped)
+strip_tx_version <- function(x) sub("\\.[0-9]+$", "", x)
+# a DEXSeq group of overlapping genes (GENE1+GENE2) or a SUPPA2 locus of overlapping genes (GENE1_and_GENE2) becomes one row per gene
+expand_genes <- function(df) {
+  parts <- strsplit(df$gene_id, "\\+|_and_")
+  out <- df[rep(seq_len(nrow(df)), lengths(parts)), , drop = FALSE]
+  out$gene_id <- as.character(unlist(parts))
+  rownames(out) <- NULL
+  out
+}
+tidy_ids <- function(df) { df$gene_id <- strip_version(df$gene_id); df }
+
+# significant: adjusted p-value below the FDR; for events also the absolute dPSI threshold and not low_support
+sig_usage <- function(tab, fdr) !is.na(tab$padj) & tab$padj < fdr
+sig_events <- function(tab, fdr, dpsi) {
+  !is.na(tab$padj) & tab$padj < fdr & !is.na(tab$effect) & abs(tab$effect) >= dpsi & !tab$low_support
+}
+# per gene: the significant features, the one with the smallest adjusted p-value (then the larger change, then the identifier) and its direction
+top_by_gene <- function(feat, sig) {
+  s <- feat[sig & !is.na(feat$padj), c("gene_id", "feature_id", "padj", "effect", "direction"), drop = FALSE]
+  s <- s[order(s$padj, 1 - abs(s$effect), s$feature_id), , drop = FALSE]
+  n <- table(s$gene_id)
+  top <- s[!duplicated(s$gene_id), , drop = FALSE]
+  data.frame(gene_id = top$gene_id, n_sig_features = as.integer(n[top$gene_id]), top_feature = top$feature_id, top_effect = top$effect,
+             top_padj = top$padj, direction = ifelse(top$direction %in% c("treatment_up", "control_up"), top$direction, NA_character_),
+             stringsAsFactors = FALSE)
+}
+# the calls of one tool: the genes called, the genes tested (the universe), and the direction of every gene that has a significant feature
+make_calls <- function(genes, tested, feat, sig_feat) {
+  list(genes = sort(unique(as.character(genes))), tested = sort(unique(as.character(tested))), all = sort(unique(as.character(feat$gene_id))),
+       dir = top_by_gene(feat, sig_feat))
+}
+# rMATS and SUPPA2: a gene is called when one of its events is significant
+calls_from_events <- function(tab, fdr, dpsi) {
+  tab <- tidy_ids(expand_genes(tab))
+  sig <- sig_events(tab, fdr, dpsi)
+  make_calls(tab$gene_id[sig], tab$gene_id[!is.na(tab$padj)], tab, sig)
+}
+# DEXSeq and edgeR exon usage: a gene is called by the gene-level table (gene_id, padj); the features are the exon bins or exons of the RDS
+calls_from_gene_table <- function(gene_tab, feat, fdr) {
+  g <- tidy_ids(expand_genes(gene_tab))
+  f <- tidy_ids(expand_genes(feat))
+  make_calls(g$gene_id[sig_usage(g, fdr)], g$gene_id[!is.na(g$padj)], f, sig_usage(f, fdr))
+}
+# DTU: a gene is called when stageR's gene is below the FDR; its significant features are the transcripts with stageR's transcript below the FDR
+calls_from_stager <- function(st, feat, fdr) {
+  s <- tidy_ids(st)
+  f <- tidy_ids(feat)
+  s$tx_id <- strip_tx_version(s$tx_id)
+  f$feature_id <- strip_tx_version(f$feature_id)
+  txsig <- !is.na(s$transcript) & s$transcript < fdr
+  confirmed <- paste(s$gene_id, s$tx_id)[txsig]
+  sigf <- paste(f$gene_id, f$feature_id) %in% confirmed
+  make_calls(s$gene_id[!is.na(s$gene) & s$gene < fdr], s$gene_id[!is.na(s$gene)], f, sigf)
+}
+# the three gene groups of a tool: the genes whose direction is treatment_up, those whose direction is control_up, and all called genes
+group_genes <- function(cl) {
+  d <- cl$dir
+  list(all = cl$genes,
+       treatment_up = intersect(cl$genes, d$gene_id[d$direction %in% "treatment_up"]),
+       control_up = intersect(cl$genes, d$gene_id[d$direction %in% "control_up"]))
+}
+
+strip_quotes <- function(x) gsub("^\"|\"$", "", x)
+read_delim_chr <- function(path, sep) {
+  if (!file.exists(path)) stop("file ", path, " not found: none of its columns can be read")
+  l <- sub("\r$", "", readLines(path, warn = FALSE))
+  l <- l[nzchar(l)]
+  if (length(l) == 0) stop("file ", path, " is empty: no header line, so no column can be found")
+  nm <- strsplit(l[1], sep, fixed = TRUE)[[1]]
+  if (length(l) == 1) {
+    return(as.data.frame(stats::setNames(replicate(length(nm), character(0), simplify = FALSE), nm),
+                         check.names = FALSE, stringsAsFactors = FALSE))
+  }
+  tab <- utils::read.table(text = l[-1], sep = sep, quote = "", header = FALSE, colClasses = "character", na.strings = character(0),
+                           comment.char = "", col.names = paste0("V", seq_along(nm)), fill = FALSE, stringsAsFactors = FALSE)
+  names(tab) <- nm
+  tab
+}
+need_cols <- function(tab, cols, path) {
+  miss <- setdiff(cols, names(tab))
+  if (length(miss)) stop("file ", path, ": column not found: ", paste(miss, collapse = ", "),
+                         " (columns present: ", paste(names(tab), collapse = ", "), ")")
+}
+to_num <- function(x, path, col) {
+  x <- trimws(strip_quotes(x))
+  miss <- x %in% c("", "NA", "nan", "NaN", "-nan")
+  v <- suppressWarnings(as.numeric(ifelse(miss, NA, x)))
+  bad <- is.na(v) & !miss
+  if (any(bad)) stop("file ", path, ": column ", col, " has a value that is not a number: '", x[bad][1], "'")
+  v
+}
+read_contrasts <- function(path) {
+  tab <- read_delim_chr(path, ",")
+  need_cols(tab, c("contrast", "treatment", "control"), path)
+  tab <- tab[nzchar(tab$contrast), c("contrast", "treatment", "control")]
+  rownames(tab) <- NULL
+  tab
+}
+# a gene-level table: the gene identifier and the adjusted p-value (DEXSeq perGeneQValue: groupID, padj; edgeR Simes: Geneid, FDR)
+read_gene_table <- function(path, sep, id_col, p_col) {
+  tab <- read_delim_chr(path, sep)
+  need_cols(tab, c(id_col, p_col), path)
+  data.frame(gene_id = strip_quotes(tab[[id_col]]), padj = to_num(tab[[p_col]], path, p_col), stringsAsFactors = FALSE)
+}
+# stageR: gene and transcript are the screened adjusted p-values at the two levels, NA where not screened
+read_stager <- function(path) {
+  tab <- read_delim_chr(path, "\t")
+  need_cols(tab, c("geneID", "txID", "gene", "transcript"), path)
+  data.frame(gene_id = strip_quotes(tab$geneID), tx_id = strip_quotes(tab$txID), gene = to_num(tab$gene, path, "gene"),
+             transcript = to_num(tab$transcript, path, "transcript"), stringsAsFactors = FALSE)
+}
+# the overall alpha stageR was run with, read from the stageRTx object with getAlpha; NA when the file is absent or cannot be read
+stager_alpha <- function(path) {
+  if (!file.exists(path) || !requireNamespace("stageR", quietly = TRUE)) return(NA_real_)
+  tryCatch(as.numeric(stageR::getAlpha(readRDS(path)))[1], error = function(e) NA_real_)
+}
+# stageR's adjusted p-values are valid only at the alpha they were computed for. At another FDR the stage-wise adjustment is re-run
+# from the stageRTx object of the run (stageR is in the image); when the object cannot be read the values of the run are used as they stand
+stager_for_fdr <- function(st, path, fdr) {
+  alpha <- stager_alpha(path)
+  if (is.na(alpha)) return(list(st = st, alpha = NA_real_, mode = "unreadable"))
+  if (isTRUE(all.equal(alpha, fdr))) return(list(st = st, alpha = alpha, mode = "run"))
+  re <- tryCatch({
+    obj <- stageR::stageWiseAdjustment(readRDS(path), method = "dtu", alpha = fdr, allowNA = TRUE)
+    r <- stageR::getAdjustedPValues(obj, onlySignificantGenes = FALSE, order = FALSE)
+    data.frame(gene_id = as.character(r$geneID), tx_id = as.character(r$txID), gene = as.numeric(r$gene), transcript = as.numeric(r$transcript),
+               stringsAsFactors = FALSE)
+  }, error = function(e) NULL)
+  if (is.null(re)) return(list(st = st, alpha = alpha, mode = "unreadable"))
+  list(st = re, alpha = alpha, mode = "rerun")
+}
+# the sentence that tells which stageR values are used
+stager_note <- function(res, fdr) {
+  if (res$mode == "run") return(paste0("stageR was run with an overall alpha of ", format(res$alpha), " (read from the `stageRTx` object of the run), equal to the FDR of this report: the stageR table of the run is used as it is."))
+  if (res$mode == "rerun") return(paste0("stageR's adjusted p-values are valid only at the alpha they were computed for. The run used an overall alpha of ", format(res$alpha),
+    " (read from the `stageRTx` object of the run) and the FDR of this report is ", format(fdr), ", so the stage-wise adjustment was re-run at ", format(fdr),
+    " from that object with the stageR package of the image; the values of the run are not used."))
+  paste0("**WARNING: the stageR values of the run are valid only at the alpha the run used, which is the run's setting and is not recorded in the table.** stageR's overall alpha is the run's setting; the `stageRTx` object was not found or could not be read, or the adjustment could not be re-run, so the values of the run are used as they stand for the FDR of this report, ",
+         format(fdr), ", and the transcript-level values may not be adjusted p-values at that level.")
+}
+show_image <- function(file, alt) cat("![", alt, "](", file, ")\n\n", sep = "")
+
+# the gene sets of every tool of one contrast, as in 05_cross_tool.Rmd: the calls of each tool that has a result, the files that were not found,
+# and the sentence about the stageR values
+collect_calls <- function(C, Tr, Co, modules, report_dir, outdir, fdr, dpsi) {
+  path_of <- function(...) file.path(outdir, ...)
+  calls <- list(); notfound <- character(0); stnote <- NULL
+  for (tool in names(TOOL_LABELS)) {
+    if (!MODULE_OF_TOOL[[tool]] %in% modules) next
+    f <- file.path(report_dir, "rds", paste0(C, ".", tool, ".rds"))
+    if (!file.exists(f)) { notfound <- c(notfound, f); next }
+    tab <- readRDS(f)
+    need_cols(tab, c("gene_id", "feature_id", "effect", "padj", "direction", "low_support"), f)
+    cl <- NULL
+    if (tool %in% c("rmats", "suppa")) {
+      cl <- calls_from_events(tab, fdr, dpsi)
+    } else if (tool == "exon_dexseq") {
+      pgf <- path_of("star", "dexseq_exon", "results", sprintf("perGeneQValue.%s.csv", C))
+      if (file.exists(pgf)) { pg <- read_gene_table(pgf, ",", "groupID", "padj"); cl <- calls_from_gene_table(pg, tab, fdr) } else notfound <- c(notfound, pgf)
+    } else if (tool == "exon_edger") {
+      sf <- path_of("star", "edger", sprintf("contrast_%s.usage.simes.csv", C))
+      if (file.exists(sf)) { sm <- read_gene_table(sf, ",", "Geneid", "FDR"); cl <- calls_from_gene_table(sm, tab, fdr) } else notfound <- c(notfound, sf)
+    } else if (tool == "dtu") {
+      gf <- path_of("salmon", "dexseq_dtu", "results", "stager", sprintf("getAdjustedPValues.%s-%s.tsv", Tr, Co))
+      if (file.exists(gf)) {
+        st <- read_stager(gf)
+        sres <- stager_for_fdr(st, path_of("salmon", "dexseq_dtu", "results", "stager", sprintf("stageRTx.%s-%s.rds", Tr, Co)), fdr)
+        stnote <- stager_note(sres, fdr)
+        cl <- calls_from_stager(sres$st, tab, fdr)
+      } else notfound <- c(notfound, gf)
+    }
+    if (!is.null(cl)) calls[[tool]] <- cl
+  }
+  list(calls = calls, notfound = notfound, stnote = stnote)
+}
+
+# the annotation object of an organism package (org.Hs.eg.db holds the object org.Hs.eg.db)
+orgdb_object <- function(pkg) getExportedValue(pkg, pkg)
+# Ensembl identifiers to Entrez identifiers; the identifiers without an Entrez identifier are counted as unmapped
+to_entrez <- function(ids, pkg) {
+  ids <- unique(as.character(ids)); ids <- ids[!is.na(ids) & nzchar(ids)]
+  db <- orgdb_object(pkg)
+  known <- ids[ids %in% AnnotationDbi::keys(db, keytype = "ENSEMBL")]
+  m <- if (length(known)) suppressMessages(AnnotationDbi::select(db, keys = known, keytype = "ENSEMBL", columns = "ENTREZID")) else
+    data.frame(ENSEMBL = character(0), ENTREZID = character(0), stringsAsFactors = FALSE)
+  m <- m[!is.na(m$ENTREZID), , drop = FALSE]
+  mapped <- length(unique(m$ENSEMBL))
+  list(entrez = sort(unique(as.character(m$ENTREZID))), n_ids = length(ids), n_mapped = mapped, n_unmapped = length(ids) - mapped)
+}
+GO_COLUMNS <- c("ID", "Description", "GeneRatio", "BgRatio", "pvalue", "p.adjust", "qvalue", "geneID", "Count")
+# one GO enrichment (ont is BP, MF or CC) of the Entrez genes in the universe; terms at the cutoff, Benjamini-Hochberg; a failure gives no term and a message
+run_go <- function(entrez, universe, pkg, ont) {
+  err <- NULL
+  res <- tryCatch(clusterProfiler::enrichGO(gene = entrez, universe = universe, OrgDb = orgdb_object(pkg), keyType = "ENTREZID", ont = ont,
+                                            pAdjustMethod = "BH", pvalueCutoff = ENRICH_CUTOFF, qvalueCutoff = ENRICH_CUTOFF, readable = FALSE),
+                  error = function(e) { err <<- conditionMessage(e); NULL })
+  d <- if (is.null(res)) NULL else as.data.frame(res)
+  if (is.null(d) || nrow(d) == 0) d <- as.data.frame(stats::setNames(replicate(length(GO_COLUMNS), character(0), simplify = FALSE), GO_COLUMNS), stringsAsFactors = FALSE)
+  d <- d[, GO_COLUMNS, drop = FALSE]
+  rownames(d) <- NULL
+  list(table = d, error = err)
+}
+ratio_of <- function(x) as.numeric(sub("/.*$", "", x)) / as.numeric(sub("^.*/", "", x))
+# the top terms of every group that ran (n per group and ontology), as one table for the dotplot
+dotplot_data <- function(res, n = 5) {
+  if (nrow(res) == 0) return(res)
+  parts <- split(res, paste(res$run, res$ont))
+  out <- do.call(rbind, lapply(parts, function(d) head(d[order(d$p.adjust, d$ID), , drop = FALSE], n)))
+  out$ratio <- ratio_of(out$GeneRatio)
+  out$label <- ifelse(nchar(out$Description) > 60, paste0(substr(out$Description, 1, 57), "..."), out$Description)
+  rownames(out) <- NULL
+  out
+}
+enrich_dotplot <- function(res, file) {
+  d <- dotplot_data(res)
+  d$label <- factor(d$label, levels = rev(unique(d$label[order(d$ont, d$p.adjust)])))
+  p <- ggplot(d, aes(x = run, y = label, size = Count, colour = p.adjust)) + geom_point() +
+    facet_grid(ont ~ ., scales = "free_y", space = "free_y") +
+    scale_colour_gradient(low = "#b2182b", high = "#2166ab") +
+    labs(x = NULL, y = NULL, colour = "adjusted p-value", size = "genes") + theme_bw() + theme(axis.text.x = element_text(angle = 30, hjust = 1))
+  ggplot2::ggsave(filename = file, plot = p, width = 9, height = max(4, 0.25 * nlevels(d$label) + 2), dpi = 150, limitsize = FALSE)
+  invisible(file)
+}
+```
+
+The enrichment is run only for human and mouse (the image holds the annotation packages of these two organisms), with the Gene Ontology through clusterProfiler. A term is kept at a Benjamini-Hochberg adjusted p-value and q-value of `r ENRICH_CUTOFF`, whatever the FDR used to call the genes, and a group needs at least `r MIN_GENES` genes.
+
+```{r report, results="asis"}
+modules <- strsplit(trimws(params$modules), "[[:space:]]+")[[1]]
+fig_dir <- file.path(params$report_dir, "figures"); tab_dir <- file.path(params$report_dir, "tables")
+dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE); dir.create(tab_dir, recursive = TRUE, showWarnings = FALSE)
+contrasts <- read_contrasts(params$contrasts)
+dbs <- requested_dbs(params$enrich_dbs)
+pkg <- unname(ORGDB[params$organism])
+can_run <- isTRUE(params$enrich)
+if (!can_run) {
+  cat("The enrichment is switched off for this report (enrich = FALSE).\n\n")
+} else {
+  if (any(c("kegg", "reactome") %in% dbs)) {
+    if (all(vapply(c("ReactomePA", "KEGG.db", "reactome.db"), requireNamespace, logical(1), quietly = TRUE))) {
+      cat("KEGG or Reactome was requested in `enrich_dbs`: this report runs GO only.\n\n")
+    } else {
+      cat("KEGG or Reactome was requested in `enrich_dbs`: KEGG/Reactome require an image rebuild (ReactomePA, KEGG.db and reactome.db are not in this image). GO only.\n\n")
+    }
+  }
+  if (is.na(pkg)) {
+    cat("**organism not supported**: the organism is `", params$organism, "`, and the image holds annotation packages for human and mouse only. No enrichment is run.\n\n", sep = "")
+    can_run <- FALSE
+  } else if (!all(vapply(c(pkg, "clusterProfiler", "GO.db", "AnnotationDbi"), requireNamespace, logical(1), quietly = TRUE))) {
+    cat("The packages `", pkg, "`, `clusterProfiler`, `GO.db` and `AnnotationDbi` are not all in this image: no enrichment is run (an image rebuild is needed).\n\n", sep = "")
+    can_run <- FALSE
+  } else if (!"go" %in% dbs) {
+    cat("GO is not in `enrich_dbs` (`", params$enrich_dbs, "`): this report has nothing to run.\n\n", sep = "")
+    can_run <- FALSE
+  }
+}
+for (i in seq_len(nrow(contrasts))) {
+  if (!can_run) break
+  C <- contrasts$contrast[i]; Tr <- contrasts$treatment[i]; Co <- contrasts$control[i]
+  cat("\n\n## Contrast ", C, "\n\n", sep = "")
+  cat("Treatment `", Tr, "`, control `", Co, "`: `treatment_up` genes have a higher effect in `", Tr, "`, `control_up` genes in `", Co, "`.\n\n", sep = "")
+  cat("Thresholds: FDR ", format(params$fdr), ", abs(dPSI) ", format(params$dpsi), " (rMATS and SUPPA2 events only); rMATS minimum read support ", params$min_reads,
+      ". Enrichment: GO (BP, MF, CC), Benjamini-Hochberg cutoff ", format(ENRICH_CUTOFF), ", groups of at least ", MIN_GENES, " genes.\n\n", sep = "")
+  cc <- collect_calls(C, Tr, Co, modules, params$report_dir, params$outdir, params$fdr, params$dpsi)
+  if (length(cc$notfound)) cat("Files not found (the tool is left out):\n\n", paste0("- `", cc$notfound, "`\n"), "\n", sep = "")
+  if (!is.null(cc$stnote)) cat("DTU, stageR: ", cc$stnote, "\n\n", sep = "")
+  if (length(cc$calls) == 0) { cat("No tool has a result for this contrast: there is no gene list to test.\n\n"); next }
+  summ <- list(); allres <- list()
+  for (tool in names(cc$calls)) {
+    cl <- cc$calls[[tool]]
+    cat("### ", TOOL_LABELS[[tool]], ", ", C, "\n\n", sep = "")
+    uni <- to_entrez(cl$tested, pkg)
+    cat("Universe: the ", uni$n_ids, " genes testable in ", TOOL_LABELS[[tool]], " (an adjusted p-value is present); ", uni$n_mapped, " mapped to Entrez, ",
+        uni$n_unmapped, " unmapped.\n\n", sep = "")
+    gs <- group_genes(cl)
+    for (g in names(gs)) {
+      ids <- gs[[g]]
+      row <- data.frame(tool = tool, group = g, genes = length(ids), genes_mapped = NA_integer_, genes_unmapped = NA_integer_, universe_genes = uni$n_ids,
+                        universe_mapped = uni$n_mapped, universe_unmapped = uni$n_unmapped, status = "skipped", terms_go_bp = NA_integer_,
+                        terms_go_mf = NA_integer_, terms_go_cc = NA_integer_, stringsAsFactors = FALSE)
+      cat("#### ", GROUP_LABELS[[g]], "\n\n", sep = "")
+      if (length(ids) < MIN_GENES) {
+        cat("skipped: fewer than ", MIN_GENES, " genes (n=", length(ids), ")\n\n", sep = "")
+        summ[[length(summ) + 1]] <- row
+        next
+      }
+      m <- to_entrez(ids, pkg)
+      row$genes_mapped <- m$n_mapped; row$genes_unmapped <- m$n_unmapped
+      cat(length(ids), " genes, ", m$n_mapped, " mapped to Entrez, ", m$n_unmapped, " unmapped.\n\n", sep = "")
+      if (length(m$entrez) < MIN_GENES) {
+        cat("skipped: fewer than ", MIN_GENES, " genes (n=", length(m$entrez), " with an Entrez identifier)\n\n", sep = "")
+        summ[[length(summ) + 1]] <- row
+        next
+      }
+      row$status <- "ran"
+      for (k in names(ONTOLOGIES)) {
+        r <- run_go(m$entrez, uni$entrez, pkg, ONTOLOGIES[[k]])
+        utils::write.csv(r$table, file.path(tab_dir, paste0(C, ".enrich.", tool, ".", g, ".", k, ".csv")), row.names = FALSE)
+        row[[paste0("terms_", k)]] <- nrow(r$table)
+        cat("GO ", ONTOLOGIES[[k]], ": ", nrow(r$table), " terms at the cutoff (table `tables/", C, ".enrich.", tool, ".", g, ".", k, ".csv`)", sep = "")
+        if (!is.null(r$error)) cat(" (the enrichment failed: ", r$error, ")", sep = "")
+        cat("\n\n")
+        if (nrow(r$table) > 0) {
+          show <- head(r$table[, c("ID", "Description", "GeneRatio", "BgRatio", "p.adjust", "Count")], 10)
+          show$p.adjust <- signif(show$p.adjust, 3)
+          cat(knitr::kable(show, format = "markdown", row.names = FALSE), sep = "\n")
+          cat("\n\n")
+          allres[[length(allres) + 1]] <- data.frame(run = paste0(TOOL_LABELS[[tool]], "\n", g), ont = ONTOLOGIES[[k]], r$table[, c("ID", "Description", "GeneRatio", "p.adjust", "Count")], stringsAsFactors = FALSE)
+        }
+      }
+      summ[[length(summ) + 1]] <- row
+    }
+  }
+  sm <- do.call(rbind, summ); rownames(sm) <- NULL
+  utils::write.csv(sm, file.path(tab_dir, paste0(C, ".enrich.summary.csv")), row.names = FALSE)
+  cat("### Summary, ", C, "\n\n", sep = "")
+  cat("Genes per group, genes mapped and unmapped, universe (testable genes) and status (table `tables/", C, ".enrich.summary.csv`):\n\n", sep = "")
+  cat(knitr::kable(sm, format = "markdown"), sep = "\n")
+  cat("\n\n### Dotplot, ", C, "\n\n", sep = "")
+  res <- if (length(allres)) do.call(rbind, allres) else data.frame()
+  if (nrow(res) > 0) {
+    df <- file.path(fig_dir, paste0(C, ".enrich.dotplot.png"))
+    enrich_dotplot(res, df)
+    cat("The top terms of the groups that ran (up to 5 per group and ontology; figure `figures/", C, ".enrich.dotplot.png`).\n\n", sep = "")
+    show_image(df, paste0("GO enrichment, top terms, ", C))
+  } else {
+    cat("No group ran, or no term passed the cutoff: no dotplot for this contrast.\n\n")
+  }
+}
+```
+````
+
+The summary page `07_summary.Rmd` is the index of the report directory. It runs last and starts when the other jobs have ended, whatever their outcome, so some reports may be missing. It scans `{REPORT_DIR}` and lists, with links, the reports `01_import.html` to `06_enrichment.html` that exist (a report that does not exist is listed as `not produced` and is not linked), every figure in `figures/` and every table in `tables/` that exists (nothing is listed that is not in the directory), the thresholds (`{FDR}`, `{DPSI}`, `{RMATS_TYPE}`, `{MIN_READS}`), the contrasts with their treatment and control, the modules found and the sign rules. For each contrast it shows the counts tables that the other reports wrote (`tables/{CONTRAST}.rmats.counts.csv`, `.suppa.counts.csv`, `.usage.counts.csv`), the cross-tool tables (`.cross_tool.sets.csv`, `.cross_tool.concordance.csv`) and the enrichment summary (`.enrich.summary.csv`); a table that does not exist is reported as not found and the page still renders. A Warnings block collects the lines that begin with `WARNING` that the other reports print into their text, recovered from the HTML of those reports; warnings that R raised and that knitr suppressed are not in the HTML and are not listed. The page is written to `report_summary.html`, the entry point of the report directory.
+
+**File `07_summary.Rmd`.**
+````rmd
+---
+title: "Summary of the nf-core/rnasplice reports"
+output:
+  html_document:
+    toc: true
+params:
+  outdir: ""
+  report_dir: "."
+  contrasts: ""
+  samplesheet: ""
+  modules: ""
+  fdr: 0.05
+  dpsi: 0.1
+  rmats_type: "JC"
+  min_reads: 10
+  events: true
+  cross: true
+  topgene: true
+  enrich: true
+  organism: "human"
+  enrich_dbs: "GO"
+  gtf: ""
+  paired_rmats: false
+  paired_suppa: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+```
+
+This page lists the reports, figures and tables of the report directory `r params$report_dir` for the nf-core/rnasplice run in `r params$outdir`, the thresholds, the contrasts, the sign rules, the counts of every contrast and the warnings the reports printed. Only files that exist are listed. Every effect is stated as **treatment minus control**: a positive effect is higher in the treatment group (more inclusion for rMATS and SUPPA2, higher usage for the exon and transcript usage tools).
+
+```{r functions}
+REPORTS <- data.frame(
+  file = c("01_import.html", "02_rmats.html", "03_suppa.html", "04_usage.html", "05_cross_tool.html", "06_enrichment.html"),
+  title = c("Import and harmonise", "rMATS events", "SUPPA2 events", "Exon and transcript usage", "Cross-tool comparison", "GO enrichment"),
+  stringsAsFactors = FALSE)
+# the counts tables that the other reports write for each contrast: file part, title, and the module it belongs to (NA: not tied to one module)
+COUNT_TABLES <- data.frame(
+  part = c("rmats.counts", "suppa.counts", "usage.counts", "cross_tool.sets", "cross_tool.concordance", "enrich.summary"),
+  title = c("rMATS events and significant events", "SUPPA2 events and significant events", "Exon and transcript usage: tested and significant",
+            "Cross-tool: genes tested and called by each tool", "Cross-tool: direction concordance for each pair of tools", "GO enrichment: groups, genes and universe"),
+  module = c("rmats", "suppa", "usage", NA, NA, NA), stringsAsFactors = FALSE)
+USAGE_MODULES <- c("dexseq_exon", "edger_exon", "dtu")
+
+html_escape <- function(x) { x <- gsub("&", "&amp;", x, fixed = TRUE); x <- gsub("<", "&lt;", x, fixed = TRUE); x <- gsub(">", "&gt;", x, fixed = TRUE); gsub("\"", "&quot;", x, fixed = TRUE) }
+# the files of a directory that match a pattern, sorted; nothing when the directory does not exist
+list_files <- function(dir, pattern) if (dir.exists(dir)) sort(list.files(dir, pattern = pattern)) else character(0)
+# a table of the report directory with every field kept as text (what the other report wrote is shown as it stands); NULL when it is missing or unreadable
+read_counts <- function(path) {
+  if (!file.exists(path)) return(NULL)
+  tryCatch(utils::read.csv(path, colClasses = "character", check.names = FALSE, na.strings = character(0), stringsAsFactors = FALSE), error = function(e) NULL)
+}
+# the lines that begin with WARNING in the text of an HTML report: tags removed, entities decoded, each line once
+html_warnings <- function(path) {
+  if (!file.exists(path)) return(character(0))
+  h <- paste(readLines(path, warn = FALSE), collapse = "\n")
+  h <- gsub("(?s)<(script|style)[^>]*>.*?</\\1>", " ", h, perl = TRUE)
+  h <- gsub("</(p|li|tr|h[1-6]|div|pre)>|<br ?/?>", "\n", h, perl = TRUE)
+  h <- gsub("<[^>]+>", "", h)
+  h <- gsub("&amp;", "&", gsub("&lt;", "<", gsub("&gt;", ">", gsub("&quot;", "\"", h, fixed = TRUE), fixed = TRUE), fixed = TRUE), fixed = TRUE)
+  l <- trimws(gsub("[[:space:]]+", " ", strsplit(h, "\n", fixed = TRUE)[[1]]))
+  l <- sub("^.*?(WARNING)", "\\1", l[grepl("WARNING", l, fixed = TRUE)], perl = TRUE)
+  unique(l)
+}
+strip_quotes <- function(x) gsub("^\"|\"$", "", x)
+read_delim_chr <- function(path, sep) {
+  if (!file.exists(path)) stop("file ", path, " not found: none of its columns can be read")
+  l <- sub("\r$", "", readLines(path, warn = FALSE))
+  l <- l[nzchar(l)]
+  if (length(l) == 0) stop("file ", path, " is empty: no header line, so no column can be found")
+  nm <- strsplit(l[1], sep, fixed = TRUE)[[1]]
+  if (length(l) == 1) {
+    return(as.data.frame(stats::setNames(replicate(length(nm), character(0), simplify = FALSE), nm),
+                         check.names = FALSE, stringsAsFactors = FALSE))
+  }
+  tab <- utils::read.table(text = l[-1], sep = sep, quote = "", header = FALSE, colClasses = "character", na.strings = character(0),
+                           comment.char = "", col.names = paste0("V", seq_along(nm)), fill = FALSE, stringsAsFactors = FALSE)
+  names(tab) <- nm
+  tab
+}
+need_cols <- function(tab, cols, path) {
+  miss <- setdiff(cols, names(tab))
+  if (length(miss)) stop("file ", path, ": column not found: ", paste(miss, collapse = ", "),
+                         " (columns present: ", paste(names(tab), collapse = ", "), ")")
+}
+read_contrasts <- function(path) {
+  tab <- read_delim_chr(path, ",")
+  need_cols(tab, c("contrast", "treatment", "control"), path)
+  tab <- tab[nzchar(tab$contrast), c("contrast", "treatment", "control")]
+  rownames(tab) <- NULL
+  tab
+}
+# a list of links to files of the report directory, as HTML (the paths are relative to the directory)
+link_list <- function(rel, label = rel) {
+  if (length(rel) == 0) return("none\n")
+  paste0("<ul>\n", paste0("<li><a href=\"", html_escape(rel), "\">", html_escape(label), "</a></li>", collapse = "\n"), "\n</ul>\n")
+}
+```
+
+```{r report, results="asis"}
+modules <- strsplit(trimws(params$modules), "[[:space:]]+")[[1]]
+modules <- modules[nzchar(modules)]
+rd <- params$report_dir
+cat("## Reports\n\n")
+cat("The reports of `", rd, "`. A report missing from the directory is marked in the list (its job failed or did not run, or the section was not requested).\n\n", sep = "")
+for (i in seq_len(nrow(REPORTS))) {
+  f <- REPORTS$file[i]
+  if (file.exists(file.path(rd, f))) cat("- <a href=\"", html_escape(f), "\">", html_escape(f), "</a>: ", REPORTS$title[i], "\n", sep = "")
+  else cat("- ", REPORTS$title[i], ": not produced\n", sep = "")
+}
+cat("\n\n## Thresholds and run\n\n")
+cat("- FDR (adjusted p-value cutoff): ", format(params$fdr), "\n", sep = "")
+cat("- dPSI (minimum absolute dPSI of an rMATS or SUPPA2 event; not applied to exon or transcript usage): ", format(params$dpsi), "\n", sep = "")
+cat("- rMATS count type: ", params$rmats_type, "\n", sep = "")
+cat("- rMATS minimum read support (mean of IJC plus SJC per group, smaller of the two groups): ", params$min_reads, "\n", sep = "")
+cat("- Pairing: rMATS ", if (isTRUE(params$paired_rmats)) "paired" else "unpaired", " statistics, SUPPA2 ", if (isTRUE(params$paired_suppa)) "paired" else "unpaired", " statistics (read from the run's parameters)\n", sep = "")
+cat("- Organism: ", params$organism, "; enrichment databases requested: ", params$enrich_dbs, "\n", sep = "")
+cat("- Modules found: ", if (length(modules)) paste(modules, collapse = ", ") else "none", "\n", sep = "")
+cat("- Run output (read only): `", params$outdir, "`\n\n", sep = "")
+cat("## Contrasts\n\n")
+contrasts <- read_contrasts(params$contrasts)
+cat("Each contrast is treatment against control; every sign below is fixed by this choice.\n\n")
+cat(knitr::kable(contrasts, format = "markdown"), sep = "\n")
+cat("\n\n## Sign rules\n\n")
+cat("| Tool | Column read | Convention of the tool | Conversion to treatment minus control |\n|---|---|---|---|\n")
+cat("| rMATS | `IncLevelDifference` | IncLevel1 minus IncLevel2, group 1 (b1) is the treatment: treatment minus control | kept |\n")
+cat("| SUPPA2 | `{kind}_{T}-{kind}_{C}_dPSI` | control minus treatment | sign flipped |\n")
+cat("| DEXSeq exon usage | `log2fold_{C}_{T}` | control versus treatment | sign flipped |\n")
+cat("| DEXSeq transcript usage (DTU) | `log2fold_{C}_{T}` | control versus treatment | sign flipped |\n")
+cat("| edgeR exon usage | `logFC` | treatment minus control | kept |\n\n")
+cat("`direction` is `treatment_up` for a positive effect, `control_up` for a negative one and `none` for zero or a missing effect.\n\n")
+cat("## Counts per contrast\n\n")
+for (i in seq_len(nrow(contrasts))) {
+  C <- contrasts$contrast[i]
+  cat("### ", C, "\n\n", sep = "")
+  cat("Treatment `", contrasts$treatment[i], "`, control `", contrasts$control[i], "`.\n\n", sep = "")
+  for (j in seq_len(nrow(COUNT_TABLES))) {
+    rel <- file.path("tables", paste0(C, ".", COUNT_TABLES$part[j], ".csv"))
+    d <- read_counts(file.path(rd, rel))
+    cat("**", COUNT_TABLES$title[j], "** (`", rel, "`)\n\n", sep = "")
+    if (is.null(d)) {
+      mod <- COUNT_TABLES$module[j]
+      absent <- !is.na(mod) && !any((if (mod == "usage") USAGE_MODULES else mod) %in% modules)
+      cat(if (absent) "not found: the module is not in the run.\n\n" else "not found: the report that writes it was not produced, or the table is empty or unreadable.\n\n")
+    } else if (nrow(d) == 0) {
+      cat("The table has no rows.\n\n")
+    } else {
+      cat(knitr::kable(d, format = "markdown", row.names = FALSE), sep = "\n")
+      cat("\n\n")
+    }
+  }
+}
+cat("## Figures\n\n")
+figs <- list_files(file.path(rd, "figures"), "\\.(png|pdf|svg|jpg)$")
+cat(link_list(file.path("figures", figs), figs), "\n")
+cat("## Tables\n\n")
+tabs <- list_files(file.path(rd, "tables"), "\\.(csv|tsv|txt)$")
+cat(link_list(file.path("tables", tabs), tabs), "\n")
+cat("## Warnings\n\n")
+cat("Lines that begin with WARNING in the text of the other reports, recovered from the HTML of those reports (a warning that R raised and that knitr suppressed is not in the HTML and is not listed here).\n\n")
+nw <- 0
+for (i in seq_len(nrow(REPORTS))) {
+  w <- html_warnings(file.path(rd, REPORTS$file[i]))
+  if (length(w)) { nw <- nw + length(w); cat("**", REPORTS$file[i], "**\n\n", paste0("- ", w, "\n"), "\n", sep = "") }
+}
+if (nw == 0) cat("No WARNING line was found in the reports that exist.\n\n")
 ```
 ````

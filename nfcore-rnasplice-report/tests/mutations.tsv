@@ -135,7 +135,7 @@ S3-need-37	check	skill	s|#SBATCH -c 4|REMOVED|g	missing required text: #SBATCH -
 S3-need-38	check	skill	s|#SBATCH --mem=\$MEM|REMOVED|g	missing required text: #SBATCH --mem=$MEM
 S3-need-39	check	skill	s|#SBATCH -t \$TIME|REMOVED|g	missing required text: #SBATCH -t $TIME
 S3-need-40	check	skill	s|singularity exec --bind \$BIND "\$SIF" Rscript -e "rmarkdown::render('\$R/\$2',|REMOVED|g	missing required text: singularity exec --bind $BIND "$SIF" Rscript -e "rmarkdown::render('$R/$2',
-S3-need-41	check	skill	s|output_dir = '\$R', knit_root_dir = '\$R',|REMOVED|g	missing required text: output_dir = '$R', knit_root_dir = '$R',
+S3-need-41	check	skill	s|output_dir = '\$R', \${OUTF}knit_root_dir = '\$R',|REMOVED|g	missing required text: output_dir = '$R', ${OUTF}knit_root_dir = '$R',
 S3-need-42	check	skill	s|events = \$EV, cross = \$CR, topgene = \$TG, enrich = \$EN|REMOVED|g	missing required text: events = $EV, cross = $CR, topgene = $TG, enrich = $EN
 S3-need-43	check	skill	s|if sec cross && \[ \$ntools -ge 2 \]; then JOBS="\$JOBS 05:05_cross_tool\.Rmd"; fi|REMOVED|g	missing required text: if sec cross && [ $ntools -ge 2 ]; then JOBS="$JOBS 05:05_cross_tool.Rmd"; fi
 S3-need-44	check	skill	s|if sec enrich; then JOBS="\$JOBS 06:06_enrichment\.Rmd"; fi|REMOVED|g	missing required text: if sec enrich; then JOBS="$JOBS 06:06_enrichment.Rmd"; fi
@@ -328,3 +328,55 @@ R6-rtest-suppa-locus-unsplit	rtest	skill	s/  tab <- tidy_ids(expand_genes(tab))/
 R6-rtest-version-not-stripped-05	rtest	skill	s/^  f\$feature_id <- strip_tx_version(f\$feature_id)$/  f <- f/	FAIL: calls_from_stager joins versioned DEXSeq identifiers
 R6-rtest-version-not-stripped-04	rtest	skill	s/tab\$gene_id <- strip_version(tab\$gene_id); tab\$feature_id <- strip_tx_version(tab\$feature_id)/tab <- tab/	FAIL: on the versioned copy the DTU counts
 R6-rtest-effect-column-missing	rtest	skill	s/^    out\[\[paste0("effect_", t)\]\] <- ifelse(.*$/    NULL/	FAIL: SYNTHETIC cross table: effect_<tool>
+S7-heading06	check	skill	s|^\*\*File `06_enrichment.Rmd`\.\*\*$|REMOVED|	missing required text: **File `06_enrichment.Rmd`.**
+S7-heading07	check	skill	s|^\*\*File `07_summary.Rmd`\.\*\*$|REMOVED|	missing required text: **File `07_summary.Rmd`.**
+S7-universe-wording	check	skill	s|set of genes that were testable in that tool, the genes with|set of genes that were measured in that tool, the genes with|	missing required text: The universe (the background) of each enrichment is the set of genes that were testable in that tool
+S7-min10-prose	check	skill	s|A group is tested only when it has at least 10 genes\.|A group is tested.|	missing required text: A group is tested only when it has at least 10 genes.
+S7-min-genes-const	check	skill	s|^MIN_GENES <- 10$|MIN_GENES <- 5|	missing required text: MIN_GENES <- 10
+S7-min-genes-test	check	skill	s|if (length(ids) < MIN_GENES) {|if (length(ids) < 5) {|	missing required text: if (length(ids) < MIN_GENES) {
+S7-skip-message	check	skill	s|"skipped: fewer than ", MIN_GENES, " genes (n=", length(ids)|"omitted: fewer than ", MIN_GENES, " genes (n=", length(ids)|	missing required text: cat("skipped: fewer than ", MIN_GENES, " genes (n=", length(ids), ")\n\n", sep = "")
+S7-universe-all	check	skill	s|^    uni <- to_entrez(cl\$tested, pkg)$|    uni <- to_entrez(cl$all, pkg)|	missing required text:     uni <- to_entrez(cl$tested, pkg)
+S7-direction-swapped	check	skill	s|d\$gene_id\[d\$direction %in% "treatment_up"\]|d$gene_id[d$direction %in% "control_up"]|	missing required text:        treatment_up = intersect(cl$genes, d$gene_id[d$direction %in% "treatment_up"]),
+S7-rebuild-message	check	skill	s|KEGG/Reactome require an image rebuild (ReactomePA, KEGG.db|KEGG/Reactome need more (ReactomePA, KEGG.db|	missing required text: KEGG/Reactome require an image rebuild (ReactomePA, KEGG.db and reactome.db are not in this image). GO only.
+S7-organism-message	check	skill	s|\*\*organism not supported\*\*|**not handled**|	missing required text: **organism not supported**
+S7-bh-cutoff	check	skill	s|pAdjustMethod = "BH", pvalueCutoff = ENRICH_CUTOFF|pAdjustMethod = "none", pvalueCutoff = ENRICH_CUTOFF|	missing required text: pAdjustMethod = "BH", pvalueCutoff = ENRICH_CUTOFF, qvalueCutoff = ENRICH_CUTOFF
+S7-cutoff-const	check	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.1|	missing required text: ENRICH_CUTOFF <- 0.05
+S7-step8-go-only	check	skill	s|Only GO is run: KEGG and Reactome are never run by this report|KEGG and Reactome are run as far as the image allows|	missing required text: Only GO is run: KEGG and Reactome are never run by this report
+S7-step8-old-wording	check	skill	s|^- `enrich`: GO enrichment (biological|- `enrich`: GO enrichment, plus KEGG and Reactome as far as `{ENRICH_DBS}` allows (biological|	forbidden text present: plus KEGG and Reactome as far as
+S7-step8-background	check	skill	s|with the genes that were testable in that tool as the background|with all genes as the background|	missing required text: a group needs at least 10 genes), with the genes that were testable in that tool as the background
+S7-net-download	check	skill	s|^MIN_GENES <- 10$|MIN_GENES <- 10\nutils::download.file("http://x", tempfile())|	a network call, download or installation
+S7-net-keggrest	check	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.05\nk <- KEGGREST::keggList("pathway")|	a network call, download or installation
+S7-net-install	check	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.05\ninstall.packages("ReactomePA")|	a network call, download or installation
+S7-net-url	check	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.05\nz <- readLines(url("http://x"))|	a network call, download or installation
+S7-flag-in-r-fence	check	skill	s|^MIN_GENES <- 10$|MIN_GENES <- 10 # run with --fast|	a --flag appears in prose or outside the allowed commands
+S7-no-install-claim	check	skill	s|never downloads or installs anything|reads what it needs|	missing required text: never downloads or installs anything
+S7-07-thresholds-fdr	check	skill	s#^cat("- FDR (adjusted p-value cutoff).*$#NULL#	missing required text: cat("- FDR (adjusted p-value cutoff): ", format(params$fdr), "\n", sep = "")
+S7-07-thresholds-minreads	check	skill	s#^cat("- rMATS minimum read support.*$#NULL#	missing required text: cat("- rMATS minimum read support (mean of IJC plus SJC per group, smaller of the two groups): ", params$min_reads, "\n", sep = "")
+S7-07-lists-missing-file	check	skill	s|^  if (file.exists(file.path(rd, f))) cat(|  if (TRUE) cat(|	missing required text:   if (file.exists(file.path(rd, f))) cat("- <a href=\"", html_escape(f), "\">
+S7-07-not-produced	check	skill	s|: not produced\\n"|: absent\\n"|	missing required text:   else cat("- ", REPORTS$title[i], ": not produced\n", sep = "")
+S7-06-sign-sentence	check	skill	s|\*\*treatment minus control\*\*: a positive effect is higher in the treatment group (more inclusion for rMATS and SUPPA2, higher usage for the exon and transcript usage tools). The direction of a gene|a positive effect is higher. The direction of a gene|	06_enrichment.Rmd: the sign sentence (Every effect is stated as **treatment minus control**) must stand before the functions chunk
+S7-07-sign-sentence	check	skill	s|Only files that exist are listed\. Every effect is stated as \*\*treatment minus control\*\*|Only files that exist are listed. Every effect is stated as treatment minus control|	07_summary.Rmd: the sign sentence (Every effect is stated as **treatment minus control**) must stand before the functions chunk
+S7-06-param-outside	check	skill	s|^pkg <- unname(ORGDB\[params\$organism\])$|pkg <- unname(ORGDB[params$organism]); x <- params$kegg_db|	06_enrichment.Rmd: params$kegg_db is not one of the 18 parameters of the contract
+S7-07-param-outside	check	skill	s|^modules <- modules\[nzchar(modules)\]$|modules <- modules[nzchar(modules)]; x <- params$title|	07_summary.Rmd: params$title is not one of the 18 parameters of the contract
+S7-06-literal-threshold	check	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.05\nx <- 0.1|	a literal threshold (0.05 or 0.1) in the body of the Rmd instead of the parameters
+R7-rtest-universe-all	rtest	skill	s|^    uni <- to_entrez(cl\$tested, pkg)$|    uni <- to_entrez(cl$all, pkg)|	FAIL: universe size equals the number of genes with a non-NA padj
+R7-rtest-min-genes-const	rtest	skill	s|^MIN_GENES <- 10$|MIN_GENES <- 5|	FAIL: the skill constants: minimum 10 genes, cutoff 0.05
+R7-rtest-min-genes-logic	rtest	skill	s|if (length(ids) < MIN_GENES) {|if (length(ids) < 5) {|	FAIL: 06 renders when every group has fewer than 10 genes
+R7-rtest-direction-swapped	rtest	skill	s|d\$gene_id\[d\$direction %in% "treatment_up"\]|d$gene_id[d$direction %in% "control_up"]|	FAIL: SYNTHETIC human: the group sizes are 42 (all), 30 (treatment_up), 12 (control_up)
+R7-rtest-net-download	rtest	skill	s|^MIN_GENES <- 10$|MIN_GENES <- 10\nutils::download.file("http://x", tempfile())|	FAIL: 06 has no network call, download or installation in its code
+R7-rtest-net-keggrest	rtest	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.05\nk <- KEGGREST::keggList("pathway")|	FAIL: 06 has no network call, download or installation in its code
+R7-rtest-net-07	rtest	skill	s|^USAGE_MODULES <- c("dexseq_exon", "edger_exon", "dtu")$|&\nutils::install.packages("DT")|	FAIL: 07 has no network call, download or installation in its code
+R7-rtest-cutoff	rtest	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.9|	FAIL: the skill constants: minimum 10 genes, cutoff 0.05
+R7-rtest-skip-message	rtest	skill	s|"skipped: fewer than "|"omitted: fewer than "|	FAIL: the group of 7 genes is skipped with the message
+R7-rtest-organism-message	rtest	skill	s|\*\*organism not supported\*\*|**not handled**|	FAIL: organism zebrafish
+R7-rtest-rebuild-message	rtest	skill	s|KEGG/Reactome require an image rebuild (ReactomePA, KEGG.db|KEGG/Reactome need more (ReactomePA, KEGG.db|	FAIL: enrich_dbs 'GO,KEGG'
+R7-rtest-unmapped-not-counted	rtest	skill	s|n_unmapped = length(ids) - mapped|n_unmapped = 0L|	FAIL: SYNTHETIC human: the unmapped identifiers are counted
+R7-rtest-no-universe	rtest	skill	s|enrichGO(gene = entrez, universe = universe, |enrichGO(gene = entrez, |	FAIL: treatment_up: the terms contain the queried term GO:0006412 or a close parent
+R7-rtest-07-lists-missing-file	rtest	skill	s|^  if (file.exists(file.path(rd, f))) cat(|  if (TRUE) cat(|	FAIL: 07 does not link the reports that are absent
+R7-rtest-07-no-thresholds	rtest	skill	s#^cat("- \(FDR\|dPSI\|rMATS count\|rMATS minimum\).*$#NULL#	FAIL: 07 states the thresholds read from the parameters (0.037, 0.123, 17, JCEC)
+R7-rtest-07-warnings-dropped	rtest	skill	s|^  unique(l)$|  character(0)|	FAIL: html_warnings strips the tags
+R7-rtest-07-counts-truncated	rtest	skill	s|cat(knitr::kable(d, format = "markdown", row.names = FALSE), sep = "\\n")|cat(knitr::kable(head(d, 1), format = "markdown", row.names = FALSE), sep = "\\n")|	FAIL: 07 shows the
+S7-summary-output-file	check	skill	s|OUTF="output_file = 'report_summary.html', "|OUTF=""|	missing required text:   OUTF=""; if [ "$1" = 07 ]; then OUTF="output_file = 'report_summary.html', "; fi
+S7-summary-render-arg	check	skill	s|\${OUTF}knit_root_dir|knit_root_dir|	missing required text:   output_dir = '$R', ${OUTF}knit_root_dir = '$R',
+S7-summary-final-instruction	check	skill	s|^  Start with the summary page.*$|  Done.|	missing required text: Start with the summary page, the index of every report, figure and table: {REPORT_DIR}/report_summary.html
+S7-summary-file-prose	check	skill	s|The page is written to `report_summary.html`, the entry point|The page is written to `07_summary.html`, the entry point|	missing required text: The page is written to `report_summary.html`, the entry point of the report directory.

@@ -92,6 +92,8 @@ done
 for pair in 01:01_import 02:02_rmats 03:03_suppa 04:04_usage 05:05_cross_tool 06:06_enrichment 07:07_summary; do
   has "run_${pair%%:*}: its Rmd" "${pair#*:}.Rmd" "$tmp/all/run_${pair%%:*}.sbatch"
 done
+has "run_07: the summary page is written to report_summary.html" "output_file = 'report_summary.html'" "$tmp/all/run_07.sbatch"
+hasnt "run_01: no output_file" "output_file" "$tmp/all/run_01.sbatch"
 has "params: fdr" 'fdr = 0.05' "$tmp/all/run_02.sbatch"
 has "params: dpsi" 'dpsi = 0.1' "$tmp/all/run_02.sbatch"
 has "params: rmats type" "rmats_type = 'JC'" "$tmp/all/run_02.sbatch"
