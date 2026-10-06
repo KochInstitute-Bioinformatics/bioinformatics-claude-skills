@@ -466,21 +466,34 @@ T9b-readme-13	check	readme	s|The wizard refuses typed values (e-mail address, pa
 T9b-need-01	check	skill	s|\*\*Extracting the Rmd files\.\*\*|REMOVED|g	missing required text: **Extracting the Rmd files.**
 T9b-need-02	check	skill	s|R='{REPORT_DIR}'; SK='{SKILL_FILE}'|REMOVED|g	missing required text: R='{REPORT_DIR}'; SK='{SKILL_FILE}'
 T9b-need-03	check	skill	s|ERROR: the skill file \$SK does not exist: give the path of the skill file, or write the Rmd files one at a time with the Write tool|REMOVED|g	missing required text: ERROR: the skill file $SK does not exist: give the path of the skill file, or write the Rmd files one at a time with the Write tool
-T9b-need-04	check	skill	s|closed = 1; exit } s == 2 { print } END { exit !closed }|REMOVED|g	missing required text: closed = 1; exit } s == 2 { print } END { exit !closed }
-T9b-need-05	check	skill	s|\[ "\$(head -n 1 "\$D/\$n\.Rmd")" = "---" \]|REMOVED|g	missing required text: [ "$(head -n 1 "$D/$n.Rmd")" = "---" ]
-T9b-need-06	check	skill	s|\[ "\$(ls "\$D" \| wc -l)" -eq 7 \]|REMOVED|g	missing required text: [ "$(ls "$D" | wc -l)" -eq 7 ]
-T9b-need-07	check	skill	s|and only then moves them to `{REPORT_DIR}`|REMOVED|g	missing required text: and only then moves them to `{REPORT_DIR}`
 T9b-need-08	check	skill	s|writing them one at a time with the Write tool is the fallback when that block cannot read the skill file|REMOVED|g	missing required text: writing them one at a time with the Write tool is the fallback when that block cannot read the skill file
 T9b-need-09	check	skill	s|case '{EMAIL}' in none\|'') sed -i '/\^#SBATCH \.\.mail-/d' '{REPORT_DIR}/image_check/pull_image\.sbatch' ;; esac|REMOVED|g	missing required text: case '{EMAIL}' in none|'') sed -i '/^#SBATCH ..mail-/d' '{REPORT_DIR}/image_check/pull_image.sbatch' ;; esac
 T9b-need-10	check	skill	s|case '{EMAIL}' in none\|'') sed -i '/\^#SBATCH \.\.mail-/d' '{REPORT_DIR}/image_check/check_packages\.sbatch' ;; esac|REMOVED|g	missing required text: case '{EMAIL}' in none|'') sed -i '/^#SBATCH ..mail-/d' '{REPORT_DIR}/image_check/check_packages.sbatch' ;; esac
 T9b-need-11	check	skill	s|MK='__R__\|__OUT__\|__SIF__\|__EMAIL__\|__JOBNAME__|REMOVED|g	missing required text: MK='__R__|__OUT__|__SIF__|__EMAIL__|__JOBNAME__
 T9b-need-12	check	skill	s|grep -Eq "(\$MK)" "\$f"|REMOVED|g	missing required text: grep -Eq "($MK)" "$f"
-T9b-awk-range	check	skill	s|s == 2 { print } END|s == 3 { print } END|	missing required text: closed = 1; exit } s == 2 { print } END { exit !closed }
-T9b-header-check	check	skill	s|= "---" ]|= "--" ]|	missing required text: [ "$(head -n 1 "$D/$n.Rmd")" = "---" ]
-T9b-count-check	check	skill	s|-eq 7 ]|-eq 6 ]|	missing required text: [ "$(ls "$D" | wc -l)" -eq 7 ]
 T9b-block-removed	check	skill	s|\*\*Extracting the Rmd files\.\*\*|Extracting the Rmd files.|	missing required text: **Extracting the Rmd files.**
 T9c-readme-1	check	readme	s|The live run above used the skill at commit 0abe782, in which the Rmd files were cut out with a separate awk command\.|REMOVED|g	README missing required text: The live run above used the skill at commit 0abe782, in which the Rmd files were cut out with a separate awk command.
 T9c-readme-2	check	readme	s|they have static and render tests only, and have not run on the cluster|REMOVED|g	README missing required text: they have static and render tests only, and have not run on the cluster
-T9c-need-1	check	skill	s|trap 'for n in \$NAMES; do rm -f "\$D/\$n\.Rmd"; done; rmdir "\$D" 2>/dev/null' EXIT|REMOVED|g	missing required text: trap 'for n in $NAMES; do rm -f "$D/$n.Rmd"; done; rmdir "$D" 2>/dev/null' EXIT
 T9c-need-2	check	skill	s|ERROR: the line endings are CRLF in \$SK: use a copy with LF line endings; nothing was written to \$R|REMOVED|g	missing required text: ERROR: the line endings are CRLF in $SK: use a copy with LF line endings; nothing was written to $R
-T9c-need-3	check	skill	s|the temporary directory is removed when the block ends|REMOVED|g	missing required text: the temporary directory is removed when the block ends
+T9d-readme-1	check	readme	s|every Bash block was accepted by the Claude Code safety check (skill at commit 0abe782)\.|REMOVED|g	README missing required text: every Bash block was accepted by the Claude Code safety check (skill at commit 0abe782).
+T9d-readme-2	check	readme	s|A later version of the block that extracts the Rmd files was refused by the Claude Code safety check|REMOVED|g	README missing required text: A later version of the block that extracts the Rmd files was refused by the Claude Code safety check
+T9d-readme-3	check	readme	s|The live run of the final blocks is part of the real-data run, which has not completed\.|REMOVED|g	README missing required text: The live run of the final blocks is part of the real-data run, which has not completed.
+T9d-need-01	check	skill	s|does not hold exactly 7 Rmd blocks; nothing was written to \$R|REMOVED|g	missing required text: does not hold exactly 7 Rmd blocks; nothing was written to $R
+T9d-need-02	check	skill	s|is missing, repeated, not closed, empty, or does not start with the YAML header line; nothing was written to \$R|REMOVED|g	missing required text: is missing, repeated, not closed, empty, or does not start with the YAML header line; nothing was written to $R
+T9d-need-03	check	skill	s|\[ "\${1:-0}" = 1 \] && \[ "\${2:-0}" = 1 \] && \[ "\${3:-0}" -gt 0 \] && \[ "\${4:-0}" = 1 \]|REMOVED|g	missing required text: [ "${1:-0}" = 1 ] && [ "${2:-0}" = 1 ] && [ "${3:-0}" -gt 0 ] && [ "${4:-0}" = 1 ]
+T9d-need-04	check	skill	s|END { print b + 0, (s == 3), l + 0, f + 0 }|REMOVED|g	missing required text: END { print b + 0, (s == 3), l + 0, f + 0 }
+T9d-need-05	check	skill	s|s == 2 && \$0 == "````" { exit } s == 2 { print }|REMOVED|g	missing required text: s == 2 && $0 == "````" { exit } s == 2 { print }
+T9d-need-06	check	skill	s|\[ -s "\$R/\$n\.Rmd" \] && \[ "\$(head -n 1 "\$R/\$n\.Rmd")" = "---" \]|REMOVED|g	missing required text: [ -s "$R/$n.Rmd" ] && [ "$(head -n 1 "$R/$n.Rmd")" = "---" ]
+T9d-need-07	check	skill	s|The block first reads the skill file without writing anything|REMOVED|g	missing required text: The block first reads the skill file without writing anything
+T9d-need-08	check	skill	s|so nothing has been written\. Only then does it write the seven files|REMOVED|g	missing required text: so nothing has been written. Only then does it write the seven files
+T9d-need-09	check	skill	s|The block makes no temporary directory and deletes and moves nothing\.|REMOVED|g	missing required text: The block makes no temporary directory and deletes and moves nothing.
+T9d-rm-variable	check	skill	$s/$/\n```bash\nrm -f "$D"\n```/	a code fence removes files through a variable
+T9d-rmdir-variable	check	skill	$s/$/\n```bash\nrmdir "$D"\n```/	a code fence removes files through a variable
+T9d-find-delete	check	skill	$s/$/\n```bash\nfind "$X" -name a -delete\n```/	a code fence removes files through a variable
+T9d-rm-in-plain-fence	check	skill	$s/$/\n```\nrm -rf $X\n```/	a code fence removes files through a variable
+T9d-rm-trap-form	check	skill	$s#$#\n```bash\ntrap 'for n in $NAMES; do rm -f "$D"; done; rmdir "$D" 2>/dev/null' EXIT\n```#	a code fence removes files through a variable
+T9d-header-check	check	skill	s|l == 1 && $0 == "---"|l == 1 \&\& $0 == "--"|	missing required text: if (l == 1 && $0 == "---") f = 1
+T9d-awk-range	check	skill	s|s == 2 { print }' "$SK" > |s == 3 { print }' "$SK" > |	missing required text: s == 2 && $0 == "````" { exit } s == 2 { print }
+T9d-count-check	check	skill	s|"$SK")" -eq 7 \]|"$SK")" -eq 6 ]|	missing required text: [ "$(grep -c '^\*\*File `[0-9][0-9]_[a-z_]*\.Rmd`\.\*\*$' "$SK")" -eq 7 ]
+T9d-need-x1	check	skill	s|if (l == 1 && \$0 == "---") f = 1|REMOVED|g	missing required text: if (l == 1 && $0 == "---") f = 1
+T9d-need-x2	check	skill	s|\[ "\$(grep -c '\^\\\*\\\*File `\[0-9\]\[0-9\]_\[a-z_\]\*\\\.Rmd`\\\.\\\*\\\*\$' "\$SK")" -eq 7 \]|REMOVED|g	missing required text: [ "$(grep -c '^\*\*File `[0-9][0-9]_[a-z_]*\.Rmd`\.\*\*$' "$SK")" -eq 7 ]

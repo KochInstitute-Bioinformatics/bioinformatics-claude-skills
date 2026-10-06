@@ -228,13 +228,7 @@ need 'holds a line break, a backslash or a double quote'
 need '**Extracting the Rmd files.**'
 need 'R='\''{REPORT_DIR}'\''; SK='\''{SKILL_FILE}'\'''
 need 'ERROR: the skill file $SK does not exist: give the path of the skill file, or write the Rmd files one at a time with the Write tool'
-need 'closed = 1; exit } s == 2 { print } END { exit !closed }'
-need '[ "$(head -n 1 "$D/$n.Rmd")" = "---" ]'
-need '[ "$(ls "$D" | wc -l)" -eq 7 ]'
-need 'and only then moves them to `{REPORT_DIR}`'
-need 'trap '\''for n in $NAMES; do rm -f "$D/$n.Rmd"; done; rmdir "$D" 2>/dev/null'\'' EXIT'
 need 'ERROR: the line endings are CRLF in $SK: use a copy with LF line endings; nothing was written to $R'
-need 'the temporary directory is removed when the block ends'
 need 'writing them one at a time with the Write tool is the fallback when that block cannot read the skill file'
 need 'case '\''{EMAIL}'\'' in none|'\'''\'') sed -i '\''/^#SBATCH ..mail-/d'\'' '\''{REPORT_DIR}/image_check/pull_image.sbatch'\'' ;; esac'
 need 'case '\''{EMAIL}'\'' in none|'\'''\'') sed -i '\''/^#SBATCH ..mail-/d'\'' '\''{REPORT_DIR}/image_check/check_packages.sbatch'\'' ;; esac'
@@ -253,6 +247,30 @@ need 'The questions that collect free text are the other report path (below), th
 # A value of the wizard is never put in double quotes in a Bash block (a $, a backtick or a backslash in it would be interpreted).
 dq=$(awk '/^```bash$/ { inb = 1; next } inb && /^```$/ { inb = 0 } inb && /"[^"$`]*\{[A-Z_]+\}[^"$`]*"/ { print NR ": " $0 }' "$SKILL")
 [ -z "$dq" ] || { echo "FAIL: a wizard value in double quotes in a Bash block (use single quotes):"; printf '%s\n' "$dq" | head -n 3; fail=1; }
+need 'does not hold exactly 7 Rmd blocks; nothing was written to $R'
+need 'is missing, repeated, not closed, empty, or does not start with the YAML header line; nothing was written to $R'
+need '[ "${1:-0}" = 1 ] && [ "${2:-0}" = 1 ] && [ "${3:-0}" -gt 0 ] && [ "${4:-0}" = 1 ]'
+need 'END { print b + 0, (s == 3), l + 0, f + 0 }'
+need 'if (l == 1 && $0 == "---") f = 1'
+need '[ "$(grep -c '\''^\*\*File `[0-9][0-9]_[a-z_]*\.Rmd`\.\*\*$'\'' "$SK")" -eq 7 ]'
+need 's == 2 && $0 == "````" { exit } s == 2 { print }'
+need '[ -s "$R/$n.Rmd" ] && [ "$(head -n 1 "$R/$n.Rmd")" = "---" ]'
+need 'The block first reads the skill file without writing anything'
+need 'so nothing has been written. Only then does it write the seven files'
+need 'The block makes no temporary directory and deletes and moves nothing.'
+# No code fence of the skill removes anything through a variable: a harness refuses `rm -f "$D/..."` because an empty variable would
+# widen the target. rm, rmdir, unlink and shred with an argument that holds a $ or a backtick, and find with -delete and a $, are errors.
+rmv=$(awk '
+  BEGIN { q = sprintf("%c", 39); pre = "(^|[[:space:];&|({\"" q "`])"
+          re_rm = pre "(rm|rmdir|unlink|shred)[[:space:]]+[^;&|]*[$`]"; re_find = pre "find[[:space:]].*-delete" }
+  { line = $0; t = line; sub(/^ {0,3}/, "", t) }
+  !inb && (t ~ /^```/ || t ~ /^~~~/) { ch = substr(t, 1, 1); n = 0; while (substr(t, n + 1, 1) == ch) n++; flen = n; inb = 1; next }
+  inb {
+    c = 0; while (substr(t, c + 1, 1) == ch) c++
+    if (c >= flen && c == length(t)) { inb = 0; next }
+    if (line ~ re_rm || (line ~ re_find && line ~ /[$`]/)) print "FAIL: a code fence removes files through a variable or a command substitution (line " NR "): " line
+  }' "$SKILL")
+[ -z "$rmv" ] || { printf '%s\n' "$rmv" | head -n 3; fail=1; }
 # No code block of the skill is long or nests a heredoc: a long script, or a heredoc inside a function inside a heredoc, is refused
 # by the safety check of the Claude Code harness. Every fenced block is checked (fences of ``` or ~~~, up to three leading spaces,
 # any info string) except the blocks whose info string is explicitly r, rmd, yaml, md, markdown, text, console, json, csv or tsv.
@@ -532,6 +550,9 @@ needr 'Chain wall times were 23 s, 17 s, 18 s and 71 s'
 needr 'the four reports take 26 MB of output in total'
 needr 'Peak memory of the report jobs: not measured.'
 needr 'The behaviour when a report job fails: not yet run.'
+needr 'every Bash block was accepted by the Claude Code safety check (skill at commit 0abe782).'
+needr 'A later version of the block that extracts the Rmd files was refused by the Claude Code safety check'
+needr 'The live run of the final blocks is part of the real-data run, which has not completed.'
 needr 'The live run above used the skill at commit 0abe782, in which the Rmd files were cut out with a separate awk command.'
 needr 'they have static and render tests only, and have not run on the cluster'
 needr '### How the scripts are made'

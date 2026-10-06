@@ -52,4 +52,23 @@ hookcase hook-root-stray CHECK_ROOT_README "$HERE/fixtures/sign_rows.tsv" red
 hookcase hook-runall-stray CHECK_RUN_ALL "$HERE/run_all_tests.sh" red
 hookcase hook-root-scratch CHECK_ROOT_README "$T/root.md" note
 hookcase hook-runall-scratch CHECK_RUN_ALL "$T/root.md" note
+# --- removal through a variable in any code fence (a harness refuses it): rmcase <name> <red|ok> <body text after the title line>
+rmcase() {
+  { echo "# nf-core/rnasplice Report Skill"; printf '%s\n' "$3"; } > "$T/nfcore-rnasplice-report.md"
+  bash "$HERE/check_skill.sh" "$T/nfcore-rnasplice-report.md" > "$T/out" 2>&1
+  if grep -q '^FAIL: a code fence removes files' "$T/out"; then got=red; else got=ok; fi
+  if [ "$got" = "$2" ]; then echo "ok   $1"; else echo "FAIL $1: expected $2, got $got"; bad=1; fi
+}
+rmcase rm-variable red $'```bash\nrm -f "$D/x"\n```'
+rmcase rm-trap-form red $'```bash\ntrap \'for n in $NAMES; do rm -f "$D/$n.Rmd"; done; rmdir "$D" 2>/dev/null\' EXIT\n```'
+rmcase rmdir-variable red $'```bash\nrmdir "$D"\n```'
+rmcase rm-after-and red $'```bash\ntrue && rm -f "$D"/a\n```'
+rmcase unlink-substitution red $'```bash\nunlink `pwd`/x\n```'
+rmcase find-delete-variable red $'```bash\nfind "$X" -name a -delete\n```'
+rmcase rm-in-plain-fence red $'```\nrm -rf $X\n```'
+rmcase rm-in-tilde-fence red $'~~~sh\nshred $F\n~~~'
+rmcase rm-literal-path ok $'```bash\nrm -f /tmp/fixed/file.Rmd\n```'
+rmcase rmdir-literal-path ok $'```bash\nrmdir /tmp/fixed/dir\n```'
+rmcase r-na-rm ok $'```r\nsum(x, na.rm = TRUE)\n```'
+rmcase rm-in-prose ok 'Never run rm -f $D here.'
 [ $bad -eq 0 ] && echo "FLAG RULE PASS" || exit 1

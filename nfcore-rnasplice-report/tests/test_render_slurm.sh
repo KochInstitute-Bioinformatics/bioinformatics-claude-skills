@@ -289,6 +289,10 @@ done
 # --- Extracting the Rmd files: the seven blocks of the skill are cut out into the report directory, byte for byte
 ex=$(blk '**Extracting the Rmd files.**') || bad "block after the heading Extracting the Rmd files not found"
 mkdir -p "$tmp/xtmp"
+# the extraction block deletes and moves nothing, and makes no temporary directory (validate, then write)
+for w in rm rmdir mv mktemp trap unlink; do
+  if printf '%s\n' "$ex" | grep -qw -- "$w"; then bad "the extraction block uses $w"; else ok "the extraction block does not use $w"; fi
+done
 runex() { env -i PATH="$SYS" TMPDIR="$tmp/xtmp" /bin/bash --noprofile --norc -c "$(printf '%s\n' "$ex" | sed -e "s|{REPORT_DIR}|$1|g" -e "s|{SKILL_FILE}|$2|g")"; }
 refrmd() { sed -n "/^\*\*File \`$1\.Rmd\`\.\*\*\$/,/^\`\`\`\`\$/p" "$skill" | sed '1,2d;$d'; }
 EX="$tmp/wd/results/2026-10-05_wd_report_rmdx"
@@ -299,21 +303,21 @@ for n in 01_import 02_rmats 03_suppa 04_usage 05_cross_tool 06_enrichment 07_sum
   if cmp -s "$tmp/ref.$n" "$EX/$n.Rmd" && [ -s "$tmp/ref.$n" ]; then ok "extraction: $n.Rmd identical to the block"; else bad "extraction: $n.Rmd differs from the block"; fi
   has "extraction: line count of $n.Rmd printed" "$n.Rmd: $(wc -l < "$tmp/ref.$n") lines" "$tmp/ex.out"
 done
-runex "$tmp/wd/results/2026-10-05_wd_report_ex_nofile" "$tmp/no_such_skill.md" > "$tmp/ex2.out" 2>&1; check "extraction: missing skill file: exit status" 1 "$?"
+mkdir -p "$tmp/wd/results/2026-10-05_wd_report_ex_nofile"; runex "$tmp/wd/results/2026-10-05_wd_report_ex_nofile" "$tmp/no_such_skill.md" > "$tmp/ex2.out" 2>&1; check "extraction: missing skill file: exit status" 1 "$?"
 has "extraction: missing skill file: the path is named" "$tmp/no_such_skill.md" "$tmp/ex2.out"
 check "extraction: missing skill file: nothing written" "" "$(ls -A "$tmp/wd/results/2026-10-05_wd_report_ex_nofile" 2>/dev/null)"
 awk '/^\*\*File `07_summary.Rmd`\.\*\*$/ { exit } { print }' "$skill" > "$tmp/skill6.md"
-runex "$tmp/wd/results/2026-10-05_wd_report_ex6" "$tmp/skill6.md" > "$tmp/ex3.out" 2>&1; check "extraction: a skill file with six Rmd blocks: exit status" 1 "$?"
+mkdir -p "$tmp/wd/results/2026-10-05_wd_report_ex6"; runex "$tmp/wd/results/2026-10-05_wd_report_ex6" "$tmp/skill6.md" > "$tmp/ex3.out" 2>&1; check "extraction: a skill file with six Rmd blocks: exit status" 1 "$?"
 has "extraction: six blocks: the message" "ERROR" "$tmp/ex3.out"
 check "extraction: six blocks: nothing written" "" "$(ls -A "$tmp/wd/results/2026-10-05_wd_report_ex6" 2>/dev/null)"
 sed '/^\*\*File `03_suppa.Rmd`\.\*\*$/{n;n;s/^---$/--/}' "$skill" > "$tmp/skillh.md"
-runex "$tmp/wd/results/2026-10-05_wd_report_exh" "$tmp/skillh.md" > "$tmp/ex4.out" 2>&1; check "extraction: a block that does not start with --- : exit status" 1 "$?"
+mkdir -p "$tmp/wd/results/2026-10-05_wd_report_exh"; runex "$tmp/wd/results/2026-10-05_wd_report_exh" "$tmp/skillh.md" > "$tmp/ex4.out" 2>&1; check "extraction: a block that does not start with --- : exit status" 1 "$?"
 check "extraction: bad header: nothing written" "" "$(ls -A "$tmp/wd/results/2026-10-05_wd_report_exh" 2>/dev/null)"
 awk '/^\*\*File `04_usage.Rmd`\.\*\*$/ { print; getline; print; getline; skip = 1 } skip && /^````$/ { skip = 0 } !skip { print }' "$skill" > "$tmp/skille.md"
-runex "$tmp/wd/results/2026-10-05_wd_report_exe" "$tmp/skille.md" > "$tmp/ex5.out" 2>&1; check "extraction: an empty block: exit status" 1 "$?"
+mkdir -p "$tmp/wd/results/2026-10-05_wd_report_exe"; runex "$tmp/wd/results/2026-10-05_wd_report_exe" "$tmp/skille.md" > "$tmp/ex5.out" 2>&1; check "extraction: an empty block: exit status" 1 "$?"
 check "extraction: empty block: nothing written" "" "$(ls -A "$tmp/wd/results/2026-10-05_wd_report_exe" 2>/dev/null)"
 sed 's/$/\r/' "$skill" > "$tmp/skillcr.md"
-runex "$tmp/wd/results/2026-10-05_wd_report_excr" "$tmp/skillcr.md" > "$tmp/ex6.out" 2>&1; check "extraction: a skill file with CRLF line endings: exit status" 1 "$?"
+mkdir -p "$tmp/wd/results/2026-10-05_wd_report_excr"; runex "$tmp/wd/results/2026-10-05_wd_report_excr" "$tmp/skillcr.md" > "$tmp/ex6.out" 2>&1; check "extraction: a skill file with CRLF line endings: exit status" 1 "$?"
 has "extraction: CRLF: the cause is named" "line endings are CRLF" "$tmp/ex6.out"
 check "extraction: CRLF: nothing written" "" "$(ls -A "$tmp/wd/results/2026-10-05_wd_report_excr" 2>/dev/null)"
 check "extraction: no temporary directory is left behind (success and every failure)" "" "$(ls -A "$tmp/xtmp")"

@@ -134,7 +134,7 @@ What has run:
 
 - The static suite (`tests/run_all_tests.sh`, default run), including the mutation rows: ALL TESTS PASS.
 - The R tests of the report's functions (four scripts: 101, 105, 147 and 100 checks, all pass) on the real output of the nf-core test-data run of nf-core/rnasplice (4 samples, chrX, 50,000 read pairs), and the rendering of Rmds 01 to 07 on that output.
-- The wizard end to end and the generated SLURM scripts on the cluster (2026-10-06), on the output of the nf-core test-data run (4 samples, chrX, 50,000 read pairs), in four runs: all modules; rMATS only; BAM input; all modules with `min_reads` 0. The wizard completed in every run, and every Bash block was accepted by the Claude Code safety check.
+- The wizard end to end and the generated SLURM scripts on the cluster (2026-10-06), on the output of the nf-core test-data run (4 samples, chrX, 50,000 read pairs), in four runs: all modules; rMATS only; BAM input; all modules with `min_reads` 0. The wizard completed in every run, and every Bash block was accepted by the Claude Code safety check (skill at commit 0abe782).
 - The 24 report jobs of the four runs all completed, and the chain dependencies shown by `scontrol` were as designed: jobs 02 to 06 `afterok` on job 01 with cancellation when job 01 fails, job 07 `afterany` on every earlier job.
 - With `min_reads` 0 the rMATS counts per type (SE 5, A5SS 3, A3SS 2, MXE 3, RI 1) equal an independent recomputation with awk from the raw tables; the pipeline output directories were not modified.
 - Chain wall times were 23 s, 17 s, 18 s and 71 s (all modules, rMATS only, BAM input, `min_reads` 0), and the four reports take 26 MB of output in total.
@@ -142,6 +142,7 @@ What has run:
 What has not run:
 
 - The live run above used the skill at commit 0abe782, in which the Rmd files were cut out with a separate awk command. The block that extracts them from the installed skill file, the lines of Step 2 that drop the mail lines when no mail is wanted, and the exact-marker check of the rendering block did not exist then: they have static and render tests only, and have not run on the cluster.
+- A later version of the block that extracts the Rmd files was refused by the Claude Code safety check (a removal through a shell variable in a cleanup step), and was replaced by a block that validates the skill file first and then writes the files, with no cleanup. The live run of the final blocks is part of the real-data run, which has not completed.
 - Real data: not yet run.
 - Peak memory of the report jobs: not measured.
 - The behaviour when a report job fails: not yet run.
