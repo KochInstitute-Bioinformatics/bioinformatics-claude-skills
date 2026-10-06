@@ -11,6 +11,15 @@ SKILL=${1:?usage: check_skill.sh <skill.md>}
 HERE=$(cd "$(dirname "$0")" && pwd); FIX="$HERE/fixtures"
 README="$(dirname "$SKILL")/README.md"
 fail=0
+# Test hooks (CHECK_ROOT_README, CHECK_RUN_ALL) are honoured only for a file under a mktemp scratch directory (/tmp/tmp.XXXXXXXXXX, the
+# directory prove_mutations.sh makes); a hook set to any other path fails the run and is ignored. A honoured hook prints a NOTE line.
+for hv in CHECK_ROOT_README CHECK_RUN_ALL; do
+  hp=${!hv:-}; [ -n "$hp" ] || continue
+  case "$hp" in
+    /tmp/tmp.??????????/*) echo "NOTE: test hook $hv is set ($hp)" ;;
+    *) echo "FAIL: test hook $hv=$hp is not under a scratch directory /tmp/tmp.XXXXXXXXXX (it is a test hook of prove_mutations.sh): unset it"; fail=1; unset "$hv" ;;
+  esac
+done
 [ -s "$SKILL" ] || { echo "FAIL: skill file missing or empty: $SKILL"; exit 1; }
 for f in sign_rows.tsv; do
   [ -s "$FIX/$f" ] || { echo "cannot read fixture $FIX/$f"; exit 2; }
@@ -425,6 +434,14 @@ needr 'Every effect in the report is treatment minus control'
 needr '| Tool | Value read | Conversion | Result |'
 needr 'KEGG/Reactome require an image rebuild'
 needr '`low_support`'
+needr 'The wizard end to end on the test data: not yet run.'
+needr 'The SLURM scripts submitted on the cluster: not yet run.'
+needr 'Real data: not yet run.'
+needr '| SUPPA2 | `dPSI` (control minus treatment) | flipped | treatment minus control |'
+needr '| DEXSeq exon usage | `log2fold_{CONTROL}_{TREATMENT}` | flipped | treatment minus control |'
+needr '| DEXSeq DTU | `log2fold_{CONTROL}_{TREATMENT}` | flipped | treatment minus control |'
+needr '| rMATS | `IncLevelDifference` (group 1 = treatment) | none | treatment minus control |'
+needr '| edgeR exon usage | `logFC` | none | treatment minus control |'
 grep -qF '| nf-core/rnasplice report | `/nfcore-rnasplice-report` |' "$ROOT_README" 2>/dev/null || { echo "FAIL: root README row missing: a row naming /nfcore-rnasplice-report"; fail=1; }
 # --- end README checks
 

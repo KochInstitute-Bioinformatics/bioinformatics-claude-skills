@@ -81,7 +81,7 @@ Every effect in the report is treatment minus control. The tools write their own
 How the signs were checked, on the output of the nf-core test-data run (test-data facts, not statements about other data):
 
 - rMATS: `IncLevelDifference` equals mean(`IncLevel1`) minus mean(`IncLevel2`) on 202 SE rows, with group 1 the treatment group.
-- SUPPA2: the sign of `dPSI` equals the sign of YRI minus GBR in the mean PSI, on 582 local events and 860 isoforms, with 0 opposite.
+- SUPPA2: the sign of `dPSI` equals the sign of YRI minus GBR in the mean PSI on 582 of the 1096 tested local rows (the rest have a dPSI of 0) and on 860 isoform rows (of 1854 tested), with 0 opposite.
 - DEXSeq exon usage and DTU: `log2fold_YRI_GBR` matches YRI minus GBR on 7420 and 218 rows.
 - edgeR exon usage agrees in sign with DEXSeq (after the DEXSeq flip) on 3 exon bins with identical coordinates.
 
@@ -129,12 +129,12 @@ RNASPLICE_REPORT_TEST_GIT_DIR=$HOME/.conda/envs/git-new/bin bash nfcore-rnasplic
 What has run:
 
 - The static suite (`tests/run_all_tests.sh`, default run), including the mutation rows: ALL TESTS PASS.
-- The R tests of the report's functions on the real output of the nf-core test-data run of nf-core/rnasplice (4 samples, chrX, 50,000 read pairs), and the rendering of Rmds 01 to 07 on that output.
+- The R tests of the report's functions (four scripts: 101, 105, 147 and 100 checks, all pass) on the real output of the nf-core test-data run of nf-core/rnasplice (4 samples, chrX, 50,000 read pairs), and the rendering of Rmds 01 to 07 on that output.
 
 What has not run:
 
 - The wizard end to end on the test data: not yet run.
 - The SLURM scripts submitted on the cluster: not yet run.
-- Real data: not yet run. Statements about real data are absent from this README until those runs exist.
+- Real data: not yet run.
 
 The sign checks above come from the test-data run only.

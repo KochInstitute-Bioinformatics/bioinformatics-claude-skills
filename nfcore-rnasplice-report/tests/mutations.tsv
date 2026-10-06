@@ -395,3 +395,12 @@ R8-readme-sign-table	check	readme	s/^| Tool | Value read | Conversion | Result |
 R8-readme-kegg	check	readme	s|KEGG/Reactome require an image rebuild|KEGG and Reactome need more work|	README missing required text: KEGG/Reactome require an image rebuild
 R8-readme-low-support	check	readme	s/`low_support`/the flag/g	README missing required text: `low_support`
 R8-root-row	check	rootreadme	/^| nf-core\/rnasplice report |/d	root README row missing
+R8-readme-not-run-all	check	readme	s/: not yet run/: run/	README missing required text: The wizard end to end on the test data: not yet run.
+R8-readme-not-run-wizard	check	readme	s/^- The wizard end to end on the test data: not yet run\./- The wizard end to end on the test data: run./	README missing required text: The wizard end to end on the test data: not yet run.
+R8-readme-not-run-slurm	check	readme	s/^- The SLURM scripts submitted on the cluster: not yet run\./- The SLURM scripts submitted on the cluster: run./	README missing required text: The SLURM scripts submitted on the cluster: not yet run.
+R8-readme-not-run-real	check	readme	s/^- Real data: not yet run\./- Real data: run./	README missing required text: Real data: not yet run.
+R8-readme-suppa-flip	check	readme	s/^| SUPPA2 | `dPSI` (control minus treatment) | flipped |/| SUPPA2 | `dPSI` (control minus treatment) | none |/	README missing required text: | SUPPA2 | `dPSI` (control minus treatment) | flipped | treatment minus control |
+R8-readme-dexseq-flip	check	readme	s/^| DEXSeq exon usage | \(.*\) | flipped |/| DEXSeq exon usage | \1 | none |/	README missing required text: | DEXSeq exon usage |
+R8-readme-dtu-flip	check	readme	s/^| DEXSeq DTU | \(.*\) | flipped |/| DEXSeq DTU | \1 | none |/	README missing required text: | DEXSeq DTU |
+R8-readme-rmats-noflip	check	readme	s/^| rMATS | \(.*\) | none |/| rMATS | \1 | flipped |/	README missing required text: | rMATS | `IncLevelDifference`
+R8-readme-edger-noflip	check	readme	s/^| edgeR exon usage | \(.*\) | none |/| edgeR exon usage | \1 | flipped |/	README missing required text: | edgeR exon usage |

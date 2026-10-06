@@ -5,7 +5,7 @@
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 T=$(mktemp -d /tmp/tmp.XXXXXXXXXX) || exit 1
-trap 'rm -f "$T/nfcore-rnasplice-report.md" "$T/README.md" "$T/out"; rmdir "$T"' EXIT
+trap 'rm -f "$T/nfcore-rnasplice-report.md" "$T/README.md" "$T/out" "$T/root.md"; rmdir "$T"' EXIT
 case "$T" in /tmp/tmp.??????????) ;; *) echo "unexpected temp dir: $T"; exit 1 ;; esac
 : > "$T/README.md"
 bad=0
@@ -38,4 +38,17 @@ flagcase segment-in-capture red $'```bash\njid=$(sbatch x; ls --color)\n```'
 flagcase segment-continuation-red red $'```bash\nsbatch x; ls \\\n  --color\n```'
 flagcase segment-all-allowed ok $'```bash\nsbatch --parsable a.sh && sbatch --parsable b.sh\n```'
 flagcase flag-after-fence-closed red $'```bash\ntrue\n```\nRun report --now here.'
+# Test hooks CHECK_ROOT_README and CHECK_RUN_ALL: honoured only for a file under a scratch directory made by mktemp (/tmp/tmp.XXXXXXXXXX,
+# as prove_mutations.sh makes it); any other path fails the run. A hook that is honoured prints a NOTE line.
+hookcase() { # name var path expect(red|note)
+  { echo "# nf-core/rnasplice Report Skill"; } > "$T/nfcore-rnasplice-report.md"; echo row > "$T/root.md"
+  env -i PATH="$PATH" "$2=$3" bash "$HERE/check_skill.sh" "$T/nfcore-rnasplice-report.md" > "$T/out" 2>&1
+  if [ "$4" = red ]; then grep -qF "FAIL: test hook $2=$3 is not under a scratch directory" "$T/out" && r=ok || r=bad
+  else grep -qF "NOTE: test hook $2 is set ($3)" "$T/out" && ! grep -qF 'is not under a scratch directory' "$T/out" && r=ok || r=bad; fi
+  if [ $r = ok ]; then echo "ok   $1"; else echo "FAIL $1"; bad=1; fi
+}
+hookcase hook-root-stray CHECK_ROOT_README "$HERE/fixtures/sign_rows.tsv" red
+hookcase hook-runall-stray CHECK_RUN_ALL "$HERE/run_all_tests.sh" red
+hookcase hook-root-scratch CHECK_ROOT_README "$T/root.md" note
+hookcase hook-runall-scratch CHECK_RUN_ALL "$T/root.md" note
 [ $bad -eq 0 ] && echo "FLAG RULE PASS" || exit 1
