@@ -141,6 +141,7 @@ What has run:
 
 What has not run:
 
+- The live run above used the skill at commit 0abe782, in which the Rmd files were cut out with a separate awk command. The block that extracts them from the installed skill file, the lines of Step 2 that drop the mail lines when no mail is wanted, and the exact-marker check of the rendering block did not exist then: they have static and render tests only, and have not run on the cluster.
 - Real data: not yet run.
 - Peak memory of the report jobs: not measured.
 - The behaviour when a report job fails: not yet run.

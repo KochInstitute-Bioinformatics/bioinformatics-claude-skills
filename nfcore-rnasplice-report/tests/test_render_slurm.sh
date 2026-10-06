@@ -288,7 +288,8 @@ for em in none x@y.z; do
 done
 # --- Extracting the Rmd files: the seven blocks of the skill are cut out into the report directory, byte for byte
 ex=$(blk '**Extracting the Rmd files.**') || bad "block after the heading Extracting the Rmd files not found"
-runex() { env -i PATH="$SYS" /bin/bash --noprofile --norc -c "$(printf '%s\n' "$ex" | sed -e "s|{REPORT_DIR}|$1|g" -e "s|{SKILL_FILE}|$2|g")"; }
+mkdir -p "$tmp/xtmp"
+runex() { env -i PATH="$SYS" TMPDIR="$tmp/xtmp" /bin/bash --noprofile --norc -c "$(printf '%s\n' "$ex" | sed -e "s|{REPORT_DIR}|$1|g" -e "s|{SKILL_FILE}|$2|g")"; }
 refrmd() { sed -n "/^\*\*File \`$1\.Rmd\`\.\*\*\$/,/^\`\`\`\`\$/p" "$skill" | sed '1,2d;$d'; }
 EX="$tmp/wd/results/2026-10-05_wd_report_rmdx"
 runex "$EX" "$skill" > "$tmp/ex.out" 2>&1; check "extraction: exit status" 0 "$?"
@@ -311,6 +312,11 @@ check "extraction: bad header: nothing written" "" "$(ls -A "$tmp/wd/results/202
 awk '/^\*\*File `04_usage.Rmd`\.\*\*$/ { print; getline; print; getline; skip = 1 } skip && /^````$/ { skip = 0 } !skip { print }' "$skill" > "$tmp/skille.md"
 runex "$tmp/wd/results/2026-10-05_wd_report_exe" "$tmp/skille.md" > "$tmp/ex5.out" 2>&1; check "extraction: an empty block: exit status" 1 "$?"
 check "extraction: empty block: nothing written" "" "$(ls -A "$tmp/wd/results/2026-10-05_wd_report_exe" 2>/dev/null)"
+sed 's/$/\r/' "$skill" > "$tmp/skillcr.md"
+runex "$tmp/wd/results/2026-10-05_wd_report_excr" "$tmp/skillcr.md" > "$tmp/ex6.out" 2>&1; check "extraction: a skill file with CRLF line endings: exit status" 1 "$?"
+has "extraction: CRLF: the cause is named" "line endings are CRLF" "$tmp/ex6.out"
+check "extraction: CRLF: nothing written" "" "$(ls -A "$tmp/wd/results/2026-10-05_wd_report_excr" 2>/dev/null)"
+check "extraction: no temporary directory is left behind (success and every failure)" "" "$(ls -A "$tmp/xtmp")"
 # --- the marker list of the rendering block names every marker of the templates
 mk=$(printf '%s\n' "$B_REND" | sed -n "s/^MK='\(.*\)'\$/\1/p; s/^MK=\"\$MK|\(.*\)\"\$/|\1/p" | tr -d '\n')
 tplm=$(cat "$tmp/run_job.sbatch.tpl" "$tmp/run_all.tpl" | grep -oE '__[A-Z]+(_[A-Z]+)*__' | sort -u)

@@ -479,3 +479,8 @@ T9b-awk-range	check	skill	s|s == 2 { print } END|s == 3 { print } END|	missing r
 T9b-header-check	check	skill	s|= "---" ]|= "--" ]|	missing required text: [ "$(head -n 1 "$D/$n.Rmd")" = "---" ]
 T9b-count-check	check	skill	s|-eq 7 ]|-eq 6 ]|	missing required text: [ "$(ls "$D" | wc -l)" -eq 7 ]
 T9b-block-removed	check	skill	s|\*\*Extracting the Rmd files\.\*\*|Extracting the Rmd files.|	missing required text: **Extracting the Rmd files.**
+T9c-readme-1	check	readme	s|The live run above used the skill at commit 0abe782, in which the Rmd files were cut out with a separate awk command\.|REMOVED|g	README missing required text: The live run above used the skill at commit 0abe782, in which the Rmd files were cut out with a separate awk command.
+T9c-readme-2	check	readme	s|they have static and render tests only, and have not run on the cluster|REMOVED|g	README missing required text: they have static and render tests only, and have not run on the cluster
+T9c-need-1	check	skill	s|trap 'for n in \$NAMES; do rm -f "\$D/\$n\.Rmd"; done; rmdir "\$D" 2>/dev/null' EXIT|REMOVED|g	missing required text: trap 'for n in $NAMES; do rm -f "$D/$n.Rmd"; done; rmdir "$D" 2>/dev/null' EXIT
+T9c-need-2	check	skill	s|ERROR: the line endings are CRLF in \$SK: use a copy with LF line endings; nothing was written to \$R|REMOVED|g	missing required text: ERROR: the line endings are CRLF in $SK: use a copy with LF line endings; nothing was written to $R
+T9c-need-3	check	skill	s|the temporary directory is removed when the block ends|REMOVED|g	missing required text: the temporary directory is removed when the block ends

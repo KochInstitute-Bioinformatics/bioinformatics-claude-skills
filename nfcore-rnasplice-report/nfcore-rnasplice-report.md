@@ -286,12 +286,14 @@ Default: every job that applies. Write the Rmd files that apply to `{REPORT_DIR}
 
 **Writing the Rmd files.** The content of each Rmd file is the block under its heading **File `<name>.Rmd`.** in the section "Report files" below (a fence of four backticks, language `rmd`). Write that block with the Write tool to `{REPORT_DIR}/<name>.Rmd` byte for byte, without the two fence lines. The Rmd files hold no placeholders: every value of the earlier steps reaches them as a render parameter of the job script (the `params = list(...)` of the block below). Writing seven long files by hand is slow and error-prone, so the files are normally cut out of the installed skill file by the next block; writing them one at a time with the Write tool is the fallback when that block cannot read the skill file.
 
-**Extracting the Rmd files.** `{SKILL_FILE}` is the absolute path of the installed skill file, `$HOME/.claude/commands/nfcore-rnasplice-report.md` with `$HOME` written out (the skill is installed there). The block copies each block between its fence lines, line by line (every line ends with a line break), to a temporary directory, checks that there are exactly seven non-empty files and that each starts with the YAML header line `---`, and only then moves them to `{REPORT_DIR}`; on any error it prints a line that begins with `ERROR` and nothing is written to `{REPORT_DIR}`. When the skill file does not exist, it names the path it looked for: give the path of the skill file, or use the Write tool as above.
+**Extracting the Rmd files.** `{SKILL_FILE}` is the absolute path of the installed skill file, `$HOME/.claude/commands/nfcore-rnasplice-report.md` with `$HOME` written out (the skill is installed there). The block copies each block between its fence lines, line by line (every line ends with a line break), to a temporary directory, checks that there are exactly seven non-empty files and that each starts with the YAML header line `---`, and only then moves them to `{REPORT_DIR}`; the temporary directory is removed when the block ends, and on any error it prints a line that begins with `ERROR` and nothing is written to `{REPORT_DIR}`. When the skill file does not exist, it names the path it looked for: give the path of the skill file, or use the Write tool as above.
 ```bash
 R='{REPORT_DIR}'; SK='{SKILL_FILE}'
 NAMES='01_import 02_rmats 03_suppa 04_usage 05_cross_tool 06_enrichment 07_summary'
 [ -f "$SK" ] || { echo "ERROR: the skill file $SK does not exist: give the path of the skill file, or write the Rmd files one at a time with the Write tool"; exit 1; }
 D=$(mktemp -d "${TMPDIR:-/tmp}/rmd_extract.XXXXXX") || { echo "ERROR: cannot create a temporary directory"; exit 1; }
+trap 'for n in $NAMES; do rm -f "$D/$n.Rmd"; done; rmdir "$D" 2>/dev/null' EXIT
+if grep -q $'\r' "$SK"; then echo "ERROR: the line endings are CRLF in $SK: use a copy with LF line endings; nothing was written to $R"; exit 1; fi
 for n in $NAMES; do
   awk -v n="$n.Rmd" 'BEGIN { h = "**File `" n "`.**" } $0 == h { s = 1; next } s == 1 && $0 == "````rmd" { s = 2; next } s == 2 && $0 == "````" { closed = 1; exit } s == 2 { print } END { exit !closed }' "$SK" > "$D/$n.Rmd" \
     || { echo "ERROR: the block of $n.Rmd was not found or is not closed in $SK; nothing was written to $R"; exit 1; }
@@ -300,7 +302,6 @@ for n in $NAMES; do
 done
 [ "$(ls "$D" | wc -l)" -eq 7 ] || { echo "ERROR: expected 7 files, found $(ls "$D" | wc -l); nothing was written to $R"; exit 1; }
 mkdir -p "$R" && mv "$D"/*.Rmd "$R"/ || { echo "ERROR: cannot move the files to $R"; exit 1; }
-rmdir "$D"
 for n in $NAMES; do echo "$n.Rmd: $(wc -l < "$R/$n.Rmd") lines"; done
 ```
 
