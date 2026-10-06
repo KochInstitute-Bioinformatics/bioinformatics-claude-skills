@@ -416,6 +416,17 @@ need '  output_dir = '"'"'$R'"'"', ${OUTF}knit_root_dir = '"'"'$R'"'"','
 need 'Start with the summary page, the index of every report, figure and table: {REPORT_DIR}/report_summary.html'
 need 'The page is written to `report_summary.html`, the entry point of the report directory.'
 # --- end Rmd 06 and 07
+# --- README checks and the root README row
+# CHECK_ROOT_README=<file> checks that file instead of the repository root README.md (a test hook of prove_mutations.sh, target rootreadme).
+ROOT_README=${CHECK_ROOT_README:-$(dirname "$SKILL")/../README.md}
+needr '## Validation status'
+needr '`report_summary.html`'
+needr 'Every effect in the report is treatment minus control'
+needr '| Tool | Value read | Conversion | Result |'
+needr 'KEGG/Reactome require an image rebuild'
+needr '`low_support`'
+grep -qF '| nf-core/rnasplice report | `/nfcore-rnasplice-report` |' "$ROOT_README" 2>/dev/null || { echo "FAIL: root README row missing: a row naming /nfcore-rnasplice-report"; fail=1; }
+# --- end README checks
 
 
 # tests/run_all_tests.sh names every script of tests/ in exactly one list (TESTS, FULL_TESTS or NOT_TESTS), runs each under

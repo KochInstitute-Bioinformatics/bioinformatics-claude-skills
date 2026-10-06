@@ -19,6 +19,7 @@ git init -q "$R" || exit 1
 "${G[@]}" add -A && "${G[@]}" commit -q -m c0 || exit 1
 # The checker also checks the README next to the skill.
 cp "$SRC/nfcore-rnasplice-report.md" "$SRC/README.md" "$D/"
+cp "$SRC/../README.md" "$R/README.md"
 "${G[@]}" add -A && "${G[@]}" commit -q -m c1 || exit 1
 C0=$("${G[@]}" rev-parse HEAD~1); C1=$("${G[@]}" rev-parse HEAD)
 cp "$D/tests/check_skill.sh" "$T/check.orig"

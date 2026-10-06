@@ -1,7 +1,7 @@
 #!/bin/bash
 # Usage: prove_mutations.sh <skill.md> [static|rtest]   (default static)
 # Each row of mutations.tsv (id<TAB>runner<TAB>target<TAB>sed program<TAB>expected text) is applied to a copy of the skill, its
-# README and tests/run_all_tests.sh (target: skill, readme or runall; the runner sees the copy of run_all_tests.sh through
+# README and tests/run_all_tests.sh (target: skill, readme, rootreadme (the repository root README.md) or runall; the runner sees the copy of run_all_tests.sh through
 # CHECK_RUN_ALL); @KEY@ in the program and the text is replaced by the mutation key KEY. A row passes when
 # the sed program changed the target, the runner exits non-zero, and the runner printed the expected text.
 # An @KEY@ that is not a non-empty mutation key fails its row (it would otherwise become an empty string).
@@ -21,7 +21,7 @@ SKILL=${1:?usage: prove_mutations.sh <skill.md> [static|rtest]}
 MODE=${2:-static}
 case "$MODE" in static|rtest) ;; *) echo "usage: prove_mutations.sh <skill.md> [static|rtest]"; exit 1 ;; esac
 case "$SKILL" in /*) ;; *) SKILL="$PWD/$SKILL" ;; esac
-HERE=$(cd "$(dirname "$0")" && pwd); README="$(dirname "$SKILL")/README.md"
+HERE=$(cd "$(dirname "$0")" && pwd); README="$(dirname "$SKILL")/README.md"; ROOT_README="$(dirname "$SKILL")/../README.md"
 gv() { awk -F'\t' -v k="$1" '$1 == k {print $2; exit}' "$HERE/fixtures/mutation_keys.tsv"; }
 # subst: replace every @KEY@ by its mutation key; an unknown or empty KEY is an error (return 1, message on stderr).
 subst() { local s=$1 k v; while [[ $s =~ @([A-Z_0-9]+)@ ]]; do k=${BASH_REMATCH[1]}; v=$(gv "$k")
@@ -34,11 +34,11 @@ if [ "$MODE" = rtest ]; then
   BASE=${RSR_SHARED_TMP:-/net/bmc-lab3/data/bcc/ase_scratch/rnasplice_report/tmp}
   mkdir -p "$BASE" || exit 1
   T=$(mktemp -d "$BASE/rsrmut.XXXXXXXXXX") || exit 1
-  trap 'for d in "$T"/row[0-9]*; do [ -d "$d" ] || continue; rm -f "$d/nfcore-rnasplice-report.md" "$d/README.md" "$d/run_all_tests.sh" "$d/out" "$d/rc"; rmdir "$d"; done; rm -f "$T/out"; rmdir "$T"' EXIT
+  trap 'for d in "$T"/row[0-9]*; do [ -d "$d" ] || continue; rm -f "$d/nfcore-rnasplice-report.md" "$d/README.md" "$d/ROOT_README.md" "$d/run_all_tests.sh" "$d/out" "$d/rc"; rmdir "$d"; done; rm -f "$T/out"; rmdir "$T"' EXIT
   case "$T" in "$BASE"/rsrmut.??????????) ;; *) echo "unexpected temp dir: $T"; exit 1 ;; esac
 else
   T=$(mktemp -d /tmp/tmp.XXXXXXXXXX) || exit 1
-  trap 'rm -f "$T/nfcore-rnasplice-report.md" "$T/README.md" "$T/run_all_tests.sh" "$T/out"; rmdir "$T"' EXIT
+  trap 'rm -f "$T/nfcore-rnasplice-report.md" "$T/README.md" "$T/ROOT_README.md" "$T/run_all_tests.sh" "$T/out"; rmdir "$T"' EXIT
   case "$T" in /tmp/tmp.??????????) ;; *) echo "unexpected temp dir: $T"; exit 1 ;; esac
 fi
 # every runner of the mode passes on the unmutated skill first
@@ -56,17 +56,19 @@ while IFS=$'\t' read -r id run target prog expect; do
   if [ "$MODE" = rtest ]; then k=$((k + 1)); D="$T/row$k"; mkdir "$D" || exit 1; else D=$T; fi
   cp "$SKILL" "$D/nfcore-rnasplice-report.md"; cp "$README" "$D/README.md" 2>/dev/null || : > "$D/README.md"
   cp "$HERE/run_all_tests.sh" "$D/run_all_tests.sh" 2>/dev/null || : > "$D/run_all_tests.sh"
+  cp "$ROOT_README" "$D/ROOT_README.md" 2>/dev/null || : > "$D/ROOT_README.md"
   case "$target" in
     skill) f="$D/nfcore-rnasplice-report.md"; orig=$SKILL ;;
     readme) f="$D/README.md"; orig=$README ;;
     runall) f="$D/run_all_tests.sh"; orig="$HERE/run_all_tests.sh" ;;
+    rootreadme) f="$D/ROOT_README.md"; orig=$ROOT_README ;;
     *) echo "MUTATION $id: bad target $target"; bad=1; continue ;;
   esac
   sed -i -e "$prog" "$f" || { echo "MUTATION $id: sed error"; bad=1; continue; }
   if cmp -s "$orig" "$f"; then echo "MUTATION $id: the sed program changed nothing"; bad=1; continue; fi
   s=$(runner "$run")
   if [ "$MODE" = rtest ]; then ids+=("$id"); dirs+=("$D"); expects+=("$expect"); continue; fi
-  if CHECK_RUN_ALL="$D/run_all_tests.sh" bash "$HERE/$s" "$D/nfcore-rnasplice-report.md" > "$D/out" 2>&1; then echo "MUTATION $id: $s passed (it must fail)"; bad=1; continue; fi
+  if CHECK_RUN_ALL="$D/run_all_tests.sh" CHECK_ROOT_README="$D/ROOT_README.md" bash "$HERE/$s" "$D/nfcore-rnasplice-report.md" > "$D/out" 2>&1; then echo "MUTATION $id: $s passed (it must fail)"; bad=1; continue; fi
   grep -qF -- "$expect" "$D/out" || { echo "MUTATION $id: $s failed without printing '$expect':"; tail -20 "$D/out"; bad=1; }
 done < "$HERE/mutations.tsv"
 # rtest rows: test_r.sh (sbatch --wait) on each mutated copy, at most 4 at a time

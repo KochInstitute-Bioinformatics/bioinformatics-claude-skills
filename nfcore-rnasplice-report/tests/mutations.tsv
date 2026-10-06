@@ -388,3 +388,10 @@ R7-rtest-net-biocmanager	rtest	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 
 R7-rtest-low-support-not-excluded	rtest	skill	s| \& !tab\$low_support$||	FAIL: calls_from_events (06): the flagged gene is not called
 R7-rtest-tidy-ids-noop	rtest	skill	s|^tidy_ids <- function(df) { df\$gene_id <- strip_version(df\$gene_id); df }$|tidy_ids <- function(df) df|	FAIL: calls_from_events (06): the flagged gene is not called, versions are removed
 R7-rtest-universe-called-genes	rtest	skill	s|^    uni <- to_entrez(cl\$tested, pkg)$|    uni <- to_entrez(cl$genes, pkg)|	FAIL: universe size equals the number of genes with a non-NA padj
+R8-readme-validation	check	readme	s/^## Validation status$/## Status/	README missing required text: ## Validation status
+R8-readme-summary	check	readme	s/`report_summary.html`/the summary page/g	README missing required text: `report_summary.html`
+R8-readme-sign-sentence	check	readme	s/treatment minus control/the same sign/g	README missing required text: Every effect in the report is treatment minus control
+R8-readme-sign-table	check	readme	s/^| Tool | Value read | Conversion | Result |$/| Tool | Value |/	README missing required text: | Tool | Value read | Conversion | Result |
+R8-readme-kegg	check	readme	s|KEGG/Reactome require an image rebuild|KEGG and Reactome need more work|	README missing required text: KEGG/Reactome require an image rebuild
+R8-readme-low-support	check	readme	s/`low_support`/the flag/g	README missing required text: `low_support`
+R8-root-row	check	rootreadme	/^| nf-core\/rnasplice report |/d	root README row missing
