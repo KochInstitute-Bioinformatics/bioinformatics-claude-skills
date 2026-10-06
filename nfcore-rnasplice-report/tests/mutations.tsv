@@ -125,18 +125,12 @@ S3-need-25	check	skill	s|\| `run_04\.sbatch` \| `04_usage\.Rmd` (DEXSeq and edge
 S3-need-26	check	skill	s|\| `run_05\.sbatch` \| `05_cross_tool\.Rmd` \| `cross` in `{SECTIONS}` and two or more tools in `{MODULES}` \||REMOVED|g	missing required text: | `run_05.sbatch` | `05_cross_tool.Rmd` | `cross` in `{SECTIONS}` and two or more tools in `{MODULES}` |
 S3-need-27	check	skill	s|\| `run_06\.sbatch` \| `06_enrichment\.Rmd` \| `enrich` in `{SECTIONS}` \||REMOVED|g	missing required text: | `run_06.sbatch` | `06_enrichment.Rmd` | `enrich` in `{SECTIONS}` |
 S3-need-28	check	skill	s|\| `run_07\.sbatch` \| `07_summary\.Rmd` (always last) \| always \||REMOVED|g	missing required text: | `run_07.sbatch` | `07_summary.Rmd` (always last) | always |
-S3-need-31	check	skill	s|\*\*SLURM scripts\.\*\*|REMOVED|g	missing required text: **SLURM scripts.**
 S3-need-32	check	skill	s|case "\$R" in \*/results/\*) ;; \*) fail "report directory \$R is not under a results/ directory" ;; esac|REMOVED|g	missing required text: case "$R" in */results/*) ;; *) fail "report directory $R is not under a results/ directory" ;; esac
 S3-need-33	check	skill	s|is inside the pipeline output \$OUT|REMOVED|g	missing required text: is inside the pipeline output $OUT
 S3-need-34	check	skill	s|are above the default limits (64G, 4:00:00), as requested|REMOVED|g	missing required text: are above the default limits (64G, 4:00:00), as requested
 S3-need-35	check	skill	s|#SBATCH -N 1|REMOVED|g	missing required text: #SBATCH -N 1
 S3-need-36	check	skill	s|#SBATCH -n 1|REMOVED|g	missing required text: #SBATCH -n 1
 S3-need-37	check	skill	s|#SBATCH -c 4|REMOVED|g	missing required text: #SBATCH -c 4
-S3-need-38	check	skill	s|#SBATCH --mem=\$MEM|REMOVED|g	missing required text: #SBATCH --mem=$MEM
-S3-need-39	check	skill	s|#SBATCH -t \$TIME|REMOVED|g	missing required text: #SBATCH -t $TIME
-S3-need-40	check	skill	s|singularity exec --bind \$BIND "\$SIF" Rscript -e "rmarkdown::render('\$R/\$2',|REMOVED|g	missing required text: singularity exec --bind $BIND "$SIF" Rscript -e "rmarkdown::render('$R/$2',
-S3-need-41	check	skill	s|output_dir = '\$R', \${OUTF}knit_root_dir = '\$R',|REMOVED|g	missing required text: output_dir = '$R', ${OUTF}knit_root_dir = '$R',
-S3-need-42	check	skill	s|events = \$EV, cross = \$CR, topgene = \$TG, enrich = \$EN|REMOVED|g	missing required text: events = $EV, cross = $CR, topgene = $TG, enrich = $EN
 S3-need-43	check	skill	s|if sec cross && \[ \$ntools -ge 2 \]; then JOBS="\$JOBS 05:05_cross_tool\.Rmd"; fi|REMOVED|g	missing required text: if sec cross && [ $ntools -ge 2 ]; then JOBS="$JOBS 05:05_cross_tool.Rmd"; fi
 S3-need-44	check	skill	s|if sec enrich; then JOBS="\$JOBS 06:06_enrichment\.Rmd"; fi|REMOVED|g	missing required text: if sec enrich; then JOBS="$JOBS 06:06_enrichment.Rmd"; fi
 S3-need-45	check	skill	s|JOBS="\$JOBS 07:07_summary\.Rmd"|REMOVED|g	missing required text: JOBS="$JOBS 07:07_summary.Rmd"
@@ -162,17 +156,7 @@ S3-flag-prose-dependency	check	skill	$s/$/\nJobs wait with --dependency=afterok 
 S3-runall-in-tests	check	runall	s| test_render_slurm.sh"|"|	tests/test_render_slurm.sh must be named in exactly one list of run_all_tests.sh
 S3-need-29	check	skill	s|Jobs 02 to 06 start when job 01 has finished successfully (`dependency=afterok`, with the option that cancels them when job 01 fails)|REMOVED|g	missing required text: Jobs 02 to 06 start when job 01 has finished successfully (`dependency=afterok`, with the option that cancels them when job 01 fails)
 S3-need-30	check	skill	s|job 07 starts when jobs 01 to 06 (those that exist) have ended, whatever their outcome (`dependency=afterany`)|REMOVED|g	missing required text: job 07 starts when jobs 01 to 06 (those that exist) have ended, whatever their outcome (`dependency=afterany`)
-S3-need-46	check	skill	s|JOB\$n=\\\$(sbatch --parsable --dependency=afterany:\$ALLDEP run_\$n\.sbatch) \|\| exit 1|REMOVED|g	missing required text: JOB$n=\$(sbatch --parsable --dependency=afterany:$ALLDEP run_$n.sbatch) || exit 1
-S3-need-46b	check	skill	s|JOB\$n=\\\$(sbatch --parsable --dependency=afterok:\\\$JOB01 --kill-on-invalid-dep=yes run_\$n\.sbatch) \|\| exit 1|REMOVED|g	missing required text: JOB$n=\$(sbatch --parsable --dependency=afterok:\$JOB01 --kill-on-invalid-dep=yes run_$n.sbatch) || exit 1
 S3-chain-afterok-for-07	check	skill	s|afterany|afterok|g	missing required text: job 07 starts when jobs 01 to 06 (those that exist) have ended
-S3-chain-no-kill	check	skill	s|--kill-on-invalid-dep=yes|--x|g	missing required text: JOB$n=\$(sbatch --parsable --dependency=afterok:\$JOB01 --kill-on-invalid-dep=yes
-S3-param-1	check	skill	s|    outdir = '\$OUT', report_dir = '\$R',|REMOVED|g	missing required text:     outdir = '$OUT', report_dir = '$R',
-S3-param-2	check	skill	s|    contrasts = '\$CONTRASTS_CSV', samplesheet = '\$SAMPLESHEET',|REMOVED|g	missing required text:     contrasts = '$CONTRASTS_CSV', samplesheet = '$SAMPLESHEET',
-S3-param-3	check	skill	s|    modules = '\$MODULES', rmats_type = '\$RMATS_TYPE',|REMOVED|g	missing required text:     modules = '$MODULES', rmats_type = '$RMATS_TYPE',
-S3-param-4	check	skill	s|    fdr = \$FDR, dpsi = \$DPSI, min_reads = \$MIN_READS,|REMOVED|g	missing required text:     fdr = $FDR, dpsi = $DPSI, min_reads = $MIN_READS,
-S3-param-5	check	skill	s|    organism = '\$ORGANISM', gtf = '\$GTF',|REMOVED|g	missing required text:     organism = '$ORGANISM', gtf = '$GTF',
-S3-param-6	check	skill	s|    enrich_dbs = '\$ENRICH_DBS',|REMOVED|g	missing required text:     enrich_dbs = '$ENRICH_DBS',
-S3-param-7	check	skill	s|    paired_rmats = \$PR, paired_suppa = \$PS))|REMOVED|g	missing required text:     paired_rmats = $PR, paired_suppa = $PS))
 R4-rtest-sign-rmats	rtest	skill	s/^    rmats = value, /    rmats = -value,/	FAIL: harmonise_effect rmats 0.3 gives 0.3
 R4-rtest-sign-suppa	rtest	skill	s/^    suppa = -value,/    suppa = value, /	FAIL: harmonise_effect suppa 0.3 gives -0.3
 R4-rtest-sign-dexseq	rtest	skill	s/^    exon_dexseq = -value,/    exon_dexseq = value, /	FAIL: harmonise_effect exon_dexseq 0.3 gives -0.3
@@ -376,8 +360,6 @@ R7-rtest-07-lists-missing-file	rtest	skill	s|^  if (file.exists(file.path(rd, f)
 R7-rtest-07-no-thresholds	rtest	skill	s#^cat("- \(FDR\|dPSI\|rMATS count\|rMATS minimum\).*$#NULL#	FAIL: 07 states the thresholds read from the parameters (0.037, 0.123, 17, JCEC)
 R7-rtest-07-warnings-dropped	rtest	skill	s|^  unique(l)$|  character(0)|	FAIL: html_warnings strips the tags
 R7-rtest-07-counts-truncated	rtest	skill	s|cat(knitr::kable(d, format = "markdown", row.names = FALSE), sep = "\\n")|cat(knitr::kable(head(d, 1), format = "markdown", row.names = FALSE), sep = "\\n")|	FAIL: 07 shows the
-S7-summary-output-file	check	skill	s|OUTF="output_file = 'report_summary.html', "|OUTF=""|	missing required text:   OUTF=""; if [ "$1" = 07 ]; then OUTF="output_file = 'report_summary.html', "; fi
-S7-summary-render-arg	check	skill	s|\${OUTF}knit_root_dir|knit_root_dir|	missing required text:   output_dir = '$R', ${OUTF}knit_root_dir = '$R',
 S7-summary-final-instruction	check	skill	s|^  Start with the summary page.*$|  Done.|	missing required text: Start with the summary page, the index of every report, figure and table: {REPORT_DIR}/report_summary.html
 S7-summary-file-prose	check	skill	s|The page is written to `report_summary.html`, the entry point|The page is written to `07_summary.html`, the entry point|	missing required text: The page is written to `report_summary.html`, the entry point of the report directory.
 S7-net-https	check	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.05\nz <- "https://example.org"|	a network call, download or installation
@@ -404,3 +386,37 @@ R8-readme-dexseq-flip	check	readme	s/^| DEXSeq exon usage | \(.*\) | flipped |/|
 R8-readme-dtu-flip	check	readme	s/^| DEXSeq DTU | \(.*\) | flipped |/| DEXSeq DTU | \1 | none |/	README missing required text: | DEXSeq DTU |
 R8-readme-rmats-noflip	check	readme	s/^| rMATS | \(.*\) | none |/| rMATS | \1 | flipped |/	README missing required text: | rMATS | `IncLevelDifference`
 R8-readme-edger-noflip	check	readme	s/^| edgeR exon usage | \(.*\) | none |/| edgeR exon usage | \1 | flipped |/	README missing required text: | edgeR exon usage |
+T3b-fence-long	check	skill	$s/$/\n```bash\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\n```/	a Bash fence of 70 lines
+T3b-fence-function-heredoc	check	skill	$s/$/\n```bash\nf() { echo x; }\ncat > y <<EOF\nz\nEOF\n```/	a Bash fence with a nested heredoc
+T3b-fence-three-heredocs	check	skill	$s/$/\n```bash\ncat > a <<EOF\nx\nEOF\ncat > b <<EOF\nx\nEOF\ncat > c <<EOF\nx\nEOF\n```/	a Bash fence with a nested heredoc
+T3b-fence-sh-long	check	skill	$s/$/\n```sh\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\n```/	a Bash fence of 70 lines
+T3b-need-01	check	skill	s|\*\*Absolute output directory\.\*\*|REMOVED|g	missing required text: **Absolute output directory.**
+T3b-need-02	check	skill	s|\*\*Checks and job list\.\*\*|REMOVED|g	missing required text: **Checks and job list.**
+T3b-need-03	check	skill	s|    contrasts = '__CONTRASTS__', samplesheet = '__SAMPLESHEET__',|REMOVED|g	missing required text:     contrasts = '__CONTRASTS__', samplesheet = '__SAMPLESHEET__',
+T3b-need-04	check	skill	s|else echo "no pairs file in {CWD}"; fi|REMOVED|g	missing required text: else echo "no pairs file in {CWD}"; fi
+T3b-need-05	check	skill	s|    enrich_dbs = '__ENRICH_DBS__',|REMOVED|g	missing required text:     enrich_dbs = '__ENRICH_DBS__',
+T3b-need-06	check	skill	s|    events = __EVENTS__, cross = __CROSS__, topgene = __TOPGENE__, enrich = __ENRICH__,|REMOVED|g	missing required text:     events = __EVENTS__, cross = __CROSS__, topgene = __TOPGENE__, enrich = __ENRICH__,
+T3b-need-07	check	skill	s|    fdr = __FDR__, dpsi = __DPSI__, min_reads = __MIN_READS__,|REMOVED|g	missing required text:     fdr = __FDR__, dpsi = __DPSI__, min_reads = __MIN_READS__,
+T3b-need-08	check	skill	s|JOB__N__=\$(sbatch --parsable --dependency=afterany:__DEPS__ run___N__\.sbatch) \|\| exit 1|REMOVED|g	missing required text: JOB__N__=$(sbatch --parsable --dependency=afterany:__DEPS__ run___N__.sbatch) || exit 1
+T3b-need-09	check	skill	s|JOB__N__=\$(sbatch --parsable --dependency=afterok:\$JOB01 --kill-on-invalid-dep=yes run___N__\.sbatch) \|\| exit 1|REMOVED|g	missing required text: JOB__N__=$(sbatch --parsable --dependency=afterok:$JOB01 --kill-on-invalid-dep=yes run___N__.sbatch) || exit 1
+T3b-need-10	check	skill	s|JOB__N__=\$(sbatch --parsable run___N__\.sbatch) \|\| exit 1|REMOVED|g	missing required text: JOB__N__=$(sbatch --parsable run___N__.sbatch) || exit 1
+T3b-need-11	check	skill	s|\*\*Job script template\.\*\*|REMOVED|g	missing required text: **Job script template.**
+T3b-need-12	check	skill	s|    modules = '__MODULES__', rmats_type = '__RMATS_TYPE__',|REMOVED|g	missing required text:     modules = '__MODULES__', rmats_type = '__RMATS_TYPE__',
+T3b-need-13	check	skill	s|    organism = '__ORGANISM__', gtf = '__GTF__',|REMOVED|g	missing required text:     organism = '__ORGANISM__', gtf = '__GTF__',
+T3b-need-14	check	skill	s|    outdir = '__OUT__', report_dir = '__R__',|REMOVED|g	missing required text:     outdir = '__OUT__', report_dir = '__R__',
+T3b-need-15	check	skill	s|  OUTF=""; if \[ "\$n" = 07 \]; then OUTF="output_file = 'report_summary\.html', "; fi|REMOVED|g	missing required text:   OUTF=""; if [ "$n" = 07 ]; then OUTF="output_file = 'report_summary.html', "; fi
+T3b-need-16	check	skill	s|  output_dir = '__R__', __OUTFILE__knit_root_dir = '__R__',|REMOVED|g	missing required text:   output_dir = '__R__', __OUTFILE__knit_root_dir = '__R__',
+T3b-need-17	check	skill	s|    paired_rmats = __PAIRED_RMATS__, paired_suppa = __PAIRED_SUPPA__))"|REMOVED|g	missing required text:     paired_rmats = __PAIRED_RMATS__, paired_suppa = __PAIRED_SUPPA__))"
+T3b-need-18	check	skill	s|refuses to continue when an Rmd of a job that applies is missing|REMOVED|g	missing required text: refuses to continue when an Rmd of a job that applies is missing
+T3b-need-19	check	skill	s|\*\*Rendering the scripts\.\*\*|REMOVED|g	missing required text: **Rendering the scripts.**
+T3b-need-20	check	skill	s|run_all\.tpl|REMOVED|g	missing required text: run_all.tpl
+T3b-need-21	check	skill	s|run_job\.sbatch\.tpl|REMOVED|g	missing required text: run_job.sbatch.tpl
+T3b-need-22	check	skill	s|#SBATCH --mem=__MEM__|REMOVED|g	missing required text: #SBATCH --mem=__MEM__
+T3b-need-23	check	skill	s|#SBATCH -t __TIME__|REMOVED|g	missing required text: #SBATCH -t __TIME__
+T3b-need-24	check	skill	s|\*\*Settings\.\*\*|REMOVED|g	missing required text: **Settings.**
+T3b-need-25	check	skill	s|singularity exec --bind __BIND__ "__SIF__" Rscript -e "rmarkdown::render('__R__/__RMD__',|REMOVED|g	missing required text: singularity exec --bind __BIND__ "__SIF__" Rscript -e "rmarkdown::render('__R__/__RMD__',
+T3b-need-26	check	skill	s|\*\*Submit script template\.\*\*|REMOVED|g	missing required text: **Submit script template.**
+T3b-need-27	check	skill	s|the first thing written into `{REPORT_DIR}` at all is the `image_check/` directory of Step 2, after this answer|REMOVED|g	missing required text: the first thing written into `{REPORT_DIR}` at all is the `image_check/` directory of Step 2, after this answer
+T3b-need-28	check	skill	s|When a block prints a line that begins with `ERROR`, stop, tell the user, and run none of the later blocks\.|REMOVED|g	missing required text: When a block prints a line that begins with `ERROR`, stop, tell the user, and run none of the later blocks.
+T3b-need-29	check	skill	s|Write this block with the Write tool, byte for byte and without the two fence lines, to `{REPORT_DIR}/templates/run_all\.tpl`|REMOVED|g	missing required text: Write this block with the Write tool, byte for byte and without the two fence lines, to `{REPORT_DIR}/templates/run_all.tpl`
+T3b-need-30	check	skill	s|Write this block with the Write tool, byte for byte and without the two fence lines, to `{REPORT_DIR}/templates/run_job\.sbatch\.tpl`|REMOVED|g	missing required text: Write this block with the Write tool, byte for byte and without the two fence lines, to `{REPORT_DIR}/templates/run_job.sbatch.tpl`

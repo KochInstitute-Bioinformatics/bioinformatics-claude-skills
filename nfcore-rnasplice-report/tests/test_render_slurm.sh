@@ -1,8 +1,11 @@
 #!/bin/bash
-# Test of the SLURM generator of the skill (Step 10): the block after the anchor "**SLURM scripts.**" is cut out, its
-# placeholders are replaced by test values, and it is run under env -i on a scratch tree. Asserts the header of every script, the R
-# call, the jobs that exist for each set of modules and sections, the chain in run_all.sh (run against a stub sbatch that
-# only records its arguments), and that nothing is written to the pipeline output. No real sbatch, singularity or R is started.
+# Test of the SLURM generator of the skill (Step 10). The generator is a few short Bash blocks and two template files: the blocks
+# and the templates are cut out by their headings (the templates are written to templates/ as the Write tool would write them), the
+# placeholders of the blocks are replaced by test values, and each block is run under env -i on a scratch tree, in order, as the
+# assistant of a user would. Asserts the header of every script, the R call, the jobs that exist for each set of modules and
+# sections, the chain in run_all.sh (run against a stub sbatch that only records its arguments), the refusals, and that nothing is
+# written to the pipeline output. Also tests the Step 3 block that makes the output directory absolute and the Step 6 block (exit
+# status without a pairs file), and that every Bash block of Step 10 is short and has no heredoc. No real sbatch, singularity or R.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
 skill=${1:-$here/../nfcore-rnasplice-report.md}
@@ -17,8 +20,11 @@ check() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1: expected '$2' got '$3'
 has()   { if grep -qF -- "$2" "$3" 2>/dev/null; then ok "$1"; else bad "$1: '$2' not found in $3"; fi; }
 hasnt() { if grep -qF -- "$2" "$3" 2>/dev/null; then bad "$1: '$2' found in $3"; else ok "$1"; fi; }
 SYS=/usr/bin:/bin
-block=$(bash "$here/cut_block.sh" "$skill" '**SLURM scripts.**') || { bad "template block not found after the anchor **SLURM scripts.**"; echo "SLURM RENDER FAIL"; exit 1; }
-[ -n "$block" ] || { bad "template block is empty"; echo "SLURM RENDER FAIL"; exit 1; }
+blk() { bash "$here/cut_block.sh" "$skill" "$1"; }
+B_CHECK=$(blk '**Checks and job list.**') && B_SET=$(blk '**Settings.**') && B_REND=$(blk '**Rendering the scripts.**') \
+  && blk '**Job script template.**' > "$tmp/run_job.sbatch.tpl" && blk '**Submit script template.**' > "$tmp/run_all.tpl" \
+  || { bad "a block or template was not found after its heading (Checks and job list, Job script template, Submit script template, Settings, Rendering the scripts)"; echo "SLURM RENDER FAIL"; exit 1; }
+[ -s "$tmp/run_job.sbatch.tpl" ] && [ -s "$tmp/run_all.tpl" ] && [ -n "$B_CHECK$B_SET$B_REND" ] || { bad "a block or template is empty"; echo "SLURM RENDER FAIL"; exit 1; }
 # A fake pipeline output (read-only afterwards) and a fake report directory under results/.
 mkdir -p "$tmp/wd/out/star" "$tmp/wd/results"
 echo x > "$tmp/wd/out/star/keep.txt"
@@ -34,29 +40,42 @@ echo $((1000 + n))
 STUB
 chmod +x "$tmp/stub/sbatch"
 [ "$(env -i PATH="$tmp/stub:$SYS" /bin/bash -c 'type -P sbatch')" = "$tmp/stub/sbatch" ] || { bad "stub sbatch is not first on the PATH"; exit 1; }
-# render <name> <modules> <sections> [var=value ...]: runs the block, leaves the output in $tmp/<name>.out and the files in $tmp/<name>/
-render() {
-  local name=$1 mods=$2 secs=$3; shift 3
-  local R="$tmp/wd/results/2026-10-05_wd_report_$name"
-  local MEM=32G TIME=4:00:00 EMAIL=x@y.z RD=$R kv
-  for kv in "$@"; do printf -v "${kv%%=*}" %s "${kv#*=}"; done
-  local prog
-  prog=$(printf '%s\n' "$block" | sed \
+# subst <text>: replaces the placeholders of the skill by the test values (the variables of render).
+subst() {
+  printf '%s\n' "$1" | sed \
     -e "s|{REPORT_DIR}|$RD|g" -e "s|{OUTDIR_RNASPLICE}|$tmp/wd/out|g" -e "s|{CWD}|$tmp/wd|g" \
     -e "s|{SIF}|/net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif|g" -e "s|{EMAIL}|$EMAIL|g" \
     -e "s|{PROJECT}|wd|g" -e "s|{MEM}|$MEM|g" -e "s|{TIME}|$TIME|g" -e "s|{MODULES}|$mods|g" -e "s|{SECTIONS}|$secs|g" \
     -e "s|{FDR}|0.05|g" -e "s|{DPSI}|0.1|g" -e "s|{RMATS_TYPE}|JC|g" -e "s|{MIN_READS}|10|g" -e "s|{ORGANISM}|human|g" \
     -e "s|{ENRICH_DBS}|GO KEGG|g" -e "s|{GTF}|$tmp/wd/genes.gtf|g" -e "s|{CONTRASTS_CSV}|$tmp/wd/contrasts.csv|g" \
-    -e "s|{SAMPLESHEET}|$tmp/wd/samples.csv|g" -e "s|{PAIRED_RMATS}|false|g" -e "s|{PAIRED_SUPPA}|true|g")
-  printf "%s\n" "$prog" | grep -o "[^$]{[A-Z][A-Z_]*}" | sort -u > "$tmp/$name.unreplaced"
+    -e "s|{SAMPLESHEET}|$tmp/wd/samples.csv|g" -e "s|{PAIRED_RMATS}|false|g" -e "s|{PAIRED_SUPPA}|true|g"
+}
+runb() { env -i PATH="$SYS" /bin/bash --noprofile --norc -c "$1"; }
+# render <name> <modules> <sections> [var=value ...]: creates the empty Rmd files (except the one named by DROP), runs the checks block,
+# writes the templates, runs the settings and rendering blocks; the output of all blocks is in $tmp/<name>.out, the exit status of
+# the first failing block in $tmp/<name>.rc, the files in $tmp/<name>/. Later blocks are not run after an ERROR, as the skill says.
+render() {
+  local name=$1 mods=$2 secs=$3; shift 3
+  local R="$tmp/wd/results/2026-10-05_wd_report_$name"
+  local MEM=32G TIME=4:00:00 EMAIL=x@y.z RD=$R DROP="" kv f prog rc=0
+  for kv in "$@"; do printf -v "${kv%%=*}" %s "${kv#*=}"; done
+  for prog in "$B_CHECK" "$B_SET" "$B_REND"; do
+    subst "$prog" | grep -o "[^$]{[A-Z][A-Z_]*}" | sort -u
+  done > "$tmp/$name.unreplaced"
   mkdir -p "$RD" 2>/dev/null
-  local f
   for f in 01_import 02_rmats 03_suppa 04_usage 05_cross_tool 06_enrichment 07_summary; do { : > "$RD/$f.Rmd"; } 2>/dev/null; done
-  env -i PATH="$SYS" /bin/bash --noprofile --norc -c "$prog" > "$tmp/$name.out" 2>&1
-  echo "$?" > "$tmp/$name.rc"
+  if [ -n "$DROP" ]; then rm -f "$RD/$DROP.Rmd"; fi
+  : > "$tmp/$name.out"
+  runb "$(subst "$B_CHECK")" >> "$tmp/$name.out" 2>&1; rc=$?
+  if [ $rc -eq 0 ]; then
+    cp "$tmp/run_job.sbatch.tpl" "$tmp/run_all.tpl" "$RD/templates/"
+    runb "$(subst "$B_SET")" >> "$tmp/$name.out" 2>&1; rc=$?
+  fi
+  if [ $rc -eq 0 ]; then runb "$(subst "$B_REND")" >> "$tmp/$name.out" 2>&1; rc=$?; fi
+  echo "$rc" > "$tmp/$name.rc"
   ln -sfn "$RD" "$tmp/$name"
 }
-jobs_of() { sed -n 's/^JOBS=//p' "$tmp/$1.out"; }
+jobs_of() { sed -n 's/^JOBS=//p' "$tmp/$1.out" | tail -n 1; }
 ALL="rmats suppa dexseq_exon edger_exon dtu"
 # --- all modules, events only
 render ev "$ALL" "events"
@@ -151,15 +170,17 @@ for p in "outdir = '$tmp/wd/out'" "report_dir = '$tmp/wd/results/2026-10-05_wd_r
   "gtf = '$tmp/wd/genes.gtf'" 'paired_rmats = FALSE' 'paired_suppa = TRUE'; do
   for n in 01 04 07; do has "param $p in run_$n" "$p" "$tmp/all/run_$n.sbatch"; done
 done
-# --- a missing Rmd stops the generator before anything is written
-render norm "rmats" "events"
-rm -f "$tmp/wd/results/2026-10-05_wd_report_norm/02_rmats.Rmd"
-rm -f "$tmp/wd/results/2026-10-05_wd_report_norm"/run_* "$tmp/norm.out"
-nb=$(printf '%s\n' "$block" | sed -e "s|{REPORT_DIR}|$tmp/wd/results/2026-10-05_wd_report_norm|g" -e "s|{OUTDIR_RNASPLICE}|$tmp/wd/out|g" -e "s|{CWD}|$tmp/wd|g" -e "s|{SIF}|/net/bmc-lab3/s.sif|g" -e "s|{EMAIL}|none|g" -e "s|{PROJECT}|wd|g" -e "s|{MEM}|32G|g" -e "s|{TIME}|4:00:00|g" -e "s|{MODULES}|rmats|g" -e "s|{SECTIONS}|events|g" -e "s|{FDR}|0.05|g" -e "s|{DPSI}|0.1|g" -e "s|{RMATS_TYPE}|JC|g" -e "s|{MIN_READS}|10|g" -e "s|{ORGANISM}|human|g" -e "s|{ENRICH_DBS}|GO|g" -e "s|{GTF}|g.gtf|g" -e "s|{CONTRASTS_CSV}|c.csv|g" -e "s|{SAMPLESHEET}|s.csv|g" -e "s|{PAIRED_RMATS}|false|g" -e "s|{PAIRED_SUPPA}|true|g")
-env -i PATH="$SYS" /bin/bash --noprofile --norc -c "$nb" > "$tmp/norm.out" 2>&1; rc=$?
-check "missing Rmd: exit status" 1 "$rc"
+# --- a missing Rmd stops the checks before anything is written (only the directories are created)
+render norm "rmats" "events" DROP=02_rmats
+check "missing Rmd: exit status" 1 "$(cat "$tmp/norm.rc")"
 has "missing Rmd: message" "02_rmats.Rmd does not exist: write the Rmd files first" "$tmp/norm.out"
 check "missing Rmd: no run_* file written" "" "$(ls "$tmp/wd/results/2026-10-05_wd_report_norm" | grep '^run_' | tr '\n' ' ')"
+check "missing Rmd: no job list written" "" "$(ls "$tmp/wd/results/2026-10-05_wd_report_norm/templates" 2>/dev/null | grep jobs.txt)"
+# --- the rendering block refuses to run without the earlier steps
+mkdir -p "$tmp/wd/results/2026-10-05_wd_report_early"
+RD="$tmp/wd/results/2026-10-05_wd_report_early" mods=rmats secs=events MEM=32G TIME=4:00:00 EMAIL=none
+runb "$(subst "$B_REND")" > "$tmp/early.out" 2>&1; check "rendering without the earlier steps is refused" 1 "$?"
+check "rendering without the earlier steps writes no script" "" "$(ls "$tmp/wd/results/2026-10-05_wd_report_early" | tr '\n' ' ')"
 # --- resources stay within the default limits, and the generated scripts hold only the requested values
 for n in 01 02 03 04 05 06 07; do
   m=$(sed -n 's/^#SBATCH --mem=\([0-9]*\)G$/\1/p' "$tmp/all/run_$n.sbatch"); t=$(sed -n 's/^#SBATCH -t \([0-9]*\):.*/\1/p' "$tmp/all/run_$n.sbatch")
@@ -181,6 +202,38 @@ check "report directory inside the pipeline output is refused" 1 "$(cat "$tmp/in
 # --- the final line names the one submit command, and the pipeline output is unchanged
 has "ev: one submit command" "SUBMIT=bash $tmp/wd/results/2026-10-05_wd_report_ev/run_all.sh" "$tmp/ev.out"
 check "nothing written to the pipeline output" "$tmp/wd/out/star/keep.txt" "$(find "$tmp/wd/out" -type f | tr '\n' ' ' | sed 's/ $//')"
+# --- no __PLACEHOLDER__ of the templates is left in a generated script
+left=$(cat "$tmp"/all/run_*.sbatch "$tmp"/all/run_all.sh "$tmp"/only/run_all.sh | grep -o '__[A-Z_]*__' | sort -u | tr '\n' ' ')
+check "no __PLACEHOLDER__ left in the generated scripts" "" "$left"
+check "templates are kept in the report directory" "jobs.txt run_all.tpl run_job.sbatch.tpl settings.sed" "$(ls "$tmp/all/templates" | tr '\n' ' ' | sed 's/ $//')"
+# --- every Bash block of Step 10 is short, has no function together with a heredoc, and at most two heredocs
+s10=$(awk '/^## Step 10 /{p=1; next} /^## /{p=0} p' "$skill")
+printf '%s\n' "$s10" | awk '
+  /^```bash$/ { inb = 1; n = 0; next }
+  inb && /^```$/ { inb = 0; print n; next }
+  inb { n++ }' > "$tmp/s10.lens"
+check "Step 10 has three Bash blocks" 3 "$(wc -l < "$tmp/s10.lens")"
+check "no Bash block of Step 10 has more than 40 lines" 0 "$(awk '$1 > 40' "$tmp/s10.lens" | wc -l)"
+check "no heredoc in a Bash block of Step 10" 0 "$(printf '%s\n' "$s10" | awk '/^```bash$/{inb=1; next} /^```$/{inb=0} inb && /<</' | wc -l)"
+# --- Step 3: the output directory is made absolute (the default of the params file is relative to the working directory)
+abs=$(blk '**Absolute output directory.**') || bad "Step 3 block with the heading Absolute output directory not found"
+mkdir -p "$tmp/wd/results_run/out"
+for given in "results_run/out" "$tmp/wd/results_run/out"; do
+  out=$(runb "$(printf '%s\n' "$abs" | sed -e "s|{CWD}|$tmp/wd|g" -e "s|{OUTDIR_GIVEN}|$given|g")" 2>&1 | sed -n 's/^OUTDIR_RNASPLICE=//p')
+  check "absolute output directory from '$given'" "$tmp/wd/results_run/out" "$out"
+done
+runb "$(printf '%s\n' "$abs" | sed -e "s|{CWD}|$tmp/wd|g" -e "s|{OUTDIR_GIVEN}|nowhere|g")" > "$tmp/abs.out" 2>&1; check "missing output directory: exit status" 1 "$?"
+has "missing output directory: message" "ERROR: output directory nowhere not found from $tmp/wd" "$tmp/abs.out"
+# --- Step 6: no pairs file is a normal run (exit status 0, one clear line)
+pb=$(blk 'The pairing is read from the run, not asked for') || bad "Step 6 block not found"
+mkdir -p "$tmp/nopairs"
+echo "rmats_paired_stats: false" > "$tmp/nopairs/x_params.yaml"
+runb "$(printf '%s\n' "$pb" | sed -e "s|{CWD}|$tmp/nopairs|g")" > "$tmp/pairs.out" 2>&1; check "Step 6 without a pairs file: exit status" 0 "$?"
+has "Step 6 without a pairs file: the line" "no pairs file in $tmp/nopairs" "$tmp/pairs.out"
+has "Step 6: the switch is printed" "rmats_paired_stats: false" "$tmp/pairs.out"
+printf 'sample,subject\ns1,p1\n' > "$tmp/nopairs/x_pairs.csv"
+runb "$(printf '%s\n' "$pb" | sed -e "s|{CWD}|$tmp/nopairs|g")" > "$tmp/pairs2.out" 2>&1; check "Step 6 with a pairs file: exit status" 0 "$?"
+has "Step 6 with a pairs file: its content" "s1,p1" "$tmp/pairs2.out"
 check "no placeholder left unreplaced in the block" "" "$(cat "$tmp"/*.unreplaced | tr "\n" " ")"
 chmod -R u+w "$tmp/wd/out"
 [ $fail -eq 0 ] && echo "SLURM RENDER PASS" || { echo "SLURM RENDER FAIL"; exit 1; }

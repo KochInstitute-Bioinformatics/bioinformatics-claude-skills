@@ -24,7 +24,7 @@ Also derive:
 ```bash
 if [ -e "{REPORT_DIR}" ]; then echo "EXISTS {REPORT_DIR}"; ls -la "{REPORT_DIR}" | head -n 20; else echo "NEW {REPORT_DIR}"; fi
 ```
-When it exists, ask before using it (numbered; default 1): "`{REPORT_DIR}` already exists (a previous report?). 1. Use a new directory with a numbered suffix, `{REPORT_DIR}_2` (default) · 2. Reuse it: files of the same name are replaced and the others are kept · 3. Give another path." A previous report is never overwritten silently: nothing is written into an existing directory before the user has answered. The answer sets `{REPORT_DIR}`; Step 3 checks that it is not inside the pipeline output directory.
+When it exists, ask before using it (numbered; default 1): "`{REPORT_DIR}` already exists (a previous report?). 1. Use a new directory with a numbered suffix, `{REPORT_DIR}_2` (default) · 2. Reuse it: files of the same name are replaced and the others are kept · 3. Give another path." A previous report is never overwritten silently: nothing is written into an existing directory before the user has answered, and the first thing written into `{REPORT_DIR}` at all is the `image_check/` directory of Step 2, after this answer. The answer sets `{REPORT_DIR}`; Step 3 checks that it is not inside the pipeline output directory.
 
 Tell the user: "Working directory: `{CWD}`; report directory: `{REPORT_DIR}`".
 
@@ -106,6 +106,11 @@ ls "{CWD}"/*_params.yaml 2>/dev/null
 grep -E '^(input|contrasts|source|outdir|gtf|genome|rmats|suppa|dexseq_exon|edger_exon|dexseq_dtu|rmats_paired_stats|diffsplice_paired):' "{CWD}"/*_params.yaml 2>/dev/null
 ```
 One params file found: its `outdir` (relative to `{CWD}` when it is not absolute) is the default for `{OUTDIR_RNASPLICE}`, its `contrasts` file is `{CONTRASTS_CSV}` and its `input` file is `{SAMPLESHEET}` (relative paths are relative to `{CWD}`; write the absolute paths). Several or none: ask which params file, or for the paths of the three files. The output directory must exist, and `{REPORT_DIR}` must not lie inside it.
+
+**Absolute output directory.** Whatever the user answers (a path relative to `{CWD}` or an absolute one) is `{OUTDIR_GIVEN}`. The report jobs run from the report directory, where a relative path does not exist, so resolve it, in one Bash call, and store the printed path as `{OUTDIR_RNASPLICE}` (absolute) for every later step and every job script:
+```bash
+cd "{CWD}" 2>/dev/null && cd "{OUTDIR_GIVEN}" 2>/dev/null && echo "OUTDIR_RNASPLICE=$(pwd)" || { echo "ERROR: output directory {OUTDIR_GIVEN} not found from {CWD}"; exit 1; }
+```
 
 **Module detection.** A module counts as found only when its main result file exists and has more than a header line; an empty file or a file with only a header is not found. The files are named from the contrasts file (treatment `{T}`, control `{C}`, contrast name `{CONTRAST}`), never by splitting file names: rMATS `star/rmats/{CONTRAST}/{SE,A5SS,A3SS,MXE,RI}.MATS.{JC,JCEC}.txt`, or `star/rmats/{CONTRAST}_paired/` with the same file names when the run used `rmats_paired_stats: true` (either directory counts); SUPPA2 `salmon/suppa/diffsplice/per_local_event/local_{T}-{C}.dpsi`; DEXSeq exon `star/dexseq_exon/results/DEXSeqResults.{CONTRAST}.csv`; edgeR exon `star/edger/contrast_{CONTRAST}.usage.exon.csv`; DTU `salmon/dexseq_dtu/results/dexseq/DEXSeqResults.{T}-{C}.tsv`. SUPPA2 and DTU file names use `{T}-{C}` (treatment, hyphen, control); the other three use the contrast name. A BAM-input run has no `salmon/` directory, so SUPPA2 and DTU are simply not found. The rMATS tables have the column `ID` twice (first column, and again after the coordinate columns); detection only counts lines and never reads columns, so this does not matter here, but every reader of these tables must account for it. Run, in one Bash call (replace `{OUTDIR_RNASPLICE}` and `{CONTRASTS_CSV}` with the literal paths):
 ```bash
@@ -213,7 +218,7 @@ $rd "$G" | head -n 5000 | grep -m1 -o 'ENS[A-Z]*G[0-9]\{6,\}' || echo "no Ensemb
 The report states the pairing of the run and never claims unpaired statistics for a paired run. The pairing is read from the run, not asked for: the params file holds the switches `rmats_paired_stats` (rMATS) and `diffsplice_paired` (SUPPA2), and a paired design has a pairs file (header `sample,subject`) next to the sheets. Run, in one Bash call (replace `{CWD}`):
 ```bash
 grep -E '^(rmats_paired_stats|diffsplice_paired):' "{CWD}"/*_params.yaml 2>/dev/null
-ls "{CWD}"/*_pairs.csv 2>/dev/null && cat "{CWD}"/*_pairs.csv
+if ls "{CWD}"/*_pairs.csv > /dev/null 2>&1; then cat "{CWD}"/*_pairs.csv; else echo "no pairs file in {CWD}"; fi
 ```
 Store `{PAIRED_RMATS}` and `{PAIRED_SUPPA}` (`true` or `false`) from the two switches. A switch that the params file does not name has the pinned pipeline's default: `rmats_paired_stats` false, `diffsplice_paired` true; say that the value is a default. Print the pairing to the user in one line per tool ("rMATS: unpaired statistics; SUPPA2: paired statistics" or the reverse) and, when a pairs file exists, its sample and subject columns. The two switches can differ; each report section states the pairing of its own tool. The DEXSeq and edgeR exon and DTU analyses use the sample sheet design of the run as it is; the report does not change it.
 
@@ -277,29 +282,12 @@ Default: every job that applies. Write the Rmd files that apply to `{REPORT_DIR}
 
 **Writing the Rmd files.** The content of each Rmd file is the block under its heading **File `<name>.Rmd`.** in the section "Report files" below (a fence of four backticks, language `rmd`). Write that block with the Write tool to `{REPORT_DIR}/<name>.Rmd` byte for byte, without the two fence lines. The Rmd files hold no placeholders: every value of the earlier steps reaches them as a render parameter of the job script (the `params = list(...)` of the block below).
 
-**SLURM scripts.** Paste this block whole into one Bash call, with the placeholders replaced by the literal values of the earlier steps (`{EMAIL}` is `none` when no mail is wanted). It checks the values, refuses a report directory outside `results/` or inside the output of the run, writes one `run_NN.sbatch` per job that applies, and writes `run_all.sh`, which only calls sbatch:
+The job scripts are made in four short steps, each a separate block: the checks, two template files written with the Write tool, the settings, and the rendering. No block is long, and none holds a heredoc inside a function, so each can be pasted whole into one Bash call. Replace the placeholders (`{...}`) of every block with the literal values of the earlier steps (`{EMAIL}` is `none` when no mail is wanted). When a block prints a line that begins with `ERROR`, stop, tell the user, and run none of the later blocks.
+
+**Checks and job list.** It checks the values, refuses a report directory outside `results/` or inside the output of the run, refuses to continue when an Rmd of a job that applies is missing (nothing but the directories is created), and writes the job list `templates/jobs.txt`:
 ```bash
-R="{REPORT_DIR}"
-OUT="{OUTDIR_RNASPLICE}"
-WORK="{CWD}"
-SIF="{SIF}"
-EMAIL="{EMAIL}"
-JOBNAME="{PROJECT}_report"
-MEM="{MEM}"
-TIME="{TIME}"
-MODULES="{MODULES}"
-SECTIONS="{SECTIONS}"
-FDR="{FDR}"
-DPSI="{DPSI}"
-RMATS_TYPE="{RMATS_TYPE}"
-MIN_READS="{MIN_READS}"
-ORGANISM="{ORGANISM}"
-ENRICH_DBS="{ENRICH_DBS}"
-GTF="{GTF}"
-CONTRASTS_CSV="{CONTRASTS_CSV}"
-SAMPLESHEET="{SAMPLESHEET}"
-PAIRED_RMATS="{PAIRED_RMATS}"
-PAIRED_SUPPA="{PAIRED_SUPPA}"
+R="{REPORT_DIR}"; OUT="{OUTDIR_RNASPLICE}"; MEM="{MEM}"; TIME="{TIME}"; MODULES="{MODULES}"; SECTIONS="{SECTIONS}"
+FDR="{FDR}"; DPSI="{DPSI}"; MIN_READS="{MIN_READS}"; RMATS_TYPE="{RMATS_TYPE}"
 fail() { echo "ERROR: $1"; exit 1; }
 case "$R" in */results/*) ;; *) fail "report directory $R is not under a results/ directory" ;; esac
 case "$R/" in "$OUT"/*) fail "report directory $R is inside the pipeline output $OUT" ;; esac
@@ -315,12 +303,8 @@ secs=$(( ((10#$d * 24 + 10#$hh) * 60 + 10#$mm) * 60 + 10#$ss ))
 if [ "$mb" -gt 65536 ] || [ "$secs" -gt 14400 ]; then echo "NOTE: $MEM and $TIME are above the default limits (64G, 4:00:00), as requested"; fi
 has() { case " $MODULES " in *" $1 "*) return 0 ;; esac; return 1; }
 sec() { case " $SECTIONS " in *" $1 "*) return 0 ;; esac; return 1; }
-tf() { if "$@"; then echo TRUE; else echo FALSE; fi; }
-EV=$(tf sec events); CR=$(tf sec cross); TG=$(tf sec topgene); EN=$(tf sec enrich)
-PR=$(tf test "$PAIRED_RMATS" = true); PS=$(tf test "$PAIRED_SUPPA" = true)
 ntools=0
 for m in rmats suppa dexseq_exon edger_exon dtu; do if has $m; then ntools=$((ntools + 1)); fi; done
-# the jobs that apply, as number:Rmd
 JOBS="01:01_import.Rmd"
 if has rmats; then JOBS="$JOBS 02:02_rmats.Rmd"; fi
 if has suppa; then JOBS="$JOBS 03:03_suppa.Rmd"; fi
@@ -329,86 +313,96 @@ if sec cross && [ $ntools -ge 2 ]; then JOBS="$JOBS 05:05_cross_tool.Rmd"; fi
 if sec enrich; then JOBS="$JOBS 06:06_enrichment.Rmd"; fi
 JOBS="$JOBS 07:07_summary.Rmd"
 for j in $JOBS; do [ -f "$R/${j#*:}" ] || fail "$R/${j#*:} does not exist: write the Rmd files first"; done
-mkdir -p "$R/logs" || fail "cannot create $R/logs"
-# bind the cluster share, and the directory of any path that lies outside it
-BIND=/net/bmc-lab3
-for p in "$R" "$OUT" "$WORK" "$SIF" "$GTF" "$CONTRASTS_CSV" "$SAMPLESHEET"; do
-  case "$p" in /net/bmc-lab3/*) ;; /*) q=$(dirname "$p"); case ",$BIND," in *",$q,"*) ;; *) BIND="$BIND,$q" ;; esac ;; esac
-done
-write_job() {
-  f="$R/run_$1.sbatch"
-  OUTF=""; if [ "$1" = 07 ]; then OUTF="output_file = 'report_summary.html', "; fi
-  cat > "$f" <<EOF
+mkdir -p "$R/logs" "$R/templates" || fail "cannot create $R/logs and $R/templates"
+printf '%s\n' $JOBS > "$R/templates/jobs.txt"
+echo "JOBS=$(printf '%s\n' $JOBS | cut -d: -f1 | tr '\n' ' ' | sed 's/ $//')"
+```
+
+**Job script template.** Write this block with the Write tool, byte for byte and without the two fence lines, to `{REPORT_DIR}/templates/run_job.sbatch.tpl`. The words between double underscores (`__MEM__`) are filled in by the rendering block; the two mail lines are dropped when no mail is wanted:
+```
 #!/bin/bash
-#SBATCH -J ${JOBNAME}_$1
+#SBATCH -J __JOBNAME_____N__
 #SBATCH -p bcc
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -c 4
-#SBATCH --mem=$MEM
-#SBATCH -t $TIME
-#SBATCH -o $R/logs/run_$1.%j.log
-EOF
-  if [ -n "$EMAIL" ] && [ "$EMAIL" != none ]; then
-    cat >> "$f" <<EOF
-#SBATCH --mail-user=$EMAIL
+#SBATCH --mem=__MEM__
+#SBATCH -t __TIME__
+#SBATCH -o __R__/logs/run___N__.%j.log
+#SBATCH --mail-user=__EMAIL__
 #SBATCH --mail-type=END,FAIL
-EOF
-  fi
-  cat >> "$f" <<EOF
 module add singularity/3.10.4 || exit 1
-cd "$R" || exit 1
-singularity exec --bind $BIND "$SIF" Rscript -e "rmarkdown::render('$R/$2',
-  output_dir = '$R', ${OUTF}knit_root_dir = '$R',
+cd "__R__" || exit 1
+singularity exec --bind __BIND__ "__SIF__" Rscript -e "rmarkdown::render('__R__/__RMD__',
+  output_dir = '__R__', __OUTFILE__knit_root_dir = '__R__',
   params = list(
-    outdir = '$OUT', report_dir = '$R',
-    contrasts = '$CONTRASTS_CSV', samplesheet = '$SAMPLESHEET',
-    modules = '$MODULES', rmats_type = '$RMATS_TYPE',
-    fdr = $FDR, dpsi = $DPSI, min_reads = $MIN_READS,
-    events = $EV, cross = $CR, topgene = $TG, enrich = $EN,
-    organism = '$ORGANISM', gtf = '$GTF',
-    enrich_dbs = '$ENRICH_DBS',
-    paired_rmats = $PR, paired_suppa = $PS))"
-EOF
-}
-cat > "$R/run_all.sh" <<EOF
+    outdir = '__OUT__', report_dir = '__R__',
+    contrasts = '__CONTRASTS__', samplesheet = '__SAMPLESHEET__',
+    modules = '__MODULES__', rmats_type = '__RMATS_TYPE__',
+    fdr = __FDR__, dpsi = __DPSI__, min_reads = __MIN_READS__,
+    events = __EVENTS__, cross = __CROSS__, topgene = __TOPGENE__, enrich = __ENRICH__,
+    organism = '__ORGANISM__', gtf = '__GTF__',
+    enrich_dbs = '__ENRICH_DBS__',
+    paired_rmats = __PAIRED_RMATS__, paired_suppa = __PAIRED_SUPPA__))"
+```
+
+**Submit script template.** Write this block with the Write tool, byte for byte and without the two fence lines, to `{REPORT_DIR}/templates/run_all.tpl`. The rendering block takes the three `JOB` lines as the line of job 01, of jobs 02 to 06 and of job 07:
+```
 #!/bin/bash
-# Submits the report jobs of $R in order; light work only, every job runs R on a compute node.
-cd "$R" || exit 1
-EOF
+# Submits the report jobs of __R__ in order; light work only, every job runs R on a compute node.
+cd "__R__" || exit 1
+JOB__N__=$(sbatch --parsable run___N__.sbatch) || exit 1
+JOB__N__=$(sbatch --parsable --dependency=afterok:$JOB01 --kill-on-invalid-dep=yes run___N__.sbatch) || exit 1
+JOB__N__=$(sbatch --parsable --dependency=afterany:__DEPS__ run___N__.sbatch) || exit 1
+echo "submitted:__ALLJ__"
+```
+
+**Settings.** It writes `templates/settings.sed`, one substitution per value of the templates:
+```bash
+R="{REPORT_DIR}"; T="$R/templates"
+b() { case " {SECTIONS} " in *" $1 "*) echo TRUE ;; *) echo FALSE ;; esac; }
+pr() { case "$1" in true) echo TRUE ;; *) echo FALSE ;; esac; }
+BIND=/net/bmc-lab3
+for p in "$R" "{OUTDIR_RNASPLICE}" "{CWD}" "{SIF}" "{GTF}" "{CONTRASTS_CSV}" "{SAMPLESHEET}"; do
+  case "$p" in /net/bmc-lab3/*) ;; /*) q=$(dirname "$p"); case ",$BIND," in *",$q,"*) ;; *) BIND="$BIND,$q" ;; esac ;; esac
+done
+set -- R "$R" OUT "{OUTDIR_RNASPLICE}" SIF "{SIF}" EMAIL "{EMAIL}" JOBNAME "{PROJECT}_report" MEM "{MEM}" TIME "{TIME}" \
+  CONTRASTS "{CONTRASTS_CSV}" SAMPLESHEET "{SAMPLESHEET}" MODULES "{MODULES}" RMATS_TYPE "{RMATS_TYPE}" \
+  FDR "{FDR}" DPSI "{DPSI}" MIN_READS "{MIN_READS}" ORGANISM "{ORGANISM}" GTF "{GTF}" ENRICH_DBS "{ENRICH_DBS}" BIND "$BIND" \
+  EVENTS "$(b events)" CROSS "$(b cross)" TOPGENE "$(b topgene)" ENRICH "$(b enrich)" \
+  PAIRED_RMATS "$(pr "{PAIRED_RMATS}")" PAIRED_SUPPA "$(pr "{PAIRED_SUPPA}")"
+while [ $# -gt 0 ]; do printf 's|__%s__|%s|g\n' "$1" "$2"; shift 2; done > "$T/settings.sed"
+[ -s "$T/settings.sed" ] || { echo "ERROR: $T/settings.sed was not written"; exit 1; }
+echo "wrote $T/settings.sed"
+```
+
+**Rendering the scripts.** It writes one `run_NN.sbatch` per job of the list and `run_all.sh`, which only calls sbatch:
+```bash
+R="{REPORT_DIR}"; T="$R/templates"; EMAIL="{EMAIL}"
+for f in jobs.txt settings.sed run_job.sbatch.tpl run_all.tpl; do
+  [ -s "$T/$f" ] || { echo "ERROR: $T/$f is missing or empty: run the earlier blocks and write the templates first"; exit 1; }
+done
+first=$(grep '^JOB' "$T/run_all.tpl" | grep -v dependency)
+after=$(grep '^JOB' "$T/run_all.tpl" | grep afterok)
+last=$(grep '^JOB' "$T/run_all.tpl" | grep afterany)
+grep -v '^JOB\|^echo' "$T/run_all.tpl" | sed -f "$T/settings.sed" > "$R/run_all.sh"
 ALLDEP=""; ALLJ=""; NUMS=""
-for j in $JOBS; do
-  n=${j%%:*}; rmd=${j#*:}
-  write_job "$n" "$rmd"
-  case "$n" in
-    01)
-      cat >> "$R/run_all.sh" <<EOF
-JOB$n=\$(sbatch --parsable run_$n.sbatch) || exit 1
-EOF
-      ;;
-    07)
-      cat >> "$R/run_all.sh" <<EOF
-JOB$n=\$(sbatch --parsable --dependency=afterany:$ALLDEP run_$n.sbatch) || exit 1
-EOF
-      ;;
-    *)
-      cat >> "$R/run_all.sh" <<EOF
-JOB$n=\$(sbatch --parsable --dependency=afterok:\$JOB01 --kill-on-invalid-dep=yes run_$n.sbatch) || exit 1
-EOF
-      ;;
-  esac
+while IFS=: read -r n rmd; do
+  OUTF=""; if [ "$n" = 07 ]; then OUTF="output_file = 'report_summary.html', "; fi
+  sed -f "$T/settings.sed" -e "s|__N__|$n|g" -e "s|__RMD__|$rmd|g" -e "s|__OUTFILE__|$OUTF|g" "$T/run_job.sbatch.tpl" > "$R/run_$n.sbatch"
+  case "$EMAIL" in ""|none) sed -i '/^#SBATCH ..mail-/d' "$R/run_$n.sbatch" ;; esac
+  case "$n" in 01) l=$first ;; 07) l=$last ;; *) l=$after ;; esac
+  printf '%s\n' "$l" | sed -e "s|__N__|$n|g" -e "s|__DEPS__|$ALLDEP|" >> "$R/run_all.sh"
   case "$n" in 07) ;; *) ALLDEP="${ALLDEP:+$ALLDEP:}\$JOB$n" ;; esac
   ALLJ="$ALLJ \$JOB$n"; NUMS="$NUMS $n"
-done
-cat >> "$R/run_all.sh" <<EOF
-echo "submitted:$ALLJ"
-EOF
+done < "$T/jobs.txt"
+grep '^echo' "$T/run_all.tpl" | sed "s|__ALLJ__|$ALLJ|" >> "$R/run_all.sh"
 ls -la "$R"
 echo "JOBS=${NUMS# }"
 echo "SUBMIT=bash $R/run_all.sh"
 ```
 
-The block prints the files written, `JOBS=` with the job numbers, and `SUBMIT=` with the one command that submits everything.
+The last block prints the files written, `JOBS=` with the job numbers, and `SUBMIT=` with the one command that submits everything.
 
 **Final instructions.** Print this to the user, with `{REPORT_DIR}` replaced, and nothing else to run:
 ```

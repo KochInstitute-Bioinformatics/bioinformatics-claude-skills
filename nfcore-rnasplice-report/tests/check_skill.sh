@@ -169,35 +169,62 @@ need '| `run_06.sbatch` | `06_enrichment.Rmd` | `enrich` in `{SECTIONS}` |'
 need '| `run_07.sbatch` | `07_summary.Rmd` (always last) | always |'
 need 'Jobs 02 to 06 start when job 01 has finished successfully (`dependency=afterok`, with the option that cancels them when job 01 fails)'
 need 'job 07 starts when jobs 01 to 06 (those that exist) have ended, whatever their outcome (`dependency=afterany`)'
-need '**SLURM scripts.**'
 need 'case "$R" in */results/*) ;; *) fail "report directory $R is not under a results/ directory" ;; esac'
 need 'is inside the pipeline output $OUT'
 need 'are above the default limits (64G, 4:00:00), as requested'
 need '#SBATCH -N 1'
 need '#SBATCH -n 1'
 need '#SBATCH -c 4'
-need '#SBATCH --mem=$MEM'
-need '#SBATCH -t $TIME'
-need 'singularity exec --bind $BIND "$SIF" Rscript -e "rmarkdown::render('\''$R/$2'\'','
-need 'output_dir = '"'"'$R'"'"', ${OUTF}knit_root_dir = '"'"'$R'"'"','
-need 'events = $EV, cross = $CR, topgene = $TG, enrich = $EN'
 need 'if sec cross && [ $ntools -ge 2 ]; then JOBS="$JOBS 05:05_cross_tool.Rmd"; fi'
 need 'if sec enrich; then JOBS="$JOBS 06:06_enrichment.Rmd"; fi'
 need 'JOBS="$JOBS 07:07_summary.Rmd"'
-need 'JOB$n=\$(sbatch --parsable --dependency=afterany:$ALLDEP run_$n.sbatch) || exit 1'
-need 'JOB$n=\$(sbatch --parsable --dependency=afterok:\$JOB01 --kill-on-invalid-dep=yes run_$n.sbatch) || exit 1'
-need '    outdir = '\''$OUT'\'', report_dir = '\''$R'\'','
-need '    contrasts = '\''$CONTRASTS_CSV'\'', samplesheet = '\''$SAMPLESHEET'\'','
-need '    modules = '\''$MODULES'\'', rmats_type = '\''$RMATS_TYPE'\'','
-need '    fdr = $FDR, dpsi = $DPSI, min_reads = $MIN_READS,'
-need '    organism = '\''$ORGANISM'\'', gtf = '\''$GTF'\'','
-need '    enrich_dbs = '\''$ENRICH_DBS'\'','
-need '    paired_rmats = $PR, paired_suppa = $PS))'
 need '`run_all.sh`, which only calls sbatch'
 need 'echo "SUBMIT=bash $R/run_all.sh"'
 need '**Final instructions.**'
 need 'Run this one command:'
 need 'the output of the run is read-only for the skill and is never written to'
+need '**Checks and job list.**'
+need '**Job script template.**'
+need '**Submit script template.**'
+need '**Settings.**'
+need '**Rendering the scripts.**'
+need 'run_job.sbatch.tpl'
+need 'run_all.tpl'
+need 'Write this block with the Write tool, byte for byte and without the two fence lines, to `{REPORT_DIR}/templates/run_job.sbatch.tpl`'
+need 'Write this block with the Write tool, byte for byte and without the two fence lines, to `{REPORT_DIR}/templates/run_all.tpl`'
+need 'When a block prints a line that begins with `ERROR`, stop, tell the user, and run none of the later blocks.'
+need 'refuses to continue when an Rmd of a job that applies is missing'
+need '#SBATCH --mem=__MEM__'
+need '#SBATCH -t __TIME__'
+need 'singularity exec --bind __BIND__ "__SIF__" Rscript -e "rmarkdown::render('\''__R__/__RMD__'\'','
+need "  output_dir = '__R__', __OUTFILE__knit_root_dir = '__R__',"
+need '    events = __EVENTS__, cross = __CROSS__, topgene = __TOPGENE__, enrich = __ENRICH__,'
+need 'JOB__N__=$(sbatch --parsable run___N__.sbatch) || exit 1'
+need 'JOB__N__=$(sbatch --parsable --dependency=afterok:$JOB01 --kill-on-invalid-dep=yes run___N__.sbatch) || exit 1'
+need 'JOB__N__=$(sbatch --parsable --dependency=afterany:__DEPS__ run___N__.sbatch) || exit 1'
+need '    outdir = '\''__OUT__'\'', report_dir = '\''__R__'\'','
+need '    contrasts = '\''__CONTRASTS__'\'', samplesheet = '\''__SAMPLESHEET__'\'','
+need '    modules = '\''__MODULES__'\'', rmats_type = '\''__RMATS_TYPE__'\'','
+need '    fdr = __FDR__, dpsi = __DPSI__, min_reads = __MIN_READS__,'
+need '    organism = '\''__ORGANISM__'\'', gtf = '\''__GTF__'\'','
+need '    enrich_dbs = '\''__ENRICH_DBS__'\'','
+need '    paired_rmats = __PAIRED_RMATS__, paired_suppa = __PAIRED_SUPPA__))"'
+need "  OUTF=\"\"; if [ \"\$n\" = 07 ]; then OUTF=\"output_file = 'report_summary.html', \"; fi"
+need '**Absolute output directory.**'
+need 'else echo "no pairs file in {CWD}"; fi'
+need 'the first thing written into `{REPORT_DIR}` at all is the `image_check/` directory of Step 2, after this answer'
+# No Bash block of the skill is long or nests a heredoc: a long script, or a heredoc inside a function inside a heredoc, is refused
+# by the safety check of the Claude Code harness. A Bash fence (language bash or sh) has at most 60 lines, at most two heredocs, and
+# no heredoc together with a function definition. Four-backtick (Rmd) fences are not Bash fences.
+fence=$(awk '
+  /^```(bash|sh)$/ { inb = 1; n = 0; hd = 0; fn = 0; start = NR; next }
+  inb && /^```$/ { inb = 0
+    if (n > 60) { print "FAIL: a Bash fence of " n " lines (line " start "); at most 60 lines" }
+    if (hd > 2 || (hd > 0 && fn > 0)) { print "FAIL: a Bash fence with a nested heredoc (line " start "): more than two heredocs, or a heredoc and a function definition" }
+    next }
+  inb { n++; if ($0 ~ /<<-?[[:space:]]*["'\'']?[A-Za-z_]+/ && $0 !~ /<<</) hd++
+        if ($0 ~ /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\)/) fn++ }' "$SKILL")
+[ -z "$fence" ] || { printf '%s\n' "$fence"; fail=1; }
 # The final instructions print exactly one submit command (a bash or sbatch line naming a run script of the report directory).
 n_submit=$(grep -cE '^[[:space:]]*(bash|sbatch)[[:space:]].*\{REPORT_DIR\}.*run_' "$SKILL")
 [ "$n_submit" -eq 1 ] || { echo "FAIL: the final instructions must print exactly one submit command (bash {REPORT_DIR}/run_all.sh), found $n_submit"; fail=1; }
@@ -420,8 +447,6 @@ for n in 06_enrichment.Rmd 07_summary.Rmd; do
   fi
 done
 # the summary page is the entry point: written to report_summary.html by job 07 and named in the final instructions
-need "  OUTF=\"\"; if [ \"\$1\" = 07 ]; then OUTF=\"output_file = 'report_summary.html', \"; fi"
-need '  output_dir = '"'"'$R'"'"', ${OUTF}knit_root_dir = '"'"'$R'"'"','
 need 'Start with the summary page, the index of every report, figure and table: {REPORT_DIR}/report_summary.html'
 need 'The page is written to `report_summary.html`, the entry point of the report directory.'
 # --- end Rmd 06 and 07
