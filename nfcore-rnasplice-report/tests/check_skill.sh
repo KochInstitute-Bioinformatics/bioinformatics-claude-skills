@@ -248,9 +248,11 @@ need 'The questions that collect free text are the other report path (below), th
 dq=$(awk '/^```bash$/ { inb = 1; next } inb && /^```$/ { inb = 0 } inb && /"[^"$`]*\{[A-Z_]+\}[^"$`]*"/ { print NR ": " $0 }' "$SKILL")
 [ -z "$dq" ] || { echo "FAIL: a wizard value in double quotes in a Bash block (use single quotes):"; printf '%s\n' "$dq" | head -n 3; fail=1; }
 need 'does not hold exactly 7 Rmd blocks; nothing was written to $R'
-need 'is missing, repeated, not closed, empty, or does not start with the YAML header line; nothing was written to $R'
+need 'is missing, repeated, not closed, holds another rmd opener, is empty, or does not start with the YAML header line; nothing was written to $R'
 need '[ "${1:-0}" = 1 ] && [ "${2:-0}" = 1 ] && [ "${3:-0}" -gt 0 ] && [ "${4:-0}" = 1 ]'
-need 'END { print b + 0, (s == 3), l + 0, f + 0 }'
+need 'END { print b + 0, (s == 3), l + 0, f + 0, x + 0 }'
+need 's == 2 && $0 == "````rmd" { x = 1 }'
+need '[ "${4:-0}" = 1 ] && [ "${5:-0}" = 0 ]'
 need 'if (l == 1 && $0 == "---") f = 1'
 need '[ "$(grep -c '\''^\*\*File `[0-9][0-9]_[a-z_]*\.Rmd`\.\*\*$'\'' "$SK")" -eq 7 ]'
 need 's == 2 && $0 == "````" { exit } s == 2 { print }'

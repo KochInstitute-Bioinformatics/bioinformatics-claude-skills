@@ -321,6 +321,18 @@ mkdir -p "$tmp/wd/results/2026-10-05_wd_report_excr"; runex "$tmp/wd/results/202
 has "extraction: CRLF: the cause is named" "line endings are CRLF" "$tmp/ex6.out"
 check "extraction: CRLF: nothing written" "" "$(ls -A "$tmp/wd/results/2026-10-05_wd_report_excr" 2>/dev/null)"
 check "extraction: no temporary directory is left behind (success and every failure)" "" "$(ls -A "$tmp/xtmp")"
+# a block whose closing fence is missing, or that holds another opener, is refused by name before anything is written
+awk '/^\*\*File `03_suppa.Rmd`\.\*\*$/ { inb = 1 } inb && /^````$/ && !done { done = 1; next } { print }' "$skill" > "$tmp/skillc3.md"
+last=$(grep -n '^````$' "$skill" | tail -n 1 | cut -d: -f1); sed "${last}d" "$skill" > "$tmp/skillc7.md"
+awk '/^\*\*File `02_rmats.Rmd`\.\*\*$/ { h = 1 } h == 1 && /^````rmd$/ { h = 2; print; next } h == 2 { print; print "````rmd"; h = 3; next } { print }' "$skill" > "$tmp/skillop.md"
+for pair in "c3:03_suppa" "c7:07_summary" "op:02_rmats"; do
+  k=${pair%%:*}; nm=${pair#*:}; d="$tmp/wd/results/2026-10-05_wd_report_fence_$k"; mkdir -p "$d"
+  runex "$d" "$tmp/skill$k.md" > "$tmp/exf$k.out" 2>&1; check "extraction: fence problem $k: exit status" 1 "$?"
+  has "extraction: fence problem $k: the block is named" "$nm.Rmd" "$tmp/exf$k.out"
+  has "extraction: fence problem $k: ERROR" "ERROR" "$tmp/exf$k.out"
+  check "extraction: fence problem $k: nothing written" "" "$(ls -A "$d")"
+done
+check "extraction: no temporary directory after the fence cases" "" "$(ls -A "$tmp/xtmp")"
 # --- the marker list of the rendering block names every marker of the templates
 mk=$(printf '%s\n' "$B_REND" | sed -n "s/^MK='\(.*\)'\$/\1/p; s/^MK=\"\$MK|\(.*\)\"\$/|\1/p" | tr -d '\n')
 tplm=$(cat "$tmp/run_job.sbatch.tpl" "$tmp/run_all.tpl" | grep -oE '__[A-Z]+(_[A-Z]+)*__' | sort -u)
