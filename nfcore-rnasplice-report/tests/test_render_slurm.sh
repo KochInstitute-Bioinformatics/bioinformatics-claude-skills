@@ -352,14 +352,18 @@ printf '%s\n' "$s10" | awk '
 check "Step 10 has four Bash blocks" 4 "$(wc -l < "$tmp/s10.lens")"
 check "no Bash block of Step 10 has more than 40 lines" 0 "$(awk '$1 > 40' "$tmp/s10.lens" | wc -l)"
 check "no heredoc in a Bash block of Step 10" 0 "$(printf '%s\n' "$s10" | awk '/^```bash$/{inb=1; next} /^```$/{inb=0} inb && /<</' | wc -l)"
-# --- Step 3: the output directory is made absolute (the default of the params file is relative to the working directory)
+# --- Step 3: the output directory is made absolute. The default of the params file is relative to the directory that holds the
+# params file (the run directory, {OUTDIR_BASE} = {PARAMS_DIR}), not to the directory the wizard runs in: the block runs from another
+# directory ($tmp/elsewhere, which has a results_run/out of its own that must not be taken) and never reads {CWD}.
 abs=$(blk '**Absolute output directory.**') || bad "Step 3 block with the heading Absolute output directory not found"
-mkdir -p "$tmp/wd/results_run/out"
+mkdir -p "$tmp/wd/results_run/out" "$tmp/elsewhere/results_run/out"
+check "the Step 3 block resolves from {OUTDIR_BASE}, not from {CWD}" "0 1" "$(printf '%s\n' "$abs" | grep -c '{CWD}') $(printf '%s\n' "$abs" | grep -c "^cd '{OUTDIR_BASE}' ")"
+runc() { (cd "$tmp/elsewhere" && env -i PATH="$SYS" /bin/bash --noprofile --norc -c "$1"); }
 for given in "results_run/out" "$tmp/wd/results_run/out"; do
-  out=$(runb "$(printf '%s\n' "$abs" | sed -e "s|{CWD}|$tmp/wd|g" -e "s|{OUTDIR_GIVEN}|$given|g")" 2>&1 | sed -n 's/^OUTDIR_RNASPLICE=//p')
-  check "absolute output directory from '$given'" "$tmp/wd/results_run/out" "$out"
+  out=$(runc "$(printf '%s\n' "$abs" | sed -e "s|{OUTDIR_BASE}|$tmp/wd|g" -e "s|{OUTDIR_GIVEN}|$given|g")" 2>&1 | sed -n 's/^OUTDIR_RNASPLICE=//p')
+  check "absolute output directory from '$given' (run directory $tmp/wd, shell in $tmp/elsewhere)" "$tmp/wd/results_run/out" "$out"
 done
-runb "$(printf '%s\n' "$abs" | sed -e "s|{CWD}|$tmp/wd|g" -e "s|{OUTDIR_GIVEN}|nowhere|g")" > "$tmp/abs.out" 2>&1; check "missing output directory: exit status" 1 "$?"
+runc "$(printf '%s\n' "$abs" | sed -e "s|{OUTDIR_BASE}|$tmp/wd|g" -e "s|{OUTDIR_GIVEN}|nowhere|g")" > "$tmp/abs.out" 2>&1; check "missing output directory: exit status" 1 "$?"
 has "missing output directory: message" "ERROR: output directory nowhere not found from $tmp/wd" "$tmp/abs.out"
 # --- Step 6: no pairs file is a normal run (exit status 0, one clear line)
 pb=$(blk 'The pairing is read from the run, not asked for') || bad "Step 6 block not found"

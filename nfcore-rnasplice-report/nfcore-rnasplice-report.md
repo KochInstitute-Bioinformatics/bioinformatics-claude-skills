@@ -109,11 +109,11 @@ Ask (default: the `outdir` of the params file): "Where is the output directory o
 ls '{CWD}'/*_params.yaml 2>/dev/null
 grep -E '^(input|contrasts|source|outdir|gtf|genome|rmats|suppa|dexseq_exon|edger_exon|dexseq_dtu|rmats_paired_stats|diffsplice_paired):' '{CWD}'/*_params.yaml 2>/dev/null
 ```
-One params file found: its `outdir` (relative to `{CWD}` when it is not absolute) is the default for `{OUTDIR_RNASPLICE}`, its `contrasts` file is `{CONTRASTS_CSV}` and its `input` file is `{SAMPLESHEET}` (relative paths are relative to `{CWD}`; write the absolute paths). Several or none: ask which params file, or for the paths of the three files. The rule on free-text values in Step 0 applies. The output directory must exist, and `{REPORT_DIR}` must not lie inside it.
+One params file found: the directory that holds it is `{PARAMS_DIR}` (the run directory, from which the pipeline was started); its `outdir` is the default for `{OUTDIR_RNASPLICE}`, its `contrasts` file is `{CONTRASTS_CSV}` and its `input` file is `{SAMPLESHEET}`. A relative path in the params file is relative to `{PARAMS_DIR}`, not to the directory the wizard runs in (write the absolute paths). Several or none: ask which params file, or for the paths of the three files; a params file the user names sets `{PARAMS_DIR}` to the directory that holds it. The rule on free-text values in Step 0 applies. The output directory must exist, and `{REPORT_DIR}` must not lie inside it.
 
-**Absolute output directory.** Whatever the user answers (a path relative to `{CWD}` or an absolute one) is `{OUTDIR_GIVEN}`. The rule on free-text values in Step 0 applies. The report jobs run from the report directory, where a relative path does not exist, so resolve it, in one Bash call, and store the printed path as `{OUTDIR_RNASPLICE}` (absolute) for every later step and every job script:
+**Absolute output directory.** Whatever the user answers (a relative or an absolute path) is `{OUTDIR_GIVEN}`. The rule on free-text values in Step 0 applies. A relative path is resolved from `{OUTDIR_BASE}`: `{PARAMS_DIR}` when the answer is the default taken from the params file (the pipeline resolved its `outdir` from the run directory, which need not be the directory the wizard runs in), `{CWD}` when the user typed the path. The report jobs run from the report directory, where a relative path does not exist, so resolve it, in one Bash call, and store the printed path as `{OUTDIR_RNASPLICE}` (absolute) for every later step and every job script:
 ```bash
-cd '{CWD}' 2>/dev/null && cd '{OUTDIR_GIVEN}' 2>/dev/null && echo "OUTDIR_RNASPLICE=$(pwd)" || { echo 'ERROR: output directory {OUTDIR_GIVEN} not found from {CWD}'; exit 1; }
+cd '{OUTDIR_BASE}' 2>/dev/null && cd '{OUTDIR_GIVEN}' 2>/dev/null && echo "OUTDIR_RNASPLICE=$(pwd)" || { echo 'ERROR: output directory {OUTDIR_GIVEN} not found from {OUTDIR_BASE}'; exit 1; }
 ```
 
 **Module detection.** A module counts as found only when its main result file exists and has more than a header line; an empty file or a file with only a header is not found. The files are named from the contrasts file (treatment `{T}`, control `{C}`, contrast name `{CONTRAST}`), never by splitting file names: rMATS `star/rmats/{CONTRAST}/{SE,A5SS,A3SS,MXE,RI}.MATS.{JC,JCEC}.txt`, or `star/rmats/{CONTRAST}_paired/` with the same file names when the run used `rmats_paired_stats: true` (either directory counts); SUPPA2 `salmon/suppa/diffsplice/per_local_event/local_{T}-{C}.dpsi`; DEXSeq exon `star/dexseq_exon/results/DEXSeqResults.{CONTRAST}.csv`; edgeR exon `star/edger/contrast_{CONTRAST}.usage.exon.csv`; DTU `salmon/dexseq_dtu/results/dexseq/DEXSeqResults.{T}-{C}.tsv`. SUPPA2 and DTU file names use `{T}-{C}` (treatment, hyphen, control); the other three use the contrast name. A BAM-input run has no `salmon/` directory, so SUPPA2 and DTU are simply not found. The rMATS tables have the column `ID` twice (first column, and again after the coordinate columns); detection only counts lines and never reads columns, so this does not matter here, but every reader of these tables must account for it. Run, in one Bash call (replace `{OUTDIR_RNASPLICE}` and `{CONTRASTS_CSV}` with the literal paths):
@@ -1424,7 +1424,7 @@ for (i in seq_len(nrow(contrasts))) {
 ```
 ````
 
-The exon and transcript usage report `04_usage.Rmd` reads `rds/{CONTRAST}.exon_dexseq.rds`, `rds/{CONTRAST}.exon_edger.rds` and `rds/{CONTRAST}.dtu.rds` (written by `01_import.Rmd`) for every contrast and the gene-level files of the run, which the RDS does not hold and which the report reads again (read only): `star/dexseq_exon/results/perGeneQValue.{CONTRAST}.csv` (columns `groupID`, `padj`), `star/edger/contrast_{CONTRAST}.usage.simes.csv` and `.usage.gene.csv` (columns `Geneid`, `FDR`), `salmon/dexseq_dtu/results/stager/getAdjustedPValues.{T}-{C}.tsv` (columns `geneID`, `txID`, `gene`, `transcript`), the stageR object `stageRTx.{T}-{C}.rds` next to it and `salmon/dexseq_dtu/results/dexseq/DEXSeqResults.{T}-{C}.tsv` (for the two group columns, named by the treatment and the control). It writes, per contrast, `tables/{CONTRAST}.usage.counts.csv`, `tables/{CONTRAST}.exon_dexseq.genes.csv` and `.exon_dexseq.bins.csv`, `tables/{CONTRAST}.exon_edger.genes.csv` and `.exon_edger.exons.csv`, `tables/{CONTRAST}.dtu.genes.csv` and `.dtu.transcripts.csv`, `figures/{CONTRAST}.usage.volcano.{exon_dexseq,exon_edger,dtu}.png`, `figures/{CONTRAST}.usage.exon_top.png` and `figures/{CONTRAST}.usage.dtu_top.png`. Exon bins, exons, genes and transcripts are significant when their adjusted p-value is below `{FDR}`; `{DPSI}` is not applied. For DEXSeq exon usage a gene is significant when its `perGeneQValue` is below `{FDR}`; for edgeR exon usage when its Simes FDR is below `{FDR}`; for DTU, stageR's `gene` column (the screened adjusted p-value at the gene level) is compared with `{FDR}` for the genes and its `transcript` column (the screened adjusted p-value at the transcript level, `NA` where the gene was not screened in) for the transcripts. stageR's own overall alpha is the run's setting: the report prints it when the `stageRTx` object is readable with the stageR package of the image and otherwise says that it is not recorded in the table. stageR's adjusted p-values are valid only at the alpha they were computed for: when the report's FDR differs from the alpha of the `stageRTx` object (read with `getAlpha`), the stage-wise adjustment is re-run at the report's FDR from that object with the stageR package of the image, and when the object cannot be read the values of the run are used with a printed warning. The DEXSeq files of the DTU run hold the transcript counts (`countData.N`); with the sample annotation of `salmon/dexseq_dtu/results/dexseq/DEXSeqDataSet.{T}-{C}.rds` (read only, the sample and condition of each column) the isoform plot shows the proportion of each transcript in its gene for each sample (`tables/{CONTRAST}.usage.dtu_proportions.csv`), and without that object it shows the two group columns, labelled as DEXSeq usage coefficients that are not proportions. `params$events` switches the tables and the volcano plots, `params$topgene` the top-gene plots. A tool whose RDS is missing is reported as missing and the report still renders.
+The exon and transcript usage report `04_usage.Rmd` reads `rds/{CONTRAST}.exon_dexseq.rds`, `rds/{CONTRAST}.exon_edger.rds` and `rds/{CONTRAST}.dtu.rds` (written by `01_import.Rmd`) for every contrast and the gene-level files of the run, which the RDS does not hold and which the report reads again (read only): `star/dexseq_exon/results/perGeneQValue.{CONTRAST}.csv` (columns `groupID`, `padj`), `star/edger/contrast_{CONTRAST}.usage.simes.csv` and `.usage.gene.csv` (columns `Geneid`, `FDR`), `salmon/dexseq_dtu/results/stager/getAdjustedPValues.{T}-{C}.tsv` (columns `geneID`, `txID`, `gene`, `transcript`), the stageR object `stageRTx.{T}-{C}.rds` next to it and `salmon/dexseq_dtu/results/dexseq/DEXSeqResults.{T}-{C}.tsv` (for the two group columns, named by the treatment and the control). It writes, per contrast, `tables/{CONTRAST}.usage.counts.csv`, `tables/{CONTRAST}.exon_dexseq.genes.csv` and `.exon_dexseq.bins.csv`, `tables/{CONTRAST}.exon_edger.genes.csv` and `.exon_edger.exons.csv`, `tables/{CONTRAST}.dtu.genes.csv` and `.dtu.transcripts.csv`, `figures/{CONTRAST}.usage.volcano.{exon_dexseq,exon_edger,dtu}.png`, `figures/{CONTRAST}.usage.exon_top.png` and `figures/{CONTRAST}.usage.dtu_top.png`. Exon bins, exons, genes and transcripts are significant when their adjusted p-value is below `{FDR}`; `{DPSI}` is not applied. For DEXSeq exon usage a gene is significant when its `perGeneQValue` is below `{FDR}`; for edgeR exon usage when its Simes FDR is below `{FDR}`; for DTU, stageR's `gene` column (the screened adjusted p-value at the gene level) is compared with `{FDR}` for the genes and its `transcript` column (the screened adjusted p-value at the transcript level, `NA` where the gene was not screened in) for the transcripts. stageR's own overall alpha is the run's setting: the report prints it when the `stageRTx` object is readable with the stageR package of the image and otherwise says that it is not recorded in the table. stageR's adjusted p-values are valid only at the alpha they were computed for: when the report's FDR differs from the alpha of the `stageRTx` object (read with `getAlpha`), the stage-wise adjustment is re-run at the report's FDR from that object with the stageR package of the image, and when the object cannot be read the values of the run are used with a printed warning. The DEXSeq files of the DTU run hold the transcript counts (`countData.N`); with the sample annotation of `salmon/dexseq_dtu/results/dexseq/DEXSeqDataSet.{T}-{C}.rds` (read only, the sample and condition of each column) the isoform plot shows the proportion of each transcript in its gene for each sample (`tables/{CONTRAST}.usage.dtu_proportions.csv`), and without that object it shows the two group columns, labelled as DEXSeq usage coefficients that are not proportions. `params$events` switches the tables and the volcano plots, `params$topgene` the top-gene plots. A tool whose RDS is missing is reported as missing and the report still renders. The direction of a gene follows the rule of `05_cross_tool.Rmd` (smallest adjusted p-value, ties broken by the largest absolute effect, then by feature identifier); the DEXSeq bins table lists the bins with an effect first; the DTU tables have a column `effect_flag`, `zero-count artefact` when the absolute log2 fold change is above 10 (a heuristic threshold; the effect is not changed).
 
 **File `04_usage.Rmd`.**
 ````rmd
@@ -1460,7 +1460,9 @@ knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, dev = "png
 
 This report shows the exon usage results of DEXSeq and edgeR and the transcript usage (DTU) results of DEXSeq with stageR screening for each contrast, read from the tables that `01_import.Rmd` wrote to `r file.path(params$report_dir, "rds")` and from the gene-level files of the run (read only). Every effect is stated as **treatment minus control**: a positive effect is higher in the treatment group (more inclusion for rMATS and SUPPA2, higher usage for the exon and transcript usage tools). For an exon bin, an exon or a transcript, a positive log2 fold change means it is more used in treatment and a negative one that it is more used in control. The effect is the harmonised column of the RDS and is used as it is.
 
-Exon usage and transcript usage are cut by the adjusted p-value only: a gene, an exon bin or a transcript is significant when its adjusted p-value is below `r params$fdr` (the dPSI threshold of the rMATS and SUPPA2 reports is not applied here). DEXSeq exon usage: a gene is significant when its per-gene q-value (`perGeneQValue`, read from the run's file) is below the FDR, an exon bin when its adjusted p-value is. edgeR exon usage: a gene is significant when its Simes FDR is below the FDR, an exon when its exon-level FDR is; the F-test gene table is counted as well. DTU: stageR screening. In the stageR table the column `gene` holds the screened adjusted p-value at the gene level and the column `transcript` the screened adjusted p-value at the transcript level (`NA` where the gene was not screened in); a gene is significant when `gene` is below the FDR and a transcript when `transcript` is. stageR's adjusted p-values are valid only at the alpha they were computed for: when the FDR of this report differs from the alpha of the run (read from the `stageRTx` object with `getAlpha`), the stage-wise adjustment is re-run at the FDR of this report from that object, and when the object cannot be read the values of the run are used with a warning. The direction of a gene is the sign of the effect of its most significant feature (smallest adjusted p-value among the significant bins, exons or transcripts of the gene); it is empty when the gene is significant but none of its features is.
+Exon usage and transcript usage are cut by the adjusted p-value only: a gene, an exon bin or a transcript is significant when its adjusted p-value is below `r params$fdr` (the dPSI threshold of the rMATS and SUPPA2 reports is not applied here). DEXSeq exon usage: a gene is significant when its per-gene q-value (`perGeneQValue`, read from the run's file) is below the FDR, an exon bin when its adjusted p-value is. edgeR exon usage: a gene is significant when its Simes FDR is below the FDR, an exon when its exon-level FDR is; the F-test gene table is counted as well. DTU: stageR screening. In the stageR table the column `gene` holds the screened adjusted p-value at the gene level and the column `transcript` the screened adjusted p-value at the transcript level (`NA` where the gene was not screened in); a gene is significant when `gene` is below the FDR and a transcript when `transcript` is. stageR's adjusted p-values are valid only at the alpha they were computed for: when the FDR of this report differs from the alpha of the run (read from the `stageRTx` object with `getAlpha`), the stage-wise adjustment is re-run at the FDR of this report from that object, and when the object cannot be read the values of the run are used with a warning. The direction of a gene is the sign of the effect of its most significant feature (smallest adjusted p-value among the significant bins, exons or transcripts of the gene); among features with the same smallest adjusted p-value (many are exactly 0 on real data) the one with the largest absolute effect is taken, and if that is tied too, the first by feature identifier, so the choice never depends on the order of the rows. The direction is empty when the gene is significant but none of its features is. The table of the DEXSeq exon bins lists the bins with an effect first (a bin of a group of overlapping genes, `GENE1+GENE2`, can have no fold change), then by adjusted p-value and the larger absolute effect.
+
+A DTU log2 fold change beyond 10 in absolute value comes from a transcript with (almost) no counts in one group: DEXSeq then reports a fold change of 20 or more that is not an estimate of a change in usage (a zero-count artefact). Such rows keep their effect as it is and are marked `zero-count artefact` in the column `effect_flag` of the DTU tables; the threshold of 10 log2 units is a heuristic, not a statistical test.
 
 ```{r functions}
 suppressPackageStartupMessages(library(ggplot2))
@@ -1471,16 +1473,22 @@ none_message <- function(fdr) paste0("none at FDR ", format(fdr))
 # significant: adjusted p-value present and below the FDR
 sig_usage <- function(tab, fdr) !is.na(tab$padj) & tab$padj < fdr
 
-# per gene: the significant features, the one with the smallest adjusted p-value (then the larger change, then the identifier) and its direction
+# per gene: the significant features and the top one with its direction. The top feature has the smallest adjusted p-value; among
+# features with the same smallest adjusted p-value (often exactly 0) the largest absolute effect, then the first feature identifier
+# (a missing effect comes last): the result never depends on the order of the rows
 top_by_gene <- function(feat, sig) {
   s <- feat[sig & !is.na(feat$padj), c("gene_id", "feature_id", "padj", "effect", "direction"), drop = FALSE]
-  s <- s[order(s$padj, 1 - abs(s$effect), s$feature_id), , drop = FALSE]
+  s <- s[order(s$padj, -abs(s$effect), s$feature_id, method = "radix"), , drop = FALSE]
   n <- table(s$gene_id)
   top <- s[!duplicated(s$gene_id), , drop = FALSE]
   data.frame(gene_id = top$gene_id, n_sig_features = as.integer(n[top$gene_id]), top_feature = top$feature_id, top_effect = top$effect,
              top_padj = top$padj, direction = ifelse(top$direction %in% c("treatment_up", "control_up"), top$direction, NA_character_),
              stringsAsFactors = FALSE)
 }
+# a DTU effect beyond 10 log2 units in absolute value: a transcript with (almost) no counts in one group, a zero-count artefact of
+# DEXSeq; the effect is kept as it is and flagged (the threshold is a heuristic)
+ARTEFACT_LOG2FC <- 10
+effect_flag <- function(effect) ifelse(!is.na(effect) & abs(effect) > ARTEFACT_LOG2FC, "zero-count artefact", "")
 # the significant genes of a gene-level table (gene_id, padj), with their top feature and direction
 gene_summary <- function(gene_tab, feat, sig_feat, fdr) {
   g <- gene_tab[sig_usage(gene_tab, fdr), , drop = FALSE]
@@ -1772,7 +1780,8 @@ for (i in seq_len(nrow(contrasts))) {
       }
       if (isTRUE(params$events)) {
         bins <- tab[sigb, c("gene_id", "feature_id", "padj", "effect", "direction"), drop = FALSE]
-        bins <- bins[order(bins$padj, bins$feature_id), , drop = FALSE]
+        # bins with an effect first (a bin of a group of overlapping genes can have none), then the smallest padj and the larger absolute effect
+        bins <- bins[order(is.na(bins$effect), bins$padj, -abs(bins$effect), bins$feature_id, method = "radix"), , drop = FALSE]
         bins$direction_wording <- usage_wording(bins$direction)
         write_tab(bins, "exon_dexseq.bins")
         cat("Exon bins below the FDR (table `tables/", C, ".exon_dexseq.bins.csv`):\n\n", sep = "")
@@ -1873,9 +1882,13 @@ for (i in seq_len(nrow(contrasts))) {
                            effect = tab$effect[k][txsig], direction = tab$direction[k][txsig], stringsAsFactors = FALSE)
           tx <- tx[order(tx$stager_transcript_padj, tx$dexseq_padj, tx$transcript_id), , drop = FALSE]
           tx$direction_wording <- usage_wording(tx$direction)
+          gt$effect_flag <- effect_flag(gt$top_effect); tx$effect_flag <- effect_flag(tx$effect)
           write_tab(gt, "dtu.genes"); write_tab(tx, "dtu.transcripts")
-          if (nrow(gt) > 0) show_tab(gt[, c("gene_id", "gene_padj", "n_sig_features", "top_feature", "top_effect", "direction_wording")]) else none_block(sg, "genes by the stageR gene-level adjusted p-value")
-          if (nrow(tx) > 0) show_tab(transform(tx, effect = round(effect, 3), stager_transcript_padj = signif(stager_transcript_padj, 3), dexseq_padj = signif(dexseq_padj, 3))[, c("gene_id", "transcript_id", "stager_transcript_padj", "effect", "direction_wording")]) else
+          nflag <- sum(nzchar(tx$effect_flag))
+          if (nflag > 0) cat(nflag, " of the transcripts below the FDR have an absolute log2 fold change above ", ARTEFACT_LOG2FC,
+                             ": marked `zero-count artefact` in the column `effect_flag` (a heuristic threshold; the effect is kept as it is).\n\n", sep = "")
+          if (nrow(gt) > 0) show_tab(gt[, c("gene_id", "gene_padj", "n_sig_features", "top_feature", "top_effect", "effect_flag", "direction_wording")]) else none_block(sg, "genes by the stageR gene-level adjusted p-value")
+          if (nrow(tx) > 0) show_tab(transform(tx, effect = round(effect, 3), stager_transcript_padj = signif(stager_transcript_padj, 3), dexseq_padj = signif(dexseq_padj, 3))[, c("gene_id", "transcript_id", "stager_transcript_padj", "effect", "effect_flag", "direction_wording")]) else
             none_block(data.frame(gene_id = tab$feature_id, padj = tab$padj, stringsAsFactors = FALSE), "transcripts by the stageR transcript-level adjusted p-value")
           if (any(!is.na(tab$padj) & !is.na(tab$effect))) {
             vf <- file.path(fig_dir, sprintf("%s.usage.volcano.dtu.png", C))
@@ -1927,7 +1940,7 @@ for (i in seq_len(nrow(contrasts))) {
 ```
 ````
 
-The cross-tool report `05_cross_tool.Rmd` is generated only when two or more tools ran (Step 10). It compares, for every contrast, the genes called by each tool that has a result. It reads `rds/{CONTRAST}.{tool}.rds` (written by `01_import.Rmd`) and, for the gene-level calls of DEXSeq exon usage, edgeR exon usage and DTU, the same gene-level files of the run as `04_usage.Rmd` (`perGeneQValue.{CONTRAST}.csv`, `usage.simes.csv`, stageR's `getAdjustedPValues.{T}-{C}.tsv`), read only. A gene is called by rMATS or SUPPA2 when at least one of its events is significant (adjusted p-value below `{FDR}`, absolute dPSI at least `{DPSI}`, and for rMATS not flagged `low_support`); by DEXSeq exon usage when its `perGeneQValue` is below `{FDR}`; by edgeR exon usage when its Simes FDR is below `{FDR}`; by DTU when stageR's `gene` column is below `{FDR}` (stageR's adjusted p-values are valid only at the alpha they were computed for: at another FDR the stage-wise adjustment is re-run from the `stageRTx` object of the run, or the values of the run are used with a warning). Gene identifiers are Ensembl identifiers; a version suffix is removed only where one is present, and a group of overlapping genes (a DEXSeq group `GENE1+GENE2` or a SUPPA2 locus `GENE1_and_GENE2`) counts for each of its genes. The direction of a gene in a tool is the sign of the effect of the feature with the smallest adjusted p-value among that tool's significant features in the gene (rMATS and SUPPA2 on dPSI, the other tools on log2 fold change): `treatment_up`, `control_up`, or empty when the gene is called at gene level and none of its features is significant. The concordance table counts, for each pair of tools, the genes called by both with the same direction and with the opposite direction; directions compared only, never effect sizes across scales. The background is stated in the report: a gene outside a tool's set was either not significant or not tested by that tool. It writes, per contrast, `tables/{CONTRAST}.cross_tool.sets.csv`, `.cross_tool.membership.csv`, `.cross_tool.intersections.csv`, `.cross_tool.genes.csv` (the genes called by two or more tools, with the direction and the harmonised effect of each tool: `direction_{tool}`, `effect_{tool}`), `.cross_tool.concordance.csv` and `figures/{CONTRAST}.upset.png` (ComplexUpset when the image has it, otherwise UpSetR). A tool whose RDS or gene-level file is missing is left out and named; fewer than two tools left means no comparison, and the report still renders.
+The cross-tool report `05_cross_tool.Rmd` is generated only when two or more tools ran (Step 10). It compares, for every contrast, the genes called by each tool that has a result. It reads `rds/{CONTRAST}.{tool}.rds` (written by `01_import.Rmd`) and, for the gene-level calls of DEXSeq exon usage, edgeR exon usage and DTU, the same gene-level files of the run as `04_usage.Rmd` (`perGeneQValue.{CONTRAST}.csv`, `usage.simes.csv`, stageR's `getAdjustedPValues.{T}-{C}.tsv`), read only. A gene is called by rMATS or SUPPA2 when at least one of its events is significant (adjusted p-value below `{FDR}`, absolute dPSI at least `{DPSI}`, and for rMATS not flagged `low_support`); by DEXSeq exon usage when its `perGeneQValue` is below `{FDR}`; by edgeR exon usage when its Simes FDR is below `{FDR}`; by DTU when stageR's `gene` column is below `{FDR}` (stageR's adjusted p-values are valid only at the alpha they were computed for: at another FDR the stage-wise adjustment is re-run from the `stageRTx` object of the run, or the values of the run are used with a warning). Gene identifiers are Ensembl identifiers; a version suffix is removed only where one is present, and a group of overlapping genes (a DEXSeq group `GENE1+GENE2` or a SUPPA2 locus `GENE1_and_GENE2`) counts for each of its genes. The direction of a gene in a tool is the sign of the effect of the feature with the smallest adjusted p-value among that tool's significant features in the gene (rMATS and SUPPA2 on dPSI, the other tools on log2 fold change): `treatment_up`, `control_up`, or empty when the gene is called at gene level and none of its features is significant. Among features with equal smallest adjusted p-value (on real data many are exactly 0) the one with the largest absolute effect is taken, and if that is tied too, the first by feature identifier; the direction never depends on the order of the rows. A gene whose tied features point in opposite directions gets the direction of the larger change; it is not marked separately. The concordance table counts, for each pair of tools, the genes called by both with the same direction and with the opposite direction; directions compared only, never effect sizes across scales. The background is stated in the report: a gene outside a tool's set was either not significant or not tested by that tool. It writes, per contrast, `tables/{CONTRAST}.cross_tool.sets.csv`, `.cross_tool.membership.csv`, `.cross_tool.intersections.csv`, `.cross_tool.genes.csv` (the genes called by two or more tools, with the direction and the harmonised effect of each tool: `direction_{tool}`, `effect_{tool}`, and, when DTU is compared, `effect_flag`: `zero-count artefact` when the absolute DTU log2 fold change is above 10, a heuristic threshold; `effect_dtu` is not changed), `.cross_tool.concordance.csv` and `figures/{CONTRAST}.upset.png` (ComplexUpset when the image has it, otherwise UpSetR). A tool whose RDS or gene-level file is missing is left out and named; fewer than two tools left means no comparison, and the report still renders.
 
 **File `05_cross_tool.Rmd`.**
 ````rmd
@@ -1965,7 +1978,7 @@ This report compares the genes called by each tool that ran, for each contrast, 
 
 A gene is called by a tool when: rMATS and SUPPA2, at least one event of the gene has an adjusted p-value below `r params$fdr`, an absolute dPSI of at least `r params$dpsi`, and (rMATS) is not flagged `low_support`; DEXSeq exon usage, the per-gene q-value (`perGeneQValue`) is below the FDR; edgeR exon usage, the Simes FDR is below the FDR; DTU, the stageR column `gene` (the screened adjusted p-value at the gene level) is below the FDR (stageR's adjusted p-values are valid only at the alpha they were computed for: at another FDR the stage-wise adjustment is re-run from the `stageRTx` object of the run, or the values of the run are used with a warning). Gene identifiers are Ensembl identifiers; a version suffix is removed only where one is present, and a group of overlapping genes (a DEXSeq group `GENE1+GENE2` or a SUPPA2 locus `GENE1_and_GENE2`) counts for each of its genes.
 
-The direction of a gene in a tool is the sign of the effect of the feature with the smallest adjusted p-value among that tool's significant features in the gene (dPSI for rMATS and SUPPA2, log2 fold change for the other tools); it is empty when the gene is called at gene level but none of its features is significant. The cross-tool table has, for each tool, `direction_<tool>` and `effect_<tool>`, the effect of that feature (dPSI for rMATS and SUPPA2, log2 fold change for the others; the two scales are not comparable). The concordance table counts, for each pair of tools, the genes called by both with the same direction and with the opposite direction (directions compared only, never effect sizes across scales: dPSI and log2 fold change are not on one scale); genes without a direction in one of the two tools are counted separately.
+The direction of a gene in a tool is the sign of the effect of the feature with the smallest adjusted p-value among that tool's significant features in the gene (dPSI for rMATS and SUPPA2, log2 fold change for the other tools); it is empty when the gene is called at gene level but none of its features is significant. Among features with equal smallest adjusted p-value (on real data many adjusted p-values are exactly 0) the one with the largest absolute effect is taken, and if that is tied too, the first by feature identifier, so the direction never depends on the order of the rows; a gene whose tied features point in opposite directions takes the direction of the larger change and is not marked separately. The cross-tool table has, for each tool, `direction_<tool>` and `effect_<tool>`, the effect of that feature (dPSI for rMATS and SUPPA2, log2 fold change for the others; the two scales are not comparable). When DTU is compared, the column `effect_flag` marks a DTU log2 fold change beyond 10 in absolute value as `zero-count artefact`: such a value comes from a transcript with (almost) no counts in one group, and the threshold of 10 is a heuristic; `effect_dtu` is kept as it is. The concordance table counts, for each pair of tools, the genes called by both with the same direction and with the opposite direction (directions compared only, never effect sizes across scales: dPSI and log2 fold change are not on one scale); genes without a direction in one of the two tools are counted separately.
 
 Background: the tools do not test the same genes. A gene outside the set of a tool was either not significant or not tested by that tool, so the overlaps describe the genes called and say nothing about genes a tool could not test; the number of genes each tool tested is in the sets table.
 
@@ -1994,31 +2007,42 @@ sig_events <- function(tab, fdr, dpsi) {
   !is.na(tab$padj) & tab$padj < fdr & !is.na(tab$effect) & abs(tab$effect) >= dpsi & !tab$low_support
 }
 
-# per gene: the significant features, the one with the smallest adjusted p-value (then the larger change, then the identifier) and its direction
+# per gene: the significant features and the top one with its direction. The top feature has the smallest adjusted p-value; among
+# features with the same smallest adjusted p-value (often exactly 0) the largest absolute effect, then the first feature identifier
+# (a missing effect comes last): the result never depends on the order of the rows
 top_by_gene <- function(feat, sig) {
   s <- feat[sig & !is.na(feat$padj), c("gene_id", "feature_id", "padj", "effect", "direction"), drop = FALSE]
-  s <- s[order(s$padj, 1 - abs(s$effect), s$feature_id), , drop = FALSE]
+  s <- s[order(s$padj, -abs(s$effect), s$feature_id, method = "radix"), , drop = FALSE]
   n <- table(s$gene_id)
   top <- s[!duplicated(s$gene_id), , drop = FALSE]
   data.frame(gene_id = top$gene_id, n_sig_features = as.integer(n[top$gene_id]), top_feature = top$feature_id, top_effect = top$effect,
              top_padj = top$padj, direction = ifelse(top$direction %in% c("treatment_up", "control_up"), top$direction, NA_character_),
              stringsAsFactors = FALSE)
 }
-# the calls of one tool: the genes called, the genes tested, and the direction of every gene that has a significant feature
-make_calls <- function(genes, tested, feat, sig_feat) {
-  list(genes = sort(unique(as.character(genes))), tested = sort(unique(as.character(tested))), dir = top_by_gene(feat, sig_feat))
+# a DTU effect beyond 10 log2 units in absolute value: a transcript with (almost) no counts in one group, a zero-count artefact of
+# DEXSeq; the effect is kept as it is and flagged (the threshold is a heuristic)
+ARTEFACT_LOG2FC <- 10
+effect_flag <- function(effect) ifelse(!is.na(effect) & abs(effect) > ARTEFACT_LOG2FC, "zero-count artefact", "")
+# the calls of one tool: the genes called (groups of overlapping genes split), the genes tested, every gene of the table, the direction of
+# every gene that has a significant feature, and the identifiers called as the pipeline writes them (a group GENE1+GENE2 or a locus
+# GENE1_and_GENE2 counted once, before the split)
+make_calls <- function(genes, tested, feat, sig_feat, ids) {
+  list(genes = sort(unique(as.character(genes))), tested = sort(unique(as.character(tested))), all = sort(unique(as.character(feat$gene_id))),
+       dir = top_by_gene(feat, sig_feat), ids = sort(unique(as.character(ids))))
 }
 # rMATS and SUPPA2: a gene is called when one of its events is significant
 calls_from_events <- function(tab, fdr, dpsi) {
+  ids <- strip_version(tab$gene_id[sig_events(tab, fdr, dpsi)])
   tab <- tidy_ids(expand_genes(tab))
   sig <- sig_events(tab, fdr, dpsi)
-  make_calls(tab$gene_id[sig], tab$gene_id[!is.na(tab$padj)], tab, sig)
+  make_calls(tab$gene_id[sig], tab$gene_id[!is.na(tab$padj)], tab, sig, ids)
 }
 # DEXSeq and edgeR exon usage: a gene is called by the gene-level table (gene_id, padj); the features are the exon bins or exons of the RDS
 calls_from_gene_table <- function(gene_tab, feat, fdr) {
+  ids <- strip_version(gene_tab$gene_id[sig_usage(gene_tab, fdr)])
   g <- tidy_ids(expand_genes(gene_tab))
   f <- tidy_ids(expand_genes(feat))
-  make_calls(g$gene_id[sig_usage(g, fdr)], g$gene_id[!is.na(g$padj)], f, sig_usage(f, fdr))
+  make_calls(g$gene_id[sig_usage(g, fdr)], g$gene_id[!is.na(g$padj)], f, sig_usage(f, fdr), ids)
 }
 # DTU: a gene is called when stageR's gene is below the FDR; its significant features are the transcripts with stageR's transcript below the FDR
 calls_from_stager <- function(st, feat, fdr) {
@@ -2029,7 +2053,8 @@ calls_from_stager <- function(st, feat, fdr) {
   txsig <- !is.na(s$transcript) & s$transcript < fdr
   confirmed <- paste(s$gene_id, s$tx_id)[txsig]
   sigf <- paste(f$gene_id, f$feature_id) %in% confirmed
-  make_calls(s$gene_id[!is.na(s$gene) & s$gene < fdr], s$gene_id[!is.na(s$gene)], f, sigf)
+  called <- s$gene_id[!is.na(s$gene) & s$gene < fdr]
+  make_calls(called, s$gene_id[!is.na(s$gene)], f, sigf, called)
 }
 
 # one row per gene of the union, one logical column per tool
@@ -2065,6 +2090,7 @@ cross_table <- function(calls, min_tools = 2) {
     d <- calls[[t]]$dir
     out[[paste0("direction_", t)]] <- ifelse(out$gene_id %in% calls[[t]]$genes, d$direction[match(out$gene_id, d$gene_id)], NA_character_)
     out[[paste0("effect_", t)]] <- ifelse(out$gene_id %in% calls[[t]]$genes, d$top_effect[match(out$gene_id, d$gene_id)], NA_real_)
+    if (t == "dtu") out$effect_flag <- effect_flag(out$effect_dtu)
   }
   out <- out[order(out$n_tools, out$gene_id, decreasing = c(TRUE, FALSE), method = "radix"), , drop = FALSE]
   rownames(out) <- NULL
@@ -2244,14 +2270,15 @@ for (i in seq_len(nrow(contrasts))) {
     next
   }
   sets <- data.frame(tool = names(calls), label = unname(TOOL_LABELS[names(calls)]), tested_genes = vapply(calls, function(x) length(x$tested), integer(1)),
-                     significant_genes = vapply(calls, function(x) length(x$genes), integer(1)), stringsAsFactors = FALSE)
+                     significant_genes = vapply(calls, function(x) length(x$genes), integer(1)),
+                     significant_ids_before_split = vapply(calls, function(x) length(x$ids), integer(1)), stringsAsFactors = FALSE)
   rownames(sets) <- NULL
   write_tab(sets, "sets")
   write_tab(membership_table(calls), "membership")
   ic <- intersection_counts(calls)
   write_tab(ic, "intersections")
   cat("### Genes called by each tool, ", C, "\n\n", sep = "")
-  cat("Tested genes and significant genes per tool (sets file `tables/", C, ".cross_tool.sets.csv`):\n\n", sep = "")
+  cat("Tested genes and significant genes per tool (sets file `tables/", C, ".cross_tool.sets.csv`). `significant_genes` counts genes after splitting the groups of overlapping genes; `significant_ids_before_split` counts the identifiers as the tool writes them (a DEXSeq group `GENE1+GENE2` or a SUPPA2 locus `GENE1_and_GENE2` once), which for DEXSeq is the number of `perGeneQValue` groups below the FDR:\n\n", sep = "")
   cat(knitr::kable(sets, format = "markdown"), sep = "\n")
   cat("\n\n")
   uf <- file.path(fig_dir, paste0(C, ".upset.png"))
@@ -2284,7 +2311,7 @@ for (i in seq_len(nrow(contrasts))) {
 ```
 ````
 
-The enrichment report `06_enrichment.Rmd` runs a GO enrichment (biological process, molecular function, cellular component) with clusterProfiler on the significant genes of each tool, for each contrast. It reads `rds/{CONTRAST}.{tool}.rds` (written by `01_import.Rmd`) and, for DEXSeq exon usage, edgeR exon usage and DTU, the same gene-level files of the run as `05_cross_tool.Rmd` (read only), and builds the same gene sets: rMATS and SUPPA2 genes with a significant event (adjusted p-value below `{FDR}`, absolute dPSI at least `{DPSI}`, and for rMATS not flagged `low_support`), DEXSeq exon usage genes with a `perGeneQValue` below `{FDR}`, edgeR exon usage genes with a Simes FDR below `{FDR}`, DTU genes with stageR's `gene` below `{FDR}` (re-run at the report's FDR when the run's alpha differs, as in `04_usage.Rmd`). Gene identifiers are Ensembl identifiers (versions removed, groups of overlapping genes split as in `05_cross_tool.Rmd`) and are mapped to Entrez identifiers with `org.Hs.eg.db` (`{ORGANISM}` human) or `org.Mm.eg.db` (mouse); the identifiers that cannot be mapped are counted and reported for every gene list and every universe. The universe of an enrichment is the set of genes that were testable in that tool (an adjusted p-value present in the harmonised table, or in the gene-level table), never the whole genome. There is one enrichment per tool and per group: the genes whose direction in the tool is `treatment_up`, those whose direction is `control_up` (the direction of a gene as defined in `05_cross_tool.Rmd`), and all significant genes; a group is tested only when it has at least 10 genes, and otherwise the report prints `skipped: fewer than 10 genes (n=...)`. Terms are kept at a Benjamini-Hochberg adjusted p-value and q-value of 0.05. It writes, per contrast, `tables/{CONTRAST}.enrich.{tool}.{group}.{go_bp,go_mf,go_cc}.csv` (`tool` as in the RDS names, `group` one of `all`, `treatment_up`, `control_up`), `tables/{CONTRAST}.enrich.summary.csv` (genes, mapped and unmapped counts, universe size, status) and `figures/{CONTRAST}.enrich.dotplot.png` (the top terms of the groups that ran; no figure when none ran). The report needs no network: it reads only the annotation packages of the image and never downloads or installs anything. `{ENRICH_DBS}` is `GO` unless the user asked for more; a request for KEGG or Reactome is answered in the report with `KEGG/Reactome require an image rebuild` (the packages ReactomePA, KEGG.db and reactome.db are not in the image), an organism other than human or mouse with `organism not supported`, and in both cases the report still renders and the job ends with exit code 0. A tool whose RDS or gene-level file is missing is named and left out.
+The enrichment report `06_enrichment.Rmd` runs a GO enrichment (biological process, molecular function, cellular component) with clusterProfiler on the significant genes of each tool, for each contrast. It reads `rds/{CONTRAST}.{tool}.rds` (written by `01_import.Rmd`) and, for DEXSeq exon usage, edgeR exon usage and DTU, the same gene-level files of the run as `05_cross_tool.Rmd` (read only), and builds the same gene sets: rMATS and SUPPA2 genes with a significant event (adjusted p-value below `{FDR}`, absolute dPSI at least `{DPSI}`, and for rMATS not flagged `low_support`), DEXSeq exon usage genes with a `perGeneQValue` below `{FDR}`, edgeR exon usage genes with a Simes FDR below `{FDR}`, DTU genes with stageR's `gene` below `{FDR}` (re-run at the report's FDR when the run's alpha differs, as in `04_usage.Rmd`). Gene identifiers are Ensembl identifiers (versions removed, groups of overlapping genes split as in `05_cross_tool.Rmd`; "genes" in the gene lists, the universes and `enrich.summary.csv` are counted after that split, and the report prints for every tool both the number of identifiers as the tool writes them, for DEXSeq exon usage the pipeline's own count of `perGeneQValue` groups below `{FDR}`, and the number of genes after the split) and are mapped to Entrez identifiers with `org.Hs.eg.db` (`{ORGANISM}` human) or `org.Mm.eg.db` (mouse); the identifiers that cannot be mapped are counted and reported for every gene list and every universe. The universe of an enrichment is the set of genes that were testable in that tool (an adjusted p-value present in the harmonised table, or in the gene-level table), never the whole genome. There is one enrichment per tool and per group: the genes whose direction in the tool is `treatment_up`, those whose direction is `control_up` (the direction of a gene as defined in `05_cross_tool.Rmd`), and all significant genes; a group is tested only when it has at least 10 genes, and otherwise the report prints `skipped: fewer than 10 genes (n=...)`. Terms are kept at a Benjamini-Hochberg adjusted p-value and q-value of 0.05. It writes, per contrast, `tables/{CONTRAST}.enrich.{tool}.{group}.{go_bp,go_mf,go_cc}.csv` (`tool` as in the RDS names, `group` one of `all`, `treatment_up`, `control_up`), `tables/{CONTRAST}.enrich.summary.csv` (genes, mapped and unmapped counts, universe size, status) and `figures/{CONTRAST}.enrich.dotplot.png` (the top terms of the groups that ran; no figure when none ran). The report needs no network: it reads only the annotation packages of the image and never downloads or installs anything. `{ENRICH_DBS}` is `GO` unless the user asked for more; a request for KEGG or Reactome is answered in the report with `KEGG/Reactome require an image rebuild` (the packages ReactomePA, KEGG.db and reactome.db are not in the image), an organism other than human or mouse with `organism not supported`, and in both cases the report still renders and the job ends with exit code 0. A tool whose RDS or gene-level file is missing is named and left out.
 
 **File `06_enrichment.Rmd`.**
 ````rmd
@@ -2318,7 +2345,9 @@ params:
 knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, dev = "png", dpi = 150, fig.width = 8, fig.height = 5)
 ```
 
-This report tests the significant genes of each tool for enriched Gene Ontology terms, for each contrast, from the tables that `01_import.Rmd` wrote to `r file.path(params$report_dir, "rds")` and from the gene-level files of the run (read only). Every effect is stated as **treatment minus control**: a positive effect is higher in the treatment group (more inclusion for rMATS and SUPPA2, higher usage for the exon and transcript usage tools). The direction of a gene in a tool is the sign of the effect of its most significant feature, as in `05_cross_tool.Rmd`: `treatment_up` for a positive effect, `control_up` for a negative one.
+This report tests the significant genes of each tool for enriched Gene Ontology terms, for each contrast, from the tables that `01_import.Rmd` wrote to `r file.path(params$report_dir, "rds")` and from the gene-level files of the run (read only). Every effect is stated as **treatment minus control**: a positive effect is higher in the treatment group (more inclusion for rMATS and SUPPA2, higher usage for the exon and transcript usage tools). The direction of a gene in a tool is the sign of the effect of its most significant feature, as in `05_cross_tool.Rmd`: `treatment_up` for a positive effect, `control_up` for a negative one. The most significant feature is the one with the smallest adjusted p-value; among features with equal smallest adjusted p-value (on real data many are exactly 0) the one with the largest absolute effect, and if that is tied too, the first by feature identifier, so the groups never depend on the order of the rows.
+
+The word genes in the gene lists, the universes and the summary table means genes after splitting the groups of overlapping genes: a DEXSeq group `GENE1+GENE2+GENE3` or a SUPPA2 locus `GENE1_and_GENE2` counts for each of its genes. The number of identifiers as the tool writes them (for DEXSeq exon usage, the groups of the pipeline's `perGeneQValue` table below the FDR) is printed next to it for every tool, and the two numbers differ when such groups are called.
 
 The gene lists are the genes called by each tool at FDR `r params$fdr` (rMATS and SUPPA2: a significant event with an absolute dPSI of at least `r params$dpsi`, and for rMATS not flagged `low_support`; DEXSeq exon usage: `perGeneQValue`; edgeR exon usage: Simes FDR; DTU: stageR's `gene`, re-run at the FDR of this report when the alpha of the run differs). Each tool is tested on its own, in three groups: the genes with direction `treatment_up`, the genes with direction `control_up`, and all significant genes. A group is tested only when it has at least 10 genes. The universe (the background) of each enrichment is the set of genes that were testable in that tool, the genes with an adjusted p-value in the harmonised table or in the gene-level table, and not the whole genome: a gene that the tool could not test cannot be a hit, so it is not in the background. Ensembl identifiers are mapped to Entrez identifiers with the annotation package of the organism (`r params$organism`); the identifiers that cannot be mapped are counted and left out. No network access is used: the report reads only the packages of the image.
 
@@ -2354,32 +2383,38 @@ sig_usage <- function(tab, fdr) !is.na(tab$padj) & tab$padj < fdr
 sig_events <- function(tab, fdr, dpsi) {
   !is.na(tab$padj) & tab$padj < fdr & !is.na(tab$effect) & abs(tab$effect) >= dpsi & !tab$low_support
 }
-# per gene: the significant features, the one with the smallest adjusted p-value (then the larger change, then the identifier) and its direction
+# per gene: the significant features and the top one with its direction. The top feature has the smallest adjusted p-value; among
+# features with the same smallest adjusted p-value (often exactly 0) the largest absolute effect, then the first feature identifier
+# (a missing effect comes last): the result never depends on the order of the rows
 top_by_gene <- function(feat, sig) {
   s <- feat[sig & !is.na(feat$padj), c("gene_id", "feature_id", "padj", "effect", "direction"), drop = FALSE]
-  s <- s[order(s$padj, 1 - abs(s$effect), s$feature_id), , drop = FALSE]
+  s <- s[order(s$padj, -abs(s$effect), s$feature_id, method = "radix"), , drop = FALSE]
   n <- table(s$gene_id)
   top <- s[!duplicated(s$gene_id), , drop = FALSE]
   data.frame(gene_id = top$gene_id, n_sig_features = as.integer(n[top$gene_id]), top_feature = top$feature_id, top_effect = top$effect,
              top_padj = top$padj, direction = ifelse(top$direction %in% c("treatment_up", "control_up"), top$direction, NA_character_),
              stringsAsFactors = FALSE)
 }
-# the calls of one tool: the genes called, the genes tested (the universe), and the direction of every gene that has a significant feature
-make_calls <- function(genes, tested, feat, sig_feat) {
+# the calls of one tool: the genes called (groups of overlapping genes split), the genes tested, every gene of the table, the direction of
+# every gene that has a significant feature, and the identifiers called as the pipeline writes them (a group GENE1+GENE2 or a locus
+# GENE1_and_GENE2 counted once, before the split)
+make_calls <- function(genes, tested, feat, sig_feat, ids) {
   list(genes = sort(unique(as.character(genes))), tested = sort(unique(as.character(tested))), all = sort(unique(as.character(feat$gene_id))),
-       dir = top_by_gene(feat, sig_feat))
+       dir = top_by_gene(feat, sig_feat), ids = sort(unique(as.character(ids))))
 }
 # rMATS and SUPPA2: a gene is called when one of its events is significant
 calls_from_events <- function(tab, fdr, dpsi) {
+  ids <- strip_version(tab$gene_id[sig_events(tab, fdr, dpsi)])
   tab <- tidy_ids(expand_genes(tab))
   sig <- sig_events(tab, fdr, dpsi)
-  make_calls(tab$gene_id[sig], tab$gene_id[!is.na(tab$padj)], tab, sig)
+  make_calls(tab$gene_id[sig], tab$gene_id[!is.na(tab$padj)], tab, sig, ids)
 }
 # DEXSeq and edgeR exon usage: a gene is called by the gene-level table (gene_id, padj); the features are the exon bins or exons of the RDS
 calls_from_gene_table <- function(gene_tab, feat, fdr) {
+  ids <- strip_version(gene_tab$gene_id[sig_usage(gene_tab, fdr)])
   g <- tidy_ids(expand_genes(gene_tab))
   f <- tidy_ids(expand_genes(feat))
-  make_calls(g$gene_id[sig_usage(g, fdr)], g$gene_id[!is.na(g$padj)], f, sig_usage(f, fdr))
+  make_calls(g$gene_id[sig_usage(g, fdr)], g$gene_id[!is.na(g$padj)], f, sig_usage(f, fdr), ids)
 }
 # DTU: a gene is called when stageR's gene is below the FDR; its significant features are the transcripts with stageR's transcript below the FDR
 calls_from_stager <- function(st, feat, fdr) {
@@ -2390,7 +2425,8 @@ calls_from_stager <- function(st, feat, fdr) {
   txsig <- !is.na(s$transcript) & s$transcript < fdr
   confirmed <- paste(s$gene_id, s$tx_id)[txsig]
   sigf <- paste(f$gene_id, f$feature_id) %in% confirmed
-  make_calls(s$gene_id[!is.na(s$gene) & s$gene < fdr], s$gene_id[!is.na(s$gene)], f, sigf)
+  called <- s$gene_id[!is.na(s$gene) & s$gene < fdr]
+  make_calls(called, s$gene_id[!is.na(s$gene)], f, sigf, called)
 }
 # the three gene groups of a tool: the genes whose direction is treatment_up, those whose direction is control_up, and all called genes
 group_genes <- function(cl) {
@@ -2609,6 +2645,8 @@ for (i in seq_len(nrow(contrasts))) {
   for (tool in names(cc$calls)) {
     cl <- cc$calls[[tool]]
     cat("### ", TOOL_LABELS[[tool]], ", ", C, "\n\n", sep = "")
+    cat("Called by ", TOOL_LABELS[[tool]], ": ", length(cl$ids), " identifiers as the tool writes them (", if (tool == "exon_dexseq") "the pipeline's own count of `perGeneQValue` groups below the FDR; " else "",
+        "a group of overlapping genes counted once) and ", length(cl$genes), " genes after splitting the groups `GENE1+GENE2` and the loci `GENE1_and_GENE2`. The gene lists below count genes after the split.\n\n", sep = "")
     uni <- to_entrez(cl$tested, pkg)
     cat("Universe: the ", uni$n_ids, " genes testable in ", TOOL_LABELS[[tool]], " (an adjusted p-value is present); ", uni$n_mapped, " mapped to Entrez, ",
         uni$n_unmapped, " unmapped.\n\n", sep = "")
