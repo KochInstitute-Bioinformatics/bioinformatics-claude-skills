@@ -371,7 +371,7 @@ R7-rtest-skip-message	rtest	skill	s|"skipped: fewer than "|"omitted: fewer than 
 R7-rtest-organism-message	rtest	skill	s|\*\*organism not supported\*\*|**not handled**|	FAIL: organism zebrafish
 R7-rtest-rebuild-message	rtest	skill	s|KEGG/Reactome require an image rebuild (ReactomePA, KEGG.db|KEGG/Reactome need more (ReactomePA, KEGG.db|	FAIL: enrich_dbs 'GO,KEGG'
 R7-rtest-unmapped-not-counted	rtest	skill	s|n_unmapped = length(ids) - mapped|n_unmapped = 0L|	FAIL: SYNTHETIC human: the unmapped identifiers are counted
-R7-rtest-no-universe	rtest	skill	s|enrichGO(gene = entrez, universe = universe, |enrichGO(gene = entrez, |	FAIL: treatment_up: the terms contain the queried term GO:0006412 or a close parent
+R7-rtest-no-universe	rtest	skill	s|enrichGO(gene = entrez, universe = universe, |enrichGO(gene = entrez, |	FAIL: treatment_up: the p-values of the queried term and of the 5 smallest equal an independent phyper
 R7-rtest-07-lists-missing-file	rtest	skill	s|^  if (file.exists(file.path(rd, f))) cat(|  if (TRUE) cat(|	FAIL: 07 does not link the reports that are absent
 R7-rtest-07-no-thresholds	rtest	skill	s#^cat("- \(FDR\|dPSI\|rMATS count\|rMATS minimum\).*$#NULL#	FAIL: 07 states the thresholds read from the parameters (0.037, 0.123, 17, JCEC)
 R7-rtest-07-warnings-dropped	rtest	skill	s|^  unique(l)$|  character(0)|	FAIL: html_warnings strips the tags
@@ -380,3 +380,11 @@ S7-summary-output-file	check	skill	s|OUTF="output_file = 'report_summary.html', 
 S7-summary-render-arg	check	skill	s|\${OUTF}knit_root_dir|knit_root_dir|	missing required text:   output_dir = '$R', ${OUTF}knit_root_dir = '$R',
 S7-summary-final-instruction	check	skill	s|^  Start with the summary page.*$|  Done.|	missing required text: Start with the summary page, the index of every report, figure and table: {REPORT_DIR}/report_summary.html
 S7-summary-file-prose	check	skill	s|The page is written to `report_summary.html`, the entry point|The page is written to `07_summary.html`, the entry point|	missing required text: The page is written to `report_summary.html`, the entry point of the report directory.
+S7-net-https	check	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.05\nz <- "https://example.org"|	a network call, download or installation
+S7-net-wget	check	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.05\nsystem("wget x")|	a network call, download or installation
+S7-net-biocmanager	check	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.05\nBiocManager::install("DT")|	a network call, download or installation
+S7-net-bash-chunk	check	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.05\n```{bash}|	or a code chunk that is not R
+R7-rtest-net-biocmanager	rtest	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.05\nBiocManager::install("DT")|	FAIL: 06 has no network call, download or installation in its code
+R7-rtest-low-support-not-excluded	rtest	skill	s| \& !tab\$low_support$||	FAIL: calls_from_events (06): the flagged gene is not called
+R7-rtest-tidy-ids-noop	rtest	skill	s|^tidy_ids <- function(df) { df\$gene_id <- strip_version(df\$gene_id); df }$|tidy_ids <- function(df) df|	FAIL: calls_from_events (06): the flagged gene is not called, versions are removed
+R7-rtest-universe-called-genes	rtest	skill	s|^    uni <- to_entrez(cl\$tested, pkg)$|    uni <- to_entrez(cl$genes, pkg)|	FAIL: universe size equals the number of genes with a non-NA padj

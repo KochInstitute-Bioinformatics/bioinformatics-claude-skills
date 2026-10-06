@@ -386,8 +386,8 @@ need 'cat("- rMATS count type: ", params$rmats_type, "\n", sep = "")'
 need 'cat("- rMATS minimum read support (mean of IJC plus SJC per group, smaller of the two groups): ", params$min_reads, "\n", sep = "")'
 need 'recovered from the HTML of those reports'
 # no network, download or installation in the code chunks of any Rmd (r fences)
-if awk '/^```\{r/ { inr = 1; next } inr && /^```$/ { inr = 0; next } inr && /KEGGREST|download|url\(|install\.packages|curl|httr|RCurl/ { found = 1 } END { exit !found }' "$SKILL"; then
-  echo "FAIL: a network call, download or installation (KEGGREST, download, url(, install.packages) in an r code chunk"; fail=1
+if awk '/^```\{[^r]/ { found = 1 } /^```\{r/ { inr = 1; next } inr && /^```$/ { inr = 0; next } inr && /KEGGREST|download|url\(|install\.packages|curl|httr|RCurl|https?:|ftp:|BiocManager|install_|wget|socketConn|system2?\(|source\(/ { found = 1 } END { exit !found }' "$SKILL"; then
+  echo "FAIL: a network call, download or installation (KEGGREST, download, url(, install.packages, https:, BiocManager, wget, system, source), or a code chunk that is not R"; fail=1
 fi
 # the old promise of KEGG and Reactome enrichment is gone from the wizard
 forbid 'plus KEGG and Reactome as far as'

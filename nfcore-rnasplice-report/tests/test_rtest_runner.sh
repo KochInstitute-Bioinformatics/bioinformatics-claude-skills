@@ -76,5 +76,9 @@ clean
 runit 1 "$MINPATH" "$D/tests/prove_mutations.sh" "$SK" rtest && has "sbatch not found on the PATH"
 runit 1 "$OKPATH" "$D/tests/prove_mutations.sh" "$SK" bogus && has "usage: prove_mutations.sh <skill.md> [static|rtest]"
 
+# 8. run_r_tests.sh with an unknown third argument fails with a clear message and runs nothing
+n=$((n + 1)); env -i HOME="$HOME" PATH="$OKPATH" SLURM_JOB_ID=1 /bin/bash --noprofile --norc "$D/tests/r/run_r_tests.sh" "$SK" "$D/tests" nosuch.R > "$TEST_TMP/out" 2>&1; rc=$?
+[ $rc -ne 0 ] && has "unknown test script: nosuch.R" || { echo "FAIL: case $n: unknown script argument: exit $rc"; bad=1; }
+
 forbidden_ran && bad=1
 [ $bad -eq 0 ] && echo "RTEST RUNNER PASS ($n)" || exit 1

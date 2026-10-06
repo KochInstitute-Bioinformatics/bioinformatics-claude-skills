@@ -12,6 +12,7 @@
 set -uo pipefail
 [ -n "${SLURM_JOB_ID:-}" ] || { echo "ERROR: run_r_tests.sh runs R: submit it with sbatch, never run it on a login node"; exit 1; }
 SKILL=${1:?usage: run_r_tests.sh <skill.md> <tests dir> [<one test script>]}; TESTS=${2:?usage: run_r_tests.sh <skill.md> <tests dir> [<one test script>]}
+case "${3:-}" in ""|test_harmonise.R|test_events_report.R|test_usage_cross.R|test_enrich_summary.R) ;; *) echo "ERROR: unknown test script: ${3} (one of test_harmonise.R test_events_report.R test_usage_cross.R test_enrich_summary.R, or none for all)"; exit 1 ;; esac
 # A job submitted from a clean environment (env -i) has no module function: load Lmod's bash init (the profile script of the
 # cluster does nothing inside a SLURM job).
 if ! type module > /dev/null 2>&1; then

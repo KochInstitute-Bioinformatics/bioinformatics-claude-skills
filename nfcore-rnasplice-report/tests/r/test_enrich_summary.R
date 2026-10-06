@@ -48,7 +48,7 @@ for (nm in c("06", "07")) {
   r <- if (nm == "06") rmd6 else rmd7
   chunks <- local({ inb <- FALSE; keep <- character(0); for (l in r) { if (grepl("^```\\{r", l)) { inb <- TRUE; next }; if (inb && l == "```") { inb <- FALSE; next }; if (inb) keep <- c(keep, l) }; keep })
   if (!check(sprintf("%s has no network call, download or installation in its code (KEGGREST, download, url(, install.packages)", nm),
-        !any(grepl("KEGGREST|download|url\\(|install\\.packages|curl|httr|RCurl", chunks)))) finish()
+        !any(grepl("KEGGREST|download|url\\(|install\\.packages|curl|httr|RCurl|https?:|ftp:|BiocManager|install_|wget|socketConn|system2?\\(|source\\(", chunks)) && !any(grepl("^```\\{[^r]", r)))) finish()
 }
 E6 <- functions_env(rmd6, "06_enrichment.Rmd"); E7 <- functions_env(rmd7, "07_summary.Rmd")
 need_fun <- function(e, nm) all(vapply(nm, exists, logical(1), envir = e, inherits = FALSE))
@@ -141,6 +141,9 @@ indep_p <- function(species, ont, term, input_ens, universe_ens) {
   n <- length(intersect(inp, ann_uni)); k <- length(intersect(tg, inp)); M <- length(tg); N <- length(ann_uni)
   stats::phyper(k - 1, M, N - M, n, lower.tail = FALSE)
 }
+# relative comparison of p-values (they range from 1e-35 to 1): all.equal would fall back to the absolute difference for values below its tolerance
+rel_eq <- function(a, b, tol = 1e-6) length(a) == length(b) && length(a) > 0 && all(is.finite(a)) && all(is.finite(b)) && all(a > 0) && all(b > 0) && max(abs(a / b - 1)) < tol
+check("rel_eq separates p-values that all.equal would call equal (1e-20 against 5e-20) and accepts equal ones", !rel_eq(1e-20, 5e-20) && isTRUE(all.equal(1e-20, 5e-20, tolerance = 1e-6)) && rel_eq(c(1e-20, 0.3), c(1e-20 * (1 + 1e-9), 0.3)))
 # SYNTHETIC human: groups treatment_up (30 genes, one unmapped), control_up (12), all (42)
 S_h <- synth("human", 29, 12)
 rdA <- synth_dir("synth_human", S_h)
@@ -171,8 +174,8 @@ p_tab <- as.numeric(bp$pvalue); names(p_tab) <- bp$ID
 chk_ids <- unique(c(intersect(TERM_UP, bp$ID), head(bp$ID[order(p_tab)], 5)))
 p_ind <- vapply(chk_ids, function(t) indep_p("human", "BP", t, S_h$up, uni_ens), numeric(1))
 check(sprintf("treatment_up: the p-values of the queried term and of the 5 smallest equal an independent phyper to 1e-6 (relative; %s)", paste(signif(p_ind, 3), collapse = " ")),
-      length(chk_ids) >= 1 && isTRUE(all.equal(unname(p_tab[chk_ids]), unname(p_ind), tolerance = 1e-6)))
-check("treatment_up: the queried term GO:0006412 is in the table and its p-value equals phyper", TERM_UP %in% bp$ID && isTRUE(all.equal(p_tab[[TERM_UP]], indep_p("human", "BP", TERM_UP, S_h$up, uni_ens), tolerance = 1e-6)))
+      length(chk_ids) >= 1 && rel_eq(unname(p_tab[chk_ids]), unname(p_ind)))
+check("treatment_up: the queried term GO:0006412 is in the table and its p-value equals phyper", TERM_UP %in% bp$ID && rel_eq(p_tab[[TERM_UP]], indep_p("human", "BP", TERM_UP, S_h$up, uni_ens)))
 check("treatment_up: every term of the table has the BH adjusted p-value of the table at or above its p-value", all(as.numeric(bp$p.adjust) >= as.numeric(bp$pvalue)))
 cu <- rd_csv(tab_file(rdA, "rmats", "control_up", "go_bp"))
 check("control_up (12 immune-response genes) is a separate enrichment: its table does not equal the treatment_up table", !identical(cu$ID, bp$ID))
@@ -180,7 +183,7 @@ alls <- rd_csv(tab_file(rdA, "rmats", "all", "go_bp"))
 p_all <- as.numeric(alls$pvalue); names(p_all) <- alls$ID
 all_ens <- c(S_h$up, S_h$down)
 chk_all <- head(alls$ID[order(p_all)], 3)
-check("the group all (42 genes) matches the independent phyper for its 3 smallest p-values", length(chk_all) >= 1 && isTRUE(all.equal(unname(p_all[chk_all]), unname(vapply(chk_all, function(t) indep_p("human", "BP", t, all_ens, uni_ens), numeric(1))), tolerance = 1e-6)))
+check("the group all (42 genes) matches the independent phyper for its 3 smallest p-values", length(chk_all) >= 1 && rel_eq(unname(p_all[chk_all]), unname(vapply(chk_all, function(t) indep_p("human", "BP", t, all_ens, uni_ens), numeric(1)))))
 check("the dotplot figure of the contrast is written", file.exists(file.path(rdA, "figures", paste0(C_SYN, ".enrich.dotplot.png"))) && file.size(file.path(rdA, "figures", paste0(C_SYN, ".enrich.dotplot.png"))) > 0)
 check("the default render prints none of the skip, organism and rebuild messages", !has(hA, "skipped: fewer than") && !has(hA, "organism not supported") && !has(hA, "require an image rebuild"))
 check("the report states the universe (testable genes) and the thresholds", has(hA, "testable") && has(hA, "treatment minus control"))
@@ -191,6 +194,24 @@ check("the unit functions: group_genes splits by the direction of the top featur
 check("requested_dbs reads GO, KEGG and Reactome from a comma or space separated value, any case",
       identical(E6$requested_dbs("GO,KEGG"), c("go", "kegg")) && identical(E6$requested_dbs("GO KEGG Reactome"), c("go", "kegg", "reactome")) && identical(E6$requested_dbs("go"), "go"))
 
+# gene sets of Rmd 06: a flagged (low_support) rMATS event is not called, and versioned Ensembl identifiers equal their unversioned forms
+S_v <- S_h
+tv <- synth_table(S_v$up, S_v$down, S_v$bg, S_v$na)
+flag_gene <- S_v$na[1]   # a real gene, testable here, with a significant event that is flagged low_support
+tv$padj[tv$gene_id == flag_gene] <- 0.001; tv$effect[tv$gene_id == flag_gene] <- 0.5; tv$direction[tv$gene_id == flag_gene] <- "treatment_up"; tv$low_support[tv$gene_id == flag_gene] <- TRUE
+ver <- S_v$up[2:6]; tv$gene_id[tv$gene_id %in% ver] <- paste0(tv$gene_id[tv$gene_id %in% ver], ".3")
+cl_v <- E6$calls_from_events(tv, 0.05, 0.1)
+check("calls_from_events (06): the flagged gene is not called, versions are removed (the 5 versioned genes are called as unversioned identifiers)",
+      !(flag_gene %in% cl_v$genes) && flag_gene %in% cl_v$tested && all(ver %in% cl_v$genes) && !any(grepl("\\.3$", cl_v$genes)) && length(cl_v$genes) == 42)
+check("calls_from_gene_table (06): versions are removed on the gene-level table too",
+      identical(E6$calls_from_gene_table(data.frame(gene_id = c("ENSG00000000001.3", "ENSG00000000002"), padj = c(0.01, 0.5), stringsAsFactors = FALSE),
+                data.frame(gene_id = "ENSG00000000001.3", feature_id = "E1", padj = 0.01, effect = 1, direction = "treatment_up", stringsAsFactors = FALSE), 0.05)$genes, "ENSG00000000001"))
+rdV <- new_dir("synth_versioned"); dir.create(file.path(rdV, "rds")); saveRDS(tv, file.path(rdV, "rds", paste0(C_SYN, ".rmats.rds")))
+writeLines(c("contrast,treatment,control", paste0(C_SYN, ",T1,C1")), dpath(rdV))
+okV <- render(rdV, "06_enrichment.Rmd", contrasts = dpath(rdV)); sV <- if (okV) summ_of(rdV) else NULL
+check("06 renders with a flagged significant event and versioned identifiers: group sizes 42/30/12 (the flagged gene is not counted), the versioned genes map (1 unmapped in the 30), the flagged gene is testable (universe 2001)",
+      okV && identical(as.integer(srow(sV, "rmats", "all")$genes), 42L) && identical(as.integer(srow(sV, "rmats", "treatment_up")$genes), 30L) && identical(as.integer(srow(sV, "rmats", "control_up")$genes), 12L) &&
+      identical(as.integer(srow(sV, "rmats", "treatment_up")$genes_unmapped), 1L) && all(as.integer(sV$universe_genes) == 2001L))
 # B: control_up has 7 genes: skipped, the other groups run
 S_b <- synth("human", 29, 7)
 rdB <- synth_dir("synth_human_7", S_b)
@@ -224,7 +245,7 @@ if (okM) {
   ids_m <- head(bpm$ID[order(pm)], 3)
   check("mouse: at least one GO BP term, the group sizes are 30 and 12, and the p-values of the 3 smallest equal an independent phyper (org.Mm.eg.db)",
         nrow(bpm) >= 1 && identical(as.integer(srow(sM, "rmats", "treatment_up")$genes), 30L) && identical(as.integer(srow(sM, "rmats", "control_up")$genes), 12L) &&
-        isTRUE(all.equal(unname(pm[ids_m]), unname(vapply(ids_m, function(t) indep_p("mouse", "BP", t, S_m$up, um), numeric(1))), tolerance = 1e-6)))
+        rel_eq(unname(pm[ids_m]), unname(vapply(ids_m, function(t) indep_p("mouse", "BP", t, S_m$up, um), numeric(1)))))
 }
 # E: organism not supported, F: GO plus KEGG, G: enrichment switched off, H: KEGG alone
 rdZ <- synth_dir("synth_zebrafish", S_h)
