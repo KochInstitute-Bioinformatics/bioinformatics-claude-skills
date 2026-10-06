@@ -86,6 +86,87 @@ whole run, which no longer matches the trimmed tables (the test uses FDR 0.05 on
 report (Benjamini-Hochberg over the tested rows of each file), so on the trimmed files they differ from those of the whole run;
 the test recomputes them from the trimmed files.
 
+The commands that built `real_hipscm/` (bash and GNU Awk 4.0.2; the low-support rMATS rows depend on the `rand()` sequence of
+that awk after `srand(42)`). Save the block as a file, for example `build_real_hipscm.sh` in a scratch directory, and run
+`bash build_real_hipscm.sh <new directory>`: it only reads the run directory and writes into `<new directory>` (and the list of DTU
+genes, `dtu_genes`, next to the script). Compared with `cmp` against this directory, every file was identical when the block was
+run again on 2026-10-06.
+
+```bash
+#!/bin/bash
+# Builds tests/fixtures/real_hipscm/ from the real nf-core/rnasplice output (read only). Trimming rules:
+# header kept byte for byte; first 200 data rows; every row of the named genes; rows with FDR/padj (SUPPA2: p-val) exactly 0,
+# the first 200 in file order; rMATS: plus 100 low-support rows (min group mean of IJC+SJC < 10) drawn with awk srand(42)
+# from the rows not kept otherwise. Rows keep their file order.
+set -u
+RUN=/net/bmc-lab3/data/bcc/yannvrb/realdata_test/rnasplice_hipscm_rerun/project
+SRC=$RUN/results/2026-10-06_project
+OUT=${1:?out dir}; SCR=$(cd "$(dirname "$0")" && pwd)
+GENES="ENSG00000166831 ENSG00000066468 ENSG00000003436 ENSG00000143393 ENSG00000007866 ENSG00000171603 ENSG00000100330 ENSG00000124588 ENSG00000103187 ENSG00000186480 ENSG00000129422 ENSG00000163931 ENSG00000204681 ENSG00000006831 ENSG00000164754 ENSG00000187244 ENSG00000197565 ENSG00000006704 ENSG00000055813 ENSG00000091513 ENSG00000163362 ENSG00000180694 ENSG00000183087 ENSG00000282278 ENSG00000134853 ENSG00000145216 ENSG00000166831"
+mkdir -p "$OUT/star/rmats/KO_vs_WT" "$OUT/star/rmats/bamlist" "$OUT/salmon/suppa/diffsplice/per_local_event" "$OUT/salmon/suppa/diffsplice/per_isoform" \
+  "$OUT/salmon/suppa/psi_per_local_event" "$OUT/star/dexseq_exon/results" "$OUT/star/edger" "$OUT/salmon/dexseq_dtu/results/dexseq" "$OUT/salmon/dexseq_dtu/results/stager"
+# common awk: g[] = named genes; ingene(id, sep) true when a part of id (split on sep) is a named gene
+AWKLIB='BEGIN { n = split(genes, a, " "); for (i = 1; i <= n; i++) g[a[i]] = 1 }
+function ingene(id, sep,   p, k, i) { gsub(/"/, "", id); k = split(id, p, sep); for (i = 1; i <= k; i++) if (p[i] in g) return 1; return 0 }'
+# rMATS: columns by header name (the ID column appears twice; GeneID, FDR and the counts once)
+for t in SE A5SS A3SS MXE RI; do
+  f=$SRC/star/rmats/KO_vs_WT/$t.MATS.JC.txt
+  awk -F'\t' -v genes="$GENES" "$AWKLIB"'
+    function gm(s,   v, k, i, t) { k = split(s, v, ","); t = 0; for (i = 1; i <= k; i++) t += v[i]; return t / k }
+    NR == FNR && FNR == 1 { for (i = 1; i <= NF; i++) c[$i] = i; srand(42); next }
+    NR == FNR {
+      keep = (FNR <= 201) || ingene($c["GeneID"], "+")
+      if ($c["FDR"] + 0 == 0 && z < 200) { z++; keep = 1 }
+      if (keep) { K[FNR] = 1; next }
+      ns = gm($c["IJC_SAMPLE_1"]) + gm($c["SJC_SAMPLE_1"]); n2 = gm($c["IJC_SAMPLE_2"]) + gm($c["SJC_SAMPLE_2"]); if (n2 < ns) ns = n2
+      if (ns < 10) { m++; if (m <= 100) R[m] = FNR; else { j = int(rand() * m) + 1; if (j <= 100) R[j] = FNR } }
+      next }
+    FNR == 1 { for (j in R) K[R[j]] = 1; print; next }
+    FNR in K' "$f" "$f" > "$OUT/star/rmats/KO_vs_WT/$t.MATS.JC.txt"
+done
+cp "$SRC/star/rmats/bamlist/KO_bamlist.txt" "$SRC/star/rmats/bamlist/WT_bamlist.txt" "$OUT/star/rmats/bamlist/"
+# SUPPA2 dPSI files: gene = text before the first ;, loci split on _and_; p-val (column 3 of the rows) exactly 0
+for k in per_local_event/local_KO-WT.dpsi per_isoform/transcript_KO-WT.dpsi; do
+  awk -F'\t' -v genes="$GENES" "$AWKLIB"'
+    FNR == 1 { print; next }
+    { gid = $1; sub(/;.*$/, "", gid); keep = (FNR <= 201) || ingene(gid, "_and_")
+      if ($3 != "nan" && $3 + 0 == 0 && z < 200) { z++; keep = 1 }
+      if (keep) print }' "$SRC/salmon/suppa/diffsplice/$k" > "$OUT/salmon/suppa/diffsplice/$k"
+done
+# SUPPA2 PSI per sample: the rows of the kept local events, in the order of the PSI file
+awk -F'\t' 'NR == FNR { if (FNR > 1) K[$1] = 1; next } FNR == 1 || ($1 in K)' "$OUT/salmon/suppa/diffsplice/per_local_event/local_KO-WT.dpsi" \
+  "$SRC/salmon/suppa/psi_per_local_event/suppa_tpm.psi" > "$OUT/salmon/suppa/psi_per_local_event/suppa_tpm.psi"
+# DEXSeq exon usage bins (column 7 padj): first 200, named genes (groups split on +), padj exactly 0 (none in this run)
+awk -F, -v genes="$GENES" "$AWKLIB"'
+  FNR == 1 { print; next }
+  { keep = (FNR <= 201) || ingene($1, "+"); if ($7 != "NA" && $7 + 0 == 0 && z < 200) { z++; keep = 1 }; if (keep) print }' \
+  "$SRC/star/dexseq_exon/results/DEXSeqResults.KO_vs_WT.csv" > "$OUT/star/dexseq_exon/results/DEXSeqResults.KO_vs_WT.csv"
+# per-gene q-values of the groups of the kept bins
+awk -F, 'NR == FNR { if (FNR > 1) K[$1] = 1; next } FNR == 1 || ($1 in K)' "$OUT/star/dexseq_exon/results/DEXSeqResults.KO_vs_WT.csv" \
+  "$SRC/star/dexseq_exon/results/perGeneQValue.KO_vs_WT.csv" > "$OUT/star/dexseq_exon/results/perGeneQValue.KO_vs_WT.csv"
+# edgeR exons (column 10 FDR): first 200, named genes, FDR exactly 0 (none in this run); gene tables: the genes of the kept exons
+awk -F, -v genes="$GENES" "$AWKLIB"'
+  FNR == 1 { print; next }
+  { keep = (FNR <= 201) || ingene($1, "+"); if ($10 + 0 == 0 && z < 200) { z++; keep = 1 }; if (keep) print }' \
+  "$SRC/star/edger/contrast_KO_vs_WT.usage.exon.csv" > "$OUT/star/edger/contrast_KO_vs_WT.usage.exon.csv"
+for k in gene simes; do
+  awk -F, 'NR == FNR { if (FNR > 1) K[$1] = 1; next } FNR == 1 || ($1 in K)' "$OUT/star/edger/contrast_KO_vs_WT.usage.exon.csv" \
+    "$SRC/star/edger/contrast_KO_vs_WT.usage.$k.csv" > "$OUT/star/edger/contrast_KO_vs_WT.usage.$k.csv"
+done
+# DTU: whole genes. Genes of the first 200 rows of the DEXSeq table, the named genes, and the genes of the first 200 stageR rows
+# with a transcript value exactly 0; then every row of those genes in the DEXSeq table, the stageR table and the per-gene q-values
+awk -F'\t' -v genes="$GENES" "$AWKLIB"'
+  NR == FNR { if (FNR > 1 && $4 != "NA" && $4 + 0 == 0 && z < 200) { z++; G[$1] = 1 }; next }
+  FNR == 1 { print; next }
+  FNR <= 201 || ingene($1, "+") || ($1 in G) { print $1 }' "$SRC/salmon/dexseq_dtu/results/stager/getAdjustedPValues.KO-WT.tsv" \
+  "$SRC/salmon/dexseq_dtu/results/dexseq/DEXSeqResults.KO-WT.tsv" | sed 1d | sort -u > "$SCR/dtu_genes"
+for k in dexseq/DEXSeqResults.KO-WT.tsv dexseq/perGeneQValue.KO-WT.tsv stager/getAdjustedPValues.KO-WT.tsv; do
+  awk -F'\t' 'NR == FNR { K[$1] = 1; next } FNR == 1 || ($1 in K)' "$SCR/dtu_genes" "$SRC/salmon/dexseq_dtu/results/$k" > "$OUT/salmon/dexseq_dtu/results/$k"
+done
+cp "$SRC/salmon/dexseq_dtu/results/stager/stageRTx.KO-WT.rds" "$OUT/salmon/dexseq_dtu/results/stager/"
+cp "$RUN/261006_project_samplesheet.csv" "$RUN/261006_project_contrasts.csv" "$RUN/261006_project_params.yaml" "$OUT/"
+```
+
 ## sign_rows.tsv
 
 The header lines of the file state how its rows were chosen. The column `fixture` names the directory of the row.
