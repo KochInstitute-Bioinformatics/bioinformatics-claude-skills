@@ -325,7 +325,7 @@ if grep -q $'\r' "$SK"; then echo "ERROR: the line endings are CRLF in $SK: use 
 [ "$(grep -c '^\*\*File `[0-9][0-9]_[a-z_]*\.Rmd`\.\*\*$' "$SK")" -eq 7 ] || { echo "ERROR: $SK does not hold exactly 7 Rmd blocks; nothing was written to $R"; exit 1; }
 for n in $NAMES; do
   set -- $(awk -v n="$n.Rmd" 'BEGIN { h = "**File `" n "`.**" } $0 == h { b++; if (b == 1) s = 1; next } s == 1 { s = ($0 == "````rmd") ? 2 : 4; next } s == 2 && $0 == "````" { s = 3; next } s == 2 && $0 == "````rmd" { x = 1 } s == 2 { l++; if (l == 1 && $0 == "---") f = 1 } END { print b + 0, (s == 3), l + 0, f + 0, x + 0, (s != 4) }' "$SK")
-  [ "${6:-0}" = 1 ] || { echo "ERROR: the line right after the heading of $n.Rmd is not the opening line ````rmd of its block; nothing was written to $R"; exit 1; }
+  [ "${6:-0}" = 1 ] || { echo "ERROR: the line right after the heading of $n.Rmd is not the opening line "'````rmd'" of its block; nothing was written to $R"; exit 1; }
   [ "${1:-0}" = 1 ] && [ "${2:-0}" = 1 ] && [ "${3:-0}" -gt 0 ] && [ "${4:-0}" = 1 ] && [ "${5:-0}" = 0 ] \
     || { echo "ERROR: the block of $n.Rmd is missing, repeated, not closed, holds another rmd opener, is empty, or does not start with the YAML header line; nothing was written to $R"; exit 1; }
 done

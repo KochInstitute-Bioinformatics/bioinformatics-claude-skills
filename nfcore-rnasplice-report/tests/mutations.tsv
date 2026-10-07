@@ -652,3 +652,10 @@ readme-guard	check	readme	s/The report directory is checked (under `results\/`, 
 readme-kegg-not-offered	check	readme	s/they are not offered by this report/they are skipped/	README missing required text: they are not offered by this report
 readme-6635	check	readme	$s/$/\nDTU: 6635 transcripts./	README names a DTU count (6635)
 readme-history	check	readme	$s/$/\nAn earlier block was refused by the Claude Code safety check./	README tells the history of a block
+backtick-dq-opener	check	skill	s/is not the opening line "'````rmd'" of its block/is not the opening line ````rmd of its block/	a backtick inside double quotes in a Bash block
+backtick-dq-new	check	skill	$s/$/\n```bash\necho "a `date` b"\n```/	a backtick inside double quotes in a Bash block
+backtick-render-opener	render	skill	s/is not the opening line "'````rmd'" of its block/is not the opening line ````rmd of its block/	FAIL extraction: opener problem no: the block is named in the message
+readme-full-time	check	readme	s/took about 9 h 52 min on 2026-10-07/took several hours/	README missing required text: The complete `--full` run took about 9 h 52 min
+readme-default-time	check	readme	s/it took about 17 min on a compute node/it took a few minutes/	README missing required text: With the current mutation rows it took about 17 min
+readme-dotted-ids	check	readme	s/such DTU genes do not overlap with the genes of the other tools/such DTU genes overlap/	README missing required text: are cut at the first dot for DTU
+readme-other-organism	check	readme	s/ Nor a run on an organism other than human or mouse (Rmd 06 has an R test with the organism zebrafish only)\.//	README missing required text: Nor a run on an organism other than human or mouse

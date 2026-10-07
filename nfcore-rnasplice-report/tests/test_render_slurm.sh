@@ -351,7 +351,7 @@ check "fence fixture: the opener of 03 is deleted" 1 "$(( $(grep -c '^````rmd$' 
 for k in no tx bl; do
   d="$tmp/wd/results/2026-10-05_wd_report_open_$k"; mkdir -p "$d"
   runex "$d" "$tmp/skill$k.md" > "$tmp/exo$k.out" 2>&1; check "extraction: opener problem $k: exit status" 1 "$?"
-  has "extraction: opener problem $k: the block is named in the message" "ERROR: the line right after the heading of 03_suppa.Rmd is not the opening line" "$tmp/exo$k.out"
+  has "extraction: opener problem $k: the block is named in the message" "ERROR: the line right after the heading of 03_suppa.Rmd is not the opening line "'````rmd'" of its block; nothing was written to $d" "$tmp/exo$k.out"
   check "extraction: opener problem $k: nothing written" "" "$(ls -A "$d")"
 done
 # --- the report directory is checked before anything is written into it: the block of Step 3, the extraction block and the checks

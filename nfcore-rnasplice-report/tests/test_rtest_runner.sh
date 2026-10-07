@@ -40,6 +40,8 @@ ncalls() { grep -c . "$CALLS"; }
 # a tree with copies of the skill and the tests (the real fixtures are not needed: the stub never runs R)
 D="$TEST_TMP/tree/nfcore-rnasplice-report"; mkdir -p "$D/tests/fixtures" "$D/tests/r" || exit 1
 cp "$SRC/nfcore-rnasplice-report.md" "$SRC/README.md" "$D/"; cp "$HERE"/*.sh "$HERE/mutations.tsv" "$D/tests/"
+# the checker also checks the row of the skill in the repository root README (one level above the skill directory)
+cp "$SRC/../README.md" "$TEST_TMP/tree/README.md" || exit 1
 cp "$HERE"/fixtures/*.tsv "$D/tests/fixtures/"; cp "$HERE/r/run_r_tests.sh" "$D/tests/r/"
 SK="$D/nfcore-rnasplice-report.md"; FAILSK="$TEST_TMP/fail_skill.md"; { cat "$SK"; echo STUB_MAKE_FAIL; } > "$FAILSK"
 

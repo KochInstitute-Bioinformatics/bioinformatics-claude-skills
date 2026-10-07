@@ -607,8 +607,32 @@ need 'if (index(v, q) || index(v, "\"") || index(v, "\\")) { print "ERROR: the v
 need 'printed by the block of Step 0 (`SKILL_FILE=`'
 # --- the opening line of an Rmd block is the line right after its heading, in both passes of the extraction
 [ "$(grep -cF -- 's == 1 { s = ($0 == "````rmd") ? 2 : 4; next }' "$SKILL")" -eq 2 ] || { echo "FAIL: both awk passes of the extraction must take the line right after the heading as the opening line of the block"; fail=1; }
-need '[ "${6:-0}" = 1 ] || { echo "ERROR: the line right after the heading of $n.Rmd is not the opening line ````rmd of its block; nothing was written to $R"; exit 1; }'
+need '[ "${6:-0}" = 1 ] || { echo "ERROR: the line right after the heading of $n.Rmd is not the opening line "'\''````rmd'\''" of its block; nothing was written to $R"; exit 1; }'
 need 'on the line right after its heading (no blank line or text between them)'
+# No Bash block has a backtick inside a double-quoted string (bash would run it as a command substitution). The scan follows the
+# quoting of each Bash fence across its lines: single quotes, double quotes, $(...) nested inside double quotes, backslash escapes
+# and comments; a backtick met in a double-quoted part is an error.
+bq=$(awk '
+  BEGIN { q = sprintf("%c", 39) }
+  /^```bash$/ { inb = 1; st = 0; sp = 0; pd = 0; next }
+  inb && /^```$/ { inb = 0; next }
+  inb {
+    n = length($0); prev = " "
+    for (i = 1; i <= n; i++) {
+      c = substr($0, i, 1)
+      if (st == 1) { if (c == q) st = 0; prev = c; continue }
+      if (c == "\\") { i++; prev = "x"; continue }
+      if (c == "$" && substr($0, i + 1, 1) == "(") { stk[++sp] = st; pds[sp] = pd; st = 0; pd = 0; i++; prev = "("; continue }
+      if (st == 0) {
+        if (c == "#" && (prev == " " || i == 1)) break
+        if (c == q) st = 1; else if (c == "\"") st = 2
+        else if (c == "(") pd++
+        else if (c == ")") { if (pd > 0) pd--; else if (sp > 0) { st = stk[sp]; pd = pds[sp]; sp-- } }
+      } else { if (c == "\"") st = 0; else if (c == "`") { print NR ": " $0; break } }
+      prev = c
+    }
+  }' "$SKILL")
+[ -z "$bq" ] || { echo "FAIL: a backtick inside double quotes in a Bash block (line $(printf '%s\n' "$bq" | head -n1 | cut -c1-120))"; fail=1; }
 # --- stageR joins: the identifier rule of the pipeline (cut at the first dot) on both sides, with a WARNING for unmatched transcripts
 [ "$(grep -cxF -- 'stager_id <- function(x) sub("\\..*", "", x)' "$SKILL")" -eq 3 ] || { echo "FAIL: 04, 05 and 06 must each define stager_id with the rule of the pipeline's stageR step"; fail=1; }
 need '  st$gene_id <- stager_id(st$gene_id); st$tx_id <- stager_id(st$tx_id)'
@@ -704,6 +728,10 @@ needr 'The report directory is checked (under `results/`, not inside the pipelin
 needr 'they are not offered by this report'
 ! grep -qF '6635' "$README" 2>/dev/null || { echo "FAIL: README names a DTU count (6635) whose set it does not define"; fail=1; }
 ! grep -qF 'was refused by the Claude Code safety check' "$README" 2>/dev/null || { echo "FAIL: README tells the history of a block instead of its facts"; fail=1; }
+needr 'The complete `--full` run took about 9 h 52 min on 2026-10-07 (97 R mutation rows, each rerunning the R test scripts).'
+needr 'With the current mutation rows it took about 17 min on a compute node'
+needr 'are cut at the first dot for DTU, as the pipeline'\''s stageR step writes them, while the other tools keep them whole: such DTU genes do not overlap with the genes of the other tools in the cross-tool comparison.'
+needr 'Nor a run on an organism other than human or mouse (Rmd 06 has an R test with the organism zebrafish only)'
 need '(normally the run directory, from which the pipeline was started)'
 needr '| SUPPA2 | `dPSI` (control minus treatment) | flipped | treatment minus control |'
 needr '| DEXSeq exon usage | `log2fold_{CONTROL}_{TREATMENT}` | flipped | treatment minus control |'
