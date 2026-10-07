@@ -52,8 +52,8 @@ for (nm in c("06", "07")) {
 }
 E6 <- functions_env(rmd6, "06_enrichment.Rmd"); E7 <- functions_env(rmd7, "07_summary.Rmd")
 need_fun <- function(e, nm) all(vapply(nm, exists, logical(1), envir = e, inherits = FALSE))
-if (!check("06 defines its functions", need_fun(E6, c("collect_calls", "group_genes", "to_entrez", "run_go", "requested_dbs", "MIN_GENES", "ENRICH_CUTOFF", "ORGDB")))) finish()
-if (!check("07 defines its functions", need_fun(E7, c("REPORTS", "read_counts", "html_warnings", "list_files")))) finish()
+if (!check("06 defines its functions", need_fun(E6, c("collect_calls", "group_genes", "to_entrez", "run_go", "requested_dbs", "kegg_message", "MIN_GENES", "ENRICH_CUTOFF", "ORGDB")))) finish()
+if (!check("07 defines its functions", need_fun(E7, c("REPORTS", "read_counts", "html_warnings", "list_files", "stamp_time", "is_current", "stamp_differs")))) finish()
 txt_of <- function(rmd) paste(rmd, collapse = "\n")
 SIGN <- "Every effect is stated as **treatment minus control**"
 for (nm in c("06", "07")) {
@@ -258,6 +258,16 @@ okK <- render(rdK, "06_enrichment.Rmd", contrasts = dpath(rdK), enrich_dbs = "GO
 hK <- html_of(rdK, "06_enrichment.html")
 check("enrich_dbs 'GO,KEGG': the render succeeds, prints 'require an image rebuild' and still writes the GO tables",
       okK && has(hK, "require an image rebuild") && file.exists(tab_file(rdK, "rmats", "treatment_up", "go_bp")))
+pres <- vapply(c("ReactomePA", "KEGG.db", "reactome.db"), requireNamespace, logical(1), quietly = TRUE)
+check(sprintf("enrich_dbs 'GO,KEGG': the report says that KEGG/Reactome are not offered by this report and names the packages the image lacks (%s)", paste(names(pres)[!pres], collapse = ", ")),
+      has(hK, "KEGG/Reactome are not offered by this report, which runs GO only") && all(vapply(names(pres)[!pres], function(p) has(hK, p), logical(1))))
+check("kegg_message: with the three packages present it says not offered and never asks for a rebuild; with one missing it names that one only",
+      { a <- E6$kegg_message(c(ReactomePA = TRUE, KEGG.db = TRUE, reactome.db = TRUE)); b <- E6$kegg_message(c(ReactomePA = TRUE, KEGG.db = FALSE, reactome.db = TRUE))
+        grepl("are not offered by this report", a, fixed = TRUE) && !grepl("rebuild", a, fixed = TRUE) && grepl("are in this image", a, fixed = TRUE) &&
+        grepl("are not offered by this report", b, fixed = TRUE) && grepl("require an image rebuild (not in this image: KEGG.db)", b, fixed = TRUE) })
+# the HTML pages load nothing from the internet: no MathJax and no script from an http(s) address
+offline_html <- function(f) { h <- paste(readLines(f, warn = FALSE), collapse = "\n"); !grepl("mathjax", h, ignore.case = TRUE) && !grepl("<script[^>]*src=\"(https?:)?//", h) }
+check("06: the HTML page loads nothing from the internet (no MathJax, no remote script)", okK && offline_html(file.path(rdK, "06_enrichment.html")))
 rdK2 <- synth_dir("synth_kegg_only", S_h)
 okK2 <- render(rdK2, "06_enrichment.Rmd", contrasts = dpath(rdK2), enrich_dbs = "kegg")
 check("enrich_dbs 'kegg' alone: the render succeeds, the rebuild message is printed and no GO table is written",
@@ -279,6 +289,8 @@ for (r in c("01_import.Rmd", "02_rmats.Rmd", "03_suppa.Rmd", "04_usage.Rmd", "05
   ok1 <- do.call(render, c(list(rdR, r), perm)); ok_all <- ok_all && ok1
   check(sprintf("%s renders on the real fixtures at FDR 0.9, |dPSI| 0.05, min_reads 0", r), ok1)
 }
+check("01 writes the run stamp rds/run_stamp.rds with the parameters of the run (FDR 0.9) before the other reports are written", file.exists(file.path(rdR, "rds", "run_stamp.rds")) &&
+      isTRUE(all.equal(readRDS(file.path(rdR, "rds", "run_stamp.rds"))$params$fdr, 0.9)) && file.mtime(file.path(rdR, "rds", "run_stamp.rds")) <= file.mtime(file.path(rdR, "02_rmats.html")))
 if (ok_all) {
   sR <- rd_csv(file.path(rdR, "tables", paste0(C, ".enrich.summary.csv")))
   sets <- rd_csv(file.path(rdR, "tables", paste0(C, ".cross_tool.sets.csv")))
@@ -357,5 +369,55 @@ check("07 renders with one counts table, shows it (SE 10 3) and says that no WAR
 wf <- file.path(work, "w.html"); writeLines(c("<p>a <code>b</code> WARNING: x <code>y</code> z</p>", "<p>warning: lower case is not a hit</p>", "<p>WARNING: x <code>y</code> z</p>"), wf)
 check("html_warnings strips the tags, keeps each WARNING line once and ignores lower case", identical(E7$html_warnings(wf), c("WARNING: x y z", "WARNING: x y z")[1]) || identical(E7$html_warnings(wf), "WARNING: x y z"))
 check("list_files lists only what exists, sorted", { d <- file.path(work, "lf"); dir.create(d); file.create(file.path(d, c("b.png", "a.png", "c.txt"))); identical(E7$list_files(d, "\\.png$"), c("a.png", "b.png")) && length(E7$list_files(file.path(work, "absent"), "\\.png$")) == 0 })
+check("07 without a run stamp says that the files cannot be dated and lists them as found", has(h7n, "no run stamp") && has(h7s, "href=\"03_suppa.html\""))
+check("07: the HTML page loads nothing from the internet (no MathJax, no remote script)", ok7s && offline_html(file.path(rdS, "report_summary.html")))
+# --- Rmd 07 on a reused report directory: an earlier run left 03_suppa.html, its counts table, a figure and a table; this run (rmats only,
+# job 03 not run) wrote the run stamp with the function of Rmd 01, then 01 and 02 and their files
+E1 <- functions_env(RMD_OTHER[["01_import.Rmd"]], "01_import.Rmd")
+check("01 defines the run stamp function", need_fun(E1, "write_run_stamp"))
+reused <- function(nm, stamp_params) {
+  d <- new_dir(nm); dir.create(file.path(d, "figures")); dir.create(file.path(d, "tables"))
+  writeLines(c("contrast,treatment,control", "SYN,T1,C1"), dpath(d))
+  old <- c(file.path(d, "03_suppa.html"), file.path(d, "tables", "SYN.suppa.counts.csv"), file.path(d, "figures", "SYN.suppa.volcano.local.png"), file.path(d, "tables", "SYN.suppa.local.significant.csv"))
+  writeLines(c("<html><body>", "<p>WARNING: a warning of the earlier run</p>", "</body></html>"), old[1])
+  writeLines(c("type,events,significant", "SE,991,771"), old[2]); file.create(old[3]); writeLines("a,b\n1,2", old[4])
+  Sys.setFileTime(old, Sys.time() - 86400)
+  E1$write_run_stamp(d, stamp_params)
+  writeLines("<html><body><p>import</p></body></html>", file.path(d, "01_import.html")); writeLines("<html><body><p>rmats</p></body></html>", file.path(d, "02_rmats.html"))
+  writeLines(c("type,events,significant", "SE,5,2"), file.path(d, "tables", "SYN.rmats.counts.csv")); file.create(file.path(d, "figures", "SYN.rmats.volcano.SE.png"))
+  d
+}
+prE <- utils::modifyList(base_params, list(contrasts = "", modules = "rmats", fdr = 0.021))
+rdE <- reused("reused07", utils::modifyList(prE, list(report_dir = file.path(work, "reused07"), contrasts = file.path(work, "reused07", "contrasts.csv"))))
+ok7e <- render(rdE, "07_summary.Rmd", contrasts = dpath(rdE), modules = "rmats", fdr = 0.021)
+h7e <- gsub("[[:space:]]+", " ", paste(readLines(file.path(rdE, "report_summary.html"), warn = FALSE), collapse = "\n"))
+cut_e <- regexpr("<h2>From an earlier run (not updated by this run)</h2>", h7e, fixed = TRUE)
+before <- if (cut_e > 0) substr(h7e, 1, cut_e - 1) else h7e; after <- if (cut_e > 0) substr(h7e, cut_e, nchar(h7e)) else ""
+check("07 on a reused report directory renders and has the section From an earlier run (not updated by this run)", ok7e && cut_e > 0)
+check("07 on a reused report directory: 03_suppa.html of the earlier run is listed under From an earlier run, not as a report of this run",
+      grepl("href=\"03_suppa.html\"", after, fixed = TRUE) && !grepl("href=\"03_suppa.html\"", before, fixed = TRUE) && grepl("not produced by this run", before, fixed = TRUE))
+check("07 on a reused report directory: the reports of this run (01, 02) are linked as current, before the earlier-run section",
+      grepl("href=\"01_import.html\"", before, fixed = TRUE) && grepl("href=\"02_rmats.html\"", before, fixed = TRUE) && !grepl("href=\"02_rmats.html\"", after, fixed = TRUE))
+check("07 on a reused report directory: the counts of the earlier run (991, 771) are not shown, those of this run (5, 2) are",
+      !grepl(">991<", h7e, fixed = TRUE) && !grepl(">771<", h7e, fixed = TRUE) && grepl(">5</td>", h7e, fixed = TRUE) && grepl("not written by this run", before, fixed = TRUE))
+check("07 on a reused report directory: the old figure and tables are listed only under From an earlier run, the new ones before it",
+      grepl("figures/SYN.suppa.volcano.local.png", after, fixed = TRUE) && !grepl("figures/SYN.suppa.volcano.local.png", before, fixed = TRUE) &&
+      grepl("tables/SYN.suppa.local.significant.csv", after, fixed = TRUE) && grepl("tables/SYN.suppa.counts.csv", after, fixed = TRUE) &&
+      grepl("href=\"figures/SYN.rmats.volcano.SE.png\"", before, fixed = TRUE) && grepl("href=\"tables/SYN.rmats.counts.csv\"", before, fixed = TRUE))
+check("07 on a reused report directory: the warning of the earlier report is not collected", !grepl("a warning of the earlier run", h7e, fixed = TRUE))
+check("07 on a reused report directory: the thresholds shown are those of this run (FDR 0.021) and the modules found are rmats",
+      grepl("0.021", before, fixed = TRUE) && grepl("Modules found: rmats", gsub("[[:space:]]+", " ", before), fixed = TRUE))
+# a stamp written by a run with other parameters: job 01 of this run did not start, so every file is from an earlier run
+rdF <- reused("reused07_other", utils::modifyList(prE, list(fdr = 0.5, contrasts = file.path(work, "reused07_other", "contrasts.csv"))))
+ok7f <- render(rdF, "07_summary.Rmd", contrasts = dpath(rdF), modules = "rmats", fdr = 0.021)
+h7f <- gsub("[[:space:]]+", " ", paste(readLines(file.path(rdF, "report_summary.html"), warn = FALSE), collapse = "\n"))
+cut_f <- regexpr("<h2>From an earlier run (not updated by this run)</h2>", h7f, fixed = TRUE)
+check("07 with a stamp of other parameters: WARNING naming fdr, and even 01 and 02 are listed under From an earlier run",
+      ok7f && grepl("was written by a run with other parameters (fdr)", h7f, fixed = TRUE) && cut_f > 0 &&
+      !grepl("href=\"02_rmats.html\"", substr(h7f, 1, cut_f - 1), fixed = TRUE) && grepl("href=\"02_rmats.html\"", substr(h7f, cut_f, nchar(h7f)), fixed = TRUE))
+check("is_current: a file not older than the stamp is current, an older one is not, a missing one is not, and every file is current without a stamp",
+      { f1 <- file.path(work, "ic_old"); f2 <- file.path(work, "ic_new"); writeLines("x", f1); writeLines("x", f2); Sys.setFileTime(f1, Sys.time() - 3600)
+        st <- Sys.time() - 60
+        identical(E7$is_current(c(f1, f2, file.path(work, "ic_absent")), st), c(FALSE, TRUE, FALSE)) && identical(E7$is_current(c(f1, f2), NULL), c(TRUE, TRUE)) })
 check("read_counts reads every field as text and returns NULL for a missing file", { f <- file.path(work, "c.csv"); writeLines(c("a,b", "1,NA", "2,0.50"), f); d <- E7$read_counts(f); identical(d$b, c("NA", "0.50")) && is.null(E7$read_counts(file.path(work, "absent.csv"))) })
 finish()

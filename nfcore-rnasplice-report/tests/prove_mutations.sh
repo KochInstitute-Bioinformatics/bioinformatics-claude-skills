@@ -6,9 +6,9 @@
 # the sed program changed the target, the runner exits non-zero, and the runner printed the expected text.
 # An @KEY@ that is not a non-empty mutation key fails its row (it would otherwise become an empty string).
 # A sed program that contains | uses another delimiter (s/.../.../ or s#...#...#), and the reverse.
-# Runners: check runtest rtest (see runner() below).
+# Runners: check runtest render rtest (see runner() below; render runs test_render_slurm.sh, the behaviour test of the Bash blocks).
 # Modes:
-#   static  the rows of the runners check and runtest (bash, awk and sed only; seconds). Rows of runner rtest are skipped and
+#   static  the rows of the runners check, runtest and render (bash, awk and sed only; seconds). Rows of runner rtest are skipped and
 #           counted in the last line. This is the mode of the default run_all_tests.sh.
 #   rtest   only the rows of runner rtest, which are exercised only by run_all_tests.sh --full (or by hand): each row's mutated
 #           skill is written to a fresh directory under RSR_SHARED_TMP (default
@@ -26,7 +26,7 @@ gv() { awk -F'\t' -v k="$1" '$1 == k {print $2; exit}' "$HERE/fixtures/mutation_
 # subst: replace every @KEY@ by its mutation key; an unknown or empty KEY is an error (return 1, message on stderr).
 subst() { local s=$1 k v; while [[ $s =~ @([A-Z_0-9]+)@ ]]; do k=${BASH_REMATCH[1]}; v=$(gv "$k")
   [ -n "$v" ] || { echo "unknown or empty mutation key @$k@" >&2; return 1; }; s=${s//@$k@/$v}; done; printf '%s' "$s"; }
-runner() { case "$1" in check) echo check_skill.sh ;; runtest) echo test_run_all.sh ;; rtest) echo test_r.sh ;; *) echo "" ;; esac; }
+runner() { case "$1" in check) echo check_skill.sh ;; runtest) echo test_run_all.sh ;; render) echo test_render_slurm.sh ;; rtest) echo test_r.sh ;; *) echo "" ;; esac; }
 in_mode() { if [ "$MODE" = rtest ]; then [ "$1" = rtest ]; else [ "$1" != rtest ]; fi; }
 
 if [ "$MODE" = rtest ]; then

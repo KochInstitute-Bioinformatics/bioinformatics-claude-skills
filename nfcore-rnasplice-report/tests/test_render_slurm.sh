@@ -46,7 +46,7 @@ PROJP=wd; CWDP=$tmp/wd; GTFP=$tmp/wd/genes.gtf; CSVP=$tmp/wd/contrasts.csv
 se() { printf '%s' "$1" | sed 's/[\\&|]/\\&/g'; }
 subst() {
   printf '%s\n' "$1" | sed \
-    -e "s|{REPORT_DIR}|$RD|g" -e "s|{OUTDIR_RNASPLICE}|$tmp/wd/out|g" -e "s|{CWD}|$(se "$CWDP")|g" \
+    -e "s|{REPORT_DIR}|$RD|g" -e "s|{OUTDIR_RNASPLICE}|${OUTX:-$tmp/wd/out}|g" -e "s|{CWD}|$(se "$CWDP")|g" \
     -e "s|{SIF}|$(se "$SIFP")|g" -e "s|{EMAIL}|$(se "$EMAIL")|g" \
     -e "s|{PROJECT}|$(se "$PROJP")|g" -e "s|{MEM}|$MEM|g" -e "s|{TIME}|$TIME|g" -e "s|{MODULES}|$mods|g" -e "s|{SECTIONS}|$secs|g" \
     -e "s|{FDR}|0.05|g" -e "s|{DPSI}|0.1|g" -e "s|{RMATS_TYPE}|JC|g" -e "s|{MIN_READS}|10|g" -e "s|{ORGANISM}|human|g" \
@@ -60,7 +60,7 @@ runb() { env -i PATH="$SYS" /bin/bash --noprofile --norc -c "$1"; }
 render() {
   local name=$1 mods=$2 secs=$3; shift 3
   local R="$tmp/wd/results/2026-10-05_wd_report_$name"
-  local MEM=32G TIME=4:00:00 EMAIL=x@y.z RD=$R DROP="" kv f prog rc=0 PROJP=$PROJP CWDP=$tmp/wd GTFP=$tmp/wd/genes.gtf CSVP=$tmp/wd/contrasts.csv SIFP=$SIFP
+  local MEM=32G TIME=4:00:00 EMAIL=x@y.z RD=$R DROP="" OUTX=$tmp/wd/out kv f prog rc=0 PROJP=$PROJP CWDP=$tmp/wd GTFP=$tmp/wd/genes.gtf CSVP=$tmp/wd/contrasts.csv SIFP=$SIFP
   for kv in "$@"; do printf -v "${kv%%=*}" %s "${kv#*=}"; done
   for prog in "$B_CHECK" "$B_SET" "$B_REND"; do
     subst "$prog" | grep -o "[^$]{[A-Z][A-Z_]*}" | sort -u
@@ -202,6 +202,15 @@ check "report directory outside results/ is refused" 1 "$(cat "$tmp/outside.rc")
 has "outside: the message" 'not under a results/ directory' "$tmp/outside.out"
 render inside "rmats" "events" RD="$tmp/wd/out/results/r"
 check "report directory inside the pipeline output is refused" 1 "$(cat "$tmp/inside.rc")"
+has "inside: the message" "is inside the pipeline output $tmp/wd/out" "$tmp/inside.out"
+# --- a path outside /net/bmc-lab3 is bound into the container: its directory is in the --bind list of every script
+render bindx "rmats" "events" GTFP=/opt/rsr_ext/genes.gtf
+check "bind outside /net/bmc-lab3: exit status" 0 "$(cat "$tmp/bindx.rc")"
+for n in 01 02 07; do
+  bl=$(sed -n "s/.*--bind '\([^']*\)'.*/\1/p" "$tmp/bindx/run_$n.sbatch")
+  case ",$bl," in *",/opt/rsr_ext,"*) ok "run_$n: the directory of a gtf outside /net/bmc-lab3 is bound ($bl)" ;; *) bad "run_$n: /opt/rsr_ext is not in the --bind list '$bl'" ;; esac
+  case "$bl" in /net/bmc-lab3,*|/net/bmc-lab3) ok "run_$n: /net/bmc-lab3 is bound first" ;; *) bad "run_$n: the --bind list '$bl' does not start with /net/bmc-lab3" ;; esac
+done
 # --- the final line names the one submit command, and the pipeline output is unchanged
 has "ev: one submit command" "SUBMIT=bash $tmp/wd/results/2026-10-05_wd_report_ev/run_all.sh" "$tmp/ev.out"
 check "nothing written to the pipeline output" "$tmp/wd/out/star/keep.txt" "$(find "$tmp/wd/out" -type f | tr '\n' ' ' | sed 's/ $//')"
@@ -293,7 +302,7 @@ mkdir -p "$tmp/xtmp"
 for w in rm rmdir mv mktemp trap unlink; do
   if printf '%s\n' "$ex" | grep -qw -- "$w"; then bad "the extraction block uses $w"; else ok "the extraction block does not use $w"; fi
 done
-runex() { env -i PATH="$SYS" TMPDIR="$tmp/xtmp" /bin/bash --noprofile --norc -c "$(printf '%s\n' "$ex" | sed -e "s|{REPORT_DIR}|$1|g" -e "s|{SKILL_FILE}|$2|g")"; }
+runex() { env -i PATH="$SYS" TMPDIR="$tmp/xtmp" /bin/bash --noprofile --norc -c "$(printf '%s\n' "$ex" | sed -e "s|{REPORT_DIR}|$1|g" -e "s|{SKILL_FILE}|$2|g" -e "s|{OUTDIR_RNASPLICE}|${3:-$tmp/wd/out}|g")"; }
 refrmd() { sed -n "/^\*\*File \`$1\.Rmd\`\.\*\*\$/,/^\`\`\`\`\$/p" "$skill" | sed '1,2d;$d'; }
 EX="$tmp/wd/results/2026-10-05_wd_report_rmdx"
 runex "$EX" "$skill" > "$tmp/ex.out" 2>&1; check "extraction: exit status" 0 "$?"
@@ -333,6 +342,38 @@ for pair in "c3:03_suppa" "c7:07_summary" "op:02_rmats"; do
   check "extraction: fence problem $k: nothing written" "" "$(ls -A "$d")"
 done
 check "extraction: no temporary directory after the fence cases" "" "$(ls -A "$tmp/xtmp")"
+# the opening line of a block must be the line right after its heading: a missing opener (03 would otherwise get the content of 04), a
+# text line or a blank line between the heading and the opener are refused, naming the block, before anything is written
+awk '{ print } /^\*\*File `03_suppa.Rmd`\.\*\*$/ { getline }' "$skill" > "$tmp/skillno.md"
+awk '{ print } /^\*\*File `03_suppa.Rmd`\.\*\*$/ { print "Some text." }' "$skill" > "$tmp/skilltx.md"
+awk '{ print } /^\*\*File `03_suppa.Rmd`\.\*\*$/ { print "" }' "$skill" > "$tmp/skillbl.md"
+check "fence fixture: the opener of 03 is deleted" 1 "$(( $(grep -c '^````rmd$' "$skill") - $(grep -c '^````rmd$' "$tmp/skillno.md") ))"
+for k in no tx bl; do
+  d="$tmp/wd/results/2026-10-05_wd_report_open_$k"; mkdir -p "$d"
+  runex "$d" "$tmp/skill$k.md" > "$tmp/exo$k.out" 2>&1; check "extraction: opener problem $k: exit status" 1 "$?"
+  has "extraction: opener problem $k: the block is named in the message" "ERROR: the line right after the heading of 03_suppa.Rmd is not the opening line" "$tmp/exo$k.out"
+  check "extraction: opener problem $k: nothing written" "" "$(ls -A "$d")"
+done
+# --- the report directory is checked before anything is written into it: the block of Step 3, the extraction block and the checks
+# block refuse a report directory inside the pipeline output (here a writable one, so that a missing check would write files)
+mkdir -p "$tmp/wd/out2/star"
+rdc=$(blk '**Report directory check.** Before anything') || bad "the block after the heading Report directory check not found"
+runrd() { env -i PATH="$SYS" /bin/bash --noprofile --norc -c "$(printf '%s\n' "$rdc" | sed -e "s|{REPORT_DIR}|$1|g" -e "s|{OUTDIR_RNASPLICE}|$2|g")"; }
+runrd "$tmp/wd/out2/results/r" "$tmp/wd/out2" > "$tmp/rdc1.out" 2>&1; check "report directory check: inside the pipeline output: exit status" 1 "$?"
+has "report directory check: inside the pipeline output: message" "is inside the pipeline output $tmp/wd/out2" "$tmp/rdc1.out"
+runrd "$tmp/wd/out2" "$tmp/wd/out2" > "$tmp/rdc2.out" 2>&1; check "report directory check: the pipeline output itself: exit status" 1 "$?"
+runrd "$tmp/wd/elsewhere2" "$tmp/wd/out2" > "$tmp/rdc3.out" 2>&1; check "report directory check: outside results/: exit status" 1 "$?"
+has "report directory check: outside results/: message" "not under a results/ directory" "$tmp/rdc3.out"
+runrd "$tmp/wd/results/2026-10-05_wd_report_ok" "$tmp/wd/out2" > "$tmp/rdc4.out" 2>&1; check "report directory check: a directory next to the output: exit status" 0 "$?"
+has "report directory check: OK line" "REPORT_DIR_OK=$tmp/wd/results/2026-10-05_wd_report_ok" "$tmp/rdc4.out"
+check "report directory check: writes nothing" "" "$(ls -A "$tmp/wd/out2/star")"
+runex "$tmp/wd/out2/results/r" "$skill" "$tmp/wd/out2" > "$tmp/exin.out" 2>&1; check "extraction: report directory inside the pipeline output: exit status" 1 "$?"
+has "extraction: report directory inside the pipeline output: message" "is inside the pipeline output $tmp/wd/out2" "$tmp/exin.out"
+[ ! -e "$tmp/wd/out2/results" ] && ok "extraction: nothing created inside the pipeline output" || bad "extraction: $tmp/wd/out2/results was created inside the pipeline output"
+render inside2 "rmats" "events" RD="$tmp/wd/out2/results/r2" OUTX="$tmp/wd/out2"
+check "checks block: report directory inside a writable pipeline output: exit status" 1 "$(cat "$tmp/inside2.rc")"
+has "checks block: report directory inside the pipeline output: message" "is inside the pipeline output $tmp/wd/out2" "$tmp/inside2.out"
+check "checks block: inside the pipeline output: no logs, templates or scripts written" "" "$(ls "$tmp/wd/out2/results/r2" | grep -v '\.Rmd$' | tr '\n' ' ')"
 # --- the marker list of the rendering block names every marker of the templates
 mk=$(printf '%s\n' "$B_REND" | sed -n "s/^MK='\(.*\)'\$/\1/p; s/^MK=\"\$MK|\(.*\)\"\$/|\1/p" | tr -d '\n')
 tplm=$(cat "$tmp/run_job.sbatch.tpl" "$tmp/run_all.tpl" | grep -oE '__[A-Z]+(_[A-Z]+)*__' | sort -u)
@@ -365,6 +406,50 @@ for given in "results_run/out" "$tmp/wd/results_run/out"; do
 done
 runc "$(printf '%s\n' "$abs" | sed -e "s|{OUTDIR_BASE}|$tmp/wd|g" -e "s|{OUTDIR_GIVEN}|nowhere|g")" > "$tmp/abs.out" 2>&1; check "missing output directory: exit status" 1 "$?"
 has "missing output directory: message" "ERROR: output directory nowhere not found from $tmp/wd" "$tmp/abs.out"
+# --- derived values with a quote, a backslash or a line break stop the block that derives them, loudly and before anything is written
+mkdir -p "$tmp/wd/o\"q"
+runc "$(printf '%s\n' "$abs" | sed -e "s|{OUTDIR_BASE}|$tmp/wd|g" -e "s|{OUTDIR_GIVEN}|o\"q|g")" > "$tmp/absq.out" 2>&1; check "output directory with a double quote: exit status" 1 "$?"
+has "output directory with a double quote: message" "ERROR: the output directory $tmp/wd/o\"q holds a single quote, a double quote, a backslash or a line break" "$tmp/absq.out"
+hasnt "output directory with a double quote: no OUTDIR_RNASPLICE line" "OUTDIR_RNASPLICE=" "$tmp/absq.out"
+s0=$(blk 'Record the current working directory') || bad "the Step 0 block after 'Record the current working directory' not found"
+mkdir -p "$tmp/home" "$tmp/s0/wd'q" "$tmp/s0/wd\"d" "$tmp/s0/wd\\b" "$tmp/s0/ok" "$tmp/s0/ho'me"
+runs0() { (cd "$1" && env -i PATH="$SYS" HOME="$2" /bin/bash --noprofile --norc -c "$s0"); }
+runs0 "$tmp/s0/ok" "$tmp/home" > "$tmp/s0ok.out" 2>&1; check "Step 0 block: plain paths: exit status" 0 "$?"
+has "Step 0 block: CWD" "CWD=$tmp/s0/ok" "$tmp/s0ok.out"; has "Step 0 block: WD_NAME" "WD_NAME=ok" "$tmp/s0ok.out"
+has "Step 0 block: SKILL_FILE" "SKILL_FILE=$tmp/home/.claude/commands/nfcore-rnasplice-report.md" "$tmp/s0ok.out"
+grep -qE '^TODAY_ISO=[0-9]{4}-[0-9]{2}-[0-9]{2}$' "$tmp/s0ok.out" && ok "Step 0 block: TODAY_ISO" || bad "Step 0 block: no TODAY_ISO=YYYY-MM-DD line"
+for w in "wd'q" "wd\"d" "wd\\b"; do
+  runs0 "$tmp/s0/$w" "$tmp/home" > "$tmp/s0bad.out" 2>&1; check "Step 0 block: working directory $w: exit status" 1 "$?"
+  has "Step 0 block: working directory $w: message" "ERROR: the path $tmp/s0/$w holds a single quote" "$tmp/s0bad.out"
+  hasnt "Step 0 block: working directory $w: no CWD line" "CWD=" "$tmp/s0bad.out"
+  check "Step 0 block: working directory $w: nothing written" "" "$(ls -A "$tmp/s0/$w")"
+done
+runs0 "$tmp/s0/ok" "$tmp/s0/ho'me" > "$tmp/s0home.out" 2>&1; check "Step 0 block: a home directory with a quote (skill file path): exit status" 1 "$?"
+has "Step 0 block: home with a quote: message" "ERROR: the path $tmp/s0/ho'me/.claude/commands/nfcore-rnasplice-report.md holds" "$tmp/s0home.out"
+check "Step 0 blocks wrote nothing" "" "$(ls -A "$tmp/s0/ok")$(ls -A "$tmp/home")"
+# the params block stops on a quote or a backslash inside a path value (the YAML quotes around a value are fine)
+pp=$(blk 'First look for the params file, in one Bash call') || bad "the params block of Step 3 not found"
+mkdir -p "$tmp/pq1" "$tmp/pq2" "$tmp/pq3" "$tmp/pq4"
+printf 'input: "s.csv"\ncontrasts: '"'"'c.csv'"'"'\noutdir: results/x\ngtf: "/g/genes.gtf"\n' > "$tmp/pq1/x_params.yaml"
+printf 'input: "s.csv"\noutdir: "results/it'"'"'s"\n' > "$tmp/pq2/x_params.yaml"
+printf 'gtf: "/g/ge\\\\nes.gtf"\n' > "$tmp/pq3/x_params.yaml"
+printf 'contrasts: "c\\"d.csv"\n' > "$tmp/pq4/x_params.yaml"
+for k in 1 2 3 4; do runb "$(printf '%s\n' "$pp" | sed -e "s|{CWD}|$tmp/pq$k|g")" > "$tmp/pq$k.out" 2>&1; echo $? > "$tmp/pq$k.rc"; done
+check "params block: quoted and plain values: exit status" 0 "$(cat "$tmp/pq1.rc")"
+has "params block: the values are printed" 'outdir: results/x' "$tmp/pq1.out"
+for k in 2:outdir 3:gtf 4:contrasts; do
+  check "params block: a quote or backslash in $k: exit status" 1 "$(cat "$tmp/pq${k%%:*}.rc")"
+  has "params block: a quote or backslash in $k: message" "ERROR: the value of ${k#*:} in the params file holds a quote or a backslash" "$tmp/pq${k%%:*}.out"
+done
+# Step 0: a report directory that exists gets the first numbered directory that does not exist yet
+rdx=$(blk '**Report directory.** Check whether') || bad "the Step 0 block after Report directory not found"
+FR="$tmp/wd/results/2026-10-05_wd_report_fr"; mkdir -p "$FR" "${FR}_2"
+runb "$(printf '%s\n' "$rdx" | sed -e "s|{REPORT_DIR}|$FR|g")" > "$tmp/fr.out" 2>&1; check "Step 0 report directory block: exit status" 0 "$?"
+has "Step 0: the first free numbered directory (_2 exists)" "FREE ${FR}_3" "$tmp/fr.out"
+hasnt "Step 0: _2 is not offered when it exists" "FREE ${FR}_2" "$tmp/fr.out"
+runb "$(printf '%s\n' "$rdx" | sed -e "s|{REPORT_DIR}|$tmp/wd/results/2026-10-05_wd_report_fresh|g")" > "$tmp/fr2.out" 2>&1
+has "Step 0: a new report directory" "NEW $tmp/wd/results/2026-10-05_wd_report_fresh" "$tmp/fr2.out"
+check "Step 0 report directory block: nothing created" "" "$(ls -A "$FR"; [ -e "${FR}_3" ] && echo created)"
 # --- Step 6: no pairs file is a normal run (exit status 0, one clear line)
 pb=$(blk 'The pairing is read from the run, not asked for') || bad "Step 6 block not found"
 mkdir -p "$tmp/nopairs"

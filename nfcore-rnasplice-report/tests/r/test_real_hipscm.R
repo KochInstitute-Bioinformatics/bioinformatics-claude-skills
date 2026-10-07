@@ -58,9 +58,10 @@ rd_tsv <- function(f) utils::read.delim(f, stringsAsFactors = FALSE, check.names
 same <- function(nm, envs) { d <- lapply(envs, function(e) if (exists(nm, envir = e, inherits = FALSE)) deparse(get(nm, envir = e)) else NULL)
   !any(vapply(d, is.null, logical(1))) && all(vapply(d[-1], identical, logical(1), d[[1]])) }
 check("top_by_gene (the direction of a gene) is the same function in 04, 05 and 06", same("top_by_gene", list(E4, E5, E6)))
-for (nm in c("strip_version", "strip_tx_version", "expand_genes", "tidy_ids", "sig_usage", "sig_events", "make_calls", "calls_from_events",
+for (nm in c("strip_version", "stager_id", "join_stager", "stager_join_warning", "expand_genes", "tidy_ids", "sig_usage", "sig_events", "make_calls", "calls_from_events",
              "calls_from_gene_table", "calls_from_stager"))
   check(sprintf("%s is the same function in 05 and 06", nm), same(nm, list(E5, E6)))
+check("stager_id, join_stager and stager_join_warning (the stageR joins) are the same functions in 04 and 05", all(vapply(c("stager_id", "join_stager", "stager_join_warning"), same, logical(1), list(E4, E5))))
 check("effect_flag and ARTEFACT_LOG2FC (10) are the same in 04 and 05", same("effect_flag", list(E4, E5)) && identical(E4$ARTEFACT_LOG2FC, 10) && identical(E5$ARTEFACT_LOG2FC, 10))
 check("effect_flag marks an absolute effect above 10 only (10 itself, NA and 9.9 are not marked)",
       identical(E5$effect_flag(c(-21.5, 22.6, 10, 9.9, NA, -10.01)), c("zero-count artefact", "zero-count artefact", "", "", "", "zero-count artefact")))

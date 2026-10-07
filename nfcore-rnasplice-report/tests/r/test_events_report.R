@@ -222,6 +222,10 @@ if (ok2) {
 }
 ok3 <- render(rd10, "03_suppa.Rmd")
 check("03_suppa.Rmd renders on the fixtures with the default thresholds", ok3 && file.exists(file.path(rd10, "03_suppa.html")))
+# the HTML pages load nothing from the internet: no MathJax (mathjax: null in the Rmd header) and no script from an http(s) address
+offline_html <- function(f) { h <- paste(readLines(f, warn = FALSE), collapse = "\n"); !grepl("mathjax", h, ignore.case = TRUE) && !grepl("<script[^>]*src=\"(https?:)?//", h) }
+check("01, 02 and 03: the HTML pages load nothing from the internet (no MathJax, no remote script)",
+      ok3 && all(vapply(c("01_import.html", "02_rmats.html", "03_suppa.html"), function(f) file.exists(file.path(rd10, f)) && offline_html(file.path(rd10, f)), logical(1))))
 
 # 3b. min_reads 0: the counts equal the raw recomputation for two threshold pairs (a literal threshold in the Rmd would fail the second)
 rd0 <- new_dir("rd0")

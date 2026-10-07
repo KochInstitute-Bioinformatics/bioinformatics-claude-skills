@@ -82,7 +82,7 @@ need '`{WD_NAME}` = basename of `{CWD}`'
 need '`{TODAY_ISO}` = today'\''s date as `YYYY-MM-DD`'
 need '`{REPORT_DIR}` = `{CWD}/results/{TODAY_ISO}_{WD_NAME}_report`'
 need 'already exists (a previous report?)'
-need 'Reuse it: files of the same name are replaced and the others are kept'
+need 'Reuse it: files of the same name are replaced; the old files stay, and the summary page lists every report, table and figure that this run did not write under From an earlier run (not updated by this run)'
 need 'A previous report is never overwritten silently'
 need 'Do not pre-fill any address.'
 need 'Store `{EMAIL}`'
@@ -250,7 +250,7 @@ dq=$(awk '/^```bash$/ { inb = 1; next } inb && /^```$/ { inb = 0 } inb && /"[^"$
 need 'does not hold exactly 7 Rmd blocks; nothing was written to $R'
 need 'is missing, repeated, not closed, holds another rmd opener, is empty, or does not start with the YAML header line; nothing was written to $R'
 need '[ "${1:-0}" = 1 ] && [ "${2:-0}" = 1 ] && [ "${3:-0}" -gt 0 ] && [ "${4:-0}" = 1 ]'
-need 'END { print b + 0, (s == 3), l + 0, f + 0, x + 0 }'
+need 'END { print b + 0, (s == 3), l + 0, f + 0, x + 0, (s != 4) }'
 need 's == 2 && $0 == "````rmd" { x = 1 }'
 need '[ "${4:-0}" = 1 ] && [ "${5:-0}" = 0 ]'
 need 'if (l == 1 && $0 == "---") f = 1'
@@ -452,7 +452,7 @@ need '  if (isTRUE(all.equal(alpha, fdr))) return(list(st = st, alpha = alpha, m
 need 'stageR::getAlpha(readRDS(path))'
 need 'stageR::stageWiseAdjustment(readRDS(path), method = "dtu", alpha = fdr, allowNA = TRUE)'
 need '**WARNING: the stageR values of the run are valid only at the alpha the run used'
-need '  s$tx_id <- strip_tx_version(s$tx_id)'
+need 'stager_id <- function(x) sub("\\..*", "", x)'
 need 'DEXSeq usage coefficient (fitted, variance-stabilised; not a proportion)'
 need 'proportion = ifelse(tot > 0, v / tot, NA_real_)'
 need '    out[[paste0("effect_", t)]] <- ifelse('
@@ -490,14 +490,14 @@ need 'cat("skipped: fewer than ", MIN_GENES, " genes (n=", length(ids), ")\n\n",
 need '    uni <- to_entrez(cl$tested, pkg)'
 need '       treatment_up = intersect(cl$genes, d$gene_id[d$direction %in% "treatment_up"]),'
 need '       control_up = intersect(cl$genes, d$gene_id[d$direction %in% "control_up"]))'
-need 'KEGG/Reactome require an image rebuild (ReactomePA, KEGG.db and reactome.db are not in this image). GO only.'
+need '  paste0(m, "; KEGG/Reactome require an image rebuild (not in this image: ", paste(names(present)[!present], collapse = ", "), ").")'
 need '**organism not supported**'
 need 'pAdjustMethod = "BH", pvalueCutoff = ENRICH_CUTOFF, qvalueCutoff = ENRICH_CUTOFF'
 need 'ENRICH_CUTOFF <- 0.05'
 need 'Only GO is run: KEGG and Reactome are never run by this report'
 need 'a group needs at least 10 genes), with the genes that were testable in that tool as the background'
 need 'never downloads or installs anything'
-need '  if (file.exists(file.path(rd, f))) cat("- <a href=\"", html_escape(f), "\">'
+need '  if (file.exists(file.path(rd, f)) && cur(file.path(rd, f))) cat("- <a href=\"", html_escape(f), "\">'
 need '  else cat("- ", REPORTS$title[i], ": not produced\n", sep = "")'
 need 'cat("- FDR (adjusted p-value cutoff): ", format(params$fdr), "\n", sep = "")'
 need 'cat("- dPSI (minimum absolute dPSI of an rMATS or SUPPA2 event; not applied to exon or transcript usage): ", format(params$dpsi), "\n", sep = "")'
@@ -556,6 +556,76 @@ need 'cd '\''{OUTDIR_BASE}'\'' 2>/dev/null && cd '\''{OUTDIR_GIVEN}'\'' 2>/dev/n
 need '`{PARAMS_DIR}` when the answer is the default taken from the params file'
 forbid 'cd '\''{CWD}'\'' 2>/dev/null && cd '\''{OUTDIR_GIVEN}'\'''
 
+# --- reused report directory: the first free _N suffix (Step 0), the run stamp of job 01 and the earlier-run section of the summary page
+need 'n=2; while [ -e '\''{REPORT_DIR}'\''_$n ]; do n=$((n + 1)); done; echo '\''FREE {REPORT_DIR}_'\''"$n"'
+need 'the first free one: the path of the `FREE` line (default)'
+need 'after this answer and after the report directory check of Step 3'
+need 'saveRDS(list(time = Sys.time(), params = as.list(params)), f)'
+need 'write_run_stamp(params$report_dir, params)'
+need 'stamp_time <- function(rd) { f <- file.path(rd, STAMP_FILE); if (file.exists(f)) file.mtime(f) else NULL }'
+need '  !is.na(m) & m >= stamp'
+need 'cur <- function(paths) if (all_old) rep(FALSE, length(paths)) else is_current(paths, stamp)'
+need 'cat("## From an earlier run (not updated by this run)\n\n")'
+need ': not produced by this run (an older `'
+need 'not written by this run: the file is from an earlier run and is listed under From an earlier run.'
+need '  if (!(file.exists(file.path(rd, REPORTS$file[i])) && cur(file.path(rd, REPORTS$file[i])))) next'
+need 'fcur <- cur(file.path(rd, "figures", figs)); old <- c(old, file.path("figures", figs[!fcur]))'
+need 'tcur <- cur(file.path(rd, "tables", tabs)); old <- c(old, file.path("tables", tabs[!tcur]))'
+need 'was written by a run with other parameters ('
+# the run stamp is written before any table is read: the stamp chunk comes before the import chunk of Rmd 01
+b1=$(rmd_block 01_import.Rmd)
+ls1=$(printf '%s\n' "$b1" | grep -n '^```{r stamp}$' | head -n1 | cut -d: -f1); li1=$(printf '%s\n' "$b1" | grep -n '^```{r import}$' | head -n1 | cut -d: -f1)
+{ [ -n "$ls1" ] && [ -n "$li1" ] && [ "$ls1" -lt "$li1" ]; } || { echo "FAIL: 01_import.Rmd: the stamp chunk must come before the import chunk (the run stamp is written before any table is read)"; fail=1; }
+# --- the report directory is checked before anything is written into it: a block of its own in Step 3, before the Step 2 blocks
+# that write image_check/ are run, and again at the top of the extraction block (and in the checks block of Step 10)
+need '**Report directory check.**'
+need '**Order of the two blocks below.**'
+need 'run these two blocks only after the block **Report directory check.** of Step 3 has passed: nothing is written into `{REPORT_DIR}` before that check.'
+need 'echo "REPORT_DIR_OK=$R"'
+g_in='case "$R/" in "$OUT"/*) echo "ERROR: report directory $R is inside the pipeline output $OUT"; exit 1 ;; esac'
+g_res='case "$R" in */results/*) ;; *) echo "ERROR: report directory $R is not under a results/ directory"; exit 1 ;; esac'
+[ "$(grep -cxF -- "$g_in" "$SKILL")" -eq 2 ] || { echo "FAIL: the guard 'report directory inside the pipeline output' must stand in the report directory check of Step 3 and in the extraction block (2 lines)"; fail=1; }
+[ "$(grep -cxF -- "$g_res" "$SKILL")" -eq 2 ] || { echo "FAIL: the guard 'report directory under results/' must stand in the report directory check of Step 3 and in the extraction block (2 lines)"; fail=1; }
+grep -qxF -- 'case "$R/" in "$OUT"/*) fail "report directory $R is inside the pipeline output $OUT" ;; esac' "$SKILL" || { echo "FAIL: the checks block of Step 10 must refuse a report directory inside the pipeline output"; fail=1; }
+xb=$(bash "$HERE/cut_block.sh" "$SKILL" '**Extracting the Rmd files.**' 2>/dev/null)
+xg=$(printf '%s\n' "$xb" | grep -nxF -- "$g_in" | head -n1 | cut -d: -f1); xm=$(printf '%s\n' "$xb" | grep -n '^mkdir -p "\$R"' | head -n1 | cut -d: -f1)
+{ [ -n "$xg" ] && [ -n "$xm" ] && [ "$xg" -lt "$xm" ]; } || { echo "FAIL: the extraction block must check that the report directory is not inside the pipeline output before it creates it"; fail=1; }
+lr=$(grep -n '^\*\*Report directory check\.\*\*' "$SKILL" | head -n1 | cut -d: -f1); ld=$(grep -n '^\*\*Module detection\.\*\*' "$SKILL" | head -n1 | cut -d: -f1)
+{ [ -n "$lr" ] && [ -n "$ld" ] && [ "$lr" -lt "$ld" ]; } || { echo "FAIL: the report directory check must come before the module detection of Step 3"; fail=1; }
+# --- every value put into a block: typed numbers in their form, derived values checked by the block that derives them
+need 'The rule holds for every value put into a block, typed or derived.'
+need '`{MEM}` digits followed by `G` or `M` (`32G`), `{TIME}` `H:MM:SS` or `D-H:MM:SS` (`4:00:00`), `{FDR}` and `{DPSI}` a decimal number (`0.05`), `{MIN_READS}` a whole number (`10`); any other answer is asked again and never put into a block.'
+need 'the paths read from the params file (`input`, `contrasts`, `outdir`, `gtf`), `{OUTDIR_RNASPLICE}` and `{SKILL_FILE}`'
+need 'A value that the assistant builds or substitutes into a block text cannot be checked by that block'
+need 'A typed value is accepted only in its form (the rule on free-text values in Step 0 applies)'
+need 'A typed memory or time is accepted only in its form (the rule on free-text values in Step 0 applies)'
+need 'd=$(pwd); s="$HOME/.claude/commands/nfcore-rnasplice-report.md"'
+need 'for v in "$d" "$s"; do case "$v" in *"'\''"*|*'\''"'\''*|*\\*|*$'\''\n'\''*) echo "ERROR: the path $v holds a single quote, a double quote, a backslash or a line break'
+need 'echo "CWD=$d"; echo "WD_NAME=${d##*/}"; echo "TODAY_ISO=$(date +%F)"; echo "SKILL_FILE=$s"'
+need 'd=$(pwd); case "$d" in *"'\''"*|*'\''"'\''*|*\\*|*$'\''\n'\''*) echo "ERROR: the output directory $d holds'
+need 'if (index(v, q) || index(v, "\"") || index(v, "\\")) { print "ERROR: the value of " k " in the params file holds a quote or a backslash'
+need 'printed by the block of Step 0 (`SKILL_FILE=`'
+# --- the opening line of an Rmd block is the line right after its heading, in both passes of the extraction
+[ "$(grep -cF -- 's == 1 { s = ($0 == "````rmd") ? 2 : 4; next }' "$SKILL")" -eq 2 ] || { echo "FAIL: both awk passes of the extraction must take the line right after the heading as the opening line of the block"; fail=1; }
+need '[ "${6:-0}" = 1 ] || { echo "ERROR: the line right after the heading of $n.Rmd is not the opening line ````rmd of its block; nothing was written to $R"; exit 1; }'
+need 'on the line right after its heading (no blank line or text between them)'
+# --- stageR joins: the identifier rule of the pipeline (cut at the first dot) on both sides, with a WARNING for unmatched transcripts
+[ "$(grep -cxF -- 'stager_id <- function(x) sub("\\..*", "", x)' "$SKILL")" -eq 3 ] || { echo "FAIL: 04, 05 and 06 must each define stager_id with the rule of the pipeline's stageR step"; fail=1; }
+need '  st$gene_id <- stager_id(st$gene_id); st$tx_id <- stager_id(st$tx_id)'
+need '  tab$gene_id <- stager_id(tab$gene_id); tab$feature_id <- stager_id(tab$feature_id)'
+need '        jn <- join_stager(sres$st, tab)'
+need '  jn <- join_stager(st, feat)'
+need 'transcripts of the stageR table were not found in the DEXSeq transcript table'
+need '        if (nzchar(stager_join_warning(jn))) cat(stager_join_warning(jn), "\n\n")'
+[ "$(grep -cF -- 'if (nzchar(cl$join_warning)) stnote <- paste0(stnote, "\n\n", cl$join_warning)' "$SKILL")" -eq 2 ] || { echo "FAIL: 05 and 06 must print the WARNING of the stageR join"; fail=1; }
+forbid 'strip_tx_version'
+# --- KEGG and Reactome: not offered by this report, whatever the image holds; the missing packages are named
+need 'kegg_message <- function(present) {'
+need 'KEGG/Reactome are not offered by this report, which runs GO only'
+forbid 'are not in this image). GO only.'
+# --- the HTML pages load nothing from the internet: MathJax off in each of the seven Rmd headers
+[ "$(grep -cxF -- '    mathjax: null' "$SKILL")" -eq 7 ] || { echo "FAIL: each of the seven Rmd headers must set mathjax: null (no MathJax from the internet)"; fail=1; }
+
 # --- README checks and the root README row
 # CHECK_ROOT_README=<file> checks that file instead of the repository root README.md (a test hook of prove_mutations.sh, target rootreadme).
 ROOT_README=${CHECK_ROOT_README:-$(dirname "$SKILL")/../README.md}
@@ -576,7 +646,6 @@ needr 'the four reports take 26 MB of output in total'
 needr 'Peak memory of the report jobs: not measured.'
 needr 'The behaviour when a report job fails: not yet run.'
 needr 'every Bash block was accepted by the Claude Code safety check (skill at commit 0abe782).'
-needr 'A later version of the block that extracts the Rmd files was refused by the Claude Code safety check'
 needr 'That block ran in the real-data run.'
 needr 'The live run on the test data used the skill at commit 0abe782, in which the Rmd files were cut out with a separate awk command'
 needr 'the real-data run used the extraction block and the rendering block with its exact-marker check'
@@ -612,7 +681,7 @@ needr 'among features with equal smallest adjusted p-value the one with the larg
 needr 'The minimum read support (`min_reads`) is a heuristic too'
 needr 'is resolved from the directory that holds the params file (the run directory)'
 needr '`tests/fixtures/sign_rows.tsv` holds 34 of these real rows'
-needr 'five scripts: 135, 105, 147, 100 and 90 checks, all pass'
+needr 'five scripts: 135, 106, 153, 118 and 93 checks, all pass'
 needr 'In that test the enrichment report runs on the DEXSeq exon usage genes only'
 needr 'reverse-stranded (the Salmon strandedness helper of `/nfcore-rnasplice-setup`: ISR, reverse fraction 0.9999)'
 needr 'nf-core/rnasplice at the development revision 1b447239488097651d8eac44bca2c1556865eb0f'
@@ -620,6 +689,21 @@ needr 'did not run the checks block of Step 10 and the package check again (same
 needr 'changed after that run (commit ca78ad5) and has static and render tests only'
 needr 'Their outcome was read from the output files and the chain instead'
 ! grep -qF 'job 01 ended with exit code 0' "$README" 2>/dev/null || { echo "FAIL: README states an exit code of job 01 that was not read"; fail=1; }
+# the record says what has not run, names the two DTU sets, and holds facts only (no account of earlier versions of a block)
+needr 'The block that extracts the Rmd files validates the skill file first and then writes the files; it deletes nothing.'
+needr 'several contrasts in one run (Rmds 01 to 07 were rendered with two contrasts only on a copy of the test fixtures)'
+needr 'paired rMATS statistics (`rmats_paired_stats: true`'
+needr 'a mouse run (Rmd 06 has an R test with mouse identifiers only), the rMATS JCEC tables, the image pull job (`image_check/pull_image.sbatch` was never submitted), and a report directory with a numbered suffix (`_2`).'
+needr 'Changed after the real-data run, with static, render and R tests only:'
+needr 'the 6169 transcripts confirmed by stageR (stageR `gene` and `transcript` below 0.05) and on the 6654 transcripts with a DEXSeq adjusted p-value below 0.05'
+needr 'MathJax is switched off in every Rmd header'
+needr 'Job 01 writes a run stamp, `rds/run_stamp.rds`'
+needr 'under "From an earlier run (not updated by this run)"'
+needr 'Typed numbers (memory, time, FDR, dPSI, minimum read support) are accepted only in their form'
+needr 'The report directory is checked (under `results/`, not inside the pipeline output) in Step 3 before anything is written into it'
+needr 'they are not offered by this report'
+! grep -qF '6635' "$README" 2>/dev/null || { echo "FAIL: README names a DTU count (6635) whose set it does not define"; fail=1; }
+! grep -qF 'was refused by the Claude Code safety check' "$README" 2>/dev/null || { echo "FAIL: README tells the history of a block instead of its facts"; fail=1; }
 need '(normally the run directory, from which the pipeline was started)'
 needr '| SUPPA2 | `dPSI` (control minus treatment) | flipped | treatment minus control |'
 needr '| DEXSeq exon usage | `log2fold_{CONTROL}_{TREATMENT}` | flipped | treatment minus control |'

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Usage: test_r.sh <skill.md>
-# Runs the R tests of the skill (tests/r/test_harmonise.R) in the R image on a compute node: submits tests/r/run_r_tests.sh
+# Runs the R tests of the skill (the five scripts tests/r/test_*.R, see tests/r/run_r_tests.sh) in the R image on a compute node: submits tests/r/run_r_tests.sh
 # with sbatch --wait on partition bcc and prints the job's log. This script itself only calls sbatch; R never runs here.
 # Refuses to run when sbatch is not on the PATH. The skill file must be on the shared file system (the job reads it).
 # The job log goes to a fresh directory under RSR_SHARED_TMP (default /net/bmc-lab3/data/bcc/ase_scratch/rnasplice_report/tmp,

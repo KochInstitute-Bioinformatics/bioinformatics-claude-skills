@@ -181,11 +181,15 @@ check("make_upset draws nothing when fewer than two tools have a gene", identica
 
 # --- 2b. SYNTHETIC: stageR version stripping, SUPPA2 merged loci, effects in the cross table, proportions, stageR at another FDR
 check("04 and 05 define the functions of the stageR re-run, the version stripping and the proportions",
-      need_fun(E4, c("strip_version", "strip_tx_version", "stager_for_fdr", "stager_note", "read_dtu_samples", "read_dtu_counts", "dtu_proportions", "dtu_proportion_plot")) &&
-      need_fun(E5, c("strip_tx_version", "stager_alpha", "stager_for_fdr", "stager_note", "read_stager")))
-check("strip_tx_version removes a trailing version of a transcript identifier only", identical(E5$strip_tx_version(c("ENST00000406022.2", "ENST00000406022", "TX.A.3")), c("ENST00000406022", "ENST00000406022", "TX.A")) &&
-      identical(E4$strip_tx_version("ENST1.7"), "ENST1"))
-# I4: a SUPPA2 locus of overlapping genes counts for each gene
+      need_fun(E4, c("stager_id", "join_stager", "stager_join_warning", "stager_for_fdr", "stager_note", "read_dtu_samples", "read_dtu_counts", "dtu_proportions", "dtu_proportion_plot")) &&
+      need_fun(E5, c("stager_id", "join_stager", "stager_join_warning", "stager_alpha", "stager_for_fdr", "stager_note", "read_stager")))
+# the rule of the pipeline's stageR step (run_stager.R stripVersion: sub("\\..*", "", x)), written here independently of the skill
+pipeline_strip <- function(x) sub("\\..*", "", x)
+ids_rule <- c("ENST00000406022.2", "ENST00000406022", "MSTRG.12.1", "STRG.3.2", "ENSG00000000457.14", "ENSG00000000457_PAR_Y")
+check("stager_id in 04 and 05 is the identifier rule of the pipeline's stageR step (everything from the first dot on removed)",
+      identical(E5$stager_id(ids_rule), pipeline_strip(ids_rule)) && identical(E4$stager_id(ids_rule), pipeline_strip(ids_rule)) &&
+      identical(E5$stager_id(c("MSTRG.12.1", "STRG.3.2")), c("MSTRG", "STRG")))
+# a SUPPA2 locus of overlapping genes counts for each gene
 SYNTHETIC_loc <- SYNTHETIC_suppa; SYNTHETIC_loc$gene_id[1] <- "G20_and_G21"; SYNTHETIC_loc$gene_id[2] <- "ENSG00000000022.3_and_ENSG00000000023"
 cl <- E5$calls_from_events(SYNTHETIC_loc, 0.05, 0.1)
 check("a SUPPA2 locus GENE1_and_GENE2 counts for each of its genes, and a version suffix is stripped after the split (G20, G21, ENSG00000000022, ENSG00000000023)",
@@ -193,18 +197,38 @@ check("a SUPPA2 locus GENE1_and_GENE2 counts for each of its genes, and a versio
       identical(dirof(cl, "G20"), "treatment_up") && identical(dirof(cl, "G21"), "treatment_up"))
 check("expand_genes splits GENE1_and_GENE2 as well as GENE1+GENE2",
       identical(E5$expand_genes(data.frame(gene_id = c("A_and_B", "C+D", "E"), stringsAsFactors = FALSE))$gene_id, c("A", "B", "C", "D", "E")))
-# I3: the cross table has the harmonised effect of each tool
+# the cross table has the harmonised effect of each tool
 xt2 <- E5$cross_table(calls_syn)
 xe <- function(g, tool) xt2[[paste0("effect_", tool)]][xt2$gene_id == g]
 check("SYNTHETIC cross table: effect_<tool> is the effect of the top feature (G2: rMATS -0.2, SUPPA2 +0.3; G1 DEXSeq 2; G6 DEXSeq has none)",
       isTRUE(all.equal(xe("G2", "rmats"), -0.2)) && isTRUE(all.equal(xe("G2", "suppa"), 0.3)) && isTRUE(all.equal(xe("G1", "exon_dexseq"), 2)) && is.na(xe("G6", "exon_dexseq")) && is.na(xe("G6", "suppa")))
-# I5: versioned DEXSeq identifiers against the unversioned stageR identifiers
+# versioned DEXSeq identifiers against the unversioned stageR identifiers
 st_v <- data.frame(gene_id = c("ENSG1", "ENSG1", "ENSG2"), tx_id = c("ENST1", "ENST2", "ENST3"), gene = c(0.01, 0.01, 0.5), transcript = c(0.02, 1, NA), stringsAsFactors = FALSE)
 feat_v <- data.frame(gene_id = c("ENSG1.5", "ENSG1.5", "ENSG2.4"), feature_id = c("ENST1.2", "ENST2.2", "ENST3.1"), padj = c(0.001, 0.2, 0.3), effect = c(-2, 1, 1),
                      direction = c("control_up", "treatment_up", "treatment_up"), stringsAsFactors = FALSE)
 cv <- E5$calls_from_stager(st_v, feat_v, 0.05)
 check("calls_from_stager joins versioned DEXSeq identifiers (ENSG1.5, ENST1.2) to the unversioned stageR identifiers: the gene is called with the direction of the confirmed transcript",
       identical(cv$genes, "ENSG1") && identical(dirof(cv, "ENSG1"), "control_up") && isTRUE(all.equal(cv$dir$top_effect[cv$dir$gene_id == "ENSG1"], -2)))
+# SYNTHETIC non-Ensembl identifiers with dots (StringTie MSTRG.12.1, STRG.3.2) next to a versioned Ensembl one: the stageR table holds the
+# identifiers as the pipeline's stageR step writes them (cut at the first dot); the DEXSeq table holds them whole. One stageR transcript
+# (XLOC.9.1 -> XLOC) has no DEXSeq row.
+st_n <- data.frame(gene_id = pipeline_strip(c("MSTRG.12", "STRG.3", "ENSG00000000457.14", "XLOC.9")), tx_id = pipeline_strip(c("MSTRG.12.1", "STRG.3.2", "ENST00000373020.5", "XLOC.9.1")),
+                   gene = c(0.01, 0.02, 0.01, 0.01), transcript = c(0.001, 0.03, 0.02, 0.01), stringsAsFactors = FALSE)
+feat_n <- data.frame(gene_id = c("MSTRG.12", "STRG.3", "ENSG00000000457.14"), feature_id = c("MSTRG.12.1", "STRG.3.2", "ENST00000373020.5"), padj = c(0.001, 0.01, 0.02),
+                     effect = c(1.5, -0.8, 2), direction = c("treatment_up", "control_up", "treatment_up"), stringsAsFactors = FALSE)
+cn5 <- E5$calls_from_stager(st_n, feat_n, 0.05)
+check("calls_from_stager (05) joins non-Ensembl identifiers with dots (MSTRG.12.1, STRG.3.2) and ENST00000373020.5 to the stageR table: the genes are called, and MSTRG, STRG and ENSG00000000457 have the direction of their confirmed transcript",
+      identical(sort(cn5$genes), sort(c("ENSG00000000457", "MSTRG", "STRG", "XLOC"))) && identical(dirof(cn5, "MSTRG"), "treatment_up") && identical(dirof(cn5, "STRG"), "control_up") &&
+      identical(dirof(cn5, "ENSG00000000457"), "treatment_up") && isTRUE(all.equal(cn5$dir$top_effect[cn5$dir$gene_id == "STRG"], -0.8)))
+check("calls_from_stager (05): the stageR transcript without a DEXSeq row is counted in a WARNING (1 transcript)",
+      grepl("WARNING: 1 transcripts of the stageR table were not found in the DEXSeq transcript table", cn5$join_warning, fixed = TRUE))
+jn4 <- E4$join_stager(st_n, feat_n)
+check("join_stager (04) joins the same identifiers: every DEXSeq row matches a stageR row, 1 stageR transcript unmatched, none ambiguous",
+      all(paste(jn4$tab$gene_id, jn4$tab$feature_id) %in% paste(jn4$st$gene_id, jn4$st$tx_id)) && jn4$unmatched == 1 && jn4$ambiguous == 0 &&
+      grepl("WARNING: 1 transcripts of the stageR table were not found", E4$stager_join_warning(jn4), fixed = TRUE))
+check("join_stager (04): no warning when every stageR transcript has its DEXSeq row; two DEXSeq rows that collapse to one identifier are counted as ambiguous",
+      !nzchar(E4$stager_join_warning(E4$join_stager(st_n[1:3, ], feat_n))) &&
+      E4$join_stager(st_n[1:3, ], rbind(feat_n, transform(feat_n[1, ], feature_id = "MSTRG.13.1", gene_id = "MSTRG.12")))$ambiguous == 2)
 check("read_dtu_groups and read_dtu_counts strip the versions of the identifiers", {
   f <- file.path(work, "dtu_v.tsv")
   writeLines(c("groupID\tfeatureID\tpadj\tGBR\tYRI\tcountData.1\tcountData.2", "ENSG1.5\tENST1.2\t0.01\t1\t2\t4\t6", "ENSG1.5\tENST2.2\t0.02\t3\t4\t6\t4"), f)
@@ -212,7 +236,7 @@ check("read_dtu_groups and read_dtu_counts strip the versions of the identifiers
   identical(g$gene_id, c("ENSG1", "ENSG1")) && identical(g$feature_id, c("ENST1", "ENST2")) && identical(k$feature_id, c("ENST1", "ENST2")) && identical(k$count_2, c(6, 4)) })
 check("read_dtu_counts gives NULL when the number of countData columns is not the number of samples",
       is.null(E4$read_dtu_counts(file.path(work, "dtu_v.tsv"), data.frame(sample = "a", condition = "GBR", stringsAsFactors = FALSE))))
-# I2: the proportion of a transcript in its gene, per sample, and the group of the sample
+# the proportion of a transcript in its gene, per sample, and the group of the sample
 SYNTHETIC_cnt <- data.frame(gene_id = c("GA", "GA", "GB", "GB"), feature_id = c("TA1", "TA2", "TB1", "TB2"), count_1 = c(10, 10, 0, 0), count_2 = c(30, 10, 5, 5),
                             count_3 = c(5, 15, 2, 6), count_4 = c(15, 5, 1, 3), stringsAsFactors = FALSE)
 SYNTHETIC_smp <- data.frame(sample = c("S1", "S2", "S3", "S4"), condition = c("GBR", "GBR", "YRI", "YRI"), stringsAsFactors = FALSE)
@@ -229,7 +253,7 @@ sm <- E4$read_dtu_samples(file.path(rt, "salmon/dexseq_dtu/results/dexseq/DEXSeq
 check("read_dtu_samples reads the sample and the condition of the four columns from the DEXSeqDataSet (columns 1-2 GBR, 3-4 YRI)",
       !is.null(sm) && identical(sm$condition, c("GBR", "GBR", "YRI", "YRI")) && identical(sm$sample[1], "ERR188383_chrX") && nrow(sm) == 4)
 check("read_dtu_samples is NULL for a missing file", is.null(E4$read_dtu_samples(file.path(work, "absent_dxd.rds"))))
-# I1: stager_note says which values are used
+# stager_note says which values are used
 check("stager_note: the run's alpha equal to the FDR, the re-run, and the warning when the object cannot be read",
       grepl("equal to the FDR of this report", E4$stager_note(list(mode = "run", alpha = 0.05), 0.05), fixed = TRUE) &&
       grepl("re-run at 0.9", E4$stager_note(list(mode = "rerun", alpha = 0.05), 0.9), fixed = TRUE) &&
@@ -315,6 +339,9 @@ check("01_import.Rmd renders for the five modules", ok && all(file.exists(file.p
 if (!ok) finish()
 ok4 <- render(rd1, "04_usage.Rmd")
 check("04_usage.Rmd renders on the fixtures with the default thresholds", ok4 && file.exists(file.path(rd1, "04_usage.html")))
+# the HTML pages load nothing from the internet: no MathJax (mathjax: null in the Rmd header) and no script from an http(s) address
+offline_html <- function(f) { h <- paste(readLines(f, warn = FALSE), collapse = "\n"); !grepl("mathjax", h, ignore.case = TRUE) && !grepl("<script[^>]*src=\"(https?:)?//", h) }
+check("04: the HTML page loads nothing from the internet (no MathJax, no remote script)", ok4 && offline_html(file.path(rd1, "04_usage.html")))
 if (ok4) {
   h <- html_of(rd1, "04_usage.html"); ex <- raw_usage(0.05)
   check("fixture sanity: the real tables hold exon bins, genes and DTU rows below the FDR (so the counts below are not all zero)",
@@ -364,6 +391,7 @@ if (ok4c) {
 rdm <- new_dir("rd_missing"); dir.create(file.path(rdm, "rds"))
 okm4 <- render(rdm, "04_usage.Rmd"); okm5 <- render(rdm, "05_cross_tool.Rmd")
 check("04 and 05 render when no RDS of the contrast exists", okm4 && okm5)
+check("05: the HTML page loads nothing from the internet (no MathJax, no remote script)", okm5 && offline_html(file.path(rdm, "05_cross_tool.html")))
 if (okm4 && okm5) {
   h4 <- html_of(rdm, "04_usage.html"); h5 <- html_of(rdm, "05_cross_tool.html")
   check("04 says that the DEXSeq, edgeR and DTU RDS were not found", has(h4, paste0(C, ".exon_dexseq.rds")) && has(h4, paste0(C, ".exon_edger.rds")) && has(h4, paste0(C, ".dtu.rds")) && has(h4, "not found"))

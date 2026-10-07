@@ -1,13 +1,14 @@
 # Test fixtures
 
-All files in `real_testdata/` are unmodified copies of the output of one nf-core/rnasplice run on the nf-core test data
-(4 paired-end human chrX samples; contrast `GBR_vs_YRI`, treatment GBR, control YRI), taken on 2026-10-03.
+The files in `real_testdata/` are copies of the output of one nf-core/rnasplice run on the nf-core test data (4 paired-end human
+chrX samples; contrast `GBR_vs_YRI`, treatment GBR, control YRI), taken on 2026-10-03. All are unmodified except one:
+`salmon/dexseq_dtu/results/dexseq/DEXSeqDataSet.GBR-YRI.rds` was reduced to its first two rows (see the table below).
 
 Run directory: `/net/bmc-lab3/data/bcc/yannvrb/rnasplice_accept4/a/`. The results directory of the run is `results/2026-10-03_a/`;
 every path below is relative to it unless it says "run directory". `real_testdata/` mirrors the same relative layout.
 
 Size rule: no file over 2 MB is stored; a larger file would be cut to its header, its first 300 rows and every row with
-FDR/padj < 0.5 (SUPPA2: first 300 rows plus rows with p-val < 0.01). All files below are smaller than 2 MB, so none was trimmed.
+FDR/padj < 0.5 (SUPPA2: first 300 rows plus rows with p-val < 0.01). All files below are smaller than 2 MB, so none was trimmed by this rule.
 
 | Fixture (under `real_testdata/`) | Source path | Date | Trimming | Bytes |
 |---|---|---|---|---|
@@ -87,9 +88,9 @@ report (Benjamini-Hochberg over the tested rows of each file), so on the trimmed
 the test recomputes them from the trimmed files.
 
 The commands that built `real_hipscm/` (bash and GNU Awk 4.0.2; the low-support rMATS rows depend on the `rand()` sequence of
-that awk after `srand(42)`). Save the block as a file, for example `build_real_hipscm.sh` in a scratch directory, and run
+that awk after `srand(42)`). Save the two blocks, one after the other, as one file, for example `build_real_hipscm.sh` in a scratch directory, and run
 `bash build_real_hipscm.sh <new directory>`: it only reads the run directory and writes into `<new directory>` (and the list of DTU
-genes, `dtu_genes`, next to the script). Compared with `cmp` against this directory, every file was identical when the block was
+genes, `dtu_genes`, next to the script). Compared with `cmp` against this directory, every file was identical when these commands were
 run again on 2026-10-06.
 
 ```bash
@@ -133,6 +134,11 @@ for k in per_local_event/local_KO-WT.dpsi per_isoform/transcript_KO-WT.dpsi; do
       if ($3 != "nan" && $3 + 0 == 0 && z < 200) { z++; keep = 1 }
       if (keep) print }' "$SRC/salmon/suppa/diffsplice/$k" > "$OUT/salmon/suppa/diffsplice/$k"
 done
+```
+
+Second part of the same file (append it to the first part; it uses `SRC`, `OUT`, `SCR`, `GENES` and `AWKLIB` from the first part):
+
+```bash
 # SUPPA2 PSI per sample: the rows of the kept local events, in the order of the PSI file
 awk -F'\t' 'NR == FNR { if (FNR > 1) K[$1] = 1; next } FNR == 1 || ($1 in K)' "$OUT/salmon/suppa/diffsplice/per_local_event/local_KO-WT.dpsi" \
   "$SRC/salmon/suppa/psi_per_local_event/suppa_tpm.psi" > "$OUT/salmon/suppa/psi_per_local_event/suppa_tpm.psi"

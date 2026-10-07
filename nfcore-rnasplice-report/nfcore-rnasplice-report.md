@@ -13,22 +13,30 @@ Rules that hold for every step:
 
 ## Step 0 — Working directory and constants
 
-Run `pwd` to record the current working directory (`{CWD}`). The sample sheet, the contrasts sheet and the params file of the run are expected here (the files `/nfcore-rnasplice-setup` wrote). Tell the user: "Working directory: `{CWD}`"
+Record the current working directory (`{CWD}`), today's date and the path of the installed skill file (`{SKILL_FILE}`, used in Step 10) with this block, in one Bash call. The block checks the two paths before they are used: a path with a single quote, a double quote, a backslash or a line break cannot be put into the later blocks (see the rule on free-text values below), so the block then prints a line that begins with `ERROR` and stops; tell the user to start the skill from a directory whose path has none of them (or to install the skill under such a path), and stop.
+```bash
+d=$(pwd); s="$HOME/.claude/commands/nfcore-rnasplice-report.md"
+for v in "$d" "$s"; do case "$v" in *"'"*|*'"'*|*\\*|*$'\n'*) echo "ERROR: the path $v holds a single quote, a double quote, a backslash or a line break: the wizard cannot put it into its blocks"; exit 1 ;; esac; done
+echo "CWD=$d"; echo "WD_NAME=${d##*/}"; echo "TODAY_ISO=$(date +%F)"; echo "SKILL_FILE=$s"
+```
+The sample sheet, the contrasts sheet and the params file of the run are expected in `{CWD}` (the files `/nfcore-rnasplice-setup` wrote). Tell the user: "Working directory: `{CWD}`"
 
-Also derive:
+Also derive (the block prints the first two):
 - `{WD_NAME}` = basename of `{CWD}`
 - `{TODAY_ISO}` = today's date as `YYYY-MM-DD`
 - `{REPORT_DIR}` = `{CWD}/results/{TODAY_ISO}_{WD_NAME}_report` (the reports, tables, figures and scripts go here; the name differs from the pipeline's own `results/{TODAY_ISO}_{WD_NAME}` so that the report never lands inside the pipeline output)
 
 **Report directory.** Check whether `{REPORT_DIR}` exists, in one Bash call:
 ```bash
-if [ -e '{REPORT_DIR}' ]; then echo 'EXISTS {REPORT_DIR}'; ls -la '{REPORT_DIR}' | head -n 20; else echo 'NEW {REPORT_DIR}'; fi
+if [ -e '{REPORT_DIR}' ]; then echo 'EXISTS {REPORT_DIR}'; ls -la '{REPORT_DIR}' | head -n 20; n=2; while [ -e '{REPORT_DIR}'_$n ]; do n=$((n + 1)); done; echo 'FREE {REPORT_DIR}_'"$n"; else echo 'NEW {REPORT_DIR}'; fi
 ```
-When it exists, ask before using it (numbered; default 1): "`{REPORT_DIR}` already exists (a previous report?). 1. Use a new directory with a numbered suffix, `{REPORT_DIR}_2` (default) · 2. Reuse it: files of the same name are replaced and the others are kept · 3. Give another path." The rule on free-text values in Step 0 applies. A previous report is never overwritten silently: nothing is written into an existing directory before the user has answered, and the first thing written into `{REPORT_DIR}` at all is the `image_check/` directory of Step 2, after this answer. The answer sets `{REPORT_DIR}`; Step 3 checks that it is not inside the pipeline output directory.
+When it exists, the block also prints `FREE` with the first numbered directory that does not exist yet (`{REPORT_DIR}_2`, or `_3` when `_2` exists, and so on). Ask before using it (numbered; default 1): "`{REPORT_DIR}` already exists (a previous report?). 1. Use a new directory with a numbered suffix, the first free one: the path of the `FREE` line (default) · 2. Reuse it: files of the same name are replaced; the old files stay, and the summary page lists every report, table and figure that this run did not write under From an earlier run (not updated by this run) · 3. Give another path." The rule on free-text values in Step 0 applies. A previous report is never overwritten silently: nothing is written into an existing directory before the user has answered, and the first thing written into `{REPORT_DIR}` at all is the `image_check/` directory of Step 2, after this answer and after the report directory check of Step 3. The answer sets `{REPORT_DIR}`; the block **Report directory check.** of Step 3 checks, before anything is written into it, that it is under `results/` and not inside the pipeline output directory.
 
 Tell the user: "Working directory: `{CWD}`; report directory: `{REPORT_DIR}`".
 
 **Free-text values.** Every block below receives the values of the wizard inside single quotes, and the generated scripts hold them inside single quotes (shell) or double quotes (R strings), so that a `$`, a backtick or `$(...)` in a value is taken literally and no command in it is run, neither by the blocks nor by the generated scripts when the user runs them. A value the user types (an e-mail address, a path, the project name) that contains a single quote (`'`), a double quote (`"`), a backslash (`\`) or a line break is therefore not accepted: ask again, and never put such a value into a block, because the quote would end the quoted value early. The questions that collect free text are the other report path (below), the e-mail address (Step 1), the image path (Step 2), the run, sheet and contrasts paths and the output directory (Step 3), the GTF path (Step 5) and the project name (Step 9); each says so. Choices from a numbered list are not free text.
+
+The rule holds for every value put into a block, typed or derived. A typed number is accepted only in its form: `{MEM}` digits followed by `G` or `M` (`32G`), `{TIME}` `H:MM:SS` or `D-H:MM:SS` (`4:00:00`), `{FDR}` and `{DPSI}` a decimal number (`0.05`), `{MIN_READS}` a whole number (`10`); any other answer is asked again and never put into a block. A derived value must not contain a single quote, a double quote, a backslash or a line break either: `{CWD}` and `{WD_NAME}` (and so `{REPORT_DIR}` and the default `{PROJECT}`), the paths read from the params file (`input`, `contrasts`, `outdir`, `gtf`), `{OUTDIR_RNASPLICE}` and `{SKILL_FILE}`. The blocks that derive these values check them before they are used and stop with a line that begins with `ERROR`: the block of Step 0 (`{CWD}`, `{WD_NAME}`, `{SKILL_FILE}`), the params block of Step 3 (the paths of the params file) and the output-directory block of Step 3 (`{OUTDIR_RNASPLICE}`). A value that the assistant builds or substitutes into a block text cannot be checked by that block, because the quote would break the block before its check runs: such a value that breaks the rule is not put into a block; stop and tell the user which value it is.
 
 ---
 
@@ -45,6 +53,8 @@ Do not pre-fill any address. The rule on free-text values in Step 0 applies. Wai
 The reports run R inside the Singularity image `{SIF}`. Ask (default 1): "Which R image? 1. `/net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif` (default) · 2. another image path." Store `{SIF}`. The rule on free-text values in Step 0 applies.
 
 **Image present.** Check, in one Bash call: `ls -la '{SIF}'`.
+
+**Order of the two blocks below.** Both write into `{REPORT_DIR}` (its `image_check/` directory). Ask the image question and run the presence check now, then go on with Step 3, and run these two blocks only after the block **Report directory check.** of Step 3 has passed: nothing is written into `{REPORT_DIR}` before that check.
 
 **Image missing.** The image is pulled on a compute node, never on the login node. Write and submit this job (replace `{SIF}`, `{REPORT_DIR}` and `{EMAIL}`; the job stops with an error when the module or the pull fails), tell the user the job id, wait until the job has left the queue (`squeue -u $USER`), then continue:
 ```bash
@@ -108,12 +118,26 @@ Ask (default: the `outdir` of the params file): "Where is the output directory o
 ```bash
 ls '{CWD}'/*_params.yaml 2>/dev/null
 grep -E '^(input|contrasts|source|outdir|gtf|genome|rmats|suppa|dexseq_exon|edger_exon|dexseq_dtu|rmats_paired_stats|diffsplice_paired):' '{CWD}'/*_params.yaml 2>/dev/null
+grep -hE '^(input|contrasts|outdir|gtf):' '{CWD}'/*_params.yaml 2>/dev/null | awk -v q="'" '{ k = $0; sub(/:.*$/, "", k); v = $0; sub(/^[a-z]+:[ \t]*/, "", v); sub(/[ \t]+$/, "", v); f = substr(v, 1, 1)
+  if ((f == "\"" || f == q) && length(v) > 1 && substr(v, length(v)) == f) v = substr(v, 2, length(v) - 2)
+  if (index(v, q) || index(v, "\"") || index(v, "\\")) { print "ERROR: the value of " k " in the params file holds a quote or a backslash: it cannot be put into the later blocks"; bad = 1 } }
+  END { exit bad }' || exit 1
 ```
-One params file found: the directory that holds it is `{PARAMS_DIR}` (normally the run directory, from which the pipeline was started); its `outdir` is the default for `{OUTDIR_RNASPLICE}`, its `contrasts` file is `{CONTRASTS_CSV}` and its `input` file is `{SAMPLESHEET}`. A relative path in the params file is relative to `{PARAMS_DIR}`, not to the directory the wizard runs in (write the absolute paths; only the output directory is resolved by a block, below). Several or none: ask which params file, or for the paths of the three files; a params file the user names sets `{PARAMS_DIR}` to the directory that holds it. The rule on free-text values in Step 0 applies. The output directory must exist, and `{REPORT_DIR}` must not lie inside it.
+The last command of the block checks the paths of the params file (the value without its YAML quotes) and stops on a quote or a backslash in one of them (rule on free-text values in Step 0). One params file found: the directory that holds it is `{PARAMS_DIR}` (normally the run directory, from which the pipeline was started); its `outdir` is the default for `{OUTDIR_RNASPLICE}`, its `contrasts` file is `{CONTRASTS_CSV}` and its `input` file is `{SAMPLESHEET}`. A relative path in the params file is relative to `{PARAMS_DIR}`, not to the directory the wizard runs in (write the absolute paths; only the output directory is resolved by a block, below). Several or none: ask which params file, or for the paths of the three files; a params file the user names sets `{PARAMS_DIR}` to the directory that holds it. The rule on free-text values in Step 0 applies. The output directory must exist, and `{REPORT_DIR}` must not lie inside it.
 
-**Absolute output directory.** Whatever the user answers (a relative or an absolute path) is `{OUTDIR_GIVEN}`. The rule on free-text values in Step 0 applies. A relative path is resolved from `{OUTDIR_BASE}`: `{PARAMS_DIR}` when the answer is the default taken from the params file (the pipeline normally resolved its `outdir` from the run directory, which need not be the directory the wizard runs in), `{CWD}` when the user typed the path. The report jobs run from the report directory, where a relative path does not exist, so resolve it, in one Bash call, and store the printed path as `{OUTDIR_RNASPLICE}` (absolute) for every later step and every job script:
+**Absolute output directory.** Whatever the user answers (a relative or an absolute path) is `{OUTDIR_GIVEN}`. The rule on free-text values in Step 0 applies. A relative path is resolved from `{OUTDIR_BASE}`: `{PARAMS_DIR}` when the answer is the default taken from the params file (the pipeline normally resolved its `outdir` from the run directory, which need not be the directory the wizard runs in), `{CWD}` when the user typed the path. The report jobs run from the report directory, where a relative path does not exist, so resolve it, in one Bash call, and store the printed path as `{OUTDIR_RNASPLICE}` (absolute) for every later step and every job script. The block stops when the resolved path holds a quote, a backslash or a line break:
 ```bash
-cd '{OUTDIR_BASE}' 2>/dev/null && cd '{OUTDIR_GIVEN}' 2>/dev/null && echo "OUTDIR_RNASPLICE=$(pwd)" || { echo 'ERROR: output directory {OUTDIR_GIVEN} not found from {OUTDIR_BASE}'; exit 1; }
+cd '{OUTDIR_BASE}' 2>/dev/null && cd '{OUTDIR_GIVEN}' 2>/dev/null || { echo 'ERROR: output directory {OUTDIR_GIVEN} not found from {OUTDIR_BASE}'; exit 1; }
+d=$(pwd); case "$d" in *"'"*|*'"'*|*\\*|*$'\n'*) echo "ERROR: the output directory $d holds a single quote, a double quote, a backslash or a line break: the wizard cannot put it into its blocks"; exit 1 ;; esac
+echo "OUTDIR_RNASPLICE=$d"
+```
+
+**Report directory check.** Before anything is written into `{REPORT_DIR}` (the `image_check/` directory of Step 2 included), check, in one Bash call, that it is under a `results/` directory and not inside the output directory of the run. On a line that begins with `ERROR`, stop and ask for another report directory (Step 0, option 3); the skill never writes into the output of the run. After this check, run the two blocks of Step 2 that write into `{REPORT_DIR}` (**Image missing.** when the image is missing, and **Package check.**), then go on with the module detection:
+```bash
+R='{REPORT_DIR}'; OUT='{OUTDIR_RNASPLICE}'
+case "$R" in */results/*) ;; *) echo "ERROR: report directory $R is not under a results/ directory"; exit 1 ;; esac
+case "$R/" in "$OUT"/*) echo "ERROR: report directory $R is inside the pipeline output $OUT"; exit 1 ;; esac
+echo "REPORT_DIR_OK=$R"
 ```
 
 **Module detection.** A module counts as found only when its main result file exists and has more than a header line; an empty file or a file with only a header is not found. The files are named from the contrasts file (treatment `{T}`, control `{C}`, contrast name `{CONTRAST}`), never by splitting file names: rMATS `star/rmats/{CONTRAST}/{SE,A5SS,A3SS,MXE,RI}.MATS.{JC,JCEC}.txt`, or `star/rmats/{CONTRAST}_paired/` with the same file names when the run used `rmats_paired_stats: true` (either directory counts); SUPPA2 `salmon/suppa/diffsplice/per_local_event/local_{T}-{C}.dpsi`; DEXSeq exon `star/dexseq_exon/results/DEXSeqResults.{CONTRAST}.csv`; edgeR exon `star/edger/contrast_{CONTRAST}.usage.exon.csv`; DTU `salmon/dexseq_dtu/results/dexseq/DEXSeqResults.{T}-{C}.tsv`. SUPPA2 and DTU file names use `{T}-{C}` (treatment, hyphen, control); the other three use the contrast name. A BAM-input run has no `salmon/` directory, so SUPPA2 and DTU are simply not found. The rMATS tables have the column `ID` twice (first column, and again after the coordinate columns); detection only counts lines and never reads columns, so this does not matter here, but every reader of these tables must account for it. Run, in one Bash call (replace `{OUTDIR_RNASPLICE}` and `{CONTRASTS_CSV}` with the literal paths):
@@ -239,6 +263,8 @@ Ask one question per value, state the default with each, and store the answers:
 - `{RMATS_TYPE}`: which rMATS count type to read, `JC` (junction counts only) or `JCEC` (junction counts plus reads on the target exon). Default: `JC`. Asked only when `rmats` is in `{MODULES}`; a type whose files the run did not produce is not offered.
 - `{MIN_READS}`: minimum read support of an rMATS event: for each group, the mean over its samples of `IJC` plus `SJC`, required in both groups (the smaller of the two group means must reach it). Default: 10. Events below it are flagged (`low_support`), kept in the tables and excluded from the significance counts of the reports, never deleted; their number is reported, and the rMATS FDR is not recomputed (it stays as rMATS wrote it). On very shallow data (like the nf-core test data) most events fall below 10; the user may lower it. Asked only when `rmats` is in `{MODULES}`.
 
+A typed value is accepted only in its form (the rule on free-text values in Step 0 applies): `{FDR}` and `{DPSI}` a decimal number such as `0.05`, `{MIN_READS}` a whole number such as `10`; any other answer is asked again.
+
 SUPPA2 reports a p-value but no adjusted p-value; the report applies the Benjamini-Hochberg correction to it and says so, and `{FDR}` is applied to the corrected value. Print the thresholds in one line and ask (default: yes): "Use these thresholds?"
 
 ---
@@ -249,7 +275,7 @@ Offer only the sections the run supports; a section that cannot be produced is n
 - `events`: event and result tables with a volcano plot for each module in `{MODULES}`. Default: yes. This is the content of the rMATS, SUPPA2 and exon and transcript usage reports.
 - `cross`: cross-tool comparison (UpSet plot of the significant genes of each tool and the direction concordance). Offered only when two or more of `rmats`, `suppa`, `dexseq_exon`, `edger_exon` and `dtu` are in `{MODULES}` (each counts as a separate tool) and UpSetR or ComplexUpset is in the image (Step 2). Default: yes when offered.
 - `topgene`: top-gene plots (per-sample PSI of the top events, exon usage and isoform proportions), drawn from the pipeline's own tables only, never from BAM files. Default: yes.
-- `enrich`: GO enrichment (biological process, molecular function, cellular component) of the significant genes of each tool, in the groups treatment_up, control_up and all significant genes (a group needs at least 10 genes), with the genes that were testable in that tool as the background. Only GO is run: KEGG and Reactome are never run by this report, and when they are asked for in `{ENRICH_DBS}` the report prints "KEGG/Reactome require an image rebuild". Offered only when `{ORGANISM}` is `human` or `mouse` (any other organism is answered in the report with "organism not supported"). Default: yes when offered.
+- `enrich`: GO enrichment (biological process, molecular function, cellular component) of the significant genes of each tool, in the groups treatment_up, control_up and all significant genes (a group needs at least 10 genes), with the genes that were testable in that tool as the background. Only GO is run: KEGG and Reactome are never run by this report, and when they are asked for in `{ENRICH_DBS}` the report prints that KEGG/Reactome are not offered by this report and, when the image lacks the packages, "KEGG/Reactome require an image rebuild". Offered only when `{ORGANISM}` is `human` or `mouse` (any other organism is answered in the report with "organism not supported"). Default: yes when offered.
 
 Which Rmd and job each switch controls is fixed in Step 10. `events` and `topgene` are both passed to the module reports as parameters. Ask (default: yes): "Generate these sections: `{SECTIONS}`?"
 
@@ -261,6 +287,8 @@ Ask one question per value and state the default:
 - Memory `{MEM}`: default 32G (at most 64G).
 - Time `{TIME}`: default 4:00:00 (at most 4:00:00).
 - `{PROJECT}`: the name used in the job names. Default: `{WD_NAME}`. The rule on free-text values in Step 0 applies.
+
+A typed memory or time is accepted only in its form (the rule on free-text values in Step 0 applies): memory digits followed by `G` or `M` (`32G`), time `H:MM:SS` or `D-H:MM:SS` (`4:00:00`); any other answer is asked again.
 
 Every generated script uses partition `bcc`, one node, one task and four CPUs (`-N 1 -n 1 -c 4`). A value above 64G or 4:00:00 is written only when the user asks for it by name; the generator then prints a note that the value is above the default limits. Tell the user the values in one line.
 
@@ -286,21 +314,24 @@ Default: every job that applies. Write the Rmd files that apply to `{REPORT_DIR}
 
 **Writing the Rmd files.** The content of each Rmd file is the block under its heading **File `<name>.Rmd`.** in the section "Report files" below (a fence of four backticks, language `rmd`). Write that block with the Write tool to `{REPORT_DIR}/<name>.Rmd` byte for byte, without the two fence lines. The Rmd files hold no placeholders: every value of the earlier steps reaches them as a render parameter of the job script (the `params = list(...)` of the block below). Writing seven long files by hand is slow and error-prone, so the files are normally cut out of the installed skill file by the next block; writing them one at a time with the Write tool is the fallback when that block cannot read the skill file.
 
-**Extracting the Rmd files.** `{SKILL_FILE}` is the absolute path of the installed skill file, `$HOME/.claude/commands/nfcore-rnasplice-report.md` with `$HOME` written out (the skill is installed there). The block first reads the skill file without writing anything: it checks that the file has no CRLF line endings and holds exactly seven Rmd blocks, and that each of the seven expected blocks occurs once, is closed, is not empty and starts with the YAML header line `---`. On any problem it prints a line that begins with `ERROR` with the cause and stops, so nothing has been written. Only then does it write the seven files to `{REPORT_DIR}` (every line ends with a line break), checks them again and prints their line counts. The block makes no temporary directory and deletes and moves nothing. When the skill file does not exist, it names the path it looked for: give the path of the skill file, or use the Write tool as above.
+**Extracting the Rmd files.** `{SKILL_FILE}` is the absolute path of the installed skill file, printed by the block of Step 0 (`SKILL_FILE=`, the path `$HOME/.claude/commands/nfcore-rnasplice-report.md` with `$HOME` written out; the skill is installed there). Its first two lines after the values check again, as in Step 3, that `{REPORT_DIR}` is under `results/` and not inside the output of the run. The block first reads the skill file without writing anything: it checks that the file has no CRLF line endings and holds exactly seven Rmd blocks, and that each of the seven expected blocks occurs once, has its opening line `` ````rmd `` on the line right after its heading (no blank line or text between them), is closed, is not empty and starts with the YAML header line `---`. On any problem it prints a line that begins with `ERROR` with the cause and stops, so nothing has been written. Only then does it write the seven files to `{REPORT_DIR}` (every line ends with a line break), checks them again and prints their line counts. The block makes no temporary directory and deletes and moves nothing. When the skill file does not exist, it names the path it looked for: give the path of the skill file, or use the Write tool as above.
 ```bash
-R='{REPORT_DIR}'; SK='{SKILL_FILE}'
+R='{REPORT_DIR}'; SK='{SKILL_FILE}'; OUT='{OUTDIR_RNASPLICE}'
+case "$R" in */results/*) ;; *) echo "ERROR: report directory $R is not under a results/ directory"; exit 1 ;; esac
+case "$R/" in "$OUT"/*) echo "ERROR: report directory $R is inside the pipeline output $OUT"; exit 1 ;; esac
 NAMES='01_import 02_rmats 03_suppa 04_usage 05_cross_tool 06_enrichment 07_summary'
 [ -f "$SK" ] || { echo "ERROR: the skill file $SK does not exist: give the path of the skill file, or write the Rmd files one at a time with the Write tool"; exit 1; }
 if grep -q $'\r' "$SK"; then echo "ERROR: the line endings are CRLF in $SK: use a copy with LF line endings; nothing was written to $R"; exit 1; fi
 [ "$(grep -c '^\*\*File `[0-9][0-9]_[a-z_]*\.Rmd`\.\*\*$' "$SK")" -eq 7 ] || { echo "ERROR: $SK does not hold exactly 7 Rmd blocks; nothing was written to $R"; exit 1; }
 for n in $NAMES; do
-  set -- $(awk -v n="$n.Rmd" 'BEGIN { h = "**File `" n "`.**" } $0 == h { b++; if (b == 1) s = 1; next } s == 1 && $0 == "````rmd" { s = 2; next } s == 2 && $0 == "````" { s = 3; next } s == 2 && $0 == "````rmd" { x = 1 } s == 2 { l++; if (l == 1 && $0 == "---") f = 1 } END { print b + 0, (s == 3), l + 0, f + 0, x + 0 }' "$SK")
+  set -- $(awk -v n="$n.Rmd" 'BEGIN { h = "**File `" n "`.**" } $0 == h { b++; if (b == 1) s = 1; next } s == 1 { s = ($0 == "````rmd") ? 2 : 4; next } s == 2 && $0 == "````" { s = 3; next } s == 2 && $0 == "````rmd" { x = 1 } s == 2 { l++; if (l == 1 && $0 == "---") f = 1 } END { print b + 0, (s == 3), l + 0, f + 0, x + 0, (s != 4) }' "$SK")
+  [ "${6:-0}" = 1 ] || { echo "ERROR: the line right after the heading of $n.Rmd is not the opening line ````rmd of its block; nothing was written to $R"; exit 1; }
   [ "${1:-0}" = 1 ] && [ "${2:-0}" = 1 ] && [ "${3:-0}" -gt 0 ] && [ "${4:-0}" = 1 ] && [ "${5:-0}" = 0 ] \
     || { echo "ERROR: the block of $n.Rmd is missing, repeated, not closed, holds another rmd opener, is empty, or does not start with the YAML header line; nothing was written to $R"; exit 1; }
 done
 mkdir -p "$R" || { echo "ERROR: cannot create $R"; exit 1; }
 for n in $NAMES; do
-  awk -v n="$n.Rmd" 'BEGIN { h = "**File `" n "`.**" } $0 == h { s = 1; next } s == 1 && $0 == "````rmd" { s = 2; next } s == 2 && $0 == "````" { exit } s == 2 { print }' "$SK" > "$R/$n.Rmd"
+  awk -v n="$n.Rmd" 'BEGIN { h = "**File `" n "`.**" } $0 == h { s = 1; next } s == 1 { s = ($0 == "````rmd") ? 2 : 4; next } s == 2 && $0 == "````" { exit } s == 2 { print }' "$SK" > "$R/$n.Rmd"
 done
 for n in $NAMES; do
   [ -s "$R/$n.Rmd" ] && [ "$(head -n 1 "$R/$n.Rmd")" = "---" ] || { echo "ERROR: $R/$n.Rmd was not written correctly"; exit 1; }
@@ -456,7 +487,7 @@ Check progress with: squeue -u $USER
 
 Each block below is the whole content of one Rmd file of `{REPORT_DIR}` (see **Writing the Rmd files.** in Step 10). The values of the wizard reach the Rmd as render parameters; the parameter names are those of the job scripts: `outdir`, `report_dir`, `contrasts`, `samplesheet`, `modules`, `fdr`, `dpsi`, `rmats_type`, `min_reads`, `events`, `cross`, `topgene`, `enrich`, `organism`, `enrich_dbs`, `gtf`, `paired_rmats`, `paired_suppa`.
 
-The import report `01_import.Rmd` reads the table of every module in `{MODULES}` for every contrast, converts each effect to treatment minus control, and writes one RDS per contrast and tool (`rds/{CONTRAST}.{tool}.rds`, tool one of `rmats`, `suppa`, `exon_dexseq`, `exon_edger`, `dtu`) with the columns `contrast, tool, gene_id, gene_symbol, feature_type, feature_id, effect, effect_scale, padj, direction, n_support, low_support`, plus `rds/{CONTRAST}.qc.rds` with the counts the report prints. A missing or renamed column stops the import with a message that names the file and the column. When the file of a module is missing for a contrast, no RDS is written for that tool and contrast and the file is listed in `qc$files_missing`; Rmds 02 to 06 check that each RDS exists before they read it. `low_support` is TRUE for an rMATS event whose read support is below `{MIN_READS}` and FALSE for every other row and tool; flagged rows stay in the RDS, and the reports exclude them from the significant calls but count and report them.
+Before it reads any table, the import report writes the run stamp `rds/run_stamp.rds` (the time and the parameters of the run); the summary page uses it to tell the files of this run from the files an earlier run left in the same directory. The import report `01_import.Rmd` reads the table of every module in `{MODULES}` for every contrast, converts each effect to treatment minus control, and writes one RDS per contrast and tool (`rds/{CONTRAST}.{tool}.rds`, tool one of `rmats`, `suppa`, `exon_dexseq`, `exon_edger`, `dtu`) with the columns `contrast, tool, gene_id, gene_symbol, feature_type, feature_id, effect, effect_scale, padj, direction, n_support, low_support`, plus `rds/{CONTRAST}.qc.rds` with the counts the report prints. A missing or renamed column stops the import with a message that names the file and the column. When the file of a module is missing for a contrast, no RDS is written for that tool and contrast and the file is listed in `qc$files_missing`; Rmds 02 to 06 check that each RDS exists before they read it. `low_support` is TRUE for an rMATS event whose read support is below `{MIN_READS}` and FALSE for every other row and tool; flagged rows stay in the RDS, and the reports exclude them from the significant calls but count and report them.
 
 **File `01_import.Rmd`.**
 ````rmd
@@ -465,6 +496,7 @@ title: "Import and harmonise the nf-core/rnasplice tables"
 output:
   html_document:
     toc: true
+    mathjax: null
 params:
   outdir: ""
   report_dir: "."
@@ -696,6 +728,20 @@ count_table <- function(tab, fdr, dpsi) {
              significant_treatment_up = sum(sig & tab$direction == "treatment_up"),
              significant_control_up = sum(sig & tab$direction == "control_up"))
 }
+
+# the run stamp, written when this report starts (job 01 is the first job of a run): rds/run_stamp.rds holds the time and the parameters
+# of this run. The summary page lists a report, table or figure as written by this run only when the file is not older than the stamp.
+write_run_stamp <- function(report_dir, params) {
+  d <- file.path(report_dir, "rds")
+  dir.create(d, recursive = TRUE, showWarnings = FALSE)
+  f <- file.path(d, "run_stamp.rds")
+  saveRDS(list(time = Sys.time(), params = as.list(params)), f)
+  invisible(f)
+}
+```
+
+```{r stamp}
+write_run_stamp(params$report_dir, params)
 ```
 
 ```{r import}
@@ -825,6 +871,7 @@ title: "rMATS splicing events"
 output:
   html_document:
     toc: true
+    mathjax: null
 params:
   outdir: ""
   report_dir: "."
@@ -1173,6 +1220,7 @@ title: "SUPPA2 differential splicing"
 output:
   html_document:
     toc: true
+    mathjax: null
 params:
   outdir: ""
   report_dir: "."
@@ -1433,6 +1481,7 @@ title: "Exon and transcript usage"
 output:
   html_document:
     toc: true
+    mathjax: null
 params:
   outdir: ""
   report_dir: "."
@@ -1460,7 +1509,7 @@ knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, dev = "png
 
 This report shows the exon usage results of DEXSeq and edgeR and the transcript usage (DTU) results of DEXSeq with stageR screening for each contrast, read from the tables that `01_import.Rmd` wrote to `r file.path(params$report_dir, "rds")` and from the gene-level files of the run (read only). Every effect is stated as **treatment minus control**: a positive effect is higher in the treatment group (more inclusion for rMATS and SUPPA2, higher usage for the exon and transcript usage tools). For an exon bin, an exon or a transcript, a positive log2 fold change means it is more used in treatment and a negative one that it is more used in control. The effect is the harmonised column of the RDS and is used as it is.
 
-Exon usage and transcript usage are cut by the adjusted p-value only: a gene, an exon bin or a transcript is significant when its adjusted p-value is below `r params$fdr` (the dPSI threshold of the rMATS and SUPPA2 reports is not applied here). DEXSeq exon usage: a gene is significant when its per-gene q-value (`perGeneQValue`, read from the run's file) is below the FDR, an exon bin when its adjusted p-value is. edgeR exon usage: a gene is significant when its Simes FDR is below the FDR, an exon when its exon-level FDR is; the F-test gene table is counted as well. DTU: stageR screening. In the stageR table the column `gene` holds the screened adjusted p-value at the gene level and the column `transcript` the screened adjusted p-value at the transcript level (`NA` where the gene was not screened in); a gene is significant when `gene` is below the FDR and a transcript when `transcript` is. stageR's adjusted p-values are valid only at the alpha they were computed for: when the FDR of this report differs from the alpha of the run (read from the `stageRTx` object with `getAlpha`), the stage-wise adjustment is re-run at the FDR of this report from that object, and when the object cannot be read the values of the run are used with a warning. The direction of a gene is the sign of the effect of its most significant feature (smallest adjusted p-value among the significant bins, exons or transcripts of the gene); among features with the same smallest adjusted p-value (many are exactly 0 on real data) the one with the largest absolute effect is taken, and if that is tied too, the first by feature identifier, so the choice never depends on the order of the rows. The direction is empty when the gene is significant but none of its features is. The table of the DEXSeq exon bins lists the bins with an effect first (a bin of a group of overlapping genes, `GENE1+GENE2`, can have no fold change), then by adjusted p-value and the larger absolute effect.
+Exon usage and transcript usage are cut by the adjusted p-value only: a gene, an exon bin or a transcript is significant when its adjusted p-value is below `r params$fdr` (the dPSI threshold of the rMATS and SUPPA2 reports is not applied here). DEXSeq exon usage: a gene is significant when its per-gene q-value (`perGeneQValue`, read from the run's file) is below the FDR, an exon bin when its adjusted p-value is. edgeR exon usage: a gene is significant when its Simes FDR is below the FDR, an exon when its exon-level FDR is; the F-test gene table is counted as well. DTU: stageR screening. In the stageR table the column `gene` holds the screened adjusted p-value at the gene level and the column `transcript` the screened adjusted p-value at the transcript level (`NA` where the gene was not screened in); a gene is significant when `gene` is below the FDR and a transcript when `transcript` is. stageR's adjusted p-values are valid only at the alpha they were computed for: when the FDR of this report differs from the alpha of the run (read from the `stageRTx` object with `getAlpha`), the stage-wise adjustment is re-run at the FDR of this report from that object, and when the object cannot be read the values of the run are used with a warning. The stageR table holds gene and transcript identifiers cut at the first dot (the rule of the pipeline's stageR step); the DEXSeq transcript table is cut by the same rule before the two are joined, and a WARNING gives the number of stageR transcripts not found in the DEXSeq table. The direction of a gene is the sign of the effect of its most significant feature (smallest adjusted p-value among the significant bins, exons or transcripts of the gene); among features with the same smallest adjusted p-value (many are exactly 0 on real data) the one with the largest absolute effect is taken, and if that is tied too, the first by feature identifier, so the choice never depends on the order of the rows. The direction is empty when the gene is significant but none of its features is. The table of the DEXSeq exon bins lists the bins with an effect first (a bin of a group of overlapping genes, `GENE1+GENE2`, can have no fold change), then by adjusted p-value and the larger absolute effect.
 
 A DTU log2 fold change beyond 10 in absolute value comes from a transcript with (almost) no counts in one group: DEXSeq then reports a fold change of 20 or more that is not an estimate of a change in usage (a zero-count artefact). Such rows keep their effect as it is and are marked `zero-count artefact` in the column `effect_flag` of the DTU tables; the threshold of 10 log2 units is a heuristic, not a statistical test.
 
@@ -1571,10 +1620,24 @@ stager_genes <- function(st) {
   g <- st[!duplicated(st$gene_id), , drop = FALSE]
   data.frame(gene_id = g$gene_id, padj = g$gene, stringsAsFactors = FALSE)
 }
-# an Ensembl gene identifier loses its version suffix (.5) only when it has one; a transcript identifier loses a trailing version in the same way
-# (the pipeline strips the versions of the stageR identifiers, not those of the DEXSeq table: both sides of a join are stripped here)
-strip_version <- function(x) sub("^(ENS[A-Z]*G[0-9]+)\\.[0-9]+$", "\\1", x)
-strip_tx_version <- function(x) sub("\\.[0-9]+$", "", x)
+# the identifier rule of the pipeline's stageR step (run_stager.R, stripVersion): everything from the first dot on is removed, for gene and
+# transcript identifiers alike (ENSG00000000457.14 -> ENSG00000000457, MSTRG.12.1 -> MSTRG). The stageR table holds identifiers cut by it,
+# the DEXSeq transcript table does not: both sides of every join with the stageR table are cut by it here
+stager_id <- function(x) sub("\\..*", "", x)
+# the stageR table and the DEXSeq transcript table with their identifiers cut by that rule; unmatched: the stageR transcripts with no row
+# in the DEXSeq table; ambiguous: the DEXSeq rows whose cut identifiers are those of another row (their stageR values cannot be told apart)
+join_stager <- function(st, tab) {
+  st$gene_id <- stager_id(st$gene_id); st$tx_id <- stager_id(st$tx_id)
+  tab$gene_id <- stager_id(tab$gene_id); tab$feature_id <- stager_id(tab$feature_id)
+  key <- paste(tab$gene_id, tab$feature_id)
+  list(st = st, tab = tab, unmatched = sum(!paste(st$gene_id, st$tx_id) %in% key), ambiguous = sum(duplicated(key) | duplicated(key, fromLast = TRUE)))
+}
+stager_join_warning <- function(j) {
+  w <- character(0)
+  if (j$unmatched > 0) w <- c(w, paste0("**WARNING: ", j$unmatched, " transcripts of the stageR table were not found in the DEXSeq transcript table** (identifiers of both cut at the first dot, as the pipeline's stageR step does): they have no effect and no direction here."))
+  if (j$ambiguous > 0) w <- c(w, paste0("**WARNING: ", j$ambiguous, " rows of the DEXSeq transcript table share their identifiers with another row once cut at the first dot** (the rule of the pipeline's stageR step): their stageR values cannot be told apart."))
+  paste(w, collapse = "\n\n")
+}
 # the overall alpha stageR was run with, read from the stageRTx object with getAlpha; NA when the file is absent or cannot be read
 stager_alpha <- function(path) {
   if (!file.exists(path) || !requireNamespace("stageR", quietly = TRUE)) return(NA_real_)
@@ -1608,7 +1671,7 @@ stager_note <- function(res, fdr) {
 read_dtu_groups <- function(path, treatment, control) {
   tab <- read_delim_chr(path, "\t")
   need_cols(tab, c("groupID", "featureID", treatment, control), path)
-  data.frame(gene_id = strip_version(strip_quotes(tab$groupID)), feature_id = strip_tx_version(strip_quotes(tab$featureID)), treatment = to_num(tab[[treatment]], path, treatment),
+  data.frame(gene_id = stager_id(strip_quotes(tab$groupID)), feature_id = stager_id(strip_quotes(tab$featureID)), treatment = to_num(tab[[treatment]], path, treatment),
              control = to_num(tab[[control]], path, control), stringsAsFactors = FALSE)
 }
 # the sample and the condition of each column of the DEXSeq transcript table (countData.1, countData.2, ...): the colData of the DEXSeqDataSet of the run
@@ -1627,7 +1690,7 @@ read_dtu_counts <- function(path, samples) {
   cc <- grep("^countData\\.[0-9]+$", names(tab), value = TRUE)
   cc <- cc[order(as.integer(sub("^countData\\.", "", cc)))]
   if (is.null(samples) || length(cc) != nrow(samples)) return(NULL)
-  out <- data.frame(gene_id = strip_version(strip_quotes(tab$groupID)), feature_id = strip_tx_version(strip_quotes(tab$featureID)), stringsAsFactors = FALSE)
+  out <- data.frame(gene_id = stager_id(strip_quotes(tab$groupID)), feature_id = stager_id(strip_quotes(tab$featureID)), stringsAsFactors = FALSE)
   for (i in seq_along(cc)) out[[paste0("count_", i)]] <- to_num(tab[[cc[i]]], path, cc[i])
   out
 }
@@ -1860,10 +1923,10 @@ for (i in seq_len(nrow(contrasts))) {
       } else {
         st <- read_stager(sf)
         sres <- stager_for_fdr(st, path_of("salmon", "dexseq_dtu", "results", "stager", sprintf("stageRTx.%s-%s.rds", Tr, Co)), params$fdr)
-        st <- sres$st
-        st$gene_id <- strip_version(st$gene_id); st$tx_id <- strip_tx_version(st$tx_id)
-        tab$gene_id <- strip_version(tab$gene_id); tab$feature_id <- strip_tx_version(tab$feature_id)
+        jn <- join_stager(sres$st, tab)
+        st <- jn$st; tab <- jn$tab
         cat(stager_note(sres, params$fdr), "\n\n")
+        if (nzchar(stager_join_warning(jn))) cat(stager_join_warning(jn), "\n\n")
         cat("The column `gene` of the stageR table is the screened adjusted p-value at the gene level and the column `transcript` the screened adjusted p-value at the transcript level (`NA` where the gene was not screened in).\n\n")
         sg <- stager_genes(st)
         txsig <- !is.na(st$transcript) & st$transcript < params$fdr
@@ -1940,7 +2003,7 @@ for (i in seq_len(nrow(contrasts))) {
 ```
 ````
 
-The cross-tool report `05_cross_tool.Rmd` is generated only when two or more tools ran (Step 10). It compares, for every contrast, the genes called by each tool that has a result. It reads `rds/{CONTRAST}.{tool}.rds` (written by `01_import.Rmd`) and, for the gene-level calls of DEXSeq exon usage, edgeR exon usage and DTU, the same gene-level files of the run as `04_usage.Rmd` (`perGeneQValue.{CONTRAST}.csv`, `usage.simes.csv`, stageR's `getAdjustedPValues.{T}-{C}.tsv`), read only. A gene is called by rMATS or SUPPA2 when at least one of its events is significant (adjusted p-value below `{FDR}`, absolute dPSI at least `{DPSI}`, and for rMATS not flagged `low_support`); by DEXSeq exon usage when its `perGeneQValue` is below `{FDR}`; by edgeR exon usage when its Simes FDR is below `{FDR}`; by DTU when stageR's `gene` column is below `{FDR}` (stageR's adjusted p-values are valid only at the alpha they were computed for: at another FDR the stage-wise adjustment is re-run from the `stageRTx` object of the run, or the values of the run are used with a warning). Gene identifiers are Ensembl identifiers; a version suffix is removed only where one is present, and a group of overlapping genes (a DEXSeq group `GENE1+GENE2` or a SUPPA2 locus `GENE1_and_GENE2`) counts for each of its genes. The direction of a gene in a tool is the sign of the effect of the feature with the smallest adjusted p-value among that tool's significant features in the gene (rMATS and SUPPA2 on dPSI, the other tools on log2 fold change): `treatment_up`, `control_up`, or empty when the gene is called at gene level and none of its features is significant. Among features with equal smallest adjusted p-value (on real data many are exactly 0) the one with the largest absolute effect is taken, and if that is tied too, the first by feature identifier; the direction never depends on the order of the rows. A gene whose tied features point in opposite directions gets the direction of the larger change; it is not marked separately. The concordance table counts, for each pair of tools, the genes called by both with the same direction and with the opposite direction; directions compared only, never effect sizes across scales. The background is stated in the report: a gene outside a tool's set was either not significant or not tested by that tool. It writes, per contrast, `tables/{CONTRAST}.cross_tool.sets.csv`, `.cross_tool.membership.csv`, `.cross_tool.intersections.csv`, `.cross_tool.genes.csv` (the genes called by two or more tools, with the direction and the harmonised effect of each tool: `direction_{tool}`, `effect_{tool}`, and, when DTU is compared, `effect_flag`: `zero-count artefact` when the absolute DTU log2 fold change is above 10, a heuristic threshold; `effect_dtu` is not changed), `.cross_tool.concordance.csv` and `figures/{CONTRAST}.upset.png` (ComplexUpset when the image has it, otherwise UpSetR). A tool whose RDS or gene-level file is missing is left out and named; fewer than two tools left means no comparison, and the report still renders.
+The cross-tool report `05_cross_tool.Rmd` is generated only when two or more tools ran (Step 10). It compares, for every contrast, the genes called by each tool that has a result. It reads `rds/{CONTRAST}.{tool}.rds` (written by `01_import.Rmd`) and, for the gene-level calls of DEXSeq exon usage, edgeR exon usage and DTU, the same gene-level files of the run as `04_usage.Rmd` (`perGeneQValue.{CONTRAST}.csv`, `usage.simes.csv`, stageR's `getAdjustedPValues.{T}-{C}.tsv`), read only. A gene is called by rMATS or SUPPA2 when at least one of its events is significant (adjusted p-value below `{FDR}`, absolute dPSI at least `{DPSI}`, and for rMATS not flagged `low_support`); by DEXSeq exon usage when its `perGeneQValue` is below `{FDR}`; by edgeR exon usage when its Simes FDR is below `{FDR}`; by DTU when stageR's `gene` column is below `{FDR}` (stageR's adjusted p-values are valid only at the alpha they were computed for: at another FDR the stage-wise adjustment is re-run from the `stageRTx` object of the run, or the values of the run are used with a warning). Gene identifiers are Ensembl identifiers; a version suffix is removed only where one is present (for the joins with the stageR table the identifiers of both tables are cut at the first dot, the rule of the pipeline's stageR step, and stageR transcripts not found in the DEXSeq transcript table are counted in a WARNING), and a group of overlapping genes (a DEXSeq group `GENE1+GENE2` or a SUPPA2 locus `GENE1_and_GENE2`) counts for each of its genes. The direction of a gene in a tool is the sign of the effect of the feature with the smallest adjusted p-value among that tool's significant features in the gene (rMATS and SUPPA2 on dPSI, the other tools on log2 fold change): `treatment_up`, `control_up`, or empty when the gene is called at gene level and none of its features is significant. Among features with equal smallest adjusted p-value (on real data many are exactly 0) the one with the largest absolute effect is taken, and if that is tied too, the first by feature identifier; the direction never depends on the order of the rows. A gene whose tied features point in opposite directions gets the direction of the larger change; it is not marked separately. The concordance table counts, for each pair of tools, the genes called by both with the same direction and with the opposite direction; directions compared only, never effect sizes across scales. The background is stated in the report: a gene outside a tool's set was either not significant or not tested by that tool. It writes, per contrast, `tables/{CONTRAST}.cross_tool.sets.csv`, `.cross_tool.membership.csv`, `.cross_tool.intersections.csv`, `.cross_tool.genes.csv` (the genes called by two or more tools, with the direction and the harmonised effect of each tool: `direction_{tool}`, `effect_{tool}`, and, when DTU is compared, `effect_flag`: `zero-count artefact` when the absolute DTU log2 fold change is above 10, a heuristic threshold; `effect_dtu` is not changed), `.cross_tool.concordance.csv` and `figures/{CONTRAST}.upset.png` (ComplexUpset when the image has it, otherwise UpSetR). A tool whose RDS or gene-level file is missing is left out and named; fewer than two tools left means no comparison, and the report still renders.
 
 **File `05_cross_tool.Rmd`.**
 ````rmd
@@ -1949,6 +2012,7 @@ title: "Cross-tool comparison"
 output:
   html_document:
     toc: true
+    mathjax: null
 params:
   outdir: ""
   report_dir: "."
@@ -1976,7 +2040,7 @@ knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, dev = "png
 
 This report compares the genes called by each tool that ran, for each contrast, from the tables that `01_import.Rmd` wrote to `r file.path(params$report_dir, "rds")` and from the gene-level files of the run (read only). Every effect is stated as **treatment minus control**: a positive effect is higher in the treatment group (more inclusion for rMATS and SUPPA2, higher usage for the exon and transcript usage tools). The direction of a gene is `treatment_up` for a positive effect and `control_up` for a negative one, as in the harmonised column `direction` of the RDS, which is used as it is.
 
-A gene is called by a tool when: rMATS and SUPPA2, at least one event of the gene has an adjusted p-value below `r params$fdr`, an absolute dPSI of at least `r params$dpsi`, and (rMATS) is not flagged `low_support`; DEXSeq exon usage, the per-gene q-value (`perGeneQValue`) is below the FDR; edgeR exon usage, the Simes FDR is below the FDR; DTU, the stageR column `gene` (the screened adjusted p-value at the gene level) is below the FDR (stageR's adjusted p-values are valid only at the alpha they were computed for: at another FDR the stage-wise adjustment is re-run from the `stageRTx` object of the run, or the values of the run are used with a warning). Gene identifiers are Ensembl identifiers; a version suffix is removed only where one is present, and a group of overlapping genes (a DEXSeq group `GENE1+GENE2` or a SUPPA2 locus `GENE1_and_GENE2`) counts for each of its genes.
+A gene is called by a tool when: rMATS and SUPPA2, at least one event of the gene has an adjusted p-value below `r params$fdr`, an absolute dPSI of at least `r params$dpsi`, and (rMATS) is not flagged `low_support`; DEXSeq exon usage, the per-gene q-value (`perGeneQValue`) is below the FDR; edgeR exon usage, the Simes FDR is below the FDR; DTU, the stageR column `gene` (the screened adjusted p-value at the gene level) is below the FDR (stageR's adjusted p-values are valid only at the alpha they were computed for: at another FDR the stage-wise adjustment is re-run from the `stageRTx` object of the run, or the values of the run are used with a warning). Gene identifiers are Ensembl identifiers; a version suffix is removed only where one is present (for the joins with the stageR table the identifiers of both tables are cut at the first dot, the rule of the pipeline's stageR step, and stageR transcripts not found in the DEXSeq transcript table are counted in a WARNING), and a group of overlapping genes (a DEXSeq group `GENE1+GENE2` or a SUPPA2 locus `GENE1_and_GENE2`) counts for each of its genes.
 
 The direction of a gene in a tool is the sign of the effect of the feature with the smallest adjusted p-value among that tool's significant features in the gene (dPSI for rMATS and SUPPA2, log2 fold change for the other tools); it is empty when the gene is called at gene level but none of its features is significant. Among features with equal smallest adjusted p-value (on real data many adjusted p-values are exactly 0) the one with the largest absolute effect is taken, and if that is tied too, the first by feature identifier, so the direction never depends on the order of the rows; a gene whose tied features point in opposite directions takes the direction of the larger change and is not marked separately. The cross-tool table has, for each tool, `direction_<tool>` and `effect_<tool>`, the effect of that feature (dPSI for rMATS and SUPPA2, log2 fold change for the others; the two scales are not comparable). When DTU is compared, the column `effect_flag` marks a DTU log2 fold change beyond 10 in absolute value as `zero-count artefact`: such a value comes from a transcript with (almost) no counts in one group, and the threshold of 10 is a heuristic; `effect_dtu` is kept as it is. The concordance table counts, for each pair of tools, the genes called by both with the same direction and with the opposite direction (directions compared only, never effect sizes across scales: dPSI and log2 fold change are not on one scale); genes without a direction in one of the two tools are counted separately.
 
@@ -1989,8 +2053,24 @@ MODULE_OF_TOOL <- c(rmats = "rmats", suppa = "suppa", exon_dexseq = "dexseq_exon
 
 # an Ensembl gene identifier loses its version suffix (.5) only when it has one
 strip_version <- function(x) sub("^(ENS[A-Z]*G[0-9]+)\\.[0-9]+$", "\\1", x)
-# a transcript identifier loses a trailing version in the same way (the pipeline strips the versions of the stageR identifiers, not those of the DEXSeq table: both sides of a join are stripped)
-strip_tx_version <- function(x) sub("\\.[0-9]+$", "", x)
+# the identifier rule of the pipeline's stageR step (run_stager.R, stripVersion): everything from the first dot on is removed, for gene and
+# transcript identifiers alike (ENSG00000000457.14 -> ENSG00000000457, MSTRG.12.1 -> MSTRG). The stageR table holds identifiers cut by it,
+# the DEXSeq transcript table does not: both sides of every join with the stageR table are cut by it here
+stager_id <- function(x) sub("\\..*", "", x)
+# the stageR table and the DEXSeq transcript table with their identifiers cut by that rule; unmatched: the stageR transcripts with no row
+# in the DEXSeq table; ambiguous: the DEXSeq rows whose cut identifiers are those of another row (their stageR values cannot be told apart)
+join_stager <- function(st, tab) {
+  st$gene_id <- stager_id(st$gene_id); st$tx_id <- stager_id(st$tx_id)
+  tab$gene_id <- stager_id(tab$gene_id); tab$feature_id <- stager_id(tab$feature_id)
+  key <- paste(tab$gene_id, tab$feature_id)
+  list(st = st, tab = tab, unmatched = sum(!paste(st$gene_id, st$tx_id) %in% key), ambiguous = sum(duplicated(key) | duplicated(key, fromLast = TRUE)))
+}
+stager_join_warning <- function(j) {
+  w <- character(0)
+  if (j$unmatched > 0) w <- c(w, paste0("**WARNING: ", j$unmatched, " transcripts of the stageR table were not found in the DEXSeq transcript table** (identifiers of both cut at the first dot, as the pipeline's stageR step does): they have no effect and no direction here."))
+  if (j$ambiguous > 0) w <- c(w, paste0("**WARNING: ", j$ambiguous, " rows of the DEXSeq transcript table share their identifiers with another row once cut at the first dot** (the rule of the pipeline's stageR step): their stageR values cannot be told apart."))
+  paste(w, collapse = "\n\n")
+}
 # a DEXSeq group of overlapping genes (GENE1+GENE2) or a SUPPA2 locus of overlapping genes (GENE1_and_GENE2) becomes one row per gene
 expand_genes <- function(df) {
   parts <- strsplit(df$gene_id, "\\+|_and_")
@@ -2046,15 +2126,16 @@ calls_from_gene_table <- function(gene_tab, feat, fdr) {
 }
 # DTU: a gene is called when stageR's gene is below the FDR; its significant features are the transcripts with stageR's transcript below the FDR
 calls_from_stager <- function(st, feat, fdr) {
-  s <- tidy_ids(st)
-  f <- tidy_ids(feat)
-  s$tx_id <- strip_tx_version(s$tx_id)
-  f$feature_id <- strip_tx_version(f$feature_id)
+  jn <- join_stager(st, feat)
+  s <- jn$st
+  f <- jn$tab
   txsig <- !is.na(s$transcript) & s$transcript < fdr
   confirmed <- paste(s$gene_id, s$tx_id)[txsig]
   sigf <- paste(f$gene_id, f$feature_id) %in% confirmed
   called <- s$gene_id[!is.na(s$gene) & s$gene < fdr]
-  make_calls(called, s$gene_id[!is.na(s$gene)], f, sigf, called)
+  cl <- make_calls(called, s$gene_id[!is.na(s$gene)], f, sigf, called)
+  cl$join_warning <- stager_join_warning(jn)
+  cl
 }
 
 # one row per gene of the union, one logical column per tool
@@ -2258,6 +2339,7 @@ for (i in seq_len(nrow(contrasts))) {
         sres <- stager_for_fdr(st, path_of("salmon", "dexseq_dtu", "results", "stager", sprintf("stageRTx.%s-%s.rds", Tr, Co)), params$fdr)
         stnote <- stager_note(sres, params$fdr)
         cl <- calls_from_stager(sres$st, tab, params$fdr)
+        if (nzchar(cl$join_warning)) stnote <- paste0(stnote, "\n\n", cl$join_warning)
       } else notfound <- c(notfound, gf)
     }
     if (!is.null(cl)) calls[[tool]] <- cl
@@ -2311,7 +2393,7 @@ for (i in seq_len(nrow(contrasts))) {
 ```
 ````
 
-The enrichment report `06_enrichment.Rmd` runs a GO enrichment (biological process, molecular function, cellular component) with clusterProfiler on the significant genes of each tool, for each contrast. It reads `rds/{CONTRAST}.{tool}.rds` (written by `01_import.Rmd`) and, for DEXSeq exon usage, edgeR exon usage and DTU, the same gene-level files of the run as `05_cross_tool.Rmd` (read only), and builds the same gene sets: rMATS and SUPPA2 genes with a significant event (adjusted p-value below `{FDR}`, absolute dPSI at least `{DPSI}`, and for rMATS not flagged `low_support`), DEXSeq exon usage genes with a `perGeneQValue` below `{FDR}`, edgeR exon usage genes with a Simes FDR below `{FDR}`, DTU genes with stageR's `gene` below `{FDR}` (re-run at the report's FDR when the run's alpha differs, as in `04_usage.Rmd`). Gene identifiers are Ensembl identifiers (versions removed, groups of overlapping genes split as in `05_cross_tool.Rmd`; "genes" in the gene lists, the universes and `enrich.summary.csv` are counted after that split, and the report prints for every tool both the number of identifiers as the tool writes them, for DEXSeq exon usage the pipeline's own count of `perGeneQValue` groups below `{FDR}`, and the number of genes after the split) and are mapped to Entrez identifiers with `org.Hs.eg.db` (`{ORGANISM}` human) or `org.Mm.eg.db` (mouse); the identifiers that cannot be mapped are counted and reported for every gene list and every universe. The universe of an enrichment is the set of genes that were testable in that tool (an adjusted p-value present in the harmonised table, or in the gene-level table), never the whole genome. There is one enrichment per tool and per group: the genes whose direction in the tool is `treatment_up`, those whose direction is `control_up` (the direction of a gene as defined in `05_cross_tool.Rmd`), and all significant genes; a group is tested only when it has at least 10 genes, and otherwise the report prints `skipped: fewer than 10 genes (n=...)`. Terms are kept at a Benjamini-Hochberg adjusted p-value and q-value of 0.05. It writes, per contrast, `tables/{CONTRAST}.enrich.{tool}.{group}.{go_bp,go_mf,go_cc}.csv` (`tool` as in the RDS names, `group` one of `all`, `treatment_up`, `control_up`), `tables/{CONTRAST}.enrich.summary.csv` (genes, mapped and unmapped counts, universe size, status) and `figures/{CONTRAST}.enrich.dotplot.png` (the top terms of the groups that ran; no figure when none ran). The report needs no network: it reads only the annotation packages of the image and never downloads or installs anything. `{ENRICH_DBS}` is `GO` unless the user asked for more; a request for KEGG or Reactome is answered in the report with `KEGG/Reactome require an image rebuild` (the packages ReactomePA, KEGG.db and reactome.db are not in the image), an organism other than human or mouse with `organism not supported`, and in both cases the report still renders and the job ends with exit code 0. A tool whose RDS or gene-level file is missing is named and left out.
+The enrichment report `06_enrichment.Rmd` runs a GO enrichment (biological process, molecular function, cellular component) with clusterProfiler on the significant genes of each tool, for each contrast. It reads `rds/{CONTRAST}.{tool}.rds` (written by `01_import.Rmd`) and, for DEXSeq exon usage, edgeR exon usage and DTU, the same gene-level files of the run as `05_cross_tool.Rmd` (read only), and builds the same gene sets: rMATS and SUPPA2 genes with a significant event (adjusted p-value below `{FDR}`, absolute dPSI at least `{DPSI}`, and for rMATS not flagged `low_support`), DEXSeq exon usage genes with a `perGeneQValue` below `{FDR}`, edgeR exon usage genes with a Simes FDR below `{FDR}`, DTU genes with stageR's `gene` below `{FDR}` (re-run at the report's FDR when the run's alpha differs, as in `04_usage.Rmd`). Gene identifiers are Ensembl identifiers (versions removed, groups of overlapping genes split as in `05_cross_tool.Rmd`; "genes" in the gene lists, the universes and `enrich.summary.csv` are counted after that split, and the report prints for every tool both the number of identifiers as the tool writes them, for DEXSeq exon usage the pipeline's own count of `perGeneQValue` groups below `{FDR}`, and the number of genes after the split) and are mapped to Entrez identifiers with `org.Hs.eg.db` (`{ORGANISM}` human) or `org.Mm.eg.db` (mouse); the identifiers that cannot be mapped are counted and reported for every gene list and every universe. The universe of an enrichment is the set of genes that were testable in that tool (an adjusted p-value present in the harmonised table, or in the gene-level table), never the whole genome. There is one enrichment per tool and per group: the genes whose direction in the tool is `treatment_up`, those whose direction is `control_up` (the direction of a gene as defined in `05_cross_tool.Rmd`), and all significant genes; a group is tested only when it has at least 10 genes, and otherwise the report prints `skipped: fewer than 10 genes (n=...)`. Terms are kept at a Benjamini-Hochberg adjusted p-value and q-value of 0.05. It writes, per contrast, `tables/{CONTRAST}.enrich.{tool}.{group}.{go_bp,go_mf,go_cc}.csv` (`tool` as in the RDS names, `group` one of `all`, `treatment_up`, `control_up`), `tables/{CONTRAST}.enrich.summary.csv` (genes, mapped and unmapped counts, universe size, status) and `figures/{CONTRAST}.enrich.dotplot.png` (the top terms of the groups that ran; no figure when none ran). The report needs no network: it reads only the annotation packages of the image and never downloads or installs anything. `{ENRICH_DBS}` is `GO` unless the user asked for more; a request for KEGG or Reactome is answered in the report with `KEGG/Reactome are not offered by this report`, followed by `KEGG/Reactome require an image rebuild` and the missing packages when the image lacks ReactomePA, KEGG.db or reactome.db (the shared image lacks all three), an organism other than human or mouse with `organism not supported`, and in both cases the report still renders and the job ends with exit code 0. A tool whose RDS or gene-level file is missing is named and left out.
 
 **File `06_enrichment.Rmd`.**
 ````rmd
@@ -2320,6 +2402,7 @@ title: "GO enrichment of the significant genes"
 output:
   html_document:
     toc: true
+    mathjax: null
 params:
   outdir: ""
   report_dir: "."
@@ -2363,11 +2446,34 @@ ENRICH_CUTOFF <- 0.05
 
 # the databases asked for in enrich_dbs (GO by default), lower case, separated by commas, semicolons or spaces
 requested_dbs <- function(x) { v <- tolower(trimws(unlist(strsplit(as.character(x), "[,; ]+")))); v[nzchar(v)] }
+# the line printed when KEGG or Reactome is requested: this report runs GO only, whatever the image holds; present = TRUE or FALSE for
+# each of the packages ReactomePA, KEGG.db and reactome.db (named), and the missing ones are named
+kegg_message <- function(present) {
+  m <- "KEGG or Reactome was requested in `enrich_dbs`: KEGG/Reactome are not offered by this report, which runs GO only"
+  if (all(present)) return(paste0(m, " (the packages ", paste(names(present), collapse = ", "), " are in this image, but this report has no KEGG or Reactome enrichment)."))
+  paste0(m, "; KEGG/Reactome require an image rebuild (not in this image: ", paste(names(present)[!present], collapse = ", "), ").")
+}
 
 # an Ensembl gene identifier loses its version suffix (.5) only when it has one
 strip_version <- function(x) sub("^(ENS[A-Z]*G[0-9]+)\\.[0-9]+$", "\\1", x)
-# a transcript identifier loses a trailing version in the same way (the pipeline strips the versions of the stageR identifiers, not those of the DEXSeq table: both sides of a join are stripped)
-strip_tx_version <- function(x) sub("\\.[0-9]+$", "", x)
+# the identifier rule of the pipeline's stageR step (run_stager.R, stripVersion): everything from the first dot on is removed, for gene and
+# transcript identifiers alike (ENSG00000000457.14 -> ENSG00000000457, MSTRG.12.1 -> MSTRG). The stageR table holds identifiers cut by it,
+# the DEXSeq transcript table does not: both sides of every join with the stageR table are cut by it here
+stager_id <- function(x) sub("\\..*", "", x)
+# the stageR table and the DEXSeq transcript table with their identifiers cut by that rule; unmatched: the stageR transcripts with no row
+# in the DEXSeq table; ambiguous: the DEXSeq rows whose cut identifiers are those of another row (their stageR values cannot be told apart)
+join_stager <- function(st, tab) {
+  st$gene_id <- stager_id(st$gene_id); st$tx_id <- stager_id(st$tx_id)
+  tab$gene_id <- stager_id(tab$gene_id); tab$feature_id <- stager_id(tab$feature_id)
+  key <- paste(tab$gene_id, tab$feature_id)
+  list(st = st, tab = tab, unmatched = sum(!paste(st$gene_id, st$tx_id) %in% key), ambiguous = sum(duplicated(key) | duplicated(key, fromLast = TRUE)))
+}
+stager_join_warning <- function(j) {
+  w <- character(0)
+  if (j$unmatched > 0) w <- c(w, paste0("**WARNING: ", j$unmatched, " transcripts of the stageR table were not found in the DEXSeq transcript table** (identifiers of both cut at the first dot, as the pipeline's stageR step does): they have no effect and no direction here."))
+  if (j$ambiguous > 0) w <- c(w, paste0("**WARNING: ", j$ambiguous, " rows of the DEXSeq transcript table share their identifiers with another row once cut at the first dot** (the rule of the pipeline's stageR step): their stageR values cannot be told apart."))
+  paste(w, collapse = "\n\n")
+}
 # a DEXSeq group of overlapping genes (GENE1+GENE2) or a SUPPA2 locus of overlapping genes (GENE1_and_GENE2) becomes one row per gene
 expand_genes <- function(df) {
   parts <- strsplit(df$gene_id, "\\+|_and_")
@@ -2418,15 +2524,16 @@ calls_from_gene_table <- function(gene_tab, feat, fdr) {
 }
 # DTU: a gene is called when stageR's gene is below the FDR; its significant features are the transcripts with stageR's transcript below the FDR
 calls_from_stager <- function(st, feat, fdr) {
-  s <- tidy_ids(st)
-  f <- tidy_ids(feat)
-  s$tx_id <- strip_tx_version(s$tx_id)
-  f$feature_id <- strip_tx_version(f$feature_id)
+  jn <- join_stager(st, feat)
+  s <- jn$st
+  f <- jn$tab
   txsig <- !is.na(s$transcript) & s$transcript < fdr
   confirmed <- paste(s$gene_id, s$tx_id)[txsig]
   sigf <- paste(f$gene_id, f$feature_id) %in% confirmed
   called <- s$gene_id[!is.na(s$gene) & s$gene < fdr]
-  make_calls(called, s$gene_id[!is.na(s$gene)], f, sigf, called)
+  cl <- make_calls(called, s$gene_id[!is.na(s$gene)], f, sigf, called)
+  cl$join_warning <- stager_join_warning(jn)
+  cl
 }
 # the three gene groups of a tool: the genes whose direction is treatment_up, those whose direction is control_up, and all called genes
 group_genes <- function(cl) {
@@ -2543,6 +2650,7 @@ collect_calls <- function(C, Tr, Co, modules, report_dir, outdir, fdr, dpsi) {
         sres <- stager_for_fdr(st, path_of("salmon", "dexseq_dtu", "results", "stager", sprintf("stageRTx.%s-%s.rds", Tr, Co)), fdr)
         stnote <- stager_note(sres, fdr)
         cl <- calls_from_stager(sres$st, tab, fdr)
+        if (nzchar(cl$join_warning)) stnote <- paste0(stnote, "\n\n", cl$join_warning)
       } else notfound <- c(notfound, gf)
     }
     if (!is.null(cl)) calls[[tool]] <- cl
@@ -2612,13 +2720,7 @@ can_run <- isTRUE(params$enrich)
 if (!can_run) {
   cat("The enrichment is switched off for this report (enrich = FALSE).\n\n")
 } else {
-  if (any(c("kegg", "reactome") %in% dbs)) {
-    if (all(vapply(c("ReactomePA", "KEGG.db", "reactome.db"), requireNamespace, logical(1), quietly = TRUE))) {
-      cat("KEGG or Reactome was requested in `enrich_dbs`: this report runs GO only.\n\n")
-    } else {
-      cat("KEGG or Reactome was requested in `enrich_dbs`: KEGG/Reactome require an image rebuild (ReactomePA, KEGG.db and reactome.db are not in this image). GO only.\n\n")
-    }
-  }
+  if (any(c("kegg", "reactome") %in% dbs)) cat(kegg_message(vapply(c("ReactomePA", "KEGG.db", "reactome.db"), requireNamespace, logical(1), quietly = TRUE)), "\n\n")
   if (is.na(pkg)) {
     cat("**organism not supported**: the organism is `", params$organism, "`, and the image holds annotation packages for human and mouse only. No enrichment is run.\n\n", sep = "")
     can_run <- FALSE
@@ -2708,7 +2810,7 @@ for (i in seq_len(nrow(contrasts))) {
 ```
 ````
 
-The summary page `07_summary.Rmd` is the index of the report directory. It runs last and starts when the other jobs have ended, whatever their outcome, so some reports may be missing. It scans `{REPORT_DIR}` and lists, with links, the reports `01_import.html` to `06_enrichment.html` that exist (a report that does not exist is listed as `not produced` and is not linked), every figure in `figures/` and every table in `tables/` that exists (nothing is listed that is not in the directory), the thresholds (`{FDR}`, `{DPSI}`, `{RMATS_TYPE}`, `{MIN_READS}`), the contrasts with their treatment and control, the modules found and the sign rules. For each contrast it shows the counts tables that the other reports wrote (`tables/{CONTRAST}.rmats.counts.csv`, `.suppa.counts.csv`, `.usage.counts.csv`), the cross-tool tables (`.cross_tool.sets.csv`, `.cross_tool.concordance.csv`) and the enrichment summary (`.enrich.summary.csv`); a table that does not exist is reported as not found and the page still renders. A Warnings block collects the lines that begin with `WARNING` that the other reports print into their text, recovered from the HTML of those reports; warnings that R raised and that knitr suppressed are not in the HTML and are not listed. The page is written to `report_summary.html`, the entry point of the report directory.
+The summary page `07_summary.Rmd` is the index of the report directory. It runs last and starts when the other jobs have ended, whatever their outcome, so some reports may be missing. It scans `{REPORT_DIR}` and lists, with links, the reports `01_import.html` to `06_enrichment.html` that exist (a report that does not exist is listed as `not produced` and is not linked), every figure in `figures/` and every table in `tables/` that exists (nothing is listed that is not in the directory), the thresholds (`{FDR}`, `{DPSI}`, `{RMATS_TYPE}`, `{MIN_READS}`), the contrasts with their treatment and control, the modules found and the sign rules. For each contrast it shows the counts tables that the other reports wrote (`tables/{CONTRAST}.rmats.counts.csv`, `.suppa.counts.csv`, `.usage.counts.csv`), the cross-tool tables (`.cross_tool.sets.csv`, `.cross_tool.concordance.csv`) and the enrichment summary (`.enrich.summary.csv`); a table that does not exist is reported as not found and the page still renders. A Warnings block collects the lines that begin with `WARNING` that the other reports print into their text, recovered from the HTML of those reports; warnings that R raised and that knitr suppressed are not in the HTML and are not listed. The page is written to `report_summary.html`, the entry point of the report directory. A report directory can hold files of an earlier run (Step 0, option 2, or a job of this run that failed or did not run): a report, counts table, figure or table is listed as this run's only when its file is not older than the run stamp `rds/run_stamp.rds` that job 01 writes when it starts; older files are listed, with links, only under From an earlier run (not updated by this run), their counts tables are not shown and their warnings are not collected, and the thresholds shown are those of this run. When the stamp holds other parameters than this page (job 01 of this run did not start), every file is listed as from an earlier run with a warning; without a stamp the files cannot be dated and are all listed as found, with a note.
 
 **File `07_summary.Rmd`.**
 ````rmd
@@ -2717,6 +2819,7 @@ title: "Summary of the nf-core/rnasplice reports"
 output:
   html_document:
     toc: true
+    mathjax: null
 params:
   outdir: ""
   report_dir: "."
@@ -2810,17 +2913,48 @@ link_list <- function(rel, label = rel) {
   if (length(rel) == 0) return("none\n")
   paste0("<ul>\n", paste0("<li><a href=\"", html_escape(rel), "\">", html_escape(label), "</a></li>", collapse = "\n"), "\n</ul>\n")
 }
+# the run stamp that job 01 writes when it starts. A report, table or figure was written by this run only when its file is not older than
+# the stamp (both are modification times of files of the report directory, so they come from one clock); an older file was left by an
+# earlier run in the same directory. Without a stamp the files cannot be dated.
+STAMP_FILE <- file.path("rds", "run_stamp.rds")
+stamp_time <- function(rd) { f <- file.path(rd, STAMP_FILE); if (file.exists(f)) file.mtime(f) else NULL }
+is_current <- function(paths, stamp) {
+  if (is.null(stamp)) return(rep(TRUE, length(paths)))
+  m <- file.mtime(paths)
+  !is.na(m) & m >= stamp
+}
+# the parameters in which the stamp differs from this page (a stamp of an earlier run: job 01 of this run did not start)
+STAMP_KEYS <- c("outdir", "contrasts", "modules", "fdr", "dpsi", "rmats_type", "min_reads", "events", "cross", "topgene", "enrich", "organism",
+                "enrich_dbs", "paired_rmats", "paired_suppa")
+stamp_differs <- function(rd, p) {
+  s <- tryCatch(readRDS(file.path(rd, STAMP_FILE))$params, error = function(e) NULL)
+  if (is.null(s)) return(character(0))
+  STAMP_KEYS[!vapply(STAMP_KEYS, function(k) identical(as.character(s[[k]]), as.character(p[[k]])), logical(1))]
+}
 ```
 
 ```{r report, results="asis"}
 modules <- strsplit(trimws(params$modules), "[[:space:]]+")[[1]]
 modules <- modules[nzchar(modules)]
 rd <- params$report_dir
+stamp <- stamp_time(rd); all_old <- FALSE; old <- character(0)
+if (is.null(stamp)) {
+  cat("**Note:** no run stamp (`rds/run_stamp.rds`, written by job 01 when it starts) was found, so the files cannot be dated: every report, table and figure of the directory is listed as found, whichever run wrote it.\n\n")
+} else {
+  dif <- stamp_differs(rd, params)
+  if (length(dif)) {
+    all_old <- TRUE
+    cat("**WARNING: the run stamp `rds/run_stamp.rds` was written by a run with other parameters (", paste(dif, collapse = ", "),
+        "): job 01 of this run did not start, so every file of the directory is listed under From an earlier run.**\n\n", sep = "")
+  }
+}
+cur <- function(paths) if (all_old) rep(FALSE, length(paths)) else is_current(paths, stamp)
 cat("## Reports\n\n")
-cat("The reports of `", rd, "`. A report missing from the directory is marked in the list (its job failed or did not run, or the section was not requested).\n\n", sep = "")
+cat("The reports of `", rd, "` written by this run. A report missing from the directory is marked in the list (its job failed or did not run, or the section was not requested); a report left by an earlier run is listed under From an earlier run.\n\n", sep = "")
 for (i in seq_len(nrow(REPORTS))) {
   f <- REPORTS$file[i]
-  if (file.exists(file.path(rd, f))) cat("- <a href=\"", html_escape(f), "\">", html_escape(f), "</a>: ", REPORTS$title[i], "\n", sep = "")
+  if (file.exists(file.path(rd, f)) && cur(file.path(rd, f))) cat("- <a href=\"", html_escape(f), "\">", html_escape(f), "</a>: ", REPORTS$title[i], "\n", sep = "")
+  else if (file.exists(file.path(rd, f))) { old <- c(old, f); cat("- ", REPORTS$title[i], ": not produced by this run (an older `", f, "` is listed under From an earlier run)\n", sep = "") }
   else cat("- ", REPORTS$title[i], ": not produced\n", sep = "")
 }
 cat("\n\n## Thresholds and run\n\n")
@@ -2851,8 +2985,13 @@ for (i in seq_len(nrow(contrasts))) {
   cat("Treatment `", contrasts$treatment[i], "`, control `", contrasts$control[i], "`.\n\n", sep = "")
   for (j in seq_len(nrow(COUNT_TABLES))) {
     rel <- file.path("tables", paste0(C, ".", COUNT_TABLES$part[j], ".csv"))
-    d <- read_counts(file.path(rd, rel))
     cat("**", COUNT_TABLES$title[j], "** (`", rel, "`)\n\n", sep = "")
+    if (file.exists(file.path(rd, rel)) && !cur(file.path(rd, rel))) {
+      old <- c(old, rel)
+      cat("not written by this run: the file is from an earlier run and is listed under From an earlier run.\n\n")
+      next
+    }
+    d <- read_counts(file.path(rd, rel))
     if (is.null(d)) {
       mod <- COUNT_TABLES$module[j]
       absent <- !is.na(mod) && !any((if (mod == "usage") USAGE_MODULES else mod) %in% modules)
@@ -2867,14 +3006,25 @@ for (i in seq_len(nrow(contrasts))) {
 }
 cat("## Figures\n\n")
 figs <- list_files(file.path(rd, "figures"), "\\.(png|pdf|svg|jpg)$")
-cat(link_list(file.path("figures", figs), figs), "\n")
+fcur <- cur(file.path(rd, "figures", figs)); old <- c(old, file.path("figures", figs[!fcur]))
+cat(link_list(file.path("figures", figs[fcur]), figs[fcur]), "\n")
 cat("## Tables\n\n")
 tabs <- list_files(file.path(rd, "tables"), "\\.(csv|tsv|txt)$")
-cat(link_list(file.path("tables", tabs), tabs), "\n")
+tcur <- cur(file.path(rd, "tables", tabs)); old <- c(old, file.path("tables", tabs[!tcur]))
+cat(link_list(file.path("tables", tabs[tcur]), tabs[tcur]), "\n")
+cat("## From an earlier run (not updated by this run)\n\n")
+old <- unique(old)
+if (is.null(stamp)) {
+  cat("No run stamp: the files cannot be dated, and none is listed here.\n\n")
+} else if (length(old)) {
+  cat("These files are older than the run stamp of this run (`rds/run_stamp.rds`): an earlier run wrote them into this directory and this run did not replace them (its job did not run or failed, or the section was not requested this time). Their numbers and thresholds are those of the earlier run, not those above.\n\n")
+  cat(link_list(old), "\n")
+} else cat("None: every report, table and figure of the directory was written by this run.\n\n")
 cat("## Warnings\n\n")
-cat("Lines that begin with WARNING in the text of the other reports, recovered from the HTML of those reports (a warning that R raised and that knitr suppressed is not in the HTML and is not listed here).\n\n")
+cat("Lines that begin with WARNING in the text of the other reports of this run, recovered from the HTML of those reports (a warning that R raised and that knitr suppressed is not in the HTML and is not listed here).\n\n")
 nw <- 0
 for (i in seq_len(nrow(REPORTS))) {
+  if (!(file.exists(file.path(rd, REPORTS$file[i])) && cur(file.path(rd, REPORTS$file[i])))) next
   w <- html_warnings(file.path(rd, REPORTS$file[i]))
   if (length(w)) { nw <- nw + length(w); cat("**", REPORTS$file[i], "**\n\n", paste0("- ", w, "\n"), "\n", sep = "") }
 }
