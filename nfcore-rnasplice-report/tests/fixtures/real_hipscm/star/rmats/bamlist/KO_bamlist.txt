@@ -1,0 +1,1 @@
+KO_1_sorted.bam,KO_2_sorted.bam,KO_3_sorted.bam

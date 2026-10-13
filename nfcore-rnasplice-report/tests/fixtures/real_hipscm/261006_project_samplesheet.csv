@@ -1,0 +1,7 @@
+sample,fastq_1,fastq_2,strandedness,condition
+WT_1,/net/bmc-lab3/data/bcc/yannvrb/realdata_test/rnasplice_hipscm_rerun/data/SRR20021261_1.fastq.gz,/net/bmc-lab3/data/bcc/yannvrb/realdata_test/rnasplice_hipscm_rerun/data/SRR20021261_2.fastq.gz,reverse,WT
+WT_2,/net/bmc-lab3/data/bcc/yannvrb/realdata_test/rnasplice_hipscm_rerun/data/SRR20021260_1.fastq.gz,/net/bmc-lab3/data/bcc/yannvrb/realdata_test/rnasplice_hipscm_rerun/data/SRR20021260_2.fastq.gz,reverse,WT
+WT_3,/net/bmc-lab3/data/bcc/yannvrb/realdata_test/rnasplice_hipscm_rerun/data/SRR20021259_1.fastq.gz,/net/bmc-lab3/data/bcc/yannvrb/realdata_test/rnasplice_hipscm_rerun/data/SRR20021259_2.fastq.gz,reverse,WT
+KO_1,/net/bmc-lab3/data/bcc/yannvrb/realdata_test/rnasplice_hipscm_rerun/data/SRR20021257_1.fastq.gz,/net/bmc-lab3/data/bcc/yannvrb/realdata_test/rnasplice_hipscm_rerun/data/SRR20021257_2.fastq.gz,reverse,KO
+KO_2,/net/bmc-lab3/data/bcc/yannvrb/realdata_test/rnasplice_hipscm_rerun/data/SRR20021256_1.fastq.gz,/net/bmc-lab3/data/bcc/yannvrb/realdata_test/rnasplice_hipscm_rerun/data/SRR20021256_2.fastq.gz,reverse,KO
+KO_3,/net/bmc-lab3/data/bcc/yannvrb/realdata_test/rnasplice_hipscm_rerun/data/SRR20021255_1.fastq.gz,/net/bmc-lab3/data/bcc/yannvrb/realdata_test/rnasplice_hipscm_rerun/data/SRR20021255_2.fastq.gz,reverse,KO

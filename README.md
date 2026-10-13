@@ -3,7 +3,7 @@
 Claude Code custom skills (slash commands) for RNA-seq analysis at the Koch Institute, all wired for SLURM + Singularity on HPC. They cover:
 
 - **Pipeline setup** — interactive wizards that configure and submit nf-core pipelines: nf-core/rnaseq (bulk), nf-core/scrnaseq (single-cell), nf-core/rnavar (RNA-seq variant calling) and nf-core/rnasplice (differential alternative splicing).
-- **Downstream analysis** — skills that generate R Markdown reports and SLURM scripts: bulk RNA-seq (DESeq2/edgeR, GSEA, optional differential transcript usage) and single-cell (Seurat).
+- **Downstream analysis** — skills that generate R Markdown reports and SLURM scripts: bulk RNA-seq (DESeq2/edgeR, GSEA, optional differential transcript usage), alternative splicing (nf-core/rnasplice: rMATS, SUPPA2, DEXSeq/edgeR exon usage, DTU) and single-cell (Seurat).
 - **Allele-specific expression** — a wizard that runs its own alignment and counting jobs (no Nextflow) for F1 crosses and outbred/human samples: per-sample imbalance, reciprocal F1 (strain versus parent-of-origin effects) and differential ASE between conditions.
 - **Session handoff** — a structured end-of-session report so the next session can resume.
 
@@ -36,6 +36,7 @@ cp -r bioinformatics-claude-skills/handoff ~/.claude/skills/
 | nf-core/scrnaseq setup | `/nfcore-scrnaseq-setup` | Interactive setup wizard for nf-core/scrnaseq single-cell RNA-seq (cellranger / star / simpleaf / kallisto, CellBender, 10x v2–v4) on SLURM + Singularity |
 | nf-core/rnavar setup | `/nfcore-rnavar-setup` | Interactive setup wizard for nf-core/rnavar RNA-seq variant calling (GATK best practices: 2-pass STAR, SplitNCigarReads, BQSR, HaplotypeCaller, optional SnpEff/VEP) on SLURM + Singularity |
 | nf-core/rnasplice setup | `/nfcore-rnasplice-setup` | Interactive setup wizard for nf-core/rnasplice differential alternative splicing (rMATS, SUPPA2, DEXSeq/edgeR exon usage, DEXSeq DTU; every module switch explicit) on SLURM + Singularity |
+| nf-core/rnasplice report | `/nfcore-rnasplice-report` | Interactive wizard that turns an nf-core/rnasplice output directory into R Markdown reports and SLURM scripts: rMATS, SUPPA2, DEXSeq/edgeR exon usage and DTU tables and volcano plots, cross-tool comparison, GO enrichment and a summary page; every effect is treatment minus control. Needs no internet |
 | Bulk RNA-seq pipeline | `/bulk-rnaseq-pipeline` | Generates a full bulk RNA-seq downstream analysis pipeline (tximport → DESeq2/edgeR → GSEA, optional DTU) from nf-core/rnaseq star_salmon output as R Markdown + SLURM scripts |
 | Seurat scRNA-seq pipeline | `/seurat-scrna-pipeline` | Generates a full single-cell RNA-seq downstream analysis pipeline (QC → Harmony integration → annotation → DEG/GSEA/LIANA) as R Markdown + SLURM scripts |
 | Allele-specific expression pipeline | `/ase-pipeline` | Interactive wizard for allele-specific expression from bulk RNA-seq (F1 cross with a third-allele masked reference, or outbred/human with STAR WASP): STAR alignment, GATK ASEReadCounter, per-sample beta-binomial tests, reference-bias diagnostic, R Markdown reports and a summary page on SLURM + Singularity. Analyses: per-sample imbalance, reciprocal F1 (strain and parent-of-origin effects) and differential ASE between conditions; in outbred mode, phASER haplotype counts reported next to the unphased results |

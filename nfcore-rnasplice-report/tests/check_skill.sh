@@ -1,0 +1,772 @@
+#!/bin/bash
+# Static checks for nfcore-rnasplice-report.md. Usage: check_skill.sh <skill.md>
+# Prints PASS (exit 0) or one FAIL line per failed check (exit 1). Uses only bash, grep, awk and sed; no network.
+# The README checked is the README.md next to the skill file. CHECK_LIST_NEEDS=1 also prints "NEED <line> <text>" per need.
+# CHECK_RUN_ALL=<file> checks that file instead of tests/run_all_tests.sh: a test hook of prove_mutations.sh (target runall) only.
+# Exit codes: 0 PASS, 1 a check failed, 2 a fixture is missing.
+# Call need/needr at top level (also inside a loop, `case` or `||`), never from inside a helper function: BASH_LINENO[0]
+# would then be the line inside the helper, and prove_red.sh could not map the need to an added checker line.
+set -u
+SKILL=${1:?usage: check_skill.sh <skill.md>}
+HERE=$(cd "$(dirname "$0")" && pwd); FIX="$HERE/fixtures"
+README="$(dirname "$SKILL")/README.md"
+fail=0
+# Test hooks (CHECK_ROOT_README, CHECK_RUN_ALL) are honoured only for a file under a mktemp scratch directory (/tmp/tmp.XXXXXXXXXX, the
+# directory prove_mutations.sh makes); a hook set to any other path fails the run and is ignored. A honoured hook prints a NOTE line.
+for hv in CHECK_ROOT_README CHECK_RUN_ALL; do
+  hp=${!hv:-}; [ -n "$hp" ] || continue
+  case "$hp" in
+    /tmp/tmp.??????????/*) echo "NOTE: test hook $hv is set ($hp)" ;;
+    *) echo "FAIL: test hook $hv=$hp is not under a scratch directory /tmp/tmp.XXXXXXXXXX (it is a test hook of prove_mutations.sh): unset it"; fail=1; unset "$hv" ;;
+  esac
+done
+[ -s "$SKILL" ] || { echo "FAIL: skill file missing or empty: $SKILL"; exit 1; }
+for f in sign_rows.tsv; do
+  [ -s "$FIX/$f" ] || { echo "cannot read fixture $FIX/$f"; exit 2; }
+done
+
+need()   { [ -n "${CHECK_LIST_NEEDS:-}" ] && echo "NEED ${BASH_LINENO[0]} $1"; grep -qF -- "$1" "$SKILL" || { echo "FAIL: missing required text: $1"; fail=1; }; }
+needr()  { [ -n "${CHECK_LIST_NEEDS:-}" ] && echo "NEED ${BASH_LINENO[0]} $1"; grep -qF -- "$1" "$README" 2>/dev/null || { echo "FAIL: README missing required text: $1"; fail=1; }; }
+forbid() { ! grep -qF -- "$1" "$SKILL" || { echo "FAIL: forbidden text present: $1"; fail=1; }; }
+# forbid_re <extended regex> <label>: no line of the skill may match the regex.
+forbid_re() { ! grep -qE -- "$1" "$SKILL" || { echo "FAIL: forbidden pattern present: $2"; fail=1; }; }
+
+# --- skeleton checks
+# The skill starts with its title line (the first line, not any line).
+[ "$(head -n1 "$SKILL")" = "# nf-core/rnasplice Report Skill" ] || { echo "FAIL: missing required text: # nf-core/rnasplice Report Skill"; fail=1; }
+# Command-line flags (--name): prose outside ``` fences never has one. Inside a fence a flag is allowed only in a command segment that
+# starts with singularity exec, sbatch, Rscript or srun (also as the capture jid=$(sbatch ...)), in a line that continues such a
+# command (the previous line ends with a backslash), and on #SBATCH lines. A line is split on ; && || and | into segments and
+# the rule is applied to each segment, so a flag after the first command of a line does not pass.
+# A fence is closed by a line of the same number of backticks as the one that opened it (four-backtick Rmd fences hold ``` lines).
+if awk '
+  function cmd(s) { return s ~ /^(singularity exec|sbatch|Rscript|srun)([[:space:]]|$)/ }
+  function segok(s,   c) { c = s; sub(/^[A-Za-z_][A-Za-z0-9_${}]*=\\?\$\(/, "", c); return cmd(s) || cmd(c) }
+  { t = $0; sub(/^[[:space:]]+/, "", t); n = 0; while (substr(t, n + 1, 1) == "`") n++ }
+  !infence && n >= 3 { infence = 1; flen = n; allowed = 0; next }
+  infence && n == flen && n == length(t) { infence = 0; allowed = 0; next }
+  !infence { if ($0 ~ /(^|[[:space:]`(])--[A-Za-z]/) found = 1; next }
+  t ~ /^#SBATCH / { allowed = ($0 ~ /\\$/); next }
+  { ns = split(t, seg, /&&|\|\||;|\|/); lastok = 0
+    for (i = 1; i <= ns; i++) {
+      s = seg[i]; sub(/^[[:space:]]+/, "", s)
+      lastok = segok(s) || (i == 1 && allowed)
+      if (s ~ /(^|[[:space:]`(])--[A-Za-z]/ && !lastok) found = 1
+    }
+    allowed = (lastok && ($0 ~ /\\$/)) }
+  END { exit !found }' "$SKILL"; then
+  echo "FAIL: a --flag appears in prose or outside the allowed commands (singularity exec, sbatch, Rscript, srun, #SBATCH lines)"; fail=1
+fi
+# No process words in the skill or the README. "Task [0-9]" is case-sensitive (a lower-case "task 3" is ordinary prose).
+for re in 'Task [0-9]' 'ledger' 'fix round' 'reviewer'; do
+  if [ "$re" = 'Task [0-9]' ]; then gi=-E; else gi=-iE; fi
+  ! grep -q $gi -- "$re" "$SKILL" || { echo "FAIL: forbidden process word in the skill: $re"; fail=1; }
+  ! grep -q $gi -- "$re" "$README" 2>/dev/null || { echo "FAIL: forbidden process word in the README: $re"; fail=1; }
+done
+# --- end skeleton checks
+
+# --- wizard checks (Steps 0-6, the inputs)
+# Every step is numbered and states a default.
+for s in 0 1 2 3 4 5 6; do
+  need "## Step $s — "
+  awk -v s="$s" '/^## Step / { insec = ($3 == s); next } insec && /[Dd]efault/ { f = 1 } END { exit !f }' "$SKILL" || { echo "FAIL: Step $s states no default"; fail=1; }
+done
+need 'ask one question at a time, state the default with each question'
+need 'Shell variables and functions do not persist between Bash tool calls'
+need 'one Bash call per procedure'
+need 'R, Nextflow, Java and every other heavy tool run only on compute nodes'
+need 'never on a login node'
+need 'Default SLURM requests are at most 64 GB and 4 hours'
+need 'Every `module add` is guarded with `|| exit 1`'
+need '`{WD_NAME}` = basename of `{CWD}`'
+need '`{TODAY_ISO}` = today'\''s date as `YYYY-MM-DD`'
+need '`{REPORT_DIR}` = `{CWD}/results/{TODAY_ISO}_{WD_NAME}_report`'
+need 'already exists (a previous report?)'
+need 'Reuse it: files of the same name are replaced; the old files stay, and the summary page lists every report, table and figure that this run did not write under From an earlier run (not updated by this run)'
+need 'A previous report is never overwritten silently'
+need 'Do not pre-fill any address.'
+need 'Store `{EMAIL}`'
+need 'Store `{SIF}`'
+need 'The image is pulled on a compute node, never on the login node'
+need '#SBATCH -p bcc'
+need 'module add singularity/3.10.4 || exit 1'
+need '"DEXSeq", "edgeR", "stageR", "ggplot2", "dplyr", "tidyr", "readr", "knitr", "rmarkdown"'
+need '"ReactomePA", "KEGG.db", "reactome.db"'
+need 'the image must be rebuilt by them'
+need 'packages are never installed at run time'
+need 'KEGG/Reactome require an image rebuild'
+need 'store `{ENRICH_DBS}` = `GO KEGG Reactome`'
+need 'is the default for `{OUTDIR_RNASPLICE}`'
+need 'has more than a header line'
+need 'an empty file or a file with only a header is not found'
+need 'star/rmats/{CONTRAST}/{SE,A5SS,A3SS,MXE,RI}.MATS.{JC,JCEC}.txt'
+need 'star/rmats/{CONTRAST}_paired/'
+need 'RMATS_DIR_PAIRED=star/rmats/${c}_paired'
+need 'salmon/suppa/diffsplice/per_local_event/local_{T}-{C}.dpsi'
+need 'star/dexseq_exon/results/DEXSeqResults.{CONTRAST}.csv'
+need 'star/edger/contrast_{CONTRAST}.usage.exon.csv'
+need 'salmon/dexseq_dtu/results/dexseq/DEXSeqResults.{T}-{C}.tsv'
+need 'never by splitting file names'
+need 'The rMATS tables have the column `ID` twice'
+need 'has no `salmon/` directory, so SUPPA2 and DTU are simply not found'
+need 'Store the modules as `{MODULES}`'
+need 'echo "MODULES=${mods# }"'
+need 'sample,condition,genome_bam,strandedness,single_end'
+need 'the FASTQ or BAM files the sheet points to are never opened'
+need 'Contrast `{CONTRAST}`: is `{T}` the treatment and `{C}` the control'
+need 'This fixes every sign'
+need 'Store `{CONTRASTS}` as the confirmed list'
+need '**Names built from the contrasts file.**'
+need 'contrasts are never mixed'
+need 'Store the GTF path as `{GTF}`'
+need 'ENSMUSG'
+need 'Store `{ORGANISM}` ='
+need 'Store `{PAIRED_RMATS}` and `{PAIRED_SUPPA}`'
+need '`rmats_paired_stats` (rMATS) and `diffsplice_paired` (SUPPA2)'
+need 'never claims unpaired statistics for a paired run'
+# Names of files and groups are built from the contrasts file, never recovered by splitting on - or _.
+forbid_re 'awk -F[-_]|cut -d[-_]|IFS=[-_]' 'file or group names split on - or _'
+# R is started only through singularity exec (sbatch), and packages are never installed at run time.
+forbid_re '^(Rscript|R -e|R -f|R --)' 'R started outside singularity exec'
+forbid_re 'install\.packages|BiocManager|install_github|conda install|pip install' 'a package is installed at run time'
+# The FASTQ or BAM files of the sample sheet are never opened.
+forbid_re 'zcat[^|]*(fastq|fq)' 'a FASTQ file is opened'
+# Every module add is guarded.
+if grep 'module add' "$SKILL" | grep -qv '|| exit 1'; then echo "FAIL: a module add without || exit 1"; fail=1; fi
+# --- end wizard checks
+# --- wizard checks (Steps 7-10, thresholds, menu, SLURM)
+for s in 7 8 9 10; do
+  need "## Step $s — "
+  awk -v s="$s" '/^## Step / { insec = ($3 == s); next } insec && /[Dd]efault/ { f = 1 } END { exit !f }' "$SKILL" || { echo "FAIL: Step $s states no default"; fail=1; }
+done
+need 'Default: every job that applies.'
+need '(FDR) cutoff for a significant event, gene or transcript. Default: 0.05.'
+need 'Default: 0.1. It is not applied to exon usage or transcript usage'
+need '`{RMATS_TYPE}`: which rMATS count type to read, `JC` (junction counts only) or `JCEC`'
+need 'Default: `JC`.'
+need 'minimum read support of an rMATS event: for each group, the mean over its samples of `IJC` plus `SJC`, required in both groups'
+need 'Default: 10. Events below it are flagged (`low_support`), kept in the tables and excluded from the significance counts of the reports, never deleted'
+need 'the rMATS FDR is not recomputed (it stays as rMATS wrote it)'
+need 'On very shallow data (like the nf-core test data) most events fall below 10; the user may lower it.'
+forbid 'dropped from the tests'
+need 'applies the Benjamini-Hochberg correction to it and says so'
+need 'a space-separated subset of `events cross topgene enrich`'
+need 'two or more of `rmats`, `suppa`, `dexseq_exon`, `edger_exon` and `dtu` are in `{MODULES}` (each counts as a separate tool)'
+need 'drawn from the pipeline'\''s own tables only, never from BAM files'
+need 'Offered only when `{ORGANISM}` is `human` or `mouse`'
+need '`events` and `topgene` are both passed to the module reports as parameters'
+need 'Memory `{MEM}`: default 32G (at most 64G).'
+need 'Time `{TIME}`: default 4:00:00 (at most 4:00:00).'
+need 'the name used in the job names. Default: `{WD_NAME}`.'
+need 'one node, one task and four CPUs (`-N 1 -n 1 -c 4`)'
+need 'is written only when the user asks for it by name'
+need '| `run_01.sbatch` | `01_import.Rmd` | always |'
+need '| `run_02.sbatch` | `02_rmats.Rmd` | `rmats` in `{MODULES}` |'
+need '| `run_03.sbatch` | `03_suppa.Rmd` | `suppa` in `{MODULES}` |'
+need '| `run_04.sbatch` | `04_usage.Rmd` (DEXSeq and edgeR exon usage, and DTU) | any of `dexseq_exon`, `edger_exon`, `dtu` in `{MODULES}` |'
+need '| `run_05.sbatch` | `05_cross_tool.Rmd` | `cross` in `{SECTIONS}` and two or more tools in `{MODULES}` |'
+need '| `run_06.sbatch` | `06_enrichment.Rmd` | `enrich` in `{SECTIONS}` |'
+need '| `run_07.sbatch` | `07_summary.Rmd` (always last) | always |'
+need 'Jobs 02 to 06 start when job 01 has finished successfully (`dependency=afterok`, with the option that cancels them when job 01 fails)'
+need 'job 07 starts when jobs 01 to 06 (those that exist) have ended, whatever their outcome (`dependency=afterany`)'
+need 'case "$R" in */results/*) ;; *) fail "report directory $R is not under a results/ directory" ;; esac'
+need 'is inside the pipeline output $OUT'
+need 'are above the default limits (64G, 4:00:00), as requested'
+need '#SBATCH -N 1'
+need '#SBATCH -n 1'
+need '#SBATCH -c 4'
+need 'if sec cross && [ $ntools -ge 2 ]; then JOBS="$JOBS 05:05_cross_tool.Rmd"; fi'
+need 'if sec enrich; then JOBS="$JOBS 06:06_enrichment.Rmd"; fi'
+need 'JOBS="$JOBS 07:07_summary.Rmd"'
+need '`run_all.sh`, which only calls sbatch'
+need 'echo "SUBMIT=bash $R/run_all.sh"'
+need '**Final instructions.**'
+need 'Run this one command:'
+need 'the output of the run is read-only for the skill and is never written to'
+need '**Checks and job list.**'
+need '**Job script template.**'
+need '**Submit script template.**'
+need '**Settings.**'
+need '**Rendering the scripts.**'
+need 'run_job.sbatch.tpl'
+need 'run_all.tpl'
+need 'Write this block with the Write tool, byte for byte and without the two fence lines, to `{REPORT_DIR}/templates/run_job.sbatch.tpl`'
+need 'Write this block with the Write tool, byte for byte and without the two fence lines, to `{REPORT_DIR}/templates/run_all.tpl`'
+need 'When a block prints a line that begins with `ERROR`, stop, tell the user, and run none of the later blocks.'
+need 'refuses to continue when an Rmd of a job that applies is missing'
+need '#SBATCH --mem=__MEM__'
+need '#SBATCH -t __TIME__'
+need '    events = __EVENTS__, cross = __CROSS__, topgene = __TOPGENE__, enrich = __ENRICH__,'
+need 'JOB__N__=$(sbatch --parsable run___N__.sbatch) || exit 1'
+need 'JOB__N__=$(sbatch --parsable --dependency=afterok:$JOB01 --kill-on-invalid-dep=yes run___N__.sbatch) || exit 1'
+need 'JOB__N__=$(sbatch --parsable --dependency=afterany:__DEPS__ run___N__.sbatch) || exit 1'
+need '    fdr = __FDR__, dpsi = __DPSI__, min_reads = __MIN_READS__,'
+need '**Absolute output directory.**'
+need 'else echo '\''no pairs file in {CWD}'\''; fi'
+need 'the first thing written into `{REPORT_DIR}` at all is the `image_check/` directory of Step 2, after this answer'
+need 'the value of $1 holds a line break'
+need 'v=$(printf '\''%s'\'' "$2" | sed '\''s/[\\&|]/\\&/g'\'')'
+need 'printf '\''s|__%s__|%s|g\n'\'' "$1" "$v"; shift 2'
+need 'is empty or still holds a template marker'
+need 'holds a space or a comma and cannot be bound into the container'
+need '**Free-text values.**'
+need 'EMAIL '\''{EMAIL}'\'' JOBNAME '\''{PROJECT}_report'\'''
+need 'R='\''{REPORT_DIR}'\''; OUT='\''{OUTDIR_RNASPLICE}'\''; MEM='\''{MEM}'\''; TIME='\''{TIME}'\'''
+need 'singularity exec --bind '\''__BIND__'\'' '\''__SIF__'\'' Rscript -e '\''rmarkdown::render("__R__/__RMD__",'
+need '  output_dir = "__R__", __OUTFILE__knit_root_dir = "__R__",'
+need '    outdir = "__OUT__", report_dir = "__R__",'
+need '    contrasts = "__CONTRASTS__", samplesheet = "__SAMPLESHEET__",'
+need '    modules = "__MODULES__", rmats_type = "__RMATS_TYPE__",'
+need '    organism = "__ORGANISM__", gtf = "__GTF__",'
+need '    enrich_dbs = "__ENRICH_DBS__",'
+need '    paired_rmats = __PAIRED_RMATS__, paired_suppa = __PAIRED_SUPPA__))'\'''
+need 'cd '\''__R__'\'' || exit 1'
+need '  OUTF=""; if [ "$n" = 07 ]; then OUTF='\''output_file = "report_summary.html", '\''; fi'
+need 'so that a `$`, a backtick or `$(...)` in a value is taken literally and no command in it is run, neither by the blocks nor by the generated scripts when the user runs them'
+need 'that contains a single quote (`'\''`), a double quote (`"`), a backslash (`\`) or a line break is therefore not accepted: ask again'
+need 'holds a line break, a backslash or a double quote'
+need '**Extracting the Rmd files.**'
+need 'R='\''{REPORT_DIR}'\''; SK='\''{SKILL_FILE}'\'''
+need 'ERROR: the skill file $SK does not exist: give the path of the skill file, or write the Rmd files one at a time with the Write tool'
+need 'ERROR: the line endings are CRLF in $SK: use a copy with LF line endings; nothing was written to $R'
+need 'writing them one at a time with the Write tool is the fallback when that block cannot read the skill file'
+need 'case '\''{EMAIL}'\'' in none|'\'''\'') sed -i '\''/^#SBATCH ..mail-/d'\'' '\''{REPORT_DIR}/image_check/pull_image.sbatch'\'' ;; esac'
+need 'case '\''{EMAIL}'\'' in none|'\'''\'') sed -i '\''/^#SBATCH ..mail-/d'\'' '\''{REPORT_DIR}/image_check/check_packages.sbatch'\'' ;; esac'
+need 'MK='\''__R__|__OUT__|__SIF__|__EMAIL__|__JOBNAME__'
+need 'grep -Eq "($MK)" "$f"'
+# The templates hold the values inside single quotes (shell) and double quotes only inside the single-quoted R program.
+forbid 'cd "__R__"'
+forbid '"__SIF__"'
+forbid '"__BIND__"'
+forbid 'Rscript -e "'
+# Every free-text question names the rule on free-text values (Step 0); the rule lists the questions.
+for a in '3. Give another path.' 'Do not pre-fill any address.' 'Store `{SIF}`.' 'Several or none: ask which params file' '**Absolute output directory.**' 'Store the GTF path as `{GTF}`' 'the name used in the job names.'; do
+  grep -F -- "$a" "$SKILL" | grep -qF -- 'The rule on free-text values in Step 0 applies.' || { echo "FAIL: the question with '$a' does not reference the rule on free-text values"; fail=1; }
+done
+need 'The questions that collect free text are the other report path (below), the e-mail address (Step 1), the image path (Step 2), the run, sheet and contrasts paths and the output directory (Step 3), the GTF path (Step 5) and the project name (Step 9); each says so.'
+# A value of the wizard is never put in double quotes in a Bash block (a $, a backtick or a backslash in it would be interpreted).
+dq=$(awk '/^```bash$/ { inb = 1; next } inb && /^```$/ { inb = 0 } inb && /"[^"$`]*\{[A-Z_]+\}[^"$`]*"/ { print NR ": " $0 }' "$SKILL")
+[ -z "$dq" ] || { echo "FAIL: a wizard value in double quotes in a Bash block (use single quotes):"; printf '%s\n' "$dq" | head -n 3; fail=1; }
+need 'does not hold exactly 7 Rmd blocks; nothing was written to $R'
+need 'is missing, repeated, not closed, holds another rmd opener, is empty, or does not start with the YAML header line; nothing was written to $R'
+need '[ "${1:-0}" = 1 ] && [ "${2:-0}" = 1 ] && [ "${3:-0}" -gt 0 ] && [ "${4:-0}" = 1 ]'
+need 'END { print b + 0, (s == 3), l + 0, f + 0, x + 0, (s != 4) }'
+need 's == 2 && $0 == "````rmd" { x = 1 }'
+need '[ "${4:-0}" = 1 ] && [ "${5:-0}" = 0 ]'
+need 'if (l == 1 && $0 == "---") f = 1'
+need '[ "$(grep -c '\''^\*\*File `[0-9][0-9]_[a-z_]*\.Rmd`\.\*\*$'\'' "$SK")" -eq 7 ]'
+need 's == 2 && $0 == "````" { exit } s == 2 { print }'
+need '[ -s "$R/$n.Rmd" ] && [ "$(head -n 1 "$R/$n.Rmd")" = "---" ]'
+need 'The block first reads the skill file without writing anything'
+need 'so nothing has been written. Only then does it write the seven files'
+need 'The block makes no temporary directory and deletes and moves nothing.'
+# No code fence of the skill removes anything through a variable: a harness refuses `rm -f "$D/..."` because an empty variable would
+# widen the target. rm, rmdir, unlink and shred with an argument that holds a $ or a backtick, and find with -delete and a $, are errors.
+rmv=$(awk '
+  BEGIN { q = sprintf("%c", 39); pre = "(^|[[:space:];&|({\"" q "`])"
+          re_rm = pre "(rm|rmdir|unlink|shred)[[:space:]]+[^;&|]*[$`]"; re_find = pre "find[[:space:]].*-delete" }
+  { line = $0; t = line; sub(/^ {0,3}/, "", t) }
+  !inb && (t ~ /^```/ || t ~ /^~~~/) { ch = substr(t, 1, 1); n = 0; while (substr(t, n + 1, 1) == ch) n++; flen = n; inb = 1; next }
+  inb {
+    c = 0; while (substr(t, c + 1, 1) == ch) c++
+    if (c >= flen && c == length(t)) { inb = 0; next }
+    if (line ~ re_rm || (line ~ re_find && line ~ /[$`]/)) print "FAIL: a code fence removes files through a variable or a command substitution (line " NR "): " line
+  }' "$SKILL")
+[ -z "$rmv" ] || { printf '%s\n' "$rmv" | head -n 3; fail=1; }
+# No code block of the skill is long or nests a heredoc: a long script, or a heredoc inside a function inside a heredoc, is refused
+# by the safety check of the Claude Code harness. Every fenced block is checked (fences of ``` or ~~~, up to three leading spaces,
+# any info string) except the blocks whose info string is explicitly r, rmd, yaml, md, markdown, text, console, json, csv or tsv.
+# A checked fence has at most 60 lines, at most two heredocs, and no heredoc together with a function definition (name() or
+# function name). A fence closes on a line of the same character, at least as long as the opener, with nothing after it.
+fence=$(awk '
+  function info(s,   w) { w = s; sub(/^[[:space:]]+/, "", w); sub(/[[:space:]{].*$/, "", w); return tolower(w) }
+  {
+    line = $0; t = line; sub(/^ {0,3}/, "", t)
+    if (!inb && !skip && (t ~ /^```/ || t ~ /^~~~/) && line !~ /^    /) {
+      ch = substr(t, 1, 1); n = 0; while (substr(t, n + 1, 1) == ch) n++
+      rest = substr(t, n + 1)
+      if (ch == "`" && index(rest, "`")) next
+      flen = n; fch = ch; inb = 1; n = 0; hd = 0; fn = 0; start = NR
+      lang = info(rest); skip = (lang == "r" || lang == "rmd" || lang == "yaml" || lang == "md" || lang == "markdown" || lang == "text" || lang == "console" || lang == "json" || lang == "csv" || lang == "tsv")
+      if (skip) { inb = 0 }
+      next
+    }
+    if (skip || inb) {
+      c = 0; while (substr(t, c + 1, 1) == fch) c++
+      if (c >= flen && c == length(t) && line !~ /^    /) {
+        if (inb) {
+          if (n > 60) print "FAIL: a code fence of " n " lines (line " start "); at most 60 lines"
+          if (hd > 2 || (hd > 0 && fn > 0)) print "FAIL: a code fence with a nested heredoc (line " start "): more than two heredocs, or a heredoc and a function definition"
+        }
+        inb = 0; skip = 0; next
+      }
+      if (inb) {
+        n++
+        if (line ~ /<<-?[[:space:]]*["'\'']?[A-Za-z_]+/ && line !~ /<<</) hd++
+        if (line ~ /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\)/ || line ~ /^[[:space:]]*function[[:space:]]+[A-Za-z_]/) fn++
+      }
+    }
+  }' "$SKILL")
+[ -z "$fence" ] || { printf '%s\n' "$fence"; fail=1; }
+# The final instructions print exactly one submit command (a bash or sbatch line naming a run script of the report directory).
+n_submit=$(grep -cE '^[[:space:]]*(bash|sbatch)[[:space:]].*\{REPORT_DIR\}.*run_' "$SKILL")
+[ "$n_submit" -eq 1 ] || { echo "FAIL: the final instructions must print exactly one submit command (bash {REPORT_DIR}/run_all.sh), found $n_submit"; fail=1; }
+# Defaults of the resources are at most 64G and 4h; so is every literal request of a script written in the skill.
+mem_def=$(sed -n 's/.*Memory `{MEM}`: default \([0-9]*\)G.*/\1/p' "$SKILL" | head -n1)
+time_def=$(sed -n 's/.*Time `{TIME}`: default \([0-9]*\):\([0-9][0-9]\):\([0-9][0-9]\).*/\1\2\3/p' "$SKILL" | head -n1)
+[ -n "$mem_def" ] && [ "$mem_def" -le 64 ] || { echo "FAIL: default memory is missing or above 64G: '$mem_def'"; fail=1; }
+[ -n "$time_def" ] && [ "$time_def" -le 40000 ] || { echo "FAIL: default time is missing or above 4:00:00: '$time_def'"; fail=1; }
+if grep -oE '^#SBATCH --mem=[0-9]+[GM]' "$SKILL" | sed 's/.*=//' | awk '/G$/ { v = $0; sub(/G/, "", v); if (v + 0 > 64) bad = 1 } /M$/ { v = $0; sub(/M/, "", v); if (v + 0 > 65536) bad = 1 } END { exit !bad }'; then
+  echo "FAIL: a literal memory request above 64G in a script of the skill"; fail=1
+fi
+if grep -oE '^#SBATCH -t [0-9]+(-[0-9]+)?:[0-9]+:[0-9]+' "$SKILL" | sed 's/^#SBATCH -t //' | awk -F'[-:]' '{ if (NF == 4) s = ($1 * 24 + $2) * 3600 + $3 * 60 + $4; else s = $1 * 3600 + $2 * 60 + $3; if (s > 14400) bad = 1 } END { exit !bad }'; then
+  echo "FAIL: a literal time request above 4:00:00 in a script of the skill"; fail=1
+fi
+# --- end wizard checks (Steps 7-10)
+
+# --- Rmd 01 (import and harmonise)
+need '**Writing the Rmd files.**'
+need 'Write that block with the Write tool to `{REPORT_DIR}/<name>.Rmd` byte for byte, without the two fence lines'
+need '**File `01_import.Rmd`.**'
+# the five sign rules of harmonise_effect, exactly (treatment minus control)
+need '    rmats = value,          # IncLevelDifference: b1 = treatment, already treatment - control'
+need '    suppa = -value,         # SUPPA2 dPSI is control - treatment'
+need '    exon_dexseq = -value,   # log2fold_{CONTROL}_{TREATMENT}'
+need '    dtu = -value,           # log2fold_{CONTROL}_{TREATMENT}'
+need '    exon_edger = value,     # logFC is treatment - control'
+need '  ifelse(is.na(effect) | effect == 0, "none", ifelse(effect > 0, "treatment_up", "control_up"))'
+# a sign flip happens only in those lines: -value nowhere else, and no bare -effect (also - x$effect) anywhere
+if grep -E '(^|[^A-Za-z0-9_])-[[:space:]]*value([^A-Za-z0-9_]|$)' "$SKILL" | grep -vxF -e '    suppa = -value,         # SUPPA2 dPSI is control - treatment' \
+     -e '    exon_dexseq = -value,   # log2fold_{CONTROL}_{TREATMENT}' -e '    dtu = -value,           # log2fold_{CONTROL}_{TREATMENT}' | grep -q .; then
+  echo "FAIL: a sign flip (-value) outside harmonise_effect"; fail=1
+fi
+forbid_re '(^|[^A-Za-z0-9_])-[[:space:]]*([A-Za-z_.][A-Za-z0-9_.]*\$)?effect([^A-Za-z0-9_]|$)' 'a bare -effect (a sign flip outside harmonise_effect)'
+need 'This report applies the Benjamini-Hochberg correction itself, separately for each contrast and for each file (local events, isoforms)'
+need 'harmonised_table(contrast, "suppa", gene, NA_character_, ftype, event, dpsi, bh_adjust(p), NA_real_)'
+need 'qc$suppa_untested[["local"]] <- sum(is.na(parts$local$effect))'
+need 'qc$suppa_untested[["isoform"]] <- sum(is.na(parts$isoform$effect))'
+need 'strip_quotes <- function(x) gsub("^\"|\"$", "", x)'
+need 'names(tab) <- dedupe_names(names(tab))'
+need '# support of a group = mean over its samples of (IJC + SJC); n_support = min(support of group 1, support of group 2).'
+# low-support rMATS events are flagged, never deleted, and excluded from the significant counts
+need '  low <- is.na(ns) | ns < min_reads'
+need '"padj", "direction", "n_support", "low_support")'
+need '    !tab$low_support'
+grep -qxF '      out$rmats <- tab' "$SKILL" || { echo "FAIL: the rMATS table must be kept whole (out\$rmats <- tab): flagged rows are never deleted"; fail=1; }
+need 'are flagged in the column `low_support`: they stay in the table, are excluded from the significant counts and are counted below; nothing is deleted, and the rMATS FDR is not recomputed.'
+# contract of a missing module file
+need 'no RDS is written for that tool and contrast and the file is listed in `qc$files_missing`; Rmds 02 to 06 check that each RDS exists before they read it'
+need 'effect_scale, padj, direction, n_support, low_support`'
+need 'if (length(miss)) stop("file ", path, ": column not found: ", paste(miss, collapse = ", "),'
+# no network and no installation inside the Rmd (the image is used as it is)
+forbid_re 'download\.file|url\(|install\.packages' 'network access or package installation in an Rmd'
+# --- end Rmd 01
+
+# --- Rmd 02 (rMATS) and Rmd 03 (SUPPA2)
+need '**File `02_rmats.Rmd`.**'
+need '**File `03_suppa.Rmd`.**'
+need 'DIRECTION_WORDING <- c(treatment_up = "more included in treatment", control_up = "more skipped in treatment")'
+need 'none_message <- function(fdr, dpsi) paste0("none at FDR ", format(fdr), ", |dPSI| ", format(dpsi))'
+need '  !is.na(tab$padj) & tab$padj < fdr & !is.na(tab$effect) & abs(tab$effect) >= dpsi & !tab$low_support'
+need '  !is.na(tab$padj) & tab$padj < fdr & !is.na(tab$effect) & abs(tab$effect) >= dpsi'
+need '  cn <- split_counts(tab, params$fdr, params$dpsi, RMATS_TYPES)'
+need '  cn <- split_counts(tab, params$fdr, params$dpsi, types)'
+need '  g1 <- group_samples(ss, treatment, bam_treatment)'
+need '  g2 <- group_samples(ss, control, bam_control)'
+need '  s1 <- g1$samples'
+need '  s2 <- g2$samples'
+need '  f <- file.path(outdir, "star", "rmats", "bamlist", paste0(condition, "_bamlist.txt"))'
+need '  list(samples = bamlist, from = "rMATS sample list", warning = NULL)'
+need 'WARNING: no rMATS sample list found for '
+need 'psi_legend <- function(treatment, control) c(paste0("treatment (", treatment, ")"), paste0("control (", control, ")"))'
+need '  ev <- sub("^[^;]*;", "", id)'
+need 'The adjusted p-value used here is the Benjamini-Hochberg correction that `01_import.Rmd` applied'
+need '`rds/{CONTRAST}.rmats.rds`'
+need '`rds/{CONTRAST}.suppa.rds`'
+need '`tables/{CONTRAST}.rmats.{type}.significant.csv`'
+need '`figures/{CONTRAST}.rmats.volcano.{type}.png`'
+need '`figures/{CONTRAST}.rmats.psi_top.png`'
+need '`tables/{CONTRAST}.suppa.{type}.significant.csv`'
+need '`figures/{CONTRAST}.suppa.volcano.{type}.png`'
+rmd_block() { awk -v a="**File \`$1\`.**" '$0 == a { seen = 1; next } seen && !inb && $0 == "````rmd" { inb = 1; next } inb && $0 == "````" { exit } inb { print }' "$SKILL"; }
+for n in 02_rmats.Rmd 03_suppa.Rmd; do
+  b=$(rmd_block "$n")
+  [ -n "$b" ] || { echo "FAIL: $n: no rmd block under its heading"; fail=1; continue; }
+  # the sign sentence stands in the text before the first code chunk with functions
+  ls=$(printf '%s\n' "$b" | grep -nF 'Every effect is stated as **treatment minus control**: a positive effect is higher in the treatment group' | head -n1 | cut -d: -f1)
+  lf=$(printf '%s\n' "$b" | grep -n '^```{r functions' | head -n1 | cut -d: -f1)
+  { [ -n "$ls" ] && [ -n "$lf" ] && [ "$ls" -lt "$lf" ]; } || { echo "FAIL: $n: the sign sentence (Every effect is stated as treatment minus control) must stand before the functions chunk"; fail=1; }
+  # the parameters the report switches on are read (the 18 params of the contract; no other name)
+  case "$n" in 02_rmats.Rmd) extra="samplesheet outdir min_reads rmats_type paired_rmats" ;; *) extra="paired_suppa" ;; esac
+  for v in fdr dpsi events topgene report_dir contrasts modules $extra; do
+    printf '%s\n' "$b" | grep -qF "params\$$v" || { echo "FAIL: $n: the parameter params\$$v is not used"; fail=1; }
+  done
+  for v in $(printf '%s\n' "$b" | grep -o 'params\$[A-Za-z_]*' | sort -u | sed 's/params\$//'); do
+    case " outdir report_dir contrasts samplesheet modules fdr dpsi rmats_type min_reads events cross topgene enrich organism enrich_dbs gtf paired_rmats paired_suppa " in
+      *" $v "*) ;; *) echo "FAIL: $n: params\$$v is not one of the 18 parameters of the contract"; fail=1 ;; esac
+  done
+  # the thresholds come from the parameters: no literal 0.05 or 0.1 in the body of the Rmd (the front matter holds the defaults)
+  if printf '%s\n' "$b" | awk 'f >= 2 { print } /^---$/ { f++ }' | grep -qE '(^|[^0-9.])0\.(05|1)([^0-9]|$)'; then
+    echo "FAIL: $n: a literal threshold (0.05 or 0.1) in the body of the Rmd instead of params\$fdr and params\$dpsi"; fail=1
+  fi
+  printf '%s\n' "$b" | grep -qF 'paste0("none at FDR "' || { echo "FAIL: $n: the empty-set message none at FDR is missing"; fail=1; }
+  printf '%s\n' "$b" | grep -qF 'three nearest events by adjusted p-value' || { echo "FAIL: $n: the three nearest events are not printed under the empty-set message"; fail=1; }
+  printf '%s\n' "$b" | grep -qF 'sig_flag(st, params$fdr, params$dpsi)' || { echo "FAIL: $n: the significant events are not selected with params\$fdr and params\$dpsi"; fail=1; }
+done
+b=$(rmd_block 02_rmats.Rmd)
+printf '%s\n' "$b" | grep -qE '^\s+s1 <- g1\$samples$' || { echo "FAIL: 02_rmats.Rmd: the PSI plot must take the sample order from rMATS's own sample lists (s1 <- g1\$samples, group 1 = the treatment)"; fail=1; }
+printf '%s\n' "$b" | grep -qE '^\s+s2 <- g2\$samples$' || { echo "FAIL: 02_rmats.Rmd: group 2 (the control) must take the sample order of its own sample list (s2 <- g2\$samples)"; fail=1; }
+printf '%s\n' "$b" | grep -qF 'psi_long(inc, ss, Tr, Co, bam_t, bam_c)' || { echo "FAIL: 02_rmats.Rmd: the PSI plot is not built from the rMATS sample lists (psi_long(inc, ss, Tr, Co, bam_t, bam_c))"; fail=1; }
+printf '%s\n' "$b" | grep -qF 'bam_t <- read_bamlist(params$outdir, Tr); bam_c <- read_bamlist(params$outdir, Co)' || { echo "FAIL: 02_rmats.Rmd: the sample lists of the run are not read (read_bamlist)"; fail=1; }
+if printf '%s\n' "$b" | grep -qF 'order of the sample sheet.'; then echo "FAIL: 02_rmats.Rmd: the PSI sample order must not be described as the order of the sample sheet"; fail=1; fi
+printf '%s\n' "$b" | grep -qF 'low_support_report(tab, params$fdr, params$dpsi)' || { echo "FAIL: 02_rmats.Rmd: the low_support count is not reported"; fail=1; }
+# --- end Rmd 02 and 03
+# --- Rmd 04 (exon and transcript usage) and Rmd 05 (cross-tool)
+need '**File `04_usage.Rmd`.**'
+need '**File `05_cross_tool.Rmd`.**'
+need 'USAGE_WORDING <- c(treatment_up = "more used in treatment", control_up = "more used in control")'
+need 'none_message <- function(fdr) paste0("none at FDR ", format(fdr))'
+need '  s <- s[order(s$padj, -abs(s$effect), s$feature_id, method = "radix"), , drop = FALSE]'
+need 'pg <- read_gene_table(pgf, ",", "groupID", "padj")'
+need 'sf <- path_of("star", "edger", sprintf("contrast_%s.usage.simes.csv", C))'
+need '  data.frame(gene_id = g$gene_id, padj = g$gene, stringsAsFactors = FALSE)'
+need '  txsig <- !is.na(s$transcript) & s$transcript < fdr'
+need '  called <- s$gene_id[!is.na(s$gene) & s$gene < fdr]'
+need '  make_calls(tab$gene_id[sig], tab$gene_id[!is.na(tab$padj)], tab, sig, ids)'
+need '    same <- sum(known & da == db)'
+need '    opposite <- sum(known & da != db)'
+need 'a gene is significant when `gene` is below the FDR and a transcript when `transcript` is'
+need 'the column `gene` holds the screened adjusted p-value at the gene level and the column `transcript` the screened adjusted p-value at the transcript level'
+need "stageR's own overall alpha is the run's setting"
+need 'the report prints it when the `stageRTx` object is readable with the stageR package of the image'
+need 'directions compared only, never effect sizes across scales'
+need 'Background: the tools do not test the same genes'
+need 'cat("**none**: no gene is called by two or more tools at FDR '
+need 'The cross-tool report `05_cross_tool.Rmd` is generated only when two or more tools ran (Step 10).'
+need 'ComplexUpset when the image has it, otherwise UpSetR'
+need 'Gene identifiers are Ensembl identifiers; a version suffix is removed only where one is present'
+need 'a SUPPA2 locus `GENE1_and_GENE2`'
+need '  parts <- strsplit(df$gene_id, "\\+|_and_")'
+need '  tab <- tidy_ids(expand_genes(tab))'
+need '  if (isTRUE(all.equal(alpha, fdr))) return(list(st = st, alpha = alpha, mode = "run"))'
+need 'stageR::getAlpha(readRDS(path))'
+need 'stageR::stageWiseAdjustment(readRDS(path), method = "dtu", alpha = fdr, allowNA = TRUE)'
+need '**WARNING: the stageR values of the run are valid only at the alpha the run used'
+need 'stager_id <- function(x) sub("\\..*", "", x)'
+need 'DEXSeq usage coefficient (fitted, variance-stabilised; not a proportion)'
+need 'proportion = ifelse(tot > 0, v / tot, NA_real_)'
+need '    out[[paste0("effect_", t)]] <- ifelse('
+forbid 'compare effect sizes across tools'
+for n in 04_usage.Rmd 05_cross_tool.Rmd; do
+  b=$(rmd_block "$n")
+  [ -n "$b" ] || { echo "FAIL: $n: no rmd block under its heading"; fail=1; continue; }
+  # the sign sentence stands in the text before the first code chunk with functions
+  ls=$(printf '%s\n' "$b" | grep -nF 'Every effect is stated as **treatment minus control**: a positive effect is higher in the treatment group' | head -n1 | cut -d: -f1)
+  lf=$(printf '%s\n' "$b" | grep -n '^```{r functions' | head -n1 | cut -d: -f1)
+  { [ -n "$ls" ] && [ -n "$lf" ] && [ "$ls" -lt "$lf" ]; } || { echo "FAIL: $n: the sign sentence (Every effect is stated as treatment minus control) must stand before the functions chunk"; fail=1; }
+  # the parameters it switches on are read, and no parameter outside the 18 of the contract
+  case "$n" in 04_usage.Rmd) extra="fdr events topgene outdir" ;; *) extra="fdr dpsi cross min_reads outdir" ;; esac
+  for v in report_dir contrasts modules $extra; do
+    printf '%s\n' "$b" | grep -qF "params\$$v" || { echo "FAIL: $n: the parameter params\$$v is not used"; fail=1; }
+  done
+  for v in $(printf '%s\n' "$b" | grep -o 'params\$[A-Za-z_]*' | sort -u | sed 's/params\$//'); do
+    case " outdir report_dir contrasts samplesheet modules fdr dpsi rmats_type min_reads events cross topgene enrich organism enrich_dbs gtf paired_rmats paired_suppa " in
+      *" $v "*) ;; *) echo "FAIL: $n: params\$$v is not one of the 18 parameters of the contract"; fail=1 ;; esac
+  done
+  # the thresholds come from the parameters: no literal 0.05 or 0.1 in the body of the Rmd
+  if printf '%s\n' "$b" | awk 'f >= 2 { print } /^---$/ { f++ }' | grep -qE '(^|[^0-9.])0\.(05|1)([^0-9]|$)'; then
+    echo "FAIL: $n: a literal threshold (0.05 or 0.1) in the body of the Rmd instead of params\$fdr and params\$dpsi"; fail=1
+  fi
+done
+# --- end Rmd 04 and 05
+# --- Rmd 06 (GO enrichment) and Rmd 07 (summary page)
+need '**File `06_enrichment.Rmd`.**'
+need '**File `07_summary.Rmd`.**'
+need 'The universe (the background) of each enrichment is the set of genes that were testable in that tool'
+need 'A group is tested only when it has at least 10 genes.'
+need 'MIN_GENES <- 10'
+need 'if (length(ids) < MIN_GENES) {'
+need 'cat("skipped: fewer than ", MIN_GENES, " genes (n=", length(ids), ")\n\n", sep = "")'
+need '    uni <- to_entrez(cl$tested, pkg)'
+need '       treatment_up = intersect(cl$genes, d$gene_id[d$direction %in% "treatment_up"]),'
+need '       control_up = intersect(cl$genes, d$gene_id[d$direction %in% "control_up"]))'
+need '  paste0(m, "; KEGG/Reactome require an image rebuild (not in this image: ", paste(names(present)[!present], collapse = ", "), ").")'
+need '**organism not supported**'
+need 'pAdjustMethod = "BH", pvalueCutoff = ENRICH_CUTOFF, qvalueCutoff = ENRICH_CUTOFF'
+need 'ENRICH_CUTOFF <- 0.05'
+need 'Only GO is run: KEGG and Reactome are never run by this report'
+need 'a group needs at least 10 genes), with the genes that were testable in that tool as the background'
+need 'never downloads or installs anything'
+need '  if (file.exists(file.path(rd, f)) && cur(file.path(rd, f))) cat("- <a href=\"", html_escape(f), "\">'
+need '  else cat("- ", REPORTS$title[i], ": not produced\n", sep = "")'
+need 'cat("- FDR (adjusted p-value cutoff): ", format(params$fdr), "\n", sep = "")'
+need 'cat("- dPSI (minimum absolute dPSI of an rMATS or SUPPA2 event; not applied to exon or transcript usage): ", format(params$dpsi), "\n", sep = "")'
+need 'cat("- rMATS count type: ", params$rmats_type, "\n", sep = "")'
+need 'cat("- rMATS minimum read support (mean of IJC plus SJC per group, smaller of the two groups): ", params$min_reads, "\n", sep = "")'
+need 'recovered from the HTML of those reports'
+# no network, download or installation in the code chunks of any Rmd (r fences)
+if awk '/^```\{[^r]/ { found = 1 } /^```\{r/ { inr = 1; next } inr && /^```$/ { inr = 0; next } inr && /KEGGREST|download|url\(|install\.packages|curl|httr|RCurl|https?:|ftp:|BiocManager|install_|wget|socketConn|system2?\(|source\(/ { found = 1 } END { exit !found }' "$SKILL"; then
+  echo "FAIL: a network call, download or installation (KEGGREST, download, url(, install.packages, https:, BiocManager, wget, system, source), or a code chunk that is not R"; fail=1
+fi
+# the old promise of KEGG and Reactome enrichment is gone from the wizard
+forbid 'plus KEGG and Reactome as far as'
+for n in 06_enrichment.Rmd 07_summary.Rmd; do
+  b=$(rmd_block "$n")
+  [ -n "$b" ] || { echo "FAIL: $n: no rmd block under its heading"; fail=1; continue; }
+  ls=$(printf '%s\n' "$b" | grep -nF 'Every effect is stated as **treatment minus control**: a positive effect is higher in the treatment group' | head -n1 | cut -d: -f1)
+  lf=$(printf '%s\n' "$b" | grep -n '^```{r functions' | head -n1 | cut -d: -f1)
+  { [ -n "$ls" ] && [ -n "$lf" ] && [ "$ls" -lt "$lf" ]; } || { echo "FAIL: $n: the sign sentence (Every effect is stated as **treatment minus control**) must stand before the functions chunk"; fail=1; }
+  case "$n" in 06_enrichment.Rmd) extra="fdr dpsi enrich organism enrich_dbs outdir" ;; *) extra="fdr dpsi rmats_type min_reads paired_rmats paired_suppa organism enrich_dbs outdir" ;; esac
+  for v in report_dir contrasts modules $extra; do
+    printf '%s\n' "$b" | grep -qF "params\$$v" || { echo "FAIL: $n: the parameter params\$$v is not used"; fail=1; }
+  done
+  for v in $(printf '%s\n' "$b" | grep -o 'params\$[A-Za-z_]*' | sort -u | sed 's/params\$//'); do
+    case " outdir report_dir contrasts samplesheet modules fdr dpsi rmats_type min_reads events cross topgene enrich organism enrich_dbs gtf paired_rmats paired_suppa " in
+      *" $v "*) ;; *) echo "FAIL: $n: params\$$v is not one of the 18 parameters of the contract"; fail=1 ;; esac
+  done
+  # no literal 0.05 or 0.1 in the body (the one enrichment cutoff constant ENRICH_CUTOFF <- 0.05 is the exception)
+  if printf '%s\n' "$b" | awk 'f >= 2 { print } /^---$/ { f++ }' | grep -vxF 'ENRICH_CUTOFF <- 0.05' | grep -qE '(^|[^0-9.])0\.(05|1)([^0-9]|$)'; then
+    echo "FAIL: $n: a literal threshold (0.05 or 0.1) in the body of the Rmd instead of the parameters"; fail=1
+  fi
+done
+# the summary page is the entry point: written to report_summary.html by job 07 and named in the final instructions
+need 'Start with the summary page, the index of every report, figure and table: {REPORT_DIR}/report_summary.html'
+need 'The page is written to `report_summary.html`, the entry point of the report directory.'
+# --- end Rmd 06 and 07
+# --- what the real-data run changed: the tie-break of the gene direction (stated in 04, 05 and 06), the DTU zero-count flag, the order
+# of the DEXSeq bins table, both gene counts in 06, and a relative outdir of the params file resolved from the run directory (Step 3)
+need 'among features with the same smallest adjusted p-value (many are exactly 0 on real data) the one with the largest absolute effect is taken, and if that is tied too, the first by feature identifier, so the choice never depends on the order of the rows'
+need 'Among features with equal smallest adjusted p-value (on real data many are exactly 0) the one with the largest absolute effect is taken, and if that is tied too, the first by feature identifier; the direction never depends on the order of the rows.'
+need 'Among features with equal smallest adjusted p-value (on real data many adjusted p-values are exactly 0) the one with the largest absolute effect is taken, and if that is tied too, the first by feature identifier, so the direction never depends on the order of the rows'
+need 'among features with equal smallest adjusted p-value (on real data many are exactly 0) the one with the largest absolute effect, and if that is tied too, the first by feature identifier, so the groups never depend on the order of the rows'
+need 'The table of the DEXSeq exon bins lists the bins with an effect first'
+need '        bins <- bins[order(is.na(bins$effect), bins$padj, -abs(bins$effect), bins$feature_id, method = "radix"), , drop = FALSE]'
+need 'the threshold of 10 log2 units is a heuristic, not a statistical test'
+need 'effect_flag <- function(effect) ifelse(!is.na(effect) & abs(effect) > ARTEFACT_LOG2FC, "zero-count artefact", "")'
+need 'ARTEFACT_LOG2FC <- 10'
+need '    if (t == "dtu") out$effect_flag <- effect_flag(out$effect_dtu)'
+need '          gt$effect_flag <- effect_flag(gt$top_effect); tx$effect_flag <- effect_flag(tx$effect)'
+need 'and the threshold of 10 is a heuristic; `effect_dtu` is kept as it is'
+need 'The word genes in the gene lists, the universes and the summary table means genes after splitting the groups of overlapping genes'
+need 'cat("Called by ", TOOL_LABELS[[tool]], ": ", length(cl$ids), " identifiers as the tool writes them ("'
+need 'significant_ids_before_split = vapply(calls, function(x) length(x$ids), integer(1))'
+need '  ids <- strip_version(gene_tab$gene_id[sig_usage(gene_tab, fdr)])'
+need 'A relative path in the params file is relative to `{PARAMS_DIR}`, not to the directory the wizard runs in'
+need 'cd '\''{OUTDIR_BASE}'\'' 2>/dev/null && cd '\''{OUTDIR_GIVEN}'\'' 2>/dev/null'
+need '`{PARAMS_DIR}` when the answer is the default taken from the params file'
+forbid 'cd '\''{CWD}'\'' 2>/dev/null && cd '\''{OUTDIR_GIVEN}'\'''
+
+# --- reused report directory: the first free _N suffix (Step 0), the run stamp of job 01 and the earlier-run section of the summary page
+need 'n=2; while [ -e '\''{REPORT_DIR}'\''_$n ]; do n=$((n + 1)); done; echo '\''FREE {REPORT_DIR}_'\''"$n"'
+need 'the first free one: the path of the `FREE` line (default)'
+need 'after this answer and after the report directory check of Step 3'
+need 'saveRDS(list(time = Sys.time(), params = as.list(params)), f)'
+need 'write_run_stamp(params$report_dir, params)'
+need 'stamp_time <- function(rd) { f <- file.path(rd, STAMP_FILE); if (file.exists(f)) file.mtime(f) else NULL }'
+need '  !is.na(m) & m >= stamp'
+need 'cur <- function(paths) if (all_old) rep(FALSE, length(paths)) else is_current(paths, stamp)'
+need 'cat("## From an earlier run (not updated by this run)\n\n")'
+need ': not produced by this run (an older `'
+need 'not written by this run: the file is from an earlier run and is listed under From an earlier run.'
+need '  if (!(file.exists(file.path(rd, REPORTS$file[i])) && cur(file.path(rd, REPORTS$file[i])))) next'
+need 'fcur <- cur(file.path(rd, "figures", figs)); old <- c(old, file.path("figures", figs[!fcur]))'
+need 'tcur <- cur(file.path(rd, "tables", tabs)); old <- c(old, file.path("tables", tabs[!tcur]))'
+need 'was written by a run with other parameters ('
+# the run stamp is written before any table is read: the stamp chunk comes before the import chunk of Rmd 01
+b1=$(rmd_block 01_import.Rmd)
+ls1=$(printf '%s\n' "$b1" | grep -n '^```{r stamp}$' | head -n1 | cut -d: -f1); li1=$(printf '%s\n' "$b1" | grep -n '^```{r import}$' | head -n1 | cut -d: -f1)
+{ [ -n "$ls1" ] && [ -n "$li1" ] && [ "$ls1" -lt "$li1" ]; } || { echo "FAIL: 01_import.Rmd: the stamp chunk must come before the import chunk (the run stamp is written before any table is read)"; fail=1; }
+# --- the report directory is checked before anything is written into it: a block of its own in Step 3, before the Step 2 blocks
+# that write image_check/ are run, and again at the top of the extraction block (and in the checks block of Step 10)
+need '**Report directory check.**'
+need '**Order of the two blocks below.**'
+need 'run these two blocks only after the block **Report directory check.** of Step 3 has passed: nothing is written into `{REPORT_DIR}` before that check.'
+need 'echo "REPORT_DIR_OK=$R"'
+g_in='case "$R/" in "$OUT"/*) echo "ERROR: report directory $R is inside the pipeline output $OUT"; exit 1 ;; esac'
+g_res='case "$R" in */results/*) ;; *) echo "ERROR: report directory $R is not under a results/ directory"; exit 1 ;; esac'
+[ "$(grep -cxF -- "$g_in" "$SKILL")" -eq 2 ] || { echo "FAIL: the guard 'report directory inside the pipeline output' must stand in the report directory check of Step 3 and in the extraction block (2 lines)"; fail=1; }
+[ "$(grep -cxF -- "$g_res" "$SKILL")" -eq 2 ] || { echo "FAIL: the guard 'report directory under results/' must stand in the report directory check of Step 3 and in the extraction block (2 lines)"; fail=1; }
+grep -qxF -- 'case "$R/" in "$OUT"/*) fail "report directory $R is inside the pipeline output $OUT" ;; esac' "$SKILL" || { echo "FAIL: the checks block of Step 10 must refuse a report directory inside the pipeline output"; fail=1; }
+xb=$(bash "$HERE/cut_block.sh" "$SKILL" '**Extracting the Rmd files.**' 2>/dev/null)
+xg=$(printf '%s\n' "$xb" | grep -nxF -- "$g_in" | head -n1 | cut -d: -f1); xm=$(printf '%s\n' "$xb" | grep -n '^mkdir -p "\$R"' | head -n1 | cut -d: -f1)
+{ [ -n "$xg" ] && [ -n "$xm" ] && [ "$xg" -lt "$xm" ]; } || { echo "FAIL: the extraction block must check that the report directory is not inside the pipeline output before it creates it"; fail=1; }
+lr=$(grep -n '^\*\*Report directory check\.\*\*' "$SKILL" | head -n1 | cut -d: -f1); ld=$(grep -n '^\*\*Module detection\.\*\*' "$SKILL" | head -n1 | cut -d: -f1)
+{ [ -n "$lr" ] && [ -n "$ld" ] && [ "$lr" -lt "$ld" ]; } || { echo "FAIL: the report directory check must come before the module detection of Step 3"; fail=1; }
+# --- every value put into a block: typed numbers in their form, derived values checked by the block that derives them
+need 'The rule holds for every value put into a block, typed or derived.'
+need '`{MEM}` digits followed by `G` or `M` (`32G`), `{TIME}` `H:MM:SS` or `D-H:MM:SS` (`4:00:00`), `{FDR}` and `{DPSI}` a decimal number (`0.05`), `{MIN_READS}` a whole number (`10`); any other answer is asked again and never put into a block.'
+need 'the paths read from the params file (`input`, `contrasts`, `outdir`, `gtf`), `{OUTDIR_RNASPLICE}` and `{SKILL_FILE}`'
+need 'A value that the assistant builds or substitutes into a block text cannot be checked by that block'
+need 'A typed value is accepted only in its form (the rule on free-text values in Step 0 applies)'
+need 'A typed memory or time is accepted only in its form (the rule on free-text values in Step 0 applies)'
+need 'd=$(pwd); s="$HOME/.claude/commands/nfcore-rnasplice-report.md"'
+need 'for v in "$d" "$s"; do case "$v" in *"'\''"*|*'\''"'\''*|*\\*|*$'\''\n'\''*) echo "ERROR: the path $v holds a single quote, a double quote, a backslash or a line break'
+need 'echo "CWD=$d"; echo "WD_NAME=${d##*/}"; echo "TODAY_ISO=$(date +%F)"; echo "SKILL_FILE=$s"'
+need 'd=$(pwd); case "$d" in *"'\''"*|*'\''"'\''*|*\\*|*$'\''\n'\''*) echo "ERROR: the output directory $d holds'
+need 'if (index(v, q) || index(v, "\"") || index(v, "\\")) { print "ERROR: the value of " k " in the params file holds a quote or a backslash'
+need 'printed by the block of Step 0 (`SKILL_FILE=`'
+# --- the opening line of an Rmd block is the line right after its heading, in both passes of the extraction
+[ "$(grep -cF -- 's == 1 { s = ($0 == "````rmd") ? 2 : 4; next }' "$SKILL")" -eq 2 ] || { echo "FAIL: both awk passes of the extraction must take the line right after the heading as the opening line of the block"; fail=1; }
+need '[ "${6:-0}" = 1 ] || { echo "ERROR: the line right after the heading of $n.Rmd is not the opening line "'\''````rmd'\''" of its block; nothing was written to $R"; exit 1; }'
+need 'on the line right after its heading (no blank line or text between them)'
+# No Bash block has a backtick inside a double-quoted string (bash would run it as a command substitution). The scan follows the
+# quoting of each Bash fence across its lines: single quotes, double quotes, $(...) nested inside double quotes, backslash escapes
+# and comments; a backtick met in a double-quoted part is an error.
+bq=$(awk '
+  BEGIN { q = sprintf("%c", 39) }
+  /^```bash$/ { inb = 1; st = 0; sp = 0; pd = 0; next }
+  inb && /^```$/ { inb = 0; next }
+  inb {
+    n = length($0); prev = " "
+    for (i = 1; i <= n; i++) {
+      c = substr($0, i, 1)
+      if (st == 1) { if (c == q) st = 0; prev = c; continue }
+      if (c == "\\") { i++; prev = "x"; continue }
+      if (c == "$" && substr($0, i + 1, 1) == "(") { stk[++sp] = st; pds[sp] = pd; st = 0; pd = 0; i++; prev = "("; continue }
+      if (st == 0) {
+        if (c == "#" && (prev == " " || i == 1)) break
+        if (c == q) st = 1; else if (c == "\"") st = 2
+        else if (c == "(") pd++
+        else if (c == ")") { if (pd > 0) pd--; else if (sp > 0) { st = stk[sp]; pd = pds[sp]; sp-- } }
+      } else { if (c == "\"") st = 0; else if (c == "`") { print NR ": " $0; break } }
+      prev = c
+    }
+  }' "$SKILL")
+[ -z "$bq" ] || { echo "FAIL: a backtick inside double quotes in a Bash block (line $(printf '%s\n' "$bq" | head -n1 | cut -c1-120))"; fail=1; }
+# --- stageR joins: the identifier rule of the pipeline (cut at the first dot) on both sides, with a WARNING for unmatched transcripts
+[ "$(grep -cxF -- 'stager_id <- function(x) sub("\\..*", "", x)' "$SKILL")" -eq 3 ] || { echo "FAIL: 04, 05 and 06 must each define stager_id with the rule of the pipeline's stageR step"; fail=1; }
+need '  st$gene_id <- stager_id(st$gene_id); st$tx_id <- stager_id(st$tx_id)'
+need '  tab$gene_id <- stager_id(tab$gene_id); tab$feature_id <- stager_id(tab$feature_id)'
+need '        jn <- join_stager(sres$st, tab)'
+need '  jn <- join_stager(st, feat)'
+need 'transcripts of the stageR table were not found in the DEXSeq transcript table'
+need '        if (nzchar(stager_join_warning(jn))) cat(stager_join_warning(jn), "\n\n")'
+[ "$(grep -cF -- 'if (nzchar(cl$join_warning)) stnote <- paste0(stnote, "\n\n", cl$join_warning)' "$SKILL")" -eq 2 ] || { echo "FAIL: 05 and 06 must print the WARNING of the stageR join"; fail=1; }
+forbid 'strip_tx_version'
+# --- KEGG and Reactome: not offered by this report, whatever the image holds; the missing packages are named
+need 'kegg_message <- function(present) {'
+need 'KEGG/Reactome are not offered by this report, which runs GO only'
+forbid 'are not in this image). GO only.'
+# --- the HTML pages load nothing from the internet: MathJax off in each of the seven Rmd headers
+[ "$(grep -cxF -- '    mathjax: null' "$SKILL")" -eq 7 ] || { echo "FAIL: each of the seven Rmd headers must set mathjax: null (no MathJax from the internet)"; fail=1; }
+
+# --- README checks and the root README row
+# CHECK_ROOT_README=<file> checks that file instead of the repository root README.md (a test hook of prove_mutations.sh, target rootreadme).
+ROOT_README=${CHECK_ROOT_README:-$(dirname "$SKILL")/../README.md}
+needr '## Validation status'
+needr '`report_summary.html`'
+needr 'Every effect in the report is treatment minus control'
+needr '| Tool | Value read | Conversion | Result |'
+needr 'KEGG/Reactome require an image rebuild'
+needr '`low_support`'
+needr 'The wizard end to end and the generated SLURM scripts on the cluster (2026-10-06), on the output of the nf-core test-data run (4 samples, chrX, 50,000 read pairs), in four runs: all modules; rMATS only; BAM input; all modules with `min_reads` 0.'
+needr 'every Bash block was accepted by the Claude Code safety check'
+needr 'The 24 report jobs of the four runs all completed'
+needr 'jobs 02 to 06 `afterok` on job 01 with cancellation when job 01 fails, job 07 `afterany` on every earlier job'
+needr '(SE 5, A5SS 3, A3SS 2, MXE 3, RI 1) equal an independent recomputation with awk from the raw tables'
+needr 'the pipeline output directories were not modified'
+needr 'Chain wall times were 23 s, 17 s, 18 s and 71 s'
+needr 'the four reports take 26 MB of output in total'
+needr 'Peak memory of the report jobs: not measured.'
+needr 'The behaviour when a report job fails: not yet run.'
+needr 'every Bash block was accepted by the Claude Code safety check (skill at commit 0abe782).'
+needr 'That block ran in the real-data run.'
+needr 'The live run on the test data used the skill at commit 0abe782, in which the Rmd files were cut out with a separate awk command'
+needr 'the real-data run used the extraction block and the rendering block with its exact-marker check'
+needr 'The lines of Step 2 that drop the mail lines when no mail is wanted have static and render tests only; the real-data record does not say whether they ran.'
+needr '### How the scripts are made'
+needr 'writes two small template files to `templates/` there'
+needr 'The wizard refuses typed values (e-mail address, paths, project name) that contain a single quote, a double quote, a backslash or a line break'
+# the real-data record (2026-10-06): what ran, the numbers, what was not verified
+! grep -qF 'Real data: not yet run.' "$README" 2>/dev/null || { echo "FAIL: README still says: Real data: not yet run."; fail=1; }
+needr '### Real data (2026-10-06)'
+needr 'human hiPSC-derived cardiomyocytes, KO versus WT (treatment KO, control WT), 3 versus 3 samples, reverse-stranded'
+needr 'execution trace shows 103 tasks completed; one attempt of the DEXSeq exon-usage task was killed (exit 143) and its retry completed.'
+needr 'rMATS SE 2049, A5SS 257, A3SS 429, MXE 1394, RI 368 (4497 events, 2453 genes)'
+needr 'SUPPA2 536 local events and 576 isoforms'
+needr 'DEXSeq exon usage 105669 bins and 9567 `perGeneQValue` groups (12867 genes after splitting the groups of overlapping genes)'
+needr 'edgeR exon usage 5944 genes (Simes) of 16804, 32253 exons, 8818 genes by the F-test'
+needr 'DTU 3628 genes (stageR) of 11452 and 6169 transcripts'
+needr 'With `min_reads` 0 the rMATS counts are SE 3206, A5SS 537, A3SS 849, MXE 1867, RI 620 (7079 events)'
+needr 'with 0 mismatches of the conversion'
+needr 'edgeR agrees with DEXSeq on 22765 of 22766 shared significant bins'
+needr 'rMATS SE -0.854 (FDR 0), SUPPA2 raw +0.454 reported as -0.454, edgeR -1.588 on the same exon'
+needr 'The published analysis of this dataset reports 2,679 events'
+needr 'An earlier run of the same data found 7,031 events. The reason for the difference to the published number has not been determined.'
+needr '01 up to 2 min 21 s, 02 about 15 s, 03, 04 and 05 about 37 s each, 06 (enrichment) 15 min 17 s, 07 4 s'
+needr 'each report directory takes 79 MB'
+needr 'the terms found are recorded as observations only'
+needr 'they have not been run on the whole real output'
+needr 'peak memory and the exit codes of jobs 01 to 05 were not read'
+needr 'The figures of the real-data reports were not viewed'
+needr 'The threshold of 10 is a heuristic, not a statistical test.'
+needr 'This tie-break is a convention, not a test'
+needr 'among features with equal smallest adjusted p-value the one with the largest absolute effect is taken, and if that is tied too, the first by feature identifier'
+needr 'The minimum read support (`min_reads`) is a heuristic too'
+needr 'is resolved from the directory that holds the params file (the run directory)'
+needr '`tests/fixtures/sign_rows.tsv` holds 34 of these real rows'
+needr 'five scripts: 135, 106, 153, 118 and 93 checks, all pass'
+needr 'In that test the enrichment report runs on the DEXSeq exon usage genes only'
+needr 'reverse-stranded (the Salmon strandedness helper of `/nfcore-rnasplice-setup`: ISR, reverse fraction 0.9999)'
+needr 'nf-core/rnasplice at the development revision 1b447239488097651d8eac44bca2c1556865eb0f'
+needr 'did not run the checks block of Step 10 and the package check again (same image and modules)'
+needr 'changed after that run (commit ca78ad5) and has static and render tests only'
+needr 'Their outcome was read from the output files and the chain instead'
+! grep -qF 'job 01 ended with exit code 0' "$README" 2>/dev/null || { echo "FAIL: README states an exit code of job 01 that was not read"; fail=1; }
+# the record says what has not run, names the two DTU sets, and holds facts only (no account of earlier versions of a block)
+needr 'The block that extracts the Rmd files validates the skill file first and then writes the files; it deletes nothing.'
+needr 'several contrasts in one run (Rmds 01 to 07 were rendered with two contrasts only on a copy of the test fixtures)'
+needr 'paired rMATS statistics (`rmats_paired_stats: true`'
+needr 'a mouse run (Rmd 06 has an R test with mouse identifiers only), the rMATS JCEC tables, the image pull job (`image_check/pull_image.sbatch` was never submitted), and a report directory with a numbered suffix (`_2`).'
+needr 'Changed after the real-data run, with static, render and R tests only:'
+needr 'the 6169 transcripts confirmed by stageR (stageR `gene` and `transcript` below 0.05) and on the 6654 transcripts with a DEXSeq adjusted p-value below 0.05'
+needr 'MathJax is switched off in every Rmd header'
+needr 'Job 01 writes a run stamp, `rds/run_stamp.rds`'
+needr 'under "From an earlier run (not updated by this run)"'
+needr 'Typed numbers (memory, time, FDR, dPSI, minimum read support) are accepted only in their form'
+needr 'The report directory is checked (under `results/`, not inside the pipeline output) in Step 3 before anything is written into it'
+needr 'they are not offered by this report'
+! grep -qF '6635' "$README" 2>/dev/null || { echo "FAIL: README names a DTU count (6635) whose set it does not define"; fail=1; }
+! grep -qF 'was refused by the Claude Code safety check' "$README" 2>/dev/null || { echo "FAIL: README tells the history of a block instead of its facts"; fail=1; }
+needr 'The complete `--full` run took about 9 h 52 min on 2026-10-07 (97 R mutation rows, each rerunning the R test scripts).'
+needr 'With the current mutation rows it took about 17 min on a compute node'
+needr 'are cut at the first dot for DTU, as the pipeline'\''s stageR step writes them, while the other tools keep them whole: such DTU genes do not overlap with the genes of the other tools in the cross-tool comparison.'
+needr 'Nor a run on an organism other than human or mouse (Rmd 06 has an R test with the organism zebrafish only)'
+need '(normally the run directory, from which the pipeline was started)'
+needr '| SUPPA2 | `dPSI` (control minus treatment) | flipped | treatment minus control |'
+needr '| DEXSeq exon usage | `log2fold_{CONTROL}_{TREATMENT}` | flipped | treatment minus control |'
+needr '| DEXSeq DTU | `log2fold_{CONTROL}_{TREATMENT}` | flipped | treatment minus control |'
+needr '| rMATS | `IncLevelDifference` (group 1 = treatment) | none | treatment minus control |'
+needr '| edgeR exon usage | `logFC` | none | treatment minus control |'
+grep -qF '| nf-core/rnasplice report | `/nfcore-rnasplice-report` |' "$ROOT_README" 2>/dev/null || { echo "FAIL: root README row missing: a row naming /nfcore-rnasplice-report"; fail=1; }
+# --- end README checks
+
+
+# tests/run_all_tests.sh names every script of tests/ in exactly one list (TESTS, FULL_TESTS or NOT_TESTS), runs each under
+# env -i, and says when the proof-tool self-test was skipped. CHECK_RUN_ALL overrides the file (used by prove_mutations.sh).
+RUN_ALL=${CHECK_RUN_ALL:-$HERE/run_all_tests.sh}
+if [ -s "$RUN_ALL" ]; then
+  ra_tests=$(sed -n 's/^TESTS="\(.*\)"$/\1/p' "$RUN_ALL"); ra_full=$(sed -n 's/^FULL_TESTS="\(.*\)"$/\1/p' "$RUN_ALL"); ra_not=$(sed -n 's/^NOT_TESTS="\(.*\)"$/\1/p' "$RUN_ALL")
+  for f in "$HERE"/*.sh; do
+    b=${f##*/}; c=0
+    for l in "$ra_tests" "$ra_full" "$ra_not"; do case " $l " in *" $b "*) c=$((c + 1)) ;; esac; done
+    [ $c -eq 1 ] || { echo "FAIL: tests/$b must be named in exactly one list of run_all_tests.sh (TESTS, FULL_TESTS or NOT_TESTS), found in $c"; fail=1; }
+  done
+  [ "$ra_not" = "cut_block.sh test_env.sh prove_red.sh run_all_tests.sh run_r_tests.sh" ] \
+    || { echo "FAIL: run_all_tests.sh NOT_TESTS must be exactly the helpers (cut_block.sh test_env.sh prove_red.sh run_all_tests.sh run_r_tests.sh), found: $ra_not"; fail=1; }
+  case " $ra_full " in *" test_proof_tools.sh "*) ;; *) echo "FAIL: run_all_tests.sh FULL_TESTS must include test_proof_tools.sh, found: $ra_full"; fail=1 ;; esac
+  # the R tests and the rtest mutation rows run only in the full mode (through sbatch); the default suite stays static
+  for t in test_r.sh test_rtest_runner.sh; do
+    case " $ra_full " in *" $t "*) ;; *) echo "FAIL: run_all_tests.sh FULL_TESTS must include $t, found: $ra_full"; fail=1 ;; esac
+  done
+  grep -qxF '  run prove_mutations.sh "$SK" rtest' "$RUN_ALL" || { echo "FAIL: run_all_tests.sh --full must run prove_mutations.sh in mode rtest"; fail=1; }
+  case " $ra_tests " in *" test_proof_tools.sh "*) echo "FAIL: run_all_tests.sh TESTS must not include test_proof_tools.sh (it belongs to FULL_TESTS)"; fail=1 ;; esac
+  grep -qF 'env -i HOME="${HOME:-/nonexistent}" PATH="$P" /bin/bash --noprofile --norc "$HERE/$1"' "$RUN_ALL" \
+    || { echo "FAIL: run_all_tests.sh must run every test under env -i with an explicit PATH"; fail=1; }
+  grep -qF 'test_proof_tools.sh was SKIPPED' "$RUN_ALL" || { echo "FAIL: run_all_tests.sh must say when the proof-tool self-test was skipped"; fail=1; }
+  grep -qF "1.8.5 | sort -V | head -n1)\" != 1.8.5 ]; then" "$RUN_ALL" || { echo "FAIL: run_all_tests.sh must check for git 1.8.5 or newer before the proof-tool self-test"; fail=1; }
+  case " $ra_tests " in *" test_run_all.sh "*) ;; *) echo "FAIL: run_all_tests.sh TESTS must run test_run_all.sh (the test of the runner itself)"; fail=1 ;; esac
+else
+  echo "FAIL: tests/run_all_tests.sh is missing or empty"; fail=1
+fi
+[ $fail -eq 0 ] && echo "PASS" || exit 1

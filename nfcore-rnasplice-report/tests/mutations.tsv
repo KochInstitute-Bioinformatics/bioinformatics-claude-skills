@@ -1,0 +1,661 @@
+# id	runner	target	sed program	expected text
+base-title	check	skill	\|^@TITLE@$|d	missing required text: @TITLE@
+base-flag	check	skill	$s/$/\nRun `report --now` here./	a --flag appears in prose or outside the allowed commands
+base-word-task	check	skill	$s/$/\nAdded in Task 3./	forbidden process word in the skill: Task [0-9]
+base-word-ledger	check	skill	$s/$/\nSee the ledger./	forbidden process word in the skill: ledger
+base-word-fix	check	skill	$s/$/\nAfter the fix round./	forbidden process word in the skill: fix round
+base-word-reviewer	check	skill	$s/$/\nThe reviewer agreed./	forbidden process word in the skill: reviewer
+base-readme-task	check	readme	$s/$/\nTask 2 text./	forbidden process word in the README: Task [0-9]
+base-readme-ledger	check	readme	$s/$/\nledger/	forbidden process word in the README: ledger
+base-readme-fix	check	readme	$s/$/\nfix round/	forbidden process word in the README: fix round
+base-readme-reviewer	check	readme	$s/$/\nreviewer/	forbidden process word in the README: reviewer
+base-full	check	runall	s/^FULL_TESTS="test_proof_tools.sh /FULL_TESTS="/	FULL_TESTS must include test_proof_tools.sh
+base-notfull	check	runall	s/^TESTS="check_skill.sh/TESTS="test_proof_tools.sh check_skill.sh/	TESTS must not include test_proof_tools.sh
+base-notlist	check	runall	s/^NOT_TESTS="cut_block.sh/NOT_TESTS="cut_block.sh prove_mutations.sh/	NOT_TESTS must be exactly the helpers
+base-onelist	check	runall	s/^NOT_TESTS="cut_block.sh/NOT_TESTS="check_skill.sh cut_block.sh/	must be named in exactly one list
+base-envi	check	runall	s/env -i HOME=/env HOME=/	must run every test under env -i with an explicit PATH
+base-skipped	check	runall	s/was SKIPPED; run/was left out; run/	must say when the proof-tool self-test was skipped
+base-gitver	check	runall	s/!= 1.8.5 \]; then/!= 1.8.4 ]; then/	must check for git 1.8.5 or newer
+base-selfrun	check	runall	s/^TESTS="check_skill.sh test_run_all.sh /TESTS="check_skill.sh /	TESTS must run test_run_all.sh
+base-passline	runtest	runall	s/full run, proof-tool self-test included/full run/	output lacks the line: ALL TESTS PASS (full run, proof-tool self-test included)
+wizard-flag-fenced-ls	check	skill	$s/$/\n```bash\nls --color\n```/	a --flag appears in prose or outside the allowed commands
+wizard-flag-fenced-cont	check	skill	$s/$/\n```bash\nls \\\n  --color\n```/	a --flag appears in prose or outside the allowed commands
+wizard-title-line2	check	skill	1s/^/Intro line\n/	missing required text: @TITLE@
+wizard-work-intro	check	skill	s|ask one question at a time, state the default with each question|REMOVED|g	missing required text: ask one question at a time, state the default with each question
+wizard-bash-persist	check	skill	s|Shell variables and functions do not persist between Bash tool calls|REMOVED|g	missing required text: Shell variables and functions do not persist between Bash tool calls
+wizard-bash-one	check	skill	s|one Bash call per procedure|REMOVED|g	missing required text: one Bash call per procedure
+wizard-heavy	check	skill	s|R, Nextflow, Java and every other heavy tool run only on compute nodes|REMOVED|g	missing required text: R, Nextflow, Java and every other heavy tool run only on compute nodes
+wizard-login	check	skill	s|never on a login node|REMOVED|g	missing required text: never on a login node
+wizard-limits	check	skill	s|Default SLURM requests are at most 64 GB and 4 hours|REMOVED|g	missing required text: Default SLURM requests are at most 64 GB and 4 hours
+wizard-module-rule	check	skill	s|Every `module add` is guarded with `\|\| exit 1`|REMOVED|g	missing required text: Every `module add` is guarded with `|| exit 1`
+wizard-wdname	check	skill	s|`{WD_NAME}` = basename of `{CWD}`|REMOVED|g	missing required text: `{WD_NAME}` = basename of `{CWD}`
+wizard-today	check	skill	s|`{TODAY_ISO}` = today's date as `YYYY-MM-DD`|REMOVED|g	missing required text: `{TODAY_ISO}` = today's date as `YYYY-MM-DD`
+wizard-reportdir	check	skill	s|`{REPORT_DIR}` = `{CWD}\/results\/{TODAY_ISO}_{WD_NAME}_report`|REMOVED|g	missing required text: `{REPORT_DIR}` = `{CWD}/results/{TODAY_ISO}_{WD_NAME}_report`
+wizard-reuse-ask	check	skill	s|already exists (a previous report?)|REMOVED|g	missing required text: already exists (a previous report?)
+wizard-reuse-opt	check	skill	s|the old files stay, and the summary page lists every report|the old files stay|	missing required text: Reuse it: files of the same name are replaced; the old files stay, and the summary page lists
+wizard-reuse-never	check	skill	s|A previous report is never overwritten silently|REMOVED|g	missing required text: A previous report is never overwritten silently
+wizard-email-nofill	check	skill	s|Do not pre-fill any address\.|REMOVED|g	missing required text: Do not pre-fill any address.
+wizard-email-store	check	skill	s|Store `{EMAIL}`|REMOVED|g	missing required text: Store `{EMAIL}`
+wizard-sif-store	check	skill	s|Store `{SIF}`|REMOVED|g	missing required text: Store `{SIF}`
+wizard-pull-sbatch	check	skill	s|The image is pulled on a compute node, never on the login node|REMOVED|g	missing required text: The image is pulled on a compute node, never on the login node
+wizard-sbatch-bcc	check	skill	s|#SBATCH -p bcc|REMOVED|g	missing required text: #SBATCH -p bcc
+wizard-module-sing	check	skill	s|module add singularity\/3\.10\.4 \|\| exit 1|REMOVED|g	missing required text: module add singularity/3.10.4 || exit 1
+wizard-pkg-mandatory	check	skill	s|"DEXSeq", "edgeR", "stageR", "ggplot2", "dplyr", "tidyr", "readr", "knitr", "rmarkdown"|REMOVED|g	missing required text: "DEXSeq", "edgeR", "stageR", "ggplot2", "dplyr", "tidyr", "readr", "knitr", "rmarkdown"
+wizard-pkg-reactome	check	skill	s|"ReactomePA", "KEGG\.db", "reactome\.db"|REMOVED|g	missing required text: "ReactomePA", "KEGG.db", "reactome.db"
+wizard-pkg-rebuild	check	skill	s|the image must be rebuilt by them|REMOVED|g	missing required text: the image must be rebuilt by them
+wizard-pkg-noinstall	check	skill	s|packages are never installed at run time|REMOVED|g	missing required text: packages are never installed at run time
+wizard-pkg-goonly	check	skill	s|KEGG\/Reactome require an image rebuild|REMOVED|g	missing required text: KEGG/Reactome require an image rebuild
+wizard-pkg-dbs	check	skill	s|store `{ENRICH_DBS}` = `GO KEGG Reactome`|REMOVED|g	missing required text: store `{ENRICH_DBS}` = `GO KEGG Reactome`
+steps-outdir-default	check	skill	s|is the default for `{OUTDIR_RNASPLICE}`|REMOVED|g	missing required text: is the default for `{OUTDIR_RNASPLICE}`
+steps-header	check	skill	s|has more than a header line|REMOVED|g	missing required text: has more than a header line
+steps-header-only	check	skill	s|an empty file or a file with only a header is not found|REMOVED|g	missing required text: an empty file or a file with only a header is not found
+steps-path-rmats	check	skill	s|star\/rmats\/{CONTRAST}\/{SE,A5SS,A3SS,MXE,RI}\.MATS\.{JC,JCEC}\.txt|REMOVED|g	missing required text: star/rmats/{CONTRAST}/{SE,A5SS,A3SS,MXE,RI}.MATS.{JC,JCEC}.txt
+steps-path-suppa	check	skill	s|salmon\/suppa\/diffsplice\/per_local_event\/local_{T}-{C}\.dpsi|REMOVED|g	missing required text: salmon/suppa/diffsplice/per_local_event/local_{T}-{C}.dpsi
+steps-path-dexseq	check	skill	s|star\/dexseq_exon\/results\/DEXSeqResults\.{CONTRAST}\.csv|REMOVED|g	missing required text: star/dexseq_exon/results/DEXSeqResults.{CONTRAST}.csv
+steps-path-edger	check	skill	s|star\/edger\/contrast_{CONTRAST}\.usage\.exon\.csv|REMOVED|g	missing required text: star/edger/contrast_{CONTRAST}.usage.exon.csv
+steps-path-dtu	check	skill	s|salmon\/dexseq_dtu\/results\/dexseq\/DEXSeqResults\.{T}-{C}\.tsv|REMOVED|g	missing required text: salmon/dexseq_dtu/results/dexseq/DEXSeqResults.{T}-{C}.tsv
+steps-nosplit	check	skill	s|never by splitting file names|REMOVED|g	missing required text: never by splitting file names
+steps-id-twice	check	skill	s|The rMATS tables have the column `ID` twice|REMOVED|g	missing required text: The rMATS tables have the column `ID` twice
+steps-bam	check	skill	s|has no `salmon\/` directory, so SUPPA2 and DTU are simply not found|REMOVED|g	missing required text: has no `salmon/` directory, so SUPPA2 and DTU are simply not found
+steps-modules-store	check	skill	s|Store the modules as `{MODULES}`|REMOVED|g	missing required text: Store the modules as `{MODULES}`
+steps-modules-line	check	skill	s|echo "MODULES=\${mods# }"|REMOVED|g	missing required text: echo "MODULES=${mods# }"
+sheets-bam-schema	check	skill	s|sample,condition,genome_bam,strandedness,single_end|REMOVED|g	missing required text: sample,condition,genome_bam,strandedness,single_end
+sheets-never-open	check	skill	s|the FASTQ or BAM files the sheet points to are never opened|REMOVED|g	missing required text: the FASTQ or BAM files the sheet points to are never opened
+sheets-confirm	check	skill	s|Contrast `{CONTRAST}`: is `{T}` the treatment and `{C}` the control|REMOVED|g	missing required text: Contrast `{CONTRAST}`: is `{T}` the treatment and `{C}` the control
+sheets-fixes	check	skill	s|This fixes every sign|REMOVED|g	missing required text: This fixes every sign
+sheets-contrasts-store	check	skill	s|Store `{CONTRASTS}` as the confirmed list|REMOVED|g	missing required text: Store `{CONTRASTS}` as the confirmed list
+sheets-names-anchor	check	skill	s|\*\*Names built from the contrasts file\.\*\*|REMOVED|g	missing required text: **Names built from the contrasts file.**
+sheets-per-contrast	check	skill	s|contrasts are never mixed|REMOVED|g	missing required text: contrasts are never mixed
+organism-gtf-store	check	skill	s|Store the GTF path as `{GTF}`|REMOVED|g	missing required text: Store the GTF path as `{GTF}`
+organism-mouse	check	skill	s|ENSMUSG|REMOVED|g	missing required text: ENSMUSG
+organism-organism-store	check	skill	s|Store `{ORGANISM}` =|REMOVED|g	missing required text: Store `{ORGANISM}` =
+pairing-pair-store	check	skill	s|Store `{PAIRED_RMATS}` and `{PAIRED_SUPPA}`|REMOVED|g	missing required text: Store `{PAIRED_RMATS}` and `{PAIRED_SUPPA}`
+pairing-pair-switches	check	skill	s|`rmats_paired_stats` (rMATS) and `diffsplice_paired` (SUPPA2)|REMOVED|g	missing required text: `rmats_paired_stats` (rMATS) and `diffsplice_paired` (SUPPA2)
+pairing-pair-never	check	skill	s|never claims unpaired statistics for a paired run|REMOVED|g	missing required text: never claims unpaired statistics for a paired run
+wizard-heading-0	check	skill	s/^## Step 0 — /## Step n0 — /	missing required text: ## Step 0 — 
+wizard-default-step0	check	skill	/^## Step 0 — /,/^---$/s/[Dd]efault/usual/g	FAIL: Step 0 states no default
+wizard-heading-1	check	skill	s/^## Step 1 — /## Step n1 — /	missing required text: ## Step 1 — 
+wizard-default-step1	check	skill	/^## Step 1 — /,/^---$/s/[Dd]efault/usual/g	FAIL: Step 1 states no default
+wizard-heading-2	check	skill	s/^## Step 2 — /## Step n2 — /	missing required text: ## Step 2 — 
+wizard-default-step2	check	skill	/^## Step 2 — /,/^---$/s/[Dd]efault/usual/g	FAIL: Step 2 states no default
+wizard-heading-3	check	skill	s/^## Step 3 — /## Step n3 — /	missing required text: ## Step 3 — 
+wizard-default-step3	check	skill	/^## Step 3 — /,/^---$/s/[Dd]efault/usual/g	FAIL: Step 3 states no default
+wizard-heading-4	check	skill	s/^## Step 4 — /## Step n4 — /	missing required text: ## Step 4 — 
+wizard-default-step4	check	skill	/^## Step 4 — /,/^---$/s/[Dd]efault/usual/g	FAIL: Step 4 states no default
+wizard-heading-5	check	skill	s/^## Step 5 — /## Step n5 — /	missing required text: ## Step 5 — 
+wizard-default-step5	check	skill	/^## Step 5 — /,/^---$/s/[Dd]efault/usual/g	FAIL: Step 5 states no default
+wizard-heading-6	check	skill	s/^## Step 6 — /## Step n6 — /	missing required text: ## Step 6 — 
+wizard-default-step6	check	skill	/^## Step 6 — /,/^---$/s/[Dd]efault/usual/g	FAIL: Step 6 states no default
+wizard-forbid-split	check	skill	$s/$/\n```bash\ncut -d_ -f1\n```/	forbidden pattern present: file or group names split on - or _
+wizard-forbid-split-awk	check	skill	$s/$/\n```bash\nawk -F- {print}\n```/	forbidden pattern present: file or group names split on - or _
+wizard-forbid-ifs	check	skill	$s/$/\n```bash\nIFS=- read a b\n```/	forbidden pattern present: file or group names split on - or _
+wizard-forbid-rscript	check	skill	$s/$/\n```bash\nRscript x.R\n```/	forbidden pattern present: R started outside singularity exec
+wizard-forbid-r-e	check	skill	$s/$/\n```bash\nR -e 1\n```/	forbidden pattern present: R started outside singularity exec
+wizard-forbid-install	check	skill	$s/$/\n```r\ninstall.packages("x")\n```/	forbidden pattern present: a package is installed at run time
+wizard-forbid-biocmanager	check	skill	$s/$/\n```r\nBiocManager::install("x")\n```/	forbidden pattern present: a package is installed at run time
+wizard-forbid-fastq	check	skill	$s/$/\n```bash\nzcat a_1.fastq.gz | head\n```/	forbidden pattern present: a FASTQ file is opened
+wizard-module-unguarded	check	skill	s|module add singularity/3.10.4 \|\| exit 1|module add singularity/3.10.4|	a module add without || exit 1
+wizard-path-rmats-paired	check	skill	s|`star/rmats/{CONTRAST}_paired/` with the same file names|REMOVED|g	missing required text: star/rmats/{CONTRAST}_paired/
+wizard-names-rmats-paired	check	skill	s|RMATS_DIR_PAIRED=|RMATS_DIR_X=|	missing required text: RMATS_DIR_PAIRED=star/rmats/${c}_paired
+# Steps 7-10 (thresholds, menu, SLURM): one row per required text, then the numeric, count and flag-rule rows
+steps-need-01	check	skill	s|## Step 7 — |REMOVED|g	missing required text: ## Step 7 — 
+steps-need-02	check	skill	s|## Step 8 — |REMOVED|g	missing required text: ## Step 8 — 
+steps-need-03	check	skill	s|## Step 9 — |REMOVED|g	missing required text: ## Step 9 — 
+steps-need-04	check	skill	s|## Step 10 — |REMOVED|g	missing required text: ## Step 10 — 
+steps-need-05	check	skill	s|(FDR) cutoff for a significant event, gene or transcript\. Default: 0\.05\.|REMOVED|g	missing required text: (FDR) cutoff for a significant event, gene or transcript. Default: 0.05.
+steps-need-06	check	skill	s|Default: 0\.1\. It is not applied to exon usage or transcript usage|REMOVED|g	missing required text: Default: 0.1. It is not applied to exon usage or transcript usage
+steps-need-07	check	skill	s|`{RMATS_TYPE}`: which rMATS count type to read, `JC` (junction counts only) or `JCEC`|REMOVED|g	missing required text: `{RMATS_TYPE}`: which rMATS count type to read, `JC` (junction counts only) or `JCEC`
+steps-need-08	check	skill	s|Default: `JC`\.|REMOVED|g	missing required text: Default: `JC`.
+steps-need-09	check	skill	s|minimum read support of an rMATS event: for each group, the mean over its samples of `IJC` plus `SJC`, required in both groups|REMOVED|g	missing required text: minimum read support of an rMATS event: for each group, the mean over its samples of `IJC` plus `SJC`, required in both groups
+steps-need-11	check	skill	s|applies the Benjamini-Hochberg correction to it and says so|REMOVED|g	missing required text: applies the Benjamini-Hochberg correction to it and says so
+steps-need-12	check	skill	s|a space-separated subset of `events cross topgene enrich`|REMOVED|g	missing required text: a space-separated subset of `events cross topgene enrich`
+steps-need-13	check	skill	s|two or more of `rmats`, `suppa`, `dexseq_exon`, `edger_exon` and `dtu` are in `{MODULES}` (each counts as a separate tool)|REMOVED|g	missing required text: two or more of `rmats`, `suppa`, `dexseq_exon`, `edger_exon` and `dtu` are in `{MODULES}` (each counts as a separate tool)
+steps-need-14	check	skill	s|drawn from the pipeline's own tables only, never from BAM files|REMOVED|g	missing required text: drawn from the pipeline's own tables only, never from BAM files
+steps-need-15	check	skill	s|Offered only when `{ORGANISM}` is `human` or `mouse`|REMOVED|g	missing required text: Offered only when `{ORGANISM}` is `human` or `mouse`
+steps-need-16	check	skill	s|`events` and `topgene` are both passed to the module reports as parameters|REMOVED|g	missing required text: `events` and `topgene` are both passed to the module reports as parameters
+steps-need-17	check	skill	s|Memory `{MEM}`: default 32G (at most 64G)\.|REMOVED|g	missing required text: Memory `{MEM}`: default 32G (at most 64G).
+steps-need-18	check	skill	s|Time `{TIME}`: default 4:00:00 (at most 4:00:00)\.|REMOVED|g	missing required text: Time `{TIME}`: default 4:00:00 (at most 4:00:00).
+steps-need-19	check	skill	s|the name used in the job names\. Default: `{WD_NAME}`\.|REMOVED|g	missing required text: the name used in the job names. Default: `{WD_NAME}`.
+steps-need-20	check	skill	s|one node, one task and four CPUs (`-N 1 -n 1 -c 4`)|REMOVED|g	missing required text: one node, one task and four CPUs (`-N 1 -n 1 -c 4`)
+steps-need-21	check	skill	s|is written only when the user asks for it by name|REMOVED|g	missing required text: is written only when the user asks for it by name
+steps-need-22	check	skill	s|\| `run_01\.sbatch` \| `01_import\.Rmd` \| always \||REMOVED|g	missing required text: | `run_01.sbatch` | `01_import.Rmd` | always |
+steps-need-23	check	skill	s|\| `run_02\.sbatch` \| `02_rmats\.Rmd` \| `rmats` in `{MODULES}` \||REMOVED|g	missing required text: | `run_02.sbatch` | `02_rmats.Rmd` | `rmats` in `{MODULES}` |
+steps-need-24	check	skill	s|\| `run_03\.sbatch` \| `03_suppa\.Rmd` \| `suppa` in `{MODULES}` \||REMOVED|g	missing required text: | `run_03.sbatch` | `03_suppa.Rmd` | `suppa` in `{MODULES}` |
+steps-need-25	check	skill	s|\| `run_04\.sbatch` \| `04_usage\.Rmd` (DEXSeq and edgeR exon usage, and DTU) \| any of `dexseq_exon`, `edger_exon`, `dtu` in `{MODULES}` \||REMOVED|g	missing required text: | `run_04.sbatch` | `04_usage.Rmd` (DEXSeq and edgeR exon usage, and DTU) | any of `dexseq_exon`, `edger_exon`, `dtu` in `{MODULES}` |
+steps-need-26	check	skill	s|\| `run_05\.sbatch` \| `05_cross_tool\.Rmd` \| `cross` in `{SECTIONS}` and two or more tools in `{MODULES}` \||REMOVED|g	missing required text: | `run_05.sbatch` | `05_cross_tool.Rmd` | `cross` in `{SECTIONS}` and two or more tools in `{MODULES}` |
+steps-need-27	check	skill	s|\| `run_06\.sbatch` \| `06_enrichment\.Rmd` \| `enrich` in `{SECTIONS}` \||REMOVED|g	missing required text: | `run_06.sbatch` | `06_enrichment.Rmd` | `enrich` in `{SECTIONS}` |
+steps-need-28	check	skill	s|\| `run_07\.sbatch` \| `07_summary\.Rmd` (always last) \| always \||REMOVED|g	missing required text: | `run_07.sbatch` | `07_summary.Rmd` (always last) | always |
+steps-need-32	check	skill	s|case "\$R" in \*/results/\*) ;; \*) fail "report directory \$R is not under a results/ directory" ;; esac|REMOVED|g	missing required text: case "$R" in */results/*) ;; *) fail "report directory $R is not under a results/ directory" ;; esac
+steps-need-33	check	skill	s|is inside the pipeline output \$OUT|REMOVED|g	missing required text: is inside the pipeline output $OUT
+steps-need-34	check	skill	s|are above the default limits (64G, 4:00:00), as requested|REMOVED|g	missing required text: are above the default limits (64G, 4:00:00), as requested
+steps-need-35	check	skill	s|#SBATCH -N 1|REMOVED|g	missing required text: #SBATCH -N 1
+steps-need-36	check	skill	s|#SBATCH -n 1|REMOVED|g	missing required text: #SBATCH -n 1
+steps-need-37	check	skill	s|#SBATCH -c 4|REMOVED|g	missing required text: #SBATCH -c 4
+steps-need-43	check	skill	s|if sec cross && \[ \$ntools -ge 2 \]; then JOBS="\$JOBS 05:05_cross_tool\.Rmd"; fi|REMOVED|g	missing required text: if sec cross && [ $ntools -ge 2 ]; then JOBS="$JOBS 05:05_cross_tool.Rmd"; fi
+steps-need-44	check	skill	s|if sec enrich; then JOBS="\$JOBS 06:06_enrichment\.Rmd"; fi|REMOVED|g	missing required text: if sec enrich; then JOBS="$JOBS 06:06_enrichment.Rmd"; fi
+steps-need-45	check	skill	s|JOBS="\$JOBS 07:07_summary\.Rmd"|REMOVED|g	missing required text: JOBS="$JOBS 07:07_summary.Rmd"
+steps-need-47	check	skill	s|`run_all\.sh`, which only calls sbatch|REMOVED|g	missing required text: `run_all.sh`, which only calls sbatch
+steps-need-48	check	skill	s|echo "SUBMIT=bash \$R/run_all\.sh"|REMOVED|g	missing required text: echo "SUBMIT=bash $R/run_all.sh"
+steps-need-49	check	skill	s|\*\*Final instructions\.\*\*|REMOVED|g	missing required text: **Final instructions.**
+steps-need-50	check	skill	s|Run this one command:|REMOVED|g	missing required text: Run this one command:
+steps-need-51	check	skill	s|the output of the run is read-only for the skill and is never written to|REMOVED|g	missing required text: the output of the run is read-only for the skill and is never written to
+steps-step10-default	check	skill	s|Default: every job that applies. |Every job that applies. |	missing required text: Default: every job that applies.
+steps-mem-default-high	check	skill	s|default 32G (at most 64G)|default 128G (at most 64G)|	default memory is missing or above 64G
+steps-mem-default-gone	check	skill	s|Memory `{MEM}`: default 32G|Memory `{MEM}`: about 32G|	default memory is missing or above 64G
+steps-time-default-high	check	skill	s|default 4:00:00 (at most 4:00:00)|default 8:00:00 (at most 4:00:00)|	default time is missing or above 4:00:00
+steps-literal-mem-high	check	skill	s|^#SBATCH --mem=8G$|#SBATCH --mem=80G|	a literal memory request above 64G
+steps-literal-time-high	check	skill	s|^#SBATCH -t 1:00:00$|#SBATCH -t 5:00:00|	a literal time request above 4:00:00
+steps-literal-time-days	check	skill	s|^#SBATCH -t 1:00:00$|#SBATCH -t 1-00:00:00|	a literal time request above 4:00:00
+steps-submit-two	check	skill	s|^  bash {REPORT_DIR}/run_all.sh$|  bash {REPORT_DIR}/run_all.sh\n  sbatch {REPORT_DIR}/run_01.sbatch|	the final instructions must print exactly one submit command
+steps-submit-none	check	skill	s|^  bash {REPORT_DIR}/run_all.sh$|  run the scripts|	the final instructions must print exactly one submit command
+steps-flag-segment-semicolon	check	skill	$s/$/\n```bash\nsbatch x; ls --color\n```/	a --flag appears in prose or outside the allowed commands
+steps-flag-segment-and	check	skill	$s/$/\n```bash\nsbatch x \&\& rm --force y\n```/	a --flag appears in prose or outside the allowed commands
+steps-flag-segment-or	check	skill	$s/$/\n```bash\nsbatch x \|\| ls --color\n```/	a --flag appears in prose or outside the allowed commands
+steps-flag-capture-ls	check	skill	$s/$/\n```bash\njid=$(ls --color)\n```/	a --flag appears in prose or outside the allowed commands
+steps-flag-prose-dependency	check	skill	$s/$/\nJobs wait with --dependency=afterok here./	a --flag appears in prose or outside the allowed commands
+steps-runall-in-tests	check	runall	s| test_render_slurm.sh"|"|	tests/test_render_slurm.sh must be named in exactly one list of run_all_tests.sh
+steps-need-29	check	skill	s|Jobs 02 to 06 start when job 01 has finished successfully (`dependency=afterok`, with the option that cancels them when job 01 fails)|REMOVED|g	missing required text: Jobs 02 to 06 start when job 01 has finished successfully (`dependency=afterok`, with the option that cancels them when job 01 fails)
+steps-need-30	check	skill	s|job 07 starts when jobs 01 to 06 (those that exist) have ended, whatever their outcome (`dependency=afterany`)|REMOVED|g	missing required text: job 07 starts when jobs 01 to 06 (those that exist) have ended, whatever their outcome (`dependency=afterany`)
+import-rtest-sign-rmats	rtest	skill	s/^    rmats = value, /    rmats = -value,/	FAIL: harmonise_effect rmats 0.3 gives 0.3
+import-rtest-sign-suppa	rtest	skill	s/^    suppa = -value,/    suppa = value, /	FAIL: harmonise_effect suppa 0.3 gives -0.3
+import-rtest-sign-dexseq	rtest	skill	s/^    exon_dexseq = -value,/    exon_dexseq = value, /	FAIL: harmonise_effect exon_dexseq 0.3 gives -0.3
+import-rtest-sign-dtu	rtest	skill	s/^    dtu = -value,/    dtu = value, /	FAIL: harmonise_effect dtu 0.3 gives -0.3
+import-rtest-sign-edger	rtest	skill	s/^    exon_edger = value, /    exon_edger = -value,/	FAIL: harmonise_effect exon_edger 0.3 gives 0.3
+import-rtest-quote	rtest	skill	s/^strip_quotes <- function(x) gsub(.*$/strip_quotes <- function(x) x/	FAIL: rMATS gene_id has no quote characters
+import-rtest-nacount	rtest	skill	/qc\$suppa_untested\[\["local"\]\] <- sum/d	FAIL: qc$suppa_untested counts the nan rows of the local file
+import-rtest-bh	rtest	skill	s/ftype, event, dpsi, bh_adjust(p), NA_real_)/ftype, event, dpsi, p, NA_real_)/	FAIL: SUPPA2 padj is BH of the p-val column over the tested rows
+import-rtest-dupid	rtest	skill	/^  names(tab) <- dedupe_names(names(tab))$/d	FAIL: rMATS raw table has one ID column and the second one renamed ID_2
+import-rtest-stopmsg	rtest	skill	s/column not found: ", paste(miss, collapse = ", "),/column not found",/	FAIL: missing column stop names the file and IncLevelDifference
+import-rtest-rds-edger	rtest	skill	s/"exon", feat, to_num(tab\$logFC, path, "logFC"),/"exon", feat, -to_num(tab$logFC, path, "logFC"),/	FAIL: rds exon_edger direction equals the raw sign rule, row by row
+import-rtest-rds-suppa	rtest	skill	s/ftype, event, dpsi, bh_adjust(p)/ftype, event, -dpsi, bh_adjust(p)/	FAIL: rds suppa direction equals the raw sign rule, row by row
+import-need-sign-rmats	check	skill	s/^    rmats = value, .*/    rmats = value,/	missing required text:     rmats = value,          # IncLevelDifference: b1 = treatment, already treatment - control
+import-need-sign-suppa	check	skill	s/^    suppa = -value,/    suppa = value, /	missing required text:     suppa = -value,         # SUPPA2 dPSI is control - treatment
+import-need-sign-dexseq	check	skill	s/^    exon_dexseq = -value,/    exon_dexseq = value, /	missing required text:     exon_dexseq = -value,   # log2fold_{CONTROL}_{TREATMENT}
+import-need-sign-dtu	check	skill	s/^    dtu = -value,/    dtu = value, /	missing required text:     dtu = -value,           # log2fold_{CONTROL}_{TREATMENT}
+import-need-sign-edger	check	skill	s/^    exon_edger = value, /    exon_edger = -value,/	missing required text:     exon_edger = value,     # logFC is treatment - control
+import-need-direction	check	skill	s/ifelse(effect > 0, "treatment_up", "control_up")/ifelse(effect > 0, "control_up", "treatment_up")/	missing required text:   ifelse(is.na(effect) | effect == 0, "none", ifelse(effect > 0, "treatment_up", "control_up"))
+import-forbid-value	check	skill	s/^RMATS_TYPES <- .*/&\nflipped <- -value/	FAIL: a sign flip (-value) outside harmonise_effect
+import-forbid-value-dup	check	skill	s/^    dtu = -value, .*/&\n    dtu2 = -value,/	FAIL: a sign flip (-value) outside harmonise_effect
+import-forbid-effect	check	skill	s/^modules <- modules\[nzchar(modules)\]$/&\nout_effect <- -effect/	forbidden pattern present: a bare -effect
+import-forbid-effect-col	check	skill	s/^modules <- modules\[nzchar(modules)\]$/&\nx <- - tab$effect/	forbidden pattern present: a bare -effect
+import-need-heading	check	skill	s/^\*\*File `01_import.Rmd`\.\*\*$/**File 01_import.Rmd.**/	missing required text: **File `01_import.Rmd`.**
+import-need-writing	check	skill	s/\*\*Writing the Rmd files\.\*\*/Writing the Rmd files./	missing required text: **Writing the Rmd files.**
+import-need-bytes	check	skill	s/byte for byte, without the two fence lines/with the fence lines/	missing required text: Write that block with the Write tool
+import-need-bh-text	check	skill	s/This report applies the Benjamini-Hochberg correction itself/This report uses the p-values/	missing required text: This report applies the Benjamini-Hochberg correction itself
+import-need-bh-code	check	skill	s/ftype, event, dpsi, bh_adjust(p), NA_real_)/ftype, event, dpsi, p, NA_real_)/	missing required text: harmonised_table(contrast, "suppa", gene, NA_character_, ftype, event, dpsi, bh_adjust(p), NA_real_)
+import-need-untested-local	check	skill	/qc\$suppa_untested\[\["local"\]\] <- sum/d	missing required text: qc$suppa_untested[["local"]] <- sum(is.na(parts$local$effect))
+import-need-untested-iso	check	skill	/qc\$suppa_untested\[\["isoform"\]\] <- sum/d	missing required text: qc$suppa_untested[["isoform"]] <- sum(is.na(parts$isoform$effect))
+import-need-strip	check	skill	s/^strip_quotes <- function(x) gsub(.*$/strip_quotes <- function(x) x/	missing required text: strip_quotes <- function(x) gsub(
+import-need-dedupe	check	skill	/^  names(tab) <- dedupe_names(names(tab))$/d	missing required text: names(tab) <- dedupe_names(names(tab))
+import-need-support	check	skill	s/support of a group = mean over its samples of (IJC + SJC)/support of a group = sum over its samples of (IJC + SJC)/	missing required text: # support of a group = mean over its samples of (IJC + SJC)
+import-need-stopmsg	check	skill	s/column not found: ", paste(miss, collapse = ", "),/column not found",/	missing required text: if (length(miss)) stop("file ", path, ": column not found: "
+import-forbid-network	check	skill	s/^modules <- modules\[nzchar(modules)\]$/&\ndownload.file("x", "y")/	forbidden pattern present: network access or package installation in an Rmd
+import-runall-full-r	check	runall	s/^\(FULL_TESTS=.*\) test_r.sh"$/\1"/	FULL_TESTS must include test_r.sh
+import-runall-full-stub	check	runall	s/^FULL_TESTS="test_proof_tools.sh test_rtest_runner.sh /FULL_TESTS="test_proof_tools.sh /	FULL_TESTS must include test_rtest_runner.sh
+import-runall-rtest	check	runall	/^  run prove_mutations.sh "\$SK" rtest$/d	must run prove_mutations.sh in mode rtest
+import-runall-not	check	runall	s/ run_all_tests.sh run_r_tests.sh"$/ run_all_tests.sh"/	NOT_TESTS must be exactly the helpers
+steps-need-10	check	skill	s/Events below it are flagged (`low_support`), kept in the tables and excluded from the significance counts of the reports, never deleted/Events below it are dropped/	missing required text: Default: 10. Events below it are flagged (`low_support`), kept in the tables and excluded from the significance counts of the reports, never deleted
+steps-need-fdr-not-recomputed	check	skill	s/the rMATS FDR is not recomputed (it stays as rMATS wrote it)/the rMATS FDR is recomputed/	missing required text: the rMATS FDR is not recomputed (it stays as rMATS wrote it)
+steps-need-shallow	check	skill	s/On very shallow data (like the nf-core test data) most events fall below 10; the user may lower it\.//	missing required text: On very shallow data (like the nf-core test data) most events fall below 10; the user may lower it.
+steps-forbid-dropped	check	skill	s/never deleted; their number is reported/never deleted; dropped from the tests; their number is reported/	forbidden text present: dropped from the tests
+import-rtest-noflag	rtest	skill	s/^  low <- is.na(ns) | ns < min_reads$/  low <- FALSE/	FAIL: rMATS low_support flags n_support below min_reads and keeps the row
+import-rtest-dropflagged	rtest	skill	s/^      out\$rmats <- tab$/      out$rmats <- tab[!tab$low_support, , drop = FALSE]/	FAIL: rds rmats keeps every raw row
+import-rtest-sig-lowsupport	rtest	skill	s/^    !tab\$low_support$/    TRUE/	FAIL: qc counts: rMATS low_support and significant (excluding low_support) equal the raw recomputation
+import-rtest-dexseq-pvalue	rtest	skill	s/to_num(tab\$padj, path, "padj")/to_num(tab$pvalue, path, "padj")/	FAIL: rds exon_dexseq padj equals the raw recomputation, row by row
+import-rtest-suppa-pooled	rtest	skill	s/ftype, event, dpsi, bh_adjust(p), NA_real_)/ftype, event, dpsi, p, NA_real_)/;s/^    if (length(parts)) out\$suppa <- do.call(rbind, unname(parts))$/&; if (length(parts)) out$suppa$padj <- bh_adjust(out$suppa$padj)/	FAIL: rds suppa padj equals the raw recomputation, row by row
+import-need-lowflag	check	skill	s/^  low <- is.na(ns) | ns < min_reads$/  low <- FALSE/	missing required text:   low <- is.na(ns) | ns < min_reads
+import-need-contract-low	check	skill	s/"padj", "direction", "n_support", "low_support")/"padj", "direction", "n_support")/	missing required text: "padj", "direction", "n_support", "low_support")
+import-need-sig-excl	check	skill	s/^    !tab\$low_support$/    TRUE/	missing required text:     !tab$low_support
+import-keep-whole	check	skill	s/^      out\$rmats <- tab$/      out$rmats <- tab[!tab$low_support, , drop = FALSE]/	the rMATS table must be kept whole
+import-need-flag-prose	check	skill	s/are flagged in the column `low_support`: they stay in the table/are removed from the table/	missing required text: are flagged in the column `low_support`
+import-need-missing-contract	check	skill	s/Rmds 02 to 06 check that each RDS exists before they read it/later reports read it/	missing required text: no RDS is written for that tool and contrast
+import-need-contract-text	check	skill	s/effect_scale, padj, direction, n_support, low_support`/effect_scale, padj, direction, n_support`/	missing required text: effect_scale, padj, direction, n_support, low_support`
+events-sign-02	check	skill	/^\*\*File `02_rmats.Rmd`\.\*\*$/,/^\*\*File `03_suppa.Rmd`\.\*\*$/s/Every effect is stated as \*\*treatment minus control\*\*: a positive effect is higher in the treatment group/Every effect is stated in the report/	FAIL: 02_rmats.Rmd: the sign sentence
+events-sign-03	check	skill	/^\*\*File `03_suppa.Rmd`\.\*\*$/,$s/Every effect is stated as \*\*treatment minus control\*\*: a positive effect is higher in the treatment group/Every effect is stated in the report/	FAIL: 03_suppa.Rmd: the sign sentence
+events-param-topgene-02	check	skill	/^\*\*File `02_rmats.Rmd`\.\*\*$/,/^\*\*File `03_suppa.Rmd`\.\*\*$/s/params\$topgene/TRUE/	FAIL: 02_rmats.Rmd: the parameter params$topgene is not used
+events-param-events-03	check	skill	/^\*\*File `03_suppa.Rmd`\.\*\*$/,$s/params\$events/TRUE/	FAIL: 03_suppa.Rmd: the parameter params$events is not used
+events-param-samplesheet-02	check	skill	/^\*\*File `02_rmats.Rmd`\.\*\*$/,/^\*\*File `03_suppa.Rmd`\.\*\*$/s/params\$samplesheet/params$sheet/	FAIL: 02_rmats.Rmd: params$sheet is not one of the 18 parameters of the contract
+events-literal-fdr-02	check	skill	/^\*\*File `02_rmats.Rmd`\.\*\*$/,/^\*\*File `03_suppa.Rmd`\.\*\*$/s/split_counts(tab, params\$fdr, params\$dpsi, RMATS_TYPES)/split_counts(tab, 0.05, 0.1, RMATS_TYPES)/	FAIL: 02_rmats.Rmd: a literal threshold (0.05 or 0.1) in the body of the Rmd
+events-literal-sig-03	check	skill	/^\*\*File `03_suppa.Rmd`\.\*\*$/,$s/sig_flag(st, params\$fdr, params\$dpsi)/sig_flag(st, params$fdr, 0.2)/	FAIL: 03_suppa.Rmd: the significant events are not selected with params$fdr and params$dpsi
+events-nonemsg-02	check	skill	/^\*\*File `02_rmats.Rmd`\.\*\*$/,/^\*\*File `03_suppa.Rmd`\.\*\*$/s/paste0("none at FDR "/paste0("no result at FDR "/	FAIL: 02_rmats.Rmd: the empty-set message none at FDR is missing
+events-nearest-03	check	skill	/^\*\*File `03_suppa.Rmd`\.\*\*$/,$s/three nearest events by adjusted p-value/nearest events/	FAIL: 03_suppa.Rmd: the three nearest events are not printed
+events-lowsupport-report	check	skill	s/low_support_report(tab, params\$fdr, params\$dpsi)/low_support_report(tab, 1, 1)/	FAIL: 02_rmats.Rmd: the low_support count is not reported
+events-network-02	check	skill	/^\*\*File `02_rmats.Rmd`\.\*\*$/,/^\*\*File `03_suppa.Rmd`\.\*\*$/s/^show_image <- function/download.file("x", "y")\n&/	FAIL: forbidden pattern present: network access or package installation in an Rmd
+events-install-03	check	skill	/^\*\*File `03_suppa.Rmd`\.\*\*$/,$s/^show_image <- function/install.packages("x")\n&/	FAIL: forbidden pattern present: network access or package installation in an Rmd
+events-flag-02	check	skill	/^\*\*File `02_rmats.Rmd`\.\*\*$/,/^\*\*File `03_suppa.Rmd`\.\*\*$/s/^show_image <- function/system("tool --flag x")\n&/	FAIL: a --flag appears in prose or outside the allowed commands
+events-flag-03	check	skill	/^\*\*File `03_suppa.Rmd`\.\*\*$/,$s/^show_image <- function/system("tool --flag x")\n&/	FAIL: a --flag appears in prose or outside the allowed commands
+events-rtest-literal-fdr	rtest	skill	s/cn <- split_counts(tab, params\$fdr, params\$dpsi, RMATS_TYPES)/cn <- split_counts(tab, 0.05, 0.1, RMATS_TYPES)/	FAIL: rMATS significant counts per type equal the raw recomputation at FDR 0.9, dPSI 0.05
+events-rtest-literal-fdr-03	rtest	skill	s/cn <- split_counts(tab, params\$fdr, params\$dpsi, types)/cn <- split_counts(tab, 0.05, 0.1, types)/	FAIL: SUPPA2 significant counts per type equal the raw recomputation at FDR 0.9, dPSI 0.05
+events-rtest-lowsupport-kept	rtest	skill	s/ \& !tab\$low_support$//	FAIL: SYNTHETIC: sig_flag marks rows 1, 2, 6, 7, 9 and 10 and no other
+events-rtest-wording-swapped	rtest	skill	s/DIRECTION_WORDING <- c(treatment_up = "more included in treatment", control_up = "more skipped in treatment")/DIRECTION_WORDING <- c(treatment_up = "more skipped in treatment", control_up = "more included in treatment")/	FAIL: direction_wording of a positive effect is 'more included in treatment'
+events-rtest-nonemsg	rtest	skill	s/paste0("none at FDR ", format(fdr)/paste0("no result at FDR ", format(fdr)/	FAIL: SYNTHETIC: none_message names the FDR and the dPSI
+events-rtest-psi-legend	rtest	skill	s/^psi_legend <- function(treatment, control) c(paste0("treatment (", treatment, ")"), paste0("control (", control, ")"))$/psi_legend <- function(treatment, control) c(paste0("control (", control, ")"), paste0("treatment (", treatment, ")"))/	FAIL: psi_legend names the treatment first and the control second
+events-rtest-lowsupport-line	rtest	skill	s/ would be significant at FDR / is significant at FDR /	FAIL: 02 reports the flagged low_support events and how many would otherwise be significant
+events-rtest-suppa-firstsemi	rtest	skill	s/^  ev <- sub("^\[^;\]\*;", "", id)$/  ev <- sub("^.*;", "", id)/	FAIL: suppa_event_type parses the type after the FIRST ; only
+events-psi-order-lists	check	skill	s/^  s1 <- g1\$samples$/  s1 <- sort(unique(ss$sample))/	FAIL: 02_rmats.Rmd: the PSI plot must take the sample order from rMATS's own sample lists
+events-psi-order-control	check	skill	s/^  s2 <- g2\$samples$/  s2 <- ss$sample[ss$condition == control]/	FAIL: 02_rmats.Rmd: group 2 (the control) must take the sample order of its own sample list
+events-psi-nobamlist	check	skill	s/psi_long(inc, ss, Tr, Co, bam_t, bam_c)/psi_long(inc, ss, Tr, Co)/	FAIL: 02_rmats.Rmd: the PSI plot is not built from the rMATS sample lists
+events-psi-noread	check	skill	s/bam_t <- read_bamlist(params\$outdir, Tr); bam_c <- read_bamlist(params\$outdir, Co)/bam_t <- NULL; bam_c <- NULL/	FAIL: 02_rmats.Rmd: the sample lists of the run are not read
+events-psi-sheetwording	check	skill	s/in the order of the sample lists rMATS was started with (`star/in the order of the sample sheet. (`star/;s/order of the sample sheet\. (`star\/rmats\/bamlist\/",/order of the sample sheet.\n\n",/	FAIL: 02_rmats.Rmd: the PSI sample order must not be described
+events-rtest-psi-ignore-bamlist	rtest	skill	s/^  if (is.null(bamlist))$/  if (TRUE)/	FAIL: psi_long with the bamlists: each value lands on its own sample (S_A 0.1, S_B 0.2, C_A 0.3, C_B 0.4)
+events-rtest-psi-reverse-bamlist	rtest	skill	s/^  list(samples = bamlist, from = "rMATS sample list", warning = NULL)$/  list(samples = rev(bamlist), from = "rMATS sample list", warning = NULL)/	FAIL: psi_long with the bamlists: each value lands on its own sample (S_A 0.1, S_B 0.2, C_A 0.3, C_B 0.4)
+events-rtest-psi-swap-groups	rtest	skill	s/^  s1 <- g1\$samples$/  s1 <- g2$samples/;s/^  s2 <- g2\$samples$/  s2 <- g1$samples/	FAIL: psi_long with the bamlists: IncLevel1 samples are the treatment and IncLevel2 samples the control, and no warning
+events-rtest-psi-nowarning	rtest	skill	s/paste0("WARNING: no rMATS sample list found for "/paste0("no rMATS sample list found for "/	FAIL: psi_long without a bamlist falls back to the sheet order and warns once for each group
+events-rtest-psi-badnames	rtest	skill	s/anyDuplicated(bamlist) || !setequal(bamlist, sheet)/anyDuplicated(bamlist)/	FAIL: psi_long with a bamlist whose names are not the samples of the sheet falls back and warns
+usage-sign-04	check	skill	/^\*\*File `04_usage.Rmd`\.\*\*$/,/^\*\*File `05_cross_tool.Rmd`\.\*\*$/s/Every effect is stated as \*\*treatment minus control\*\*: a positive effect is higher in the treatment group/Every effect is stated in the report/	FAIL: 04_usage.Rmd: the sign sentence
+usage-sign-05	check	skill	/^\*\*File `05_cross_tool.Rmd`\.\*\*$/,$s/Every effect is stated as \*\*treatment minus control\*\*: a positive effect is higher in the treatment group/Every effect is stated in the report/	FAIL: 05_cross_tool.Rmd: the sign sentence
+usage-param-events-04	check	skill	/^\*\*File `04_usage.Rmd`\.\*\*$/,/^\*\*File `05_cross_tool.Rmd`\.\*\*$/s/params\$events/TRUE/	FAIL: 04_usage.Rmd: the parameter params$events is not used
+usage-param-topgene-04	check	skill	/^\*\*File `04_usage.Rmd`\.\*\*$/,/^\*\*File `05_cross_tool.Rmd`\.\*\*$/s/params\$topgene/TRUE/	FAIL: 04_usage.Rmd: the parameter params$topgene is not used
+usage-param-cross-05	check	skill	/^\*\*File `05_cross_tool.Rmd`\.\*\*$/,$s/params\$cross/TRUE/	FAIL: 05_cross_tool.Rmd: the parameter params$cross is not used
+usage-param-outdir-05	check	skill	/^\*\*File `05_cross_tool.Rmd`\.\*\*$/,$s/params\$outdir/params$out_dir/	FAIL: 05_cross_tool.Rmd: params$out_dir is not one of the 18 parameters of the contract
+usage-param-bad-04	check	skill	/^\*\*File `04_usage.Rmd`\.\*\*$/,/^\*\*File `05_cross_tool.Rmd`\.\*\*$/s/params\$outdir/params$out_dir/	FAIL: 04_usage.Rmd: params$out_dir is not one of the 18 parameters of the contract
+usage-literal-fdr-04	check	skill	/^\*\*File `04_usage.Rmd`\.\*\*$/,/^\*\*File `05_cross_tool.Rmd`\.\*\*$/s/sigb <- sig_usage(tab, params\$fdr)/sigb <- sig_usage(tab, 0.05)/	FAIL: 04_usage.Rmd: a literal threshold (0.05 or 0.1) in the body of the Rmd
+usage-literal-fdr-05	check	skill	/^\*\*File `05_cross_tool.Rmd`\.\*\*$/,$s/calls_from_gene_table(pg, tab, params\$fdr)/calls_from_gene_table(pg, tab, 0.05)/	FAIL: 05_cross_tool.Rmd: a literal threshold (0.05 or 0.1) in the body of the Rmd
+usage-flag-04	check	skill	/^\*\*File `04_usage.Rmd`\.\*\*$/,/^\*\*File `05_cross_tool.Rmd`\.\*\*$/s/^show_image <- function/system("tool --flag x")\n&/	FAIL: a --flag appears in prose or outside the allowed commands
+usage-flag-05	check	skill	/^\*\*File `05_cross_tool.Rmd`\.\*\*$/,$s/^show_image <- function/system("tool --flag x")\n&/	FAIL: a --flag appears in prose or outside the allowed commands
+usage-network-04	check	skill	/^\*\*File `04_usage.Rmd`\.\*\*$/,/^\*\*File `05_cross_tool.Rmd`\.\*\*$/s/^show_image <- function/download.file("x", "y")\n&/	FAIL: forbidden pattern present: network access or package installation in an Rmd
+usage-install-05	check	skill	/^\*\*File `05_cross_tool.Rmd`\.\*\*$/,$s/^show_image <- function/install.packages("x")\n&/	FAIL: forbidden pattern present: network access or package installation in an Rmd
+usage-need-usage-wording	check	skill	s/USAGE_WORDING <- c(treatment_up = "more used in treatment", control_up = "more used in control")/USAGE_WORDING <- c(treatment_up = "more used in control", control_up = "more used in treatment")/	missing required text: USAGE_WORDING <- c(treatment_up = "more used in treatment", control_up = "more used in control")
+usage-need-top-order	check	skill	s/^  s <- s\[order(s\$padj, -abs(s\$effect), s\$feature_id, method = "radix"), , drop = FALSE\]$/  s <- s[order(-s$padj, -abs(s$effect), s$feature_id, method = "radix"), , drop = FALSE]/	missing required text:   s <- s[order(s$padj, -abs(s$effect), s$feature_id, method = "radix"), , drop = FALSE]
+usage-need-pergene	check	skill	s/pg <- read_gene_table(pgf, ",", "groupID", "padj")/pg <- data.frame(gene_id = tab$gene_id, padj = tab$padj)/	missing required text: pg <- read_gene_table(pgf, ",", "groupID", "padj")
+usage-need-simes	check	skill	s/contrast_%s.usage.simes.csv/contrast_%s.usage.exon.csv/	missing required text: sf <- path_of("star", "edger", sprintf("contrast_%s.usage.simes.csv", C))
+usage-need-stager-genes	check	skill	s/padj = g\$gene, stringsAsFactors = FALSE)/padj = g$transcript, stringsAsFactors = FALSE)/	missing required text:   data.frame(gene_id = g$gene_id, padj = g$gene, stringsAsFactors = FALSE)
+usage-need-stager-tx	check	skill	s/  txsig <- !is.na(s\$transcript) \& s\$transcript < fdr/  txsig <- !is.na(s$gene) \& s$gene < fdr/	missing required text:   txsig <- !is.na(s$transcript) & s$transcript < fdr
+usage-need-stager-gene	check	skill	s/  called <- s\$gene_id\[!is.na(s\$gene) \& s\$gene < fdr\]/  called <- s$gene_id[!is.na(s$transcript) \& s$transcript < fdr]/	missing required text:   called <- s$gene_id[!is.na(s$gene) & s$gene < fdr]
+usage-need-nonsig-set	check	skill	s/  make_calls(tab\$gene_id\[sig\], /  make_calls(tab$gene_id, /	missing required text:   make_calls(tab$gene_id[sig], tab$gene_id[!is.na(tab$padj)], tab, sig, ids)
+usage-need-same	check	skill	s/    same <- sum(known \& da == db)/    same <- sum(known \& da != db)/	missing required text:     same <- sum(known & da == db)
+usage-need-opposite	check	skill	s/    opposite <- sum(known \& da != db)/    opposite <- sum(known \& da == db)/	missing required text:     opposite <- sum(known & da != db)
+usage-need-stager-wording	check	skill	s/a gene is significant when `gene` is below the FDR and a transcript when `transcript` is/a gene is significant when the stageR table says so/	missing required text: a gene is significant when `gene` is below the FDR and a transcript when `transcript` is
+usage-need-stager-columns	check	skill	s/the column `gene` holds the screened adjusted p-value at the gene level and the column `transcript` the screened adjusted p-value at the transcript level/the stageR columns hold the screened adjusted p-values/	missing required text: the column `gene` holds the screened adjusted p-value at the gene level and the column `transcript` the screened adjusted p-value at the transcript level
+usage-need-stager-alpha	check	skill	s/stageR's own overall alpha is the run's setting/stageR's alpha is not mentioned/	missing required text: stageR's own overall alpha is the run's setting
+usage-need-stager-alpha-read	check	skill	s/the report prints it when the `stageRTx` object is readable with the stageR package of the image/the report does not print it/	missing required text: the report prints it when the `stageRTx` object is readable with the stageR package of the image
+usage-need-signs-only	check	skill	s/directions compared only, never effect sizes across scales/effect sizes are compared/g	missing required text: directions compared only, never effect sizes across scales
+usage-forbid-compare-sizes	check	skill	/^\*\*File `05_cross_tool.Rmd`\.\*\*$/,$s/^Background: the tools/We compare effect sizes across tools. The tools/	FAIL: forbidden text present: compare effect sizes across tools
+usage-need-background	check	skill	s/^Background: the tools do not test the same genes\./The tools do not test the same genes./	missing required text: Background: the tools do not test the same genes
+usage-need-none	check	skill	s/cat("\*\*none\*\*: no gene is called by two or more tools at FDR /cat("no gene is called by two or more tools at FDR /	missing required text: cat("**none**: no gene is called by two or more tools at FDR 
+usage-need-two-tools	check	skill	s/is generated only when two or more tools ran (Step 10)\./is generated always (Step 10)./	missing required text: The cross-tool report `05_cross_tool.Rmd` is generated only when two or more tools ran (Step 10).
+usage-need-upset-engines	check	skill	s/ComplexUpset when the image has it, otherwise UpSetR/the UpSet engine of the image/	missing required text: ComplexUpset when the image has it, otherwise UpSetR
+usage-need-ids	check	skill	s/a version suffix is removed only where one is present/version suffixes are removed/	missing required text: Gene identifiers are Ensembl identifiers; a version suffix is removed only where one is present
+usage-rtest-literal-fdr-04	rtest	skill	s/sigb <- sig_usage(tab, params\$fdr)/sigb <- sig_usage(tab, 0.05)/	FAIL: significant counts equal the raw recomputation at FDR 0.9
+usage-rtest-literal-fdr-05	rtest	skill	s/calls_from_gene_table(pg, tab, params\$fdr)/calls_from_gene_table(pg, tab, 0.05)/	FAIL: the membership table has one column per tool and the gene sets equal the recomputation at FDR 0.9
+usage-rtest-stager-columns-swapped-read	rtest	skill	s/ gene = to_num(tab\$gene, path, "gene"),/ gene = to_num(tab$transcript, path, "transcript"),/;s/^             transcript = to_num(tab\$transcript, path, "transcript"), stringsAsFactors/             transcript = to_num(tab$gene, path, "gene"), stringsAsFactors/	FAIL: read_stager reads gene and transcript as the screened adjusted p-values
+usage-rtest-stager-columns-swapped-use	rtest	skill	s/  called <- s\$gene_id\[!is.na(s\$gene) \& s\$gene < fdr\]/  called <- s$gene_id[!is.na(s$transcript) \& s$transcript < fdr]/;s/  make_calls(called, s\$gene_id\[!is.na(s\$gene)\], f, sigf, called)/  make_calls(called, s$gene_id[!is.na(s$transcript)], f, sigf, called)/	FAIL: 05 renders without the stageRTx object, prints the warning and uses the run's gene values for DTU
+usage-rtest-stager-genes-swapped	rtest	skill	s/padj = g\$gene, stringsAsFactors = FALSE)/padj = g$transcript, stringsAsFactors = FALSE)/	FAIL: significant counts equal the raw recomputation at FDR 0.05
+usage-rtest-pergene-unused	rtest	skill	s#read_gene_table(pgf, ",", "groupID", "padj")#stats::setNames(stats::aggregate(padj ~ gene_id, data = tab, FUN = min), c("gene_id", "padj"))#	FAIL: significant counts equal the raw recomputation at FDR 0.9
+usage-rtest-concordance-flipped	rtest	skill	s/same <- sum(known \& da == db)/same <- sum(known \& da != db)/;s/opposite <- sum(known \& da != db)/opposite <- sum(known \& da == db)/	FAIL: SYNTHETIC concordance rmats-suppa
+usage-rtest-direction-least-significant	rtest	skill	s/s <- s\[order(s\$padj, -abs(s\$effect), s\$feature_id, method = "radix"), , drop = FALSE\]/s <- s[order(-s$padj, -abs(s$effect), s$feature_id, method = "radix"), , drop = FALSE]/	FAIL: top_by_gene: G1 takes the feature with the SMALLEST padj
+usage-rtest-upset-nonsignificant	rtest	skill	s/make_calls(tab\$gene_id\[sig\], /make_calls(tab$gene_id, /	FAIL: SYNTHETIC rMATS set is G1, G2, G6
+usage-rtest-effect-across-scales	rtest	skill	s/same <- sum(known \& da == db)/ea <- calls[[a]]$dir$top_effect[match(both, calls[[a]]$dir$gene_id)]; eb <- calls[[b]]$dir$top_effect[match(both, calls[[b]]$dir$gene_id)]; same <- sum(known \& abs(ea - eb) < 0.5)/	FAIL: a dPSI of 0.2 and a log2 fold change of 3 with the same sign are concordant
+usage-rtest-wording-swapped	rtest	skill	s/USAGE_WORDING <- c(treatment_up = "more used in treatment", control_up = "more used in control")/USAGE_WORDING <- c(treatment_up = "more used in control", control_up = "more used in treatment")/	FAIL: usage_wording: positive is more used in treatment
+usage-rtest-no-version-strip	rtest	skill	s/^strip_version <- function(x) sub(.*$/strip_version <- function(x) x/	FAIL: expand_genes splits merged DEXSeq gene groups and strip_version removes a version suffix only when present
+usage-rtest-no-split-groups	rtest	skill	s/  parts <- strsplit(df\$gene_id, "\\\\+|_and_")/  parts <- as.list(df$gene_id)/	FAIL: expand_genes splits GENE1_and_GENE2 as well as GENE1+GENE2
+usage-rtest-cross-one-tool	rtest	skill	s/cross_table <- function(calls, min_tools = 2)/cross_table <- function(calls, min_tools = 1)/	FAIL: SYNTHETIC cross table: exactly the genes called by two or more tools
+usage-rtest-sign-flip-bins	rtest	skill	s/ifelse(top\$direction %in% c("treatment_up", "control_up"), top\$direction, NA_character_)/ifelse(top$direction == "treatment_up", "control_up", ifelse(top$direction == "control_up", "treatment_up", NA_character_))/	FAIL: top_by_gene: G1 takes the feature with the SMALLEST padj
+usage-need-locus	check	skill	s/a SUPPA2 locus `GENE1_and_GENE2`/a SUPPA2 locus/	missing required text: a SUPPA2 locus `GENE1_and_GENE2`
+usage-need-split-pattern	check	skill	s#strsplit(df\$gene_id, "\\\\+|_and_")#strsplit(df$gene_id, "\\\\+")#	missing required text:   parts <- strsplit(df$gene_id, "\\+|_and_")
+usage-need-expand-events	check	skill	s/  tab <- tidy_ids(expand_genes(tab))/  tab <- tidy_ids(tab)/	missing required text:   tab <- tidy_ids(expand_genes(tab))
+usage-need-alpha-equal	check	skill	s/all.equal(alpha, fdr)/all.equal(alpha, 0.05)/	missing required text:   if (isTRUE(all.equal(alpha, fdr))) return(list(st = st, alpha = alpha, mode = "run"))
+usage-need-getalpha	check	skill	s/stageR::getAlpha(readRDS(path))/methods::slot(readRDS(path), "alpha")/	missing required text: stageR::getAlpha(readRDS(path))
+usage-need-rerun	check	skill	s/allowNA = TRUE/allowNA = FALSE/	missing required text: stageR::stageWiseAdjustment(readRDS(path), method = "dtu", alpha = fdr, allowNA = TRUE)
+usage-need-warning	check	skill	s/\*\*WARNING: the stageR values of the run are valid only at the alpha the run used/**The stageR values of the run are valid only at the alpha the run used/	missing required text: **WARNING: the stageR values of the run are valid only at the alpha the run used
+usage-need-tx-strip	check	skill	s/^stager_id <- function(x) sub(.*$/stager_id <- function(x) sub("[.][0-9]+$", "", x)/	missing required text: stager_id <- function(x) sub("\\..*", "", x)
+usage-need-coefficient-label	check	skill	s/variance-stabilised; not a proportion)/variance-stabilised)/	missing required text: DEXSeq usage coefficient (fitted, variance-stabilised; not a proportion)
+usage-need-proportion	check	skill	s/proportion = ifelse(tot > 0, v \/ tot, NA_real_)/proportion = v/	missing required text: proportion = ifelse(tot > 0, v / tot, NA_real_)
+usage-need-effect-column	check	skill	s/    out\[\[paste0("effect_", t)\]\] <- ifelse(/    out[[paste0("eff_", t)]] <- ifelse(/	missing required text:     out[[paste0("effect_", t)]] <- ifelse(
+usage-rtest-alpha-ignored	rtest	skill	s/  if (isTRUE(all.equal(alpha, fdr))) return(list(st = st, alpha = alpha, mode = "run"))/  if (TRUE) return(list(st = st, alpha = alpha, mode = "run"))/	FAIL: stager_for_fdr: the run's table as it is at the run's alpha
+usage-rtest-fallback-warning-removed	rtest	skill	s/\*\*WARNING: the stageR values of the run are valid only at the alpha the run used/**The stageR values of the run are valid only at the alpha the run used/	FAIL: stager_note: the run's alpha equal to the FDR
+usage-rtest-fallback-uses-rerun-values	rtest	skill	s/  if (is.null(re)) return(list(st = st, alpha = alpha, mode = "unreadable"))/  if (is.null(re)) return(list(st = st, alpha = alpha, mode = "rerun"))/;s/  if (is.na(alpha)) return(list(st = st, alpha = NA_real_, mode = "unreadable"))/  if (is.na(alpha)) return(list(st = st, alpha = NA_real_, mode = "rerun"))/	FAIL: stager_for_fdr: the run's table as it is at the run's alpha
+usage-rtest-proportion-not-normalised	rtest	skill	s/proportion = ifelse(tot > 0, v \/ tot, NA_real_)/proportion = ifelse(tot > 0, v, NA_real_)/	FAIL: SYNTHETIC proportions: count / sum of the gene's transcript counts
+usage-rtest-conditions-swapped	rtest	skill	s/role <- if (samples\$condition\[i\] == treatment) "treatment" else if (samples\$condition\[i\] == control) "control" else NA_character_/role <- if (samples$condition[i] == treatment) "control" else if (samples$condition[i] == control) "treatment" else NA_character_/	FAIL: SYNTHETIC proportions: samples of the treatment condition
+usage-rtest-suppa-locus-unsplit	rtest	skill	s/  tab <- tidy_ids(expand_genes(tab))/  tab <- tidy_ids(tab)/	FAIL: a SUPPA2 locus GENE1_and_GENE2 counts for each of its genes
+usage-rtest-version-not-stripped-05	rtest	skill	/^\*\*File .05_cross_tool\.Rmd.\.\*\*$/,/^\*\*File .06_enrichment\.Rmd.\.\*\*$/s/^  tab\$gene_id <- stager_id(tab\$gene_id); tab\$feature_id <- stager_id(tab\$feature_id)$/  tab <- tab/	FAIL: calls_from_stager joins versioned DEXSeq identifiers
+usage-rtest-version-not-stripped-04	rtest	skill	0,/^  tab\$gene_id <- stager_id(tab\$gene_id); tab\$feature_id <- stager_id(tab\$feature_id)$/s//  tab <- tab/	FAIL: on the versioned copy the DTU counts
+usage-rtest-effect-column-missing	rtest	skill	s/^    out\[\[paste0("effect_", t)\]\] <- ifelse(.*$/    NULL/	FAIL: SYNTHETIC cross table: effect_<tool>
+enrich-heading06	check	skill	s|^\*\*File `06_enrichment.Rmd`\.\*\*$|REMOVED|	missing required text: **File `06_enrichment.Rmd`.**
+enrich-heading07	check	skill	s|^\*\*File `07_summary.Rmd`\.\*\*$|REMOVED|	missing required text: **File `07_summary.Rmd`.**
+enrich-universe-wording	check	skill	s|set of genes that were testable in that tool, the genes with|set of genes that were measured in that tool, the genes with|	missing required text: The universe (the background) of each enrichment is the set of genes that were testable in that tool
+enrich-min10-prose	check	skill	s|A group is tested only when it has at least 10 genes\.|A group is tested.|	missing required text: A group is tested only when it has at least 10 genes.
+enrich-min-genes-const	check	skill	s|^MIN_GENES <- 10$|MIN_GENES <- 5|	missing required text: MIN_GENES <- 10
+enrich-min-genes-test	check	skill	s|if (length(ids) < MIN_GENES) {|if (length(ids) < 5) {|	missing required text: if (length(ids) < MIN_GENES) {
+enrich-skip-message	check	skill	s|"skipped: fewer than ", MIN_GENES, " genes (n=", length(ids)|"omitted: fewer than ", MIN_GENES, " genes (n=", length(ids)|	missing required text: cat("skipped: fewer than ", MIN_GENES, " genes (n=", length(ids), ")\n\n", sep = "")
+enrich-universe-all	check	skill	s|^    uni <- to_entrez(cl\$tested, pkg)$|    uni <- to_entrez(cl$all, pkg)|	missing required text:     uni <- to_entrez(cl$tested, pkg)
+enrich-direction-swapped	check	skill	s|d\$gene_id\[d\$direction %in% "treatment_up"\]|d$gene_id[d$direction %in% "control_up"]|	missing required text:        treatment_up = intersect(cl$genes, d$gene_id[d$direction %in% "treatment_up"]),
+enrich-rebuild-message	check	skill	s|"; KEGG/Reactome require an image rebuild (not in this image: "|"; KEGG/Reactome need more (not in this image: "|	missing required text:   paste0(m, "; KEGG/Reactome require an image rebuild (not in this image: "
+enrich-organism-message	check	skill	s|\*\*organism not supported\*\*|**not handled**|	missing required text: **organism not supported**
+enrich-bh-cutoff	check	skill	s|pAdjustMethod = "BH", pvalueCutoff = ENRICH_CUTOFF|pAdjustMethod = "none", pvalueCutoff = ENRICH_CUTOFF|	missing required text: pAdjustMethod = "BH", pvalueCutoff = ENRICH_CUTOFF, qvalueCutoff = ENRICH_CUTOFF
+enrich-cutoff-const	check	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.1|	missing required text: ENRICH_CUTOFF <- 0.05
+enrich-step8-go-only	check	skill	s|Only GO is run: KEGG and Reactome are never run by this report|KEGG and Reactome are run as far as the image allows|	missing required text: Only GO is run: KEGG and Reactome are never run by this report
+enrich-step8-old-wording	check	skill	s|^- `enrich`: GO enrichment (biological|- `enrich`: GO enrichment, plus KEGG and Reactome as far as `{ENRICH_DBS}` allows (biological|	forbidden text present: plus KEGG and Reactome as far as
+enrich-step8-background	check	skill	s|with the genes that were testable in that tool as the background|with all genes as the background|	missing required text: a group needs at least 10 genes), with the genes that were testable in that tool as the background
+enrich-net-download	check	skill	s|^MIN_GENES <- 10$|MIN_GENES <- 10\nutils::download.file("http://x", tempfile())|	a network call, download or installation
+enrich-net-keggrest	check	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.05\nk <- KEGGREST::keggList("pathway")|	a network call, download or installation
+enrich-net-install	check	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.05\ninstall.packages("ReactomePA")|	a network call, download or installation
+enrich-net-url	check	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.05\nz <- readLines(url("http://x"))|	a network call, download or installation
+enrich-flag-in-r-fence	check	skill	s|^MIN_GENES <- 10$|MIN_GENES <- 10 # run with --fast|	a --flag appears in prose or outside the allowed commands
+enrich-no-install-claim	check	skill	s|never downloads or installs anything|reads what it needs|	missing required text: never downloads or installs anything
+enrich-07-thresholds-fdr	check	skill	s#^cat("- FDR (adjusted p-value cutoff).*$#NULL#	missing required text: cat("- FDR (adjusted p-value cutoff): ", format(params$fdr), "\n", sep = "")
+enrich-07-thresholds-minreads	check	skill	s#^cat("- rMATS minimum read support.*$#NULL#	missing required text: cat("- rMATS minimum read support (mean of IJC plus SJC per group, smaller of the two groups): ", params$min_reads, "\n", sep = "")
+enrich-07-lists-missing-file	check	skill	s|^  if (file.exists(file.path(rd, f)) && cur(file.path(rd, f))) cat(|  if (TRUE) cat(|	missing required text:   if (file.exists(file.path(rd, f)) && cur(file.path(rd, f))) cat("- <a href=\"", html_escape(f), "\">
+enrich-07-not-produced	check	skill	s|: not produced\\n"|: absent\\n"|	missing required text:   else cat("- ", REPORTS$title[i], ": not produced\n", sep = "")
+enrich-06-sign-sentence	check	skill	s|\*\*treatment minus control\*\*: a positive effect is higher in the treatment group (more inclusion for rMATS and SUPPA2, higher usage for the exon and transcript usage tools). The direction of a gene|a positive effect is higher. The direction of a gene|	06_enrichment.Rmd: the sign sentence (Every effect is stated as **treatment minus control**) must stand before the functions chunk
+enrich-07-sign-sentence	check	skill	s|Only files that exist are listed\. Every effect is stated as \*\*treatment minus control\*\*|Only files that exist are listed. Every effect is stated as treatment minus control|	07_summary.Rmd: the sign sentence (Every effect is stated as **treatment minus control**) must stand before the functions chunk
+enrich-06-param-outside	check	skill	s|^pkg <- unname(ORGDB\[params\$organism\])$|pkg <- unname(ORGDB[params$organism]); x <- params$kegg_db|	06_enrichment.Rmd: params$kegg_db is not one of the 18 parameters of the contract
+enrich-07-param-outside	check	skill	s|^modules <- modules\[nzchar(modules)\]$|modules <- modules[nzchar(modules)]; x <- params$title|	07_summary.Rmd: params$title is not one of the 18 parameters of the contract
+enrich-06-literal-threshold	check	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.05\nx <- 0.1|	a literal threshold (0.05 or 0.1) in the body of the Rmd instead of the parameters
+enrichr-rtest-universe-all	rtest	skill	s|^    uni <- to_entrez(cl\$tested, pkg)$|    uni <- to_entrez(cl$all, pkg)|	FAIL: universe size equals the number of genes with a non-NA padj
+enrichr-rtest-min-genes-const	rtest	skill	s|^MIN_GENES <- 10$|MIN_GENES <- 5|	FAIL: the skill constants: minimum 10 genes, cutoff 0.05
+enrichr-rtest-min-genes-logic	rtest	skill	s|if (length(ids) < MIN_GENES) {|if (length(ids) < 5) {|	FAIL: 06 renders when every group has fewer than 10 genes
+enrichr-rtest-direction-swapped	rtest	skill	s|d\$gene_id\[d\$direction %in% "treatment_up"\]|d$gene_id[d$direction %in% "control_up"]|	FAIL: SYNTHETIC human: the group sizes are 42 (all), 30 (treatment_up), 12 (control_up)
+enrichr-rtest-net-download	rtest	skill	s|^MIN_GENES <- 10$|MIN_GENES <- 10\nutils::download.file("http://x", tempfile())|	FAIL: 06 has no network call, download or installation in its code
+enrichr-rtest-net-keggrest	rtest	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.05\nk <- KEGGREST::keggList("pathway")|	FAIL: 06 has no network call, download or installation in its code
+enrichr-rtest-net-07	rtest	skill	s|^USAGE_MODULES <- c("dexseq_exon", "edger_exon", "dtu")$|&\nutils::install.packages("DT")|	FAIL: 07 has no network call, download or installation in its code
+enrichr-rtest-cutoff	rtest	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.9|	FAIL: the skill constants: minimum 10 genes, cutoff 0.05
+enrichr-rtest-skip-message	rtest	skill	s|"skipped: fewer than "|"omitted: fewer than "|	FAIL: the group of 7 genes is skipped with the message
+enrichr-rtest-organism-message	rtest	skill	s|\*\*organism not supported\*\*|**not handled**|	FAIL: organism zebrafish
+enrichr-rtest-rebuild-message	rtest	skill	s|"; KEGG/Reactome require an image rebuild (not in this image: "|"; KEGG/Reactome need more (not in this image: "|	FAIL: enrich_dbs 'GO,KEGG'
+enrichr-rtest-unmapped-not-counted	rtest	skill	s|n_unmapped = length(ids) - mapped|n_unmapped = 0L|	FAIL: SYNTHETIC human: the unmapped identifiers are counted
+enrichr-rtest-no-universe	rtest	skill	s|enrichGO(gene = entrez, universe = universe, |enrichGO(gene = entrez, |	FAIL: treatment_up: the p-values of the queried term and of the 5 smallest equal an independent phyper
+enrichr-rtest-07-lists-missing-file	rtest	skill	s|^  if (file.exists(file.path(rd, f)) && cur(file.path(rd, f))) cat(|  if (TRUE) cat(|	FAIL: 07 does not link the reports that are absent
+enrichr-rtest-07-no-thresholds	rtest	skill	s#^cat("- \(FDR\|dPSI\|rMATS count\|rMATS minimum\).*$#NULL#	FAIL: 07 states the thresholds read from the parameters (0.037, 0.123, 17, JCEC)
+enrichr-rtest-07-warnings-dropped	rtest	skill	s|^  unique(l)$|  character(0)|	FAIL: html_warnings strips the tags
+enrichr-rtest-07-counts-truncated	rtest	skill	s|cat(knitr::kable(d, format = "markdown", row.names = FALSE), sep = "\\n")|cat(knitr::kable(head(d, 1), format = "markdown", row.names = FALSE), sep = "\\n")|	FAIL: 07 shows the
+enrich-summary-final-instruction	check	skill	s|^  Start with the summary page.*$|  Done.|	missing required text: Start with the summary page, the index of every report, figure and table: {REPORT_DIR}/report_summary.html
+enrich-summary-file-prose	check	skill	s|The page is written to `report_summary.html`, the entry point|The page is written to `07_summary.html`, the entry point|	missing required text: The page is written to `report_summary.html`, the entry point of the report directory.
+enrich-net-https	check	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.05\nz <- "https://example.org"|	a network call, download or installation
+enrich-net-wget	check	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.05\nsystem("wget x")|	a network call, download or installation
+enrich-net-biocmanager	check	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.05\nBiocManager::install("DT")|	a network call, download or installation
+enrich-net-bash-chunk	check	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.05\n```{bash}|	or a code chunk that is not R
+enrichr-rtest-net-biocmanager	rtest	skill	s|^ENRICH_CUTOFF <- 0.05$|ENRICH_CUTOFF <- 0.05\nBiocManager::install("DT")|	FAIL: 06 has no network call, download or installation in its code
+enrichr-rtest-low-support-not-excluded	rtest	skill	s| \& !tab\$low_support$||	FAIL: calls_from_events (06): the flagged gene is not called
+enrichr-rtest-tidy-ids-noop	rtest	skill	s|^tidy_ids <- function(df) { df\$gene_id <- strip_version(df\$gene_id); df }$|tidy_ids <- function(df) df|	FAIL: calls_from_events (06): the flagged gene is not called, versions are removed
+enrichr-rtest-universe-called-genes	rtest	skill	s|^    uni <- to_entrez(cl\$tested, pkg)$|    uni <- to_entrez(cl$genes, pkg)|	FAIL: universe size equals the number of genes with a non-NA padj
+docs-readme-validation	check	readme	s/^## Validation status$/## Status/	README missing required text: ## Validation status
+docs-readme-summary	check	readme	s/`report_summary.html`/the summary page/g	README missing required text: `report_summary.html`
+docs-readme-sign-sentence	check	readme	s/treatment minus control/the same sign/g	README missing required text: Every effect in the report is treatment minus control
+docs-readme-sign-table	check	readme	s/^| Tool | Value read | Conversion | Result |$/| Tool | Value |/	README missing required text: | Tool | Value read | Conversion | Result |
+docs-readme-kegg	check	readme	s|KEGG/Reactome require an image rebuild|KEGG and Reactome need more work|	README missing required text: KEGG/Reactome require an image rebuild
+docs-readme-low-support	check	readme	s/`low_support`/the flag/g	README missing required text: `low_support`
+docs-root-row	check	rootreadme	/^| nf-core\/rnasplice report |/d	root README row missing
+docs-readme-not-run-real	check	readme	$s/$/\n- Real data: not yet run./	FAIL: README still says: Real data: not yet run.
+docs-readme-suppa-flip	check	readme	s/^| SUPPA2 | `dPSI` (control minus treatment) | flipped |/| SUPPA2 | `dPSI` (control minus treatment) | none |/	README missing required text: | SUPPA2 | `dPSI` (control minus treatment) | flipped | treatment minus control |
+docs-readme-dexseq-flip	check	readme	s/^| DEXSeq exon usage | \(.*\) | flipped |/| DEXSeq exon usage | \1 | none |/	README missing required text: | DEXSeq exon usage |
+docs-readme-dtu-flip	check	readme	s/^| DEXSeq DTU | \(.*\) | flipped |/| DEXSeq DTU | \1 | none |/	README missing required text: | DEXSeq DTU |
+docs-readme-rmats-noflip	check	readme	s/^| rMATS | \(.*\) | none |/| rMATS | \1 | flipped |/	README missing required text: | rMATS | `IncLevelDifference`
+docs-readme-edger-noflip	check	readme	s/^| edgeR exon usage | \(.*\) | none |/| edgeR exon usage | \1 | flipped |/	README missing required text: | edgeR exon usage |
+scripts-fence-long	check	skill	$s/$/\n```bash\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\n```/	a code fence of 70 lines
+scripts-fence-function-heredoc	check	skill	$s/$/\n```bash\nf() { echo x; }\ncat > y <<EOF\nz\nEOF\n```/	a code fence with a nested heredoc
+scripts-fence-three-heredocs	check	skill	$s/$/\n```bash\ncat > a <<EOF\nx\nEOF\ncat > b <<EOF\nx\nEOF\ncat > c <<EOF\nx\nEOF\n```/	a code fence with a nested heredoc
+scripts-fence-sh-long	check	skill	$s/$/\n```sh\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\n```/	a code fence of 70 lines
+scripts-need-01	check	skill	s|\*\*Absolute output directory\.\*\*|REMOVED|g	missing required text: **Absolute output directory.**
+scripts-need-02	check	skill	s|\*\*Checks and job list\.\*\*|REMOVED|g	missing required text: **Checks and job list.**
+scripts-need-04	check	skill	s|else echo 'no pairs file in {CWD}'; fi|REMOVED|g	missing required text: else echo 'no pairs file in {CWD}'; fi
+scripts-need-06	check	skill	s|    events = __EVENTS__, cross = __CROSS__, topgene = __TOPGENE__, enrich = __ENRICH__,|REMOVED|g	missing required text:     events = __EVENTS__, cross = __CROSS__, topgene = __TOPGENE__, enrich = __ENRICH__,
+scripts-need-07	check	skill	s|    fdr = __FDR__, dpsi = __DPSI__, min_reads = __MIN_READS__,|REMOVED|g	missing required text:     fdr = __FDR__, dpsi = __DPSI__, min_reads = __MIN_READS__,
+scripts-need-08	check	skill	s|JOB__N__=\$(sbatch --parsable --dependency=afterany:__DEPS__ run___N__\.sbatch) \|\| exit 1|REMOVED|g	missing required text: JOB__N__=$(sbatch --parsable --dependency=afterany:__DEPS__ run___N__.sbatch) || exit 1
+scripts-need-09	check	skill	s|JOB__N__=\$(sbatch --parsable --dependency=afterok:\$JOB01 --kill-on-invalid-dep=yes run___N__\.sbatch) \|\| exit 1|REMOVED|g	missing required text: JOB__N__=$(sbatch --parsable --dependency=afterok:$JOB01 --kill-on-invalid-dep=yes run___N__.sbatch) || exit 1
+scripts-need-10	check	skill	s|JOB__N__=\$(sbatch --parsable run___N__\.sbatch) \|\| exit 1|REMOVED|g	missing required text: JOB__N__=$(sbatch --parsable run___N__.sbatch) || exit 1
+scripts-need-11	check	skill	s|\*\*Job script template\.\*\*|REMOVED|g	missing required text: **Job script template.**
+scripts-need-18	check	skill	s|refuses to continue when an Rmd of a job that applies is missing|REMOVED|g	missing required text: refuses to continue when an Rmd of a job that applies is missing
+scripts-need-19	check	skill	s|\*\*Rendering the scripts\.\*\*|REMOVED|g	missing required text: **Rendering the scripts.**
+scripts-need-20	check	skill	s|run_all\.tpl|REMOVED|g	missing required text: run_all.tpl
+scripts-need-21	check	skill	s|run_job\.sbatch\.tpl|REMOVED|g	missing required text: run_job.sbatch.tpl
+scripts-need-22	check	skill	s|#SBATCH --mem=__MEM__|REMOVED|g	missing required text: #SBATCH --mem=__MEM__
+scripts-need-23	check	skill	s|#SBATCH -t __TIME__|REMOVED|g	missing required text: #SBATCH -t __TIME__
+scripts-need-24	check	skill	s|\*\*Settings\.\*\*|REMOVED|g	missing required text: **Settings.**
+scripts-need-26	check	skill	s|\*\*Submit script template\.\*\*|REMOVED|g	missing required text: **Submit script template.**
+scripts-need-27	check	skill	s|the first thing written into `{REPORT_DIR}` at all is the `image_check/` directory of Step 2, after this answer|REMOVED|g	missing required text: the first thing written into `{REPORT_DIR}` at all is the `image_check/` directory of Step 2, after this answer
+scripts-need-28	check	skill	s|When a block prints a line that begins with `ERROR`, stop, tell the user, and run none of the later blocks\.|REMOVED|g	missing required text: When a block prints a line that begins with `ERROR`, stop, tell the user, and run none of the later blocks.
+scripts-need-29	check	skill	s|Write this block with the Write tool, byte for byte and without the two fence lines, to `{REPORT_DIR}/templates/run_all\.tpl`|REMOVED|g	missing required text: Write this block with the Write tool, byte for byte and without the two fence lines, to `{REPORT_DIR}/templates/run_all.tpl`
+scripts-need-30	check	skill	s|Write this block with the Write tool, byte for byte and without the two fence lines, to `{REPORT_DIR}/templates/run_job\.sbatch\.tpl`|REMOVED|g	missing required text: Write this block with the Write tool, byte for byte and without the two fence lines, to `{REPORT_DIR}/templates/run_job.sbatch.tpl`
+settings-need-1	check	skill	s|the value of \$1 holds a line break|REMOVED|g	missing required text: the value of $1 holds a line break
+settings-need-2	check	skill	s|v=\$(printf '%s' "\$2" \| sed 's/\[\\\\&\|\]/\\\\&/g')|REMOVED|g	missing required text: v=$(printf '%s' "$2" | sed 's/[\\&|]/\\&/g')
+settings-need-3	check	skill	s|printf 's\|__%s__\|%s\|g\\n' "\$1" "\$v"; shift 2|REMOVED|g	missing required text: printf 's|__%s__|%s|g\n' "$1" "$v"; shift 2
+settings-need-4	check	skill	s|is empty or still holds a template marker|REMOVED|g	missing required text: is empty or still holds a template marker
+settings-need-5	check	skill	s|holds a space or a comma and cannot be bound into the container|REMOVED|g	missing required text: holds a space or a comma and cannot be bound into the container
+settings-fence-shell-90	check	skill	$s/$/\n```shell\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\n```/	a code fence of 90 lines
+settings-fence-info-brace	check	skill	$s/$/\n```bash {.x}\nf() { :; }\ncat > y <<EOF\nz\nEOF\n```/	a code fence with a nested heredoc
+settings-fence-function-keyword	check	skill	$s/$/\n```bash\nfunction f {\n:\n}\ncat > y <<EOF\nz\nEOF\n```/	a code fence with a nested heredoc
+settings-fence-tilde	check	skill	$s/$/\n~~~bash\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\n~~~/	a code fence of 70 lines
+settings-fence-indented	check	skill	$s/$/\n  ```bash\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\n  ```/	a code fence of 70 lines
+settings-fence-rmd-exempt-not-bypass	check	skill	$s/$/\n```text2\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\necho x\n```/	a code fence of 70 lines
+settings-fence-plain-function-heredocs	check	skill	$s/$/\n```\nf() { :; }\ncat > a <<EOF\nx\nEOF\ncat > b <<EOF\nx\nEOF\ncat > c <<EOF\nx\nEOF\n```/	a code fence with a nested heredoc
+freetext-need-1	check	skill	s|\*\*Free-text values\.\*\*|REMOVED|g	missing required text: **Free-text values.**
+freetext-need-4	check	skill	s|EMAIL '{EMAIL}' JOBNAME '{PROJECT}_report'|REMOVED|g	missing required text: EMAIL '{EMAIL}' JOBNAME '{PROJECT}_report'
+freetext-need-5	check	skill	s|R='{REPORT_DIR}'; OUT='{OUTDIR_RNASPLICE}'; MEM='{MEM}'; TIME='{TIME}'|REMOVED|g	missing required text: R='{REPORT_DIR}'; OUT='{OUTDIR_RNASPLICE}'; MEM='{MEM}'; TIME='{TIME}'
+freetext-dq-email	check	skill	s|EMAIL='{EMAIL}'$|EMAIL="{EMAIL}"|	a wizard value in double quotes in a Bash block
+freetext-dq-gtf	check	skill	s|^G='{GTF}'|G="{GTF}"|	a wizard value in double quotes in a Bash block
+freetext-dq-settings	check	skill	s|EMAIL '{EMAIL}' JOBNAME|EMAIL "{EMAIL}" JOBNAME|	a wizard value in double quotes in a Bash block
+freetext-dq-checks	check	skill	s|^R='{REPORT_DIR}'; OUT=|R="{REPORT_DIR}"; OUT=|	a wizard value in double quotes in a Bash block
+templates-need-01	check	skill	s|singularity exec --bind '__BIND__' '__SIF__' Rscript -e 'rmarkdown::render("__R__/__RMD__",|REMOVED|g	missing required text: singularity exec --bind '__BIND__' '__SIF__' Rscript -e 'rmarkdown::render("__R__/__RMD__",
+templates-need-02	check	skill	s|  output_dir = "__R__", __OUTFILE__knit_root_dir = "__R__",|REMOVED|g	missing required text:   output_dir = "__R__", __OUTFILE__knit_root_dir = "__R__",
+templates-need-03	check	skill	s|    outdir = "__OUT__", report_dir = "__R__",|REMOVED|g	missing required text:     outdir = "__OUT__", report_dir = "__R__",
+templates-need-04	check	skill	s|    contrasts = "__CONTRASTS__", samplesheet = "__SAMPLESHEET__",|REMOVED|g	missing required text:     contrasts = "__CONTRASTS__", samplesheet = "__SAMPLESHEET__",
+templates-need-05	check	skill	s|    modules = "__MODULES__", rmats_type = "__RMATS_TYPE__",|REMOVED|g	missing required text:     modules = "__MODULES__", rmats_type = "__RMATS_TYPE__",
+templates-need-06	check	skill	s|    organism = "__ORGANISM__", gtf = "__GTF__",|REMOVED|g	missing required text:     organism = "__ORGANISM__", gtf = "__GTF__",
+templates-need-07	check	skill	s|    enrich_dbs = "__ENRICH_DBS__",|REMOVED|g	missing required text:     enrich_dbs = "__ENRICH_DBS__",
+templates-need-08	check	skill	s|    paired_rmats = __PAIRED_RMATS__, paired_suppa = __PAIRED_SUPPA__))'|REMOVED|g	missing required text:     paired_rmats = __PAIRED_RMATS__, paired_suppa = __PAIRED_SUPPA__))'
+templates-need-09	check	skill	s|cd '__R__' \|\| exit 1|REMOVED|g	missing required text: cd '__R__' || exit 1
+templates-need-10	check	skill	s|  OUTF=""; if \[ "\$n" = 07 \]; then OUTF='output_file = "report_summary\.html", '; fi|REMOVED|g	missing required text:   OUTF=""; if [ "$n" = 07 ]; then OUTF='output_file = "report_summary.html", '; fi
+templates-need-11	check	skill	s|so that a `\$`, a backtick or `\$(\.\.\.)` in a value is taken literally and no command in it is run, neither by the blocks nor by the generated scripts when the user runs them|REMOVED|g	missing required text: so that a `$`, a backtick or `$(...)` in a value is taken literally and no command in it is run, neither by the blocks nor by the generated scripts when the user runs them
+templates-need-12	check	skill	s|that contains a single quote (`'`), a double quote (`"`), a backslash (`\\`) or a line break is therefore not accepted: ask again|REMOVED|g	missing required text: that contains a single quote (`'`), a double quote (`"`), a backslash (`\`) or a line break is therefore not accepted: ask again
+templates-need-13	check	skill	s|holds a line break, a backslash or a double quote|REMOVED|g	missing required text: holds a line break, a backslash or a double quote
+templates-need-14	check	skill	s|The questions that collect free text are the other report path (below), the e-mail address (Step 1), the image path (Step 2), the run, sheet and contrasts paths and the output directory (Step 3), the GTF path (Step 5) and the project name (Step 9); each says so\.|REMOVED|g	missing required text: The questions that collect free text are the other report path (below), the e-mail address (Step 1), the image path (Step 2), the run, sheet and contrasts paths and the output directory (Step 3), the GTF path (Step 5) and the project name (Step 9); each says so.
+templates-dq-cd-job	check	skill	1,/Submit script template/ s|^cd '__R__' \|\| exit 1|cd "__R__" \|\| exit 1|	forbidden text present: cd "__R__"
+templates-dq-cd-all	check	skill	/Submit script template/,$ s|^cd '__R__' \|\| exit 1|cd "__R__" \|\| exit 1|	forbidden text present: cd "__R__"
+templates-dq-sif	check	skill	s|'__SIF__'|"__SIF__"|	forbidden text present: "__SIF__"
+templates-dq-bind	check	skill	s|'__BIND__'|"__BIND__"|	forbidden text present: "__BIND__"
+templates-dq-rscript	check	skill	s|Rscript -e 'rmarkdown|Rscript -e "rmarkdown|	forbidden text present: Rscript -e "
+templates-ref-gtf	check	skill	s|^\(Store the GTF path as `{GTF}` .*\) The rule on free-text values in Step 0 applies\.|\1|	does not reference the rule on free-text values
+templates-ref-another-path	check	skill	s|3\. Give another path\." The rule on free-text values in Step 0 applies\.|3. Give another path."|	does not reference the rule on free-text values
+templates-ref-absolute	check	skill	s|\(Absolute output directory\.\*\* .*is `{OUTDIR_GIVEN}`\.\) The rule on free-text values in Step 0 applies\.|\1|	does not reference the rule on free-text values
+templates-ref-email	check	skill	s|Do not pre-fill any address. The rule on free-text values in Step 0 applies\.|Do not pre-fill any address.|	does not reference the rule on free-text values
+templates-ref-project	check	skill	s|Default: `{WD_NAME}`. The rule on free-text values in Step 0 applies\.|Default: `{WD_NAME}`.|	does not reference the rule on free-text values
+extract-readme-01	check	readme	s|The wizard end to end and the generated SLURM scripts on the cluster (2026-10-06), on the output of the nf-core test-data run (4 samples, chrX, 50,000 read pairs), in four runs: all modules; rMATS only; BAM input; all modules with `min_reads` 0\.|REMOVED|g	README missing required text: The wizard end to end and the generated SLURM scripts on the cluster (2026-10-06), on the output of the nf-core test-data run (4 samples, chrX, 50,000 read pairs), in four runs: all modules; rMATS only; BAM input; all modules with `min_reads` 0.
+extract-readme-02	check	readme	s|every Bash block was accepted by the Claude Code safety check|REMOVED|g	README missing required text: every Bash block was accepted by the Claude Code safety check
+extract-readme-03	check	readme	s|The 24 report jobs of the four runs all completed|REMOVED|g	README missing required text: The 24 report jobs of the four runs all completed
+extract-readme-04	check	readme	s|jobs 02 to 06 `afterok` on job 01 with cancellation when job 01 fails, job 07 `afterany` on every earlier job|REMOVED|g	README missing required text: jobs 02 to 06 `afterok` on job 01 with cancellation when job 01 fails, job 07 `afterany` on every earlier job
+extract-readme-05	check	readme	s|(SE 5, A5SS 3, A3SS 2, MXE 3, RI 1) equal an independent recomputation with awk from the raw tables|REMOVED|g	README missing required text: (SE 5, A5SS 3, A3SS 2, MXE 3, RI 1) equal an independent recomputation with awk from the raw tables
+extract-readme-06	check	readme	s|the pipeline output directories were not modified|REMOVED|g	README missing required text: the pipeline output directories were not modified
+extract-readme-07	check	readme	s|Chain wall times were 23 s, 17 s, 18 s and 71 s|REMOVED|g	README missing required text: Chain wall times were 23 s, 17 s, 18 s and 71 s
+extract-readme-08	check	readme	s|the four reports take 26 MB of output in total|REMOVED|g	README missing required text: the four reports take 26 MB of output in total
+extract-readme-09	check	readme	s|Peak memory of the report jobs: not measured\.|REMOVED|g	README missing required text: Peak memory of the report jobs: not measured.
+extract-readme-10	check	readme	s|The behaviour when a report job fails: not yet run\.|REMOVED|g	README missing required text: The behaviour when a report job fails: not yet run.
+extract-readme-11	check	readme	s|### How the scripts are made|REMOVED|g	README missing required text: ### How the scripts are made
+extract-readme-12	check	readme	s|writes two small template files to `templates/` there|REMOVED|g	README missing required text: writes two small template files to `templates/` there
+extract-readme-13	check	readme	s|The wizard refuses typed values (e-mail address, paths, project name) that contain a single quote, a double quote, a backslash or a line break|REMOVED|g	README missing required text: The wizard refuses typed values (e-mail address, paths, project name) that contain a single quote, a double quote, a backslash or a line break
+extract-need-01	check	skill	s|\*\*Extracting the Rmd files\.\*\*|REMOVED|g	missing required text: **Extracting the Rmd files.**
+extract-need-02	check	skill	s|R='{REPORT_DIR}'; SK='{SKILL_FILE}'|REMOVED|g	missing required text: R='{REPORT_DIR}'; SK='{SKILL_FILE}'
+extract-need-03	check	skill	s|ERROR: the skill file \$SK does not exist: give the path of the skill file, or write the Rmd files one at a time with the Write tool|REMOVED|g	missing required text: ERROR: the skill file $SK does not exist: give the path of the skill file, or write the Rmd files one at a time with the Write tool
+extract-need-08	check	skill	s|writing them one at a time with the Write tool is the fallback when that block cannot read the skill file|REMOVED|g	missing required text: writing them one at a time with the Write tool is the fallback when that block cannot read the skill file
+extract-need-09	check	skill	s|case '{EMAIL}' in none\|'') sed -i '/\^#SBATCH \.\.mail-/d' '{REPORT_DIR}/image_check/pull_image\.sbatch' ;; esac|REMOVED|g	missing required text: case '{EMAIL}' in none|'') sed -i '/^#SBATCH ..mail-/d' '{REPORT_DIR}/image_check/pull_image.sbatch' ;; esac
+extract-need-10	check	skill	s|case '{EMAIL}' in none\|'') sed -i '/\^#SBATCH \.\.mail-/d' '{REPORT_DIR}/image_check/check_packages\.sbatch' ;; esac|REMOVED|g	missing required text: case '{EMAIL}' in none|'') sed -i '/^#SBATCH ..mail-/d' '{REPORT_DIR}/image_check/check_packages.sbatch' ;; esac
+extract-need-11	check	skill	s|MK='__R__\|__OUT__\|__SIF__\|__EMAIL__\|__JOBNAME__|REMOVED|g	missing required text: MK='__R__|__OUT__|__SIF__|__EMAIL__|__JOBNAME__
+extract-need-12	check	skill	s|grep -Eq "(\$MK)" "\$f"|REMOVED|g	missing required text: grep -Eq "($MK)" "$f"
+extract-block-removed	check	skill	s|\*\*Extracting the Rmd files\.\*\*|Extracting the Rmd files.|	missing required text: **Extracting the Rmd files.**
+extractdoc-readme-1	check	readme	s|The live run on the test data used the skill at commit 0abe782, in which the Rmd files were cut out with a separate awk command|REMOVED|g	README missing required text: The live run on the test data used the skill at commit 0abe782, in which the Rmd files were cut out with a separate awk command
+extractdoc-readme-2	check	readme	s|the real-data run used the extraction block and the rendering block with its exact-marker check|REMOVED|g	README missing required text: the real-data run used the extraction block and the rendering block with its exact-marker check
+extractdoc-need-2	check	skill	s|ERROR: the line endings are CRLF in \$SK: use a copy with LF line endings; nothing was written to \$R|REMOVED|g	missing required text: ERROR: the line endings are CRLF in $SK: use a copy with LF line endings; nothing was written to $R
+nodelete-readme-1	check	readme	s|every Bash block was accepted by the Claude Code safety check (skill at commit 0abe782)\.|REMOVED|g	README missing required text: every Bash block was accepted by the Claude Code safety check (skill at commit 0abe782).
+nodelete-readme-3	check	readme	s|That block ran in the real-data run\.|REMOVED|g	README missing required text: That block ran in the real-data run.
+nodelete-need-01	check	skill	s|does not hold exactly 7 Rmd blocks; nothing was written to \$R|REMOVED|g	missing required text: does not hold exactly 7 Rmd blocks; nothing was written to $R
+nodelete-need-03	check	skill	s|\[ "\${1:-0}" = 1 \] && \[ "\${2:-0}" = 1 \] && \[ "\${3:-0}" -gt 0 \] && \[ "\${4:-0}" = 1 \]|REMOVED|g	missing required text: [ "${1:-0}" = 1 ] && [ "${2:-0}" = 1 ] && [ "${3:-0}" -gt 0 ] && [ "${4:-0}" = 1 ]
+nodelete-need-05	check	skill	s|s == 2 && \$0 == "````" { exit } s == 2 { print }|REMOVED|g	missing required text: s == 2 && $0 == "````" { exit } s == 2 { print }
+nodelete-need-06	check	skill	s|\[ -s "\$R/\$n\.Rmd" \] && \[ "\$(head -n 1 "\$R/\$n\.Rmd")" = "---" \]|REMOVED|g	missing required text: [ -s "$R/$n.Rmd" ] && [ "$(head -n 1 "$R/$n.Rmd")" = "---" ]
+nodelete-need-07	check	skill	s|The block first reads the skill file without writing anything|REMOVED|g	missing required text: The block first reads the skill file without writing anything
+nodelete-need-08	check	skill	s|so nothing has been written\. Only then does it write the seven files|REMOVED|g	missing required text: so nothing has been written. Only then does it write the seven files
+nodelete-need-09	check	skill	s|The block makes no temporary directory and deletes and moves nothing\.|REMOVED|g	missing required text: The block makes no temporary directory and deletes and moves nothing.
+nodelete-rm-variable	check	skill	$s/$/\n```bash\nrm -f "$D"\n```/	a code fence removes files through a variable
+nodelete-rmdir-variable	check	skill	$s/$/\n```bash\nrmdir "$D"\n```/	a code fence removes files through a variable
+nodelete-find-delete	check	skill	$s/$/\n```bash\nfind "$X" -name a -delete\n```/	a code fence removes files through a variable
+nodelete-rm-in-plain-fence	check	skill	$s/$/\n```\nrm -rf $X\n```/	a code fence removes files through a variable
+nodelete-rm-trap-form	check	skill	$s#$#\n```bash\ntrap 'for n in $NAMES; do rm -f "$D"; done; rmdir "$D" 2>/dev/null' EXIT\n```#	a code fence removes files through a variable
+nodelete-header-check	check	skill	s|l == 1 && $0 == "---"|l == 1 \&\& $0 == "--"|	missing required text: if (l == 1 && $0 == "---") f = 1
+nodelete-awk-range	check	skill	s|s == 2 { print }' "$SK" > |s == 3 { print }' "$SK" > |	missing required text: s == 2 && $0 == "````" { exit } s == 2 { print }
+nodelete-count-check	check	skill	s|"$SK")" -eq 7 \]|"$SK")" -eq 6 ]|	missing required text: [ "$(grep -c '^\*\*File `[0-9][0-9]_[a-z_]*\.Rmd`\.\*\*$' "$SK")" -eq 7 ]
+nodelete-need-x1	check	skill	s|if (l == 1 && \$0 == "---") f = 1|REMOVED|g	missing required text: if (l == 1 && $0 == "---") f = 1
+nodelete-need-x2	check	skill	s|\[ "\$(grep -c '\^\\\*\\\*File `\[0-9\]\[0-9\]_\[a-z_\]\*\\\.Rmd`\\\.\\\*\\\*\$' "\$SK")" -eq 7 \]|REMOVED|g	missing required text: [ "$(grep -c '^\*\*File `[0-9][0-9]_[a-z_]*\.Rmd`\.\*\*$' "$SK")" -eq 7 ]
+fence-need-1	check	skill	s|\[ "\${4:-0}" = 1 \] && \[ "\${5:-0}" = 0 \]|REMOVED|g	missing required text: [ "${4:-0}" = 1 ] && [ "${5:-0}" = 0 ]
+fence-need-2	check	skill	s|END { print b + 0, (s == 3), l + 0, f + 0, x + 0, (s != 4) }|REMOVED|g	missing required text: END { print b + 0, (s == 3), l + 0, f + 0, x + 0, (s != 4) }
+fence-need-3	check	skill	s|is missing, repeated, not closed, holds another rmd opener, is empty, or does not start with the YAML header line; nothing was written to \$R|REMOVED|g	missing required text: is missing, repeated, not closed, holds another rmd opener, is empty, or does not start with the YAML header line; nothing was written to $R
+fence-need-4	check	skill	s|s == 2 && \$0 == "````rmd" { x = 1 }|REMOVED|g	missing required text: s == 2 && $0 == "````rmd" { x = 1 }
+realtext-need-01	check	skill	s|among features with the same smallest adjusted p-value (many are exactly 0 on real data) the one with the largest absolute effect is taken, and if that is tied too, the first by feature identifier, so the choice never depends on the order of the rows|REMOVED|g	missing required text: among features with the same smallest adjusted p-value (many are exactly 0 on real data) the one with the largest absolute effect is taken, and if that is tied too, the first by feature identifier, so the choice never depends on the order of the rows
+realtext-need-02	check	skill	s|Among features with equal smallest adjusted p-value (on real data many are exactly 0) the one with the largest absolute effect is taken, and if that is tied too, the first by feature identifier; the direction never depends on the order of the rows\.|REMOVED|g	missing required text: Among features with equal smallest adjusted p-value (on real data many are exactly 0) the one with the largest absolute effect is taken, and if that is tied too, the first by feature identifier; the direction never depends on the order of the rows.
+realtext-need-03	check	skill	s|Among features with equal smallest adjusted p-value (on real data many adjusted p-values are exactly 0) the one with the largest absolute effect is taken, and if that is tied too, the first by feature identifier, so the direction never depends on the order of the rows|REMOVED|g	missing required text: Among features with equal smallest adjusted p-value (on real data many adjusted p-values are exactly 0) the one with the largest absolute effect is taken, and if that is tied too, the first by feature identifier, so the direction never depends on the order of the rows
+realtext-need-04	check	skill	s|among features with equal smallest adjusted p-value (on real data many are exactly 0) the one with the largest absolute effect, and if that is tied too, the first by feature identifier, so the groups never depend on the order of the rows|REMOVED|g	missing required text: among features with equal smallest adjusted p-value (on real data many are exactly 0) the one with the largest absolute effect, and if that is tied too, the first by feature identifier, so the groups never depend on the order of the rows
+realtext-need-05	check	skill	s|The table of the DEXSeq exon bins lists the bins with an effect first|REMOVED|g	missing required text: The table of the DEXSeq exon bins lists the bins with an effect first
+realtext-need-06	check	skill	s|        bins <- bins\[order(is\.na(bins\$effect), bins\$padj, -abs(bins\$effect), bins\$feature_id, method = "radix"), , drop = FALSE\]|REMOVED|g	missing required text:         bins <- bins[order(is.na(bins$effect), bins$padj, -abs(bins$effect), bins$feature_id, method = "radix"), , drop = FALSE]
+realtext-need-07	check	skill	s|the threshold of 10 log2 units is a heuristic, not a statistical test|REMOVED|g	missing required text: the threshold of 10 log2 units is a heuristic, not a statistical test
+realtext-need-08	check	skill	s|effect_flag <- function(effect) ifelse(!is\.na(effect) & abs(effect) > ARTEFACT_LOG2FC, "zero-count artefact", "")|REMOVED|g	missing required text: effect_flag <- function(effect) ifelse(!is.na(effect) & abs(effect) > ARTEFACT_LOG2FC, "zero-count artefact", "")
+realtext-need-09	check	skill	s|ARTEFACT_LOG2FC <- 10|REMOVED|g	missing required text: ARTEFACT_LOG2FC <- 10
+realtext-need-10	check	skill	s|    if (t == "dtu") out\$effect_flag <- effect_flag(out\$effect_dtu)|REMOVED|g	missing required text:     if (t == "dtu") out$effect_flag <- effect_flag(out$effect_dtu)
+realtext-need-11	check	skill	s|          gt\$effect_flag <- effect_flag(gt\$top_effect); tx\$effect_flag <- effect_flag(tx\$effect)|REMOVED|g	missing required text:           gt$effect_flag <- effect_flag(gt$top_effect); tx$effect_flag <- effect_flag(tx$effect)
+realtext-need-12	check	skill	s|and the threshold of 10 is a heuristic; `effect_dtu` is kept as it is|REMOVED|g	missing required text: and the threshold of 10 is a heuristic; `effect_dtu` is kept as it is
+realtext-need-13	check	skill	s|The word genes in the gene lists, the universes and the summary table means genes after splitting the groups of overlapping genes|REMOVED|g	missing required text: The word genes in the gene lists, the universes and the summary table means genes after splitting the groups of overlapping genes
+realtext-need-14	check	skill	s|cat("Called by ", TOOL_LABELS\[\[tool\]\], ": ", length(cl\$ids), " identifiers as the tool writes them ("|REMOVED|g	missing required text: cat("Called by ", TOOL_LABELS[[tool]], ": ", length(cl$ids), " identifiers as the tool writes them ("
+realtext-need-15	check	skill	s|significant_ids_before_split = vapply(calls, function(x) length(x\$ids), integer(1))|REMOVED|g	missing required text: significant_ids_before_split = vapply(calls, function(x) length(x$ids), integer(1))
+realtext-need-16	check	skill	s|  ids <- strip_version(gene_tab\$gene_id\[sig_usage(gene_tab, fdr)\])|REMOVED|g	missing required text:   ids <- strip_version(gene_tab$gene_id[sig_usage(gene_tab, fdr)])
+realtext-need-17	check	skill	s|A relative path in the params file is relative to `{PARAMS_DIR}`, not to the directory the wizard runs in|REMOVED|g	missing required text: A relative path in the params file is relative to `{PARAMS_DIR}`, not to the directory the wizard runs in
+realtext-need-18	check	skill	s|cd '{OUTDIR_BASE}' 2>/dev/null && cd '{OUTDIR_GIVEN}' 2>/dev/null|REMOVED|g	missing required text: cd '{OUTDIR_BASE}' 2>/dev/null && cd '{OUTDIR_GIVEN}' 2>/dev/null
+realtext-need-19	check	skill	s|`{PARAMS_DIR}` when the answer is the default taken from the params file|REMOVED|g	missing required text: `{PARAMS_DIR}` when the answer is the default taken from the params file
+realtext-readme-04	check	readme	s|The lines of Step 2 that drop the mail lines when no mail is wanted have static and render tests only; the real-data record does not say whether they ran\.|REMOVED|g	README missing required text: The lines of Step 2 that drop the mail lines when no mail is wanted have static and render tests only; the real-data record does not say whether they ran.
+realtext-readme-08	check	readme	s|### Real data (2026-10-06)|REMOVED|g	README missing required text: ### Real data (2026-10-06)
+realtext-readme-09	check	readme	s|human hiPSC-derived cardiomyocytes, KO versus WT (treatment KO, control WT), 3 versus 3 samples, reverse-stranded|REMOVED|g	README missing required text: human hiPSC-derived cardiomyocytes, KO versus WT (treatment KO, control WT), 3 versus 3 samples, reverse-stranded
+realtext-readme-10	check	readme	s|execution trace shows 103 tasks completed; one attempt|execution trace shows 104 tasks completed; one attempt|g	README missing required text: execution trace shows 103 tasks completed; one attempt of the DEXSeq exon-usage task was killed (exit 143) and its retry completed.
+realtext-readme-11	check	readme	s|rMATS SE 2049, A5SS 257, A3SS 429, MXE 1394, RI 368 (4497 events, 2453 genes)|REMOVED|g	README missing required text: rMATS SE 2049, A5SS 257, A3SS 429, MXE 1394, RI 368 (4497 events, 2453 genes)
+realtext-readme-12	check	readme	s|SUPPA2 536 local events and 576 isoforms|REMOVED|g	README missing required text: SUPPA2 536 local events and 576 isoforms
+realtext-readme-13	check	readme	s|DEXSeq exon usage 105669 bins and 9567 `perGeneQValue` groups (12867 genes after splitting the groups of overlapping genes)|REMOVED|g	README missing required text: DEXSeq exon usage 105669 bins and 9567 `perGeneQValue` groups (12867 genes after splitting the groups of overlapping genes)
+realtext-readme-14	check	readme	s|edgeR exon usage 5944 genes (Simes) of 16804, 32253 exons, 8818 genes by the F-test|REMOVED|g	README missing required text: edgeR exon usage 5944 genes (Simes) of 16804, 32253 exons, 8818 genes by the F-test
+realtext-readme-15	check	readme	s|DTU 3628 genes (stageR) of 11452 and 6169 transcripts|REMOVED|g	README missing required text: DTU 3628 genes (stageR) of 11452 and 6169 transcripts
+realtext-readme-16	check	readme	s|With `min_reads` 0 the rMATS counts are SE 3206, A5SS 537, A3SS 849, MXE 1867, RI 620 (7079 events)|REMOVED|g	README missing required text: With `min_reads` 0 the rMATS counts are SE 3206, A5SS 537, A3SS 849, MXE 1867, RI 620 (7079 events)
+realtext-readme-17	check	readme	s|with 0 mismatches of the conversion|REMOVED|g	README missing required text: with 0 mismatches of the conversion
+realtext-readme-18	check	readme	s|edgeR agrees with DEXSeq on 22765 of 22766 shared significant bins|REMOVED|g	README missing required text: edgeR agrees with DEXSeq on 22765 of 22766 shared significant bins
+realtext-readme-19	check	readme	s|rMATS SE -0\.854 (FDR 0), SUPPA2 raw +0\.454 reported as -0\.454, edgeR -1\.588 on the same exon|REMOVED|g	README missing required text: rMATS SE -0.854 (FDR 0), SUPPA2 raw +0.454 reported as -0.454, edgeR -1.588 on the same exon
+realtext-readme-20	check	readme	s|The published analysis of this dataset reports 2,679 events|REMOVED|g	README missing required text: The published analysis of this dataset reports 2,679 events
+realtext-readme-21	check	readme	s|An earlier run of the same data found 7,031 events\. The reason for the difference to the published number has not been determined\.|REMOVED|g	README missing required text: An earlier run of the same data found 7,031 events. The reason for the difference to the published number has not been determined.
+realtext-readme-22	check	readme	s|01 up to 2 min 21 s, 02 about 15 s, 03, 04 and 05 about 37 s each, 06 (enrichment) 15 min 17 s, 07 4 s|REMOVED|g	README missing required text: 01 up to 2 min 21 s, 02 about 15 s, 03, 04 and 05 about 37 s each, 06 (enrichment) 15 min 17 s, 07 4 s
+realtext-readme-23	check	readme	s|each report directory takes 79 MB|REMOVED|g	README missing required text: each report directory takes 79 MB
+realtext-readme-24	check	readme	s|the terms found are recorded as observations only|REMOVED|g	README missing required text: the terms found are recorded as observations only
+realtext-readme-25	check	readme	s|they have not been run on the whole real output|they ran on the whole real output|g	README missing required text: they have not been run on the whole real output
+realtext-readme-26	check	readme	s|peak memory and the exit codes of jobs 01 to 05 were not read|REMOVED|g	README missing required text: peak memory and the exit codes of jobs 01 to 05 were not read
+realtext-readme-27	check	readme	s|The figures of the real-data reports were not viewed|REMOVED|g	README missing required text: The figures of the real-data reports were not viewed
+realtext-readme-28	check	readme	s|The threshold of 10 is a heuristic, not a statistical test\.|REMOVED|g	README missing required text: The threshold of 10 is a heuristic, not a statistical test.
+realtext-readme-29	check	readme	s|This tie-break is a convention, not a test|REMOVED|g	README missing required text: This tie-break is a convention, not a test
+realtext-readme-30	check	readme	s|among features with equal smallest adjusted p-value the one with the largest absolute effect is taken, and if that is tied too, the first by feature identifier|REMOVED|g	README missing required text: among features with equal smallest adjusted p-value the one with the largest absolute effect is taken, and if that is tied too, the first by feature identifier
+realtext-readme-31	check	readme	s|The minimum read support (`min_reads`) is a heuristic too|REMOVED|g	README missing required text: The minimum read support (`min_reads`) is a heuristic too
+realtext-readme-32	check	readme	s|is resolved from the directory that holds the params file (the run directory)|REMOVED|g	README missing required text: is resolved from the directory that holds the params file (the run directory)
+realtext-readme-33	check	readme	s|`tests/fixtures/sign_rows\.tsv` holds 34 of these real rows|REMOVED|g	README missing required text: `tests/fixtures/sign_rows.tsv` holds 34 of these real rows
+realtext-readme-34	check	readme	s|five scripts: 135, 106, 153, 118 and 93 checks, all pass|REMOVED|g	README missing required text: five scripts: 135, 106, 153, 118 and 93 checks, all pass
+realtext-readme-35	check	readme	s|In that test the enrichment report runs on the DEXSeq exon usage genes only|REMOVED|g	README missing required text: In that test the enrichment report runs on the DEXSeq exon usage genes only
+realtext-forbid-cwd	check	skill	s|cd '{OUTDIR_BASE}' 2>/dev/null \&\& cd '{OUTDIR_GIVEN}'|cd '{CWD}' 2>/dev/null \&\& cd '{OUTDIR_GIVEN}'|	FAIL: forbidden text present: cd '{CWD}' 2>/dev/null && cd '{OUTDIR_GIVEN}'
+real-rtest-tie-first-row	rtest	skill	s/s <- s\[order(s\$padj, -abs(s\$effect), s\$feature_id, method = "radix"), , drop = FALSE\]/s <- s[order(s$padj, method = "radix"), , drop = FALSE]/	FAIL: SYNTHETIC tie (05): two features with padj 0 and opposite signs: the larger absolute effect wins
+real-rtest-tie-smallest-abs	rtest	skill	s/s <- s\[order(s\$padj, -abs(s\$effect), s\$feature_id, method = "radix")/s <- s[order(s$padj, abs(s$effect), s$feature_id, method = "radix")/	FAIL: real hipscm: TEAD3 rMATS direction is that of the tied event with the largest change
+real-rtest-tie-row-order	rtest	skill	s/s <- s\[order(s\$padj, -abs(s\$effect), s\$feature_id, method = "radix")/s <- s[order(s$padj, -abs(s$effect), method = "radix")/	FAIL: SYNTHETIC tie (05): equal padj and equal absolute effects: the first feature identifier wins
+real-rtest-real-sign-rmats	rtest	skill	s/^    rmats = value, /    rmats = -value,/	FAIL: real hipscm: the RDS effect of every rMATS sign row has the expected sign
+real-rtest-real-sign-suppa	rtest	skill	s/^    suppa = -value,/    suppa = value, /	FAIL: real hipscm: the RDS effect of every SUPPA2 sign row has the expected sign
+real-rtest-real-sign-dexseq	rtest	skill	s/^    exon_dexseq = -value,/    exon_dexseq = value, /	FAIL: real hipscm: the RDS effect of every DEXSeq_exon sign row has the expected sign
+real-rtest-real-sign-dtu	rtest	skill	s/^    dtu = -value,/    dtu = value, /	FAIL: real hipscm: the RDS effect of every DEXSeq_DTU sign row has the expected sign
+real-rtest-real-sign-edger	rtest	skill	s/^    exon_edger = value, /    exon_edger = -value,/	FAIL: real hipscm: the RDS effect of every edgeR_exon sign row has the expected sign
+real-rtest-bins-order	rtest	skill	s/bins <- bins\[order(is.na(bins\$effect), bins\$padj, -abs(bins\$effect), bins\$feature_id, method = "radix"), , drop = FALSE\]/bins <- bins[order(bins$padj, bins$feature_id), , drop = FALSE]/	FAIL: real hipscm: the DEXSeq bins table lists every bin with an effect before the bins without one
+real-rtest-flag-signed	rtest	skill	s/ifelse(!is.na(effect) \& abs(effect) > ARTEFACT_LOG2FC/ifelse(!is.na(effect) \& effect > ARTEFACT_LOG2FC/	FAIL: real hipscm: dtu.transcripts.csv has effect_flag, 'zero-count artefact' exactly where abs(effect) > 10
+real-rtest-flag-cross-missing	rtest	skill	/^    if (t == "dtu") out\$effect_flag <- effect_flag(out\$effect_dtu)$/d	FAIL: real hipscm: cross_tool.genes.csv has effect_flag for effect_dtu
+real-rtest-06-ids-are-genes	rtest	skill	s/": ", length(cl\$ids), " identifiers as the tool writes them ("/": ", length(cl$genes), " identifiers as the tool writes them ("/	FAIL: real hipscm: 06 prints both DEXSeq numbers
+real-rtest-ids-after-split	rtest	skill	s/^  ids <- strip_version(gene_tab\$gene_id\[sig_usage(gene_tab, fdr)\])$/  ids <- strip_version(expand_genes(gene_tab)$gene_id[sig_usage(expand_genes(gene_tab), fdr)])/	FAIL: real hipscm: the sets table has the identifiers before the split next to the genes
+realrecord-readme-01	check	readme	s|reverse-stranded (the Salmon strandedness helper of `/nfcore-rnasplice-setup`: ISR, reverse fraction 0\.9999)|REMOVED|g	README missing required text: reverse-stranded (the Salmon strandedness helper of `/nfcore-rnasplice-setup`: ISR, reverse fraction 0.9999)
+realrecord-readme-02	check	readme	s|nf-core/rnasplice at the development revision 1b447239488097651d8eac44bca2c1556865eb0f|REMOVED|g	README missing required text: nf-core/rnasplice at the development revision 1b447239488097651d8eac44bca2c1556865eb0f
+realrecord-readme-03	check	readme	s|did not run the checks block of Step 10 and the package check again (same image and modules)|REMOVED|g	README missing required text: did not run the checks block of Step 10 and the package check again (same image and modules)
+realrecord-readme-04	check	readme	s|changed after that run (commit ca78ad5) and has static and render tests only|REMOVED|g	README missing required text: changed after that run (commit ca78ad5) and has static and render tests only
+realrecord-readme-05	check	readme	s|Their outcome was read from the output files and the chain instead|REMOVED|g	README missing required text: Their outcome was read from the output files and the chain instead
+realrecord-need-06	check	skill	s|(normally the run directory, from which the pipeline was started)|REMOVED|g	missing required text: (normally the run directory, from which the pipeline was started)
+realrecord-readme-exit01	check	readme	s|Their outcome was read from the output files and the chain instead|Job 01 ended with exit code 0, job 01 ended with exit code 0. Their outcome was read from the output files and the chain instead|	FAIL: README states an exit code of job 01 that was not read
+freedir-loop	check	skill	s/do n=\$((n + 1)); done/do n=$((n + 2)); done/	missing required text: n=2; while [ -e
+freedir-option	check	skill	s/the first free one: the path of the `FREE` line (default)/{REPORT_DIR}_2 (default)/	missing required text: the first free one: the path of the `FREE` line (default)
+freedir-order-text	check	skill	s/ and after the report directory check of Step 3//	missing required text: after this answer and after the report directory check of Step 3
+freedir-render	render	skill	s/n=2; while \[ -e/n=2; while false \&\& [ -e/	FAIL Step 0: the first free numbered directory
+stamp-save	check	skill	s/params = as.list(params)), f)/params = list()), f)/	missing required text: saveRDS(list(time = Sys.time(), params = as.list(params)), f)
+stamp-call	check	skill	s/^write_run_stamp(params\$report_dir, params)$/invisible(NULL)/	missing required text: write_run_stamp(params$report_dir, params)
+stamp-chunk-order	check	skill	s/^```{r stamp}$/```{r stamp_late}/	the stamp chunk must come before the import chunk
+stamp-time-ignored	check	skill	s/^stamp_time <- function(rd) .*$/stamp_time <- function(rd) NULL/	missing required text: stamp_time <- function(rd) { f <- file.path(rd, STAMP_FILE)
+stamp-compare-reversed	check	skill	s/  !is.na(m) \& m >= stamp/  !is.na(m) \& m <= stamp/	missing required text:   !is.na(m) & m >= stamp
+stamp-cur-all	check	skill	s/^cur <- function(paths) .*$/cur <- function(paths) TRUE/	missing required text: cur <- function(paths) if (all_old)
+stamp-section	check	skill	s/cat("## From an earlier run (not updated by this run)/cat("## Older files/	missing required text: cat("## From an earlier run (not updated by this run)
+stamp-report-line	check	skill	s/: not produced by this run (an older `/: older (`/	missing required text: : not produced by this run (an older `
+stamp-counts-line	check	skill	s/not written by this run: the file is from an earlier run/an old file/	missing required text: not written by this run: the file is from an earlier run
+stamp-warnings-old	check	skill	s/^  if (!(file.exists(file.path(rd, REPORTS\$file\[i\])) \&\& cur(file.path(rd, REPORTS\$file\[i\])))) next$/  if (FALSE) next/	missing required text:   if (!(file.exists(file.path(rd, REPORTS$file[i]))
+stamp-figures	check	skill	s/old <- c(old, file.path("figures", figs\[!fcur\]))/old <- old/	missing required text: fcur <- cur(file.path(rd, "figures", figs)); old <- c(old
+stamp-tables	check	skill	s/old <- c(old, file.path("tables", tabs\[!tcur\]))/old <- old/	missing required text: tcur <- cur(file.path(rd, "tables", tabs)); old <- c(old
+stamp-params-differ	check	skill	s/was written by a run with other parameters (/was written earlier (/	missing required text: was written by a run with other parameters (
+stamp-rtest-ignored	rtest	skill	s/^stamp_time <- function(rd) .*$/stamp_time <- function(rd) NULL/	FAIL: 07 on a reused report directory: 03_suppa.html of the earlier run is listed under From an earlier run
+stamp-rtest-reversed	rtest	skill	s/  !is.na(m) \& m >= stamp/  !is.na(m) \& m <= stamp/	FAIL: 07 on a reused report directory: 03_suppa.html of the earlier run is listed under From an earlier run
+stamp-rtest-not-written	rtest	skill	s/^write_run_stamp(params\$report_dir, params)$/invisible(NULL)/	FAIL: 01 writes the run stamp rds/run_stamp.rds
+guard-step3-inside	check	skill	0,/"\$OUT"\/\*) echo "ERROR: report directory/s//"$OUT"x\/*) echo "ERROR: report directory/	the guard 'report directory inside the pipeline output' must stand
+guard-extract-inside	check	skill	/^R='{REPORT_DIR}'; SK=/,/^NAMES=/s/"\$OUT"\/\*) echo/"$OUT"x\/*) echo/	the guard 'report directory inside the pipeline output' must stand
+guard-checks-inside	check	skill	s/case "\$R\/" in "\$OUT"\/\*) fail/case "$R\/" in "$OUT"x\/*) fail/	the checks block of Step 10 must refuse a report directory inside the pipeline output
+guard-step3-results	check	skill	0,/case "\$R" in \*\/results\/\*) ;; \*) echo/s//case "$R" in *) ;; *) echo/	the guard 'report directory under results/' must stand
+guard-extract-order	check	skill	/^R='{REPORT_DIR}'; SK=/,/^NAMES=/{/"\$OUT"\/\*) echo/d}	the extraction block must check that the report directory is not inside the pipeline output before it creates it
+guard-block-heading	check	skill	s/^\*\*Report directory check\.\*\* Before/**Report directory checks.** Before/	the report directory check must come before the module detection
+guard-step2-order	check	skill	s/run these two blocks only after the block \*\*Report directory check.\*\* of Step 3 has passed/run these two blocks now/	missing required text: run these two blocks only after the block
+guard-ok-line	check	skill	s/echo "REPORT_DIR_OK=\$R"/echo "OK"/	missing required text: echo "REPORT_DIR_OK=$R"
+guard-render-step3	render	skill	0,/"\$OUT"\/\*) echo "ERROR: report directory/s//"$OUT"x\/*) echo "ERROR: report directory/	FAIL report directory check: inside the pipeline output: exit status
+guard-render-extract	render	skill	/^R='{REPORT_DIR}'; SK=/,/^NAMES=/s/"\$OUT"\/\*) echo/"$OUT"x\/*) echo/	FAIL extraction: report directory inside the pipeline output: exit status
+guard-render-checks	render	skill	s/case "\$R\/" in "\$OUT"\/\*) fail/case "$R\/" in "$OUT"x\/*) fail/	FAIL checks block: report directory inside a writable pipeline output: exit status
+bind-render-outside	render	skill	s#^  case "\$p" in /net/bmc-lab3/\*) ;; /\*) q=.*$#  :#	FAIL run_01: /opt/rsr_ext is not in the --bind list
+derived-rule	check	skill	s/The rule holds for every value put into a block, typed or derived\. //	missing required text: The rule holds for every value put into a block, typed or derived.
+derived-typed-forms	check	skill	s/any other answer is asked again and never put into a block\./any other answer is used as it is./	missing required text: `{MEM}` digits followed by
+derived-list	check	skill	s/, `{OUTDIR_RNASPLICE}` and `{SKILL_FILE}`/ and `{OUTDIR_RNASPLICE}`/	missing required text: the paths read from the params file (`input`, `contrasts`, `outdir`, `gtf`), `{OUTDIR_RNASPLICE}` and `{SKILL_FILE}`
+derived-substituted	check	skill	s/A value that the assistant builds or substitutes into a block text cannot be checked by that block/Other values are not checked/	missing required text: A value that the assistant builds or substitutes into a block text cannot be checked by that block
+derived-step7	check	skill	s/A typed value is accepted only in its form (the rule on free-text values in Step 0 applies)/A typed value is used as it is/	missing required text: A typed value is accepted only in its form
+derived-step9	check	skill	s/A typed memory or time is accepted only in its form (the rule on free-text values in Step 0 applies)/A typed memory or time is used as it is/	missing required text: A typed memory or time is accepted only in its form
+derived-step0-error	check	skill	s/echo "ERROR: the path \$v holds/echo "NOTE: the path $v holds/	missing required text: for v in "$d" "$s"; do case
+derived-step0-print	check	skill	s/echo "SKILL_FILE=\$s"/echo "SKILL=$s"/	missing required text: echo "CWD=$d"; echo "WD_NAME=
+derived-outdir-check	check	skill	s/^d=\$(pwd); case "\$d" in/d=$(pwd); case "x" in/	missing required text: d=$(pwd); case "$d" in
+derived-params-check	check	skill	s/print "ERROR: the value of " k " in the params/print "NOTE: the value of " k " in the params/	missing required text: if (index(v, q)
+derived-skillfile-text	check	skill	s/printed by the block of Step 0 (`SKILL_FILE=`/the path/	missing required text: printed by the block of Step 0
+derived-render-step0	render	skill	s/the wizard cannot put it into its blocks"; exit 1 ;; esac; done/the wizard cannot put it into its blocks" ;; esac; done/	FAIL Step 0 block: working directory
+derived-render-outdir	render	skill	s/^d=\$(pwd); case "\$d" in/d=$(pwd); case "x" in/	FAIL output directory with a double quote: exit status
+derived-render-params	render	skill	s/  END { exit bad }' || exit 1/  END { exit 0 }' || exit 1/	FAIL params block: a quote or backslash in
+derived-render-yaml-quotes	render	skill	s/  if ((f == "\\"" || f == q) \&\& length(v) > 1/  if (0 \&\& length(v) > 1/	FAIL params block: quoted and plain values: exit status
+opener-both	check	skill	s/s == 1 { s = (\$0 == "````rmd") ? 2 : 4; next }/s == 1 \&\& $0 == "````rmd" { s = 2; next }/	both awk passes of the extraction must take the line right after the heading
+opener-render-both	render	skill	s/s == 1 { s = (\$0 == "````rmd") ? 2 : 4; next }/s == 1 \&\& $0 == "````rmd" { s = 2; next }/	FAIL extraction: opener problem no: exit status
+opener-render-validate	render	skill	0,/s == 1 { s = (\$0 == "````rmd") ? 2 : 4; next }/s//s == 1 \&\& $0 == "````rmd" { s = 2; next }/	FAIL extraction: opener problem no:
+opener-message	check	skill	s/\[ "\${6:-0}" = 1 \] || { echo "ERROR: the line right after/[ 1 = 1 ] || { echo "ERROR: the line right after/	missing required text: [ "${6:-0}" = 1 ] || { echo
+opener-render-message	render	skill	s/\[ "\${6:-0}" = 1 \] || { echo "ERROR: the line right after/[ 1 = 1 ] || { echo "ERROR: the line right after/	FAIL extraction: opener problem no: the block is named in the message
+opener-prose	check	skill	s/on the line right after its heading (no blank line or text between them)/after its heading/	missing required text: on the line right after its heading (no blank line or text between them)
+stagerid-defs	check	skill	s/^stager_id <- function(x) sub(/stager_id <- function(x) sub0(/	04, 05 and 06 must each define stager_id
+stagerid-need-st	check	skill	s/^  st\$gene_id <- stager_id(st\$gene_id); st\$tx_id <- stager_id(st\$tx_id)$/  st <- st/	missing required text:   st$gene_id <- stager_id(st$gene_id)
+stagerid-join-04	check	skill	s/^        jn <- join_stager(sres\$st, tab)$/        jn <- list(st = sres$st, tab = tab, unmatched = 0, ambiguous = 0)/	missing required text:         jn <- join_stager(sres$st, tab)
+stagerid-join-05	check	skill	s/^  jn <- join_stager(st, feat)$/  jn <- list(st = st, tab = feat, unmatched = 0, ambiguous = 0)/	missing required text:   jn <- join_stager(st, feat)
+stagerid-warning-04	check	skill	s/^        if (nzchar(stager_join_warning(jn))) cat(stager_join_warning(jn), "\\n\\n")$/        invisible(jn)/	missing required text:         if (nzchar(stager_join_warning(jn)))
+stagerid-warning-05	check	skill	s/^        if (nzchar(cl\$join_warning)) stnote <- paste0(stnote, "\\n\\n", cl\$join_warning)$/        invisible(cl)/	05 and 06 must print the WARNING of the stageR join
+stagerid-forbid-old	check	skill	s/^stager_id <- function(x) sub(.*$/&\nstrip_tx_version <- function(x) sub("[.][0-9]+$", "", x)/	forbidden text present: strip_tx_version
+stagerid-warning-text	check	skill	s/transcripts of the stageR table were not found in the DEXSeq transcript table/transcripts were lost/g	missing required text: transcripts of the stageR table were not found
+stagerid-rtest-04-old-rule	rtest	skill	0,/^stager_id <- function(x) sub(.*$/s//stager_id <- function(x) sub("[.][0-9]+$", "", x)/	FAIL: stager_id in 04 and 05 is the identifier rule
+stagerid-rtest-05-old-rule	rtest	skill	/^\*\*File .05_cross_tool\.Rmd.\.\*\*$/,/^\*\*File .06_enrichment\.Rmd.\.\*\*$/s/^stager_id <- function(x) sub(.*$/stager_id <- function(x) sub("[.][0-9]+$", "", x)/	FAIL: calls_from_stager (05) joins non-Ensembl identifiers with dots
+stagerid-rtest-no-unmatched	rtest	skill	s/unmatched = sum(!paste(st\$gene_id, st\$tx_id) %in% key)/unmatched = 0/	FAIL: calls_from_stager (05): the stageR transcript without a DEXSeq row is counted
+kegg-not-offered	check	skill	s/KEGG\/Reactome are not offered by this report, which runs GO only/KEGG\/Reactome were skipped/	missing required text: KEGG/Reactome are not offered by this report, which runs GO only
+kegg-function	check	skill	s/^kegg_message <- function(present) {$/kegg_msg <- function(present) {/	missing required text: kegg_message <- function(present) {
+kegg-forbid-old	check	skill	s/^ENRICH_CUTOFF <- 0.05$/&\n# KEGG\/Reactome require an image rebuild (ReactomePA, KEGG.db and reactome.db are not in this image). GO only./	forbidden text present: are not in this image). GO only.
+kegg-rtest-not-offered	rtest	skill	s/KEGG\/Reactome are not offered by this report, which runs GO only/KEGG\/Reactome were skipped/	FAIL: enrich_dbs 'GO,KEGG': the report says that KEGG/Reactome are not offered
+kegg-rtest-present-rebuild	rtest	skill	s/^  if (all(present)) return(paste0(m, " (the packages "/  if (FALSE) return(paste0(m, " (the packages "/	FAIL: kegg_message: with the three packages present
+mathjax-count	check	skill	0,/^    mathjax: null$/{//d}	each of the seven Rmd headers must set mathjax: null
+mathjax-rtest-01	rtest	skill	0,/^    mathjax: null$/{//d}	FAIL: 01, 02 and 03: the HTML pages load nothing from the internet
+readme-extract-facts	check	readme	s/; it deletes nothing\././	README missing required text: The block that extracts the Rmd files validates the skill file first and then writes the files; it deletes nothing.
+readme-contrasts	check	readme	s/several contrasts in one run (Rmds 01 to 07/several contrasts (Rmds 01 to 07/	README missing required text: several contrasts in one run
+readme-paired	check	readme	s/paired rMATS statistics (`rmats_paired_stats: true`/paired statistics (`rmats_paired_stats`/	README missing required text: paired rMATS statistics
+readme-notrun-rest	check	readme	s/the image pull job (`image_check\/pull_image.sbatch` was never submitted), //	README missing required text: a mouse run (Rmd 06
+readme-changed	check	readme	s/Changed after the real-data run, with static, render and R tests only:/Also:/	README missing required text: Changed after the real-data run
+readme-dtu-sets	check	readme	s/on the 6169 transcripts confirmed by stageR/on the transcripts confirmed by stageR/	README missing required text: the 6169 transcripts confirmed by stageR
+readme-mathjax	check	readme	s/ (MathJax is switched off in every Rmd header)//	README missing required text: MathJax is switched off in every Rmd header
+readme-stamp	check	readme	s/Job 01 writes a run stamp, `rds\/run_stamp.rds`/Job 01 starts/	README missing required text: Job 01 writes a run stamp
+readme-earlier	check	readme	s/under "From an earlier run (not updated by this run)"/apart/	README missing required text: under "From an earlier run
+readme-typed	check	readme	s/Typed numbers (memory, time, FDR, dPSI, minimum read support) are accepted only in their form/Typed numbers are used/	README missing required text: Typed numbers
+readme-guard	check	readme	s/The report directory is checked (under `results\/`, not inside the pipeline output) in Step 3 before anything is written into it/The report directory is checked/	README missing required text: The report directory is checked (under
+readme-kegg-not-offered	check	readme	s/they are not offered by this report/they are skipped/	README missing required text: they are not offered by this report
+readme-6635	check	readme	$s/$/\nDTU: 6635 transcripts./	README names a DTU count (6635)
+readme-history	check	readme	$s/$/\nAn earlier block was refused by the Claude Code safety check./	README tells the history of a block
+backtick-dq-opener	check	skill	s/is not the opening line "'````rmd'" of its block/is not the opening line ````rmd of its block/	a backtick inside double quotes in a Bash block
+backtick-dq-new	check	skill	$s/$/\n```bash\necho "a `date` b"\n```/	a backtick inside double quotes in a Bash block
+backtick-render-opener	render	skill	s/is not the opening line "'````rmd'" of its block/is not the opening line ````rmd of its block/	FAIL extraction: opener problem no: the block is named in the message
+readme-full-time	check	readme	s/took about 9 h 52 min on 2026-10-07/took several hours/	README missing required text: The complete `--full` run took about 9 h 52 min
+readme-default-time	check	readme	s/it took about 17 min on a compute node/it took a few minutes/	README missing required text: With the current mutation rows it took about 17 min
+readme-dotted-ids	check	readme	s/such DTU genes do not overlap with the genes of the other tools/such DTU genes overlap/	README missing required text: are cut at the first dot for DTU
+readme-other-organism	check	readme	s/ Nor a run on an organism other than human or mouse (Rmd 06 has an R test with the organism zebrafish only)\.//	README missing required text: Nor a run on an organism other than human or mouse
