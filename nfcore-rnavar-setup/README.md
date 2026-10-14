@@ -44,7 +44,7 @@ The skill is a guided wizard that collects your settings one step at a time and 
 | 5 | Read length | Auto-detected from the reads (asked only for BAM/CRAM input) |
 | 6 | Organism and genome files | Organism and genome base directory asked; choose an Ensembl release (version, existing FASTA/GTF and STAR index auto-detected) or a custom reference (you give the FASTA, GTF and index directory) |
 | 7 | Known sites for base recalibration | Asked: supply known-sites VCFs or skip recalibration |
-| 8 | Variant calling options | Asked: duplicates, two-pass, thresholds, gVCF, large chromosomes, save intermediates |
+| 8 | Variant calling options | Asked first: what the calls will be used for (identity QC, coding variants, allele-specific expression; sets defaults for 8f and 9 and adds hand-off lines); then duplicates, two-pass, thresholds, gVCF, large chromosomes, save intermediates |
 | 9 | Optional annotation | Asked: none, SnpEff, VEP or both; cache locations and identifiers asked |
 | 10 | MultiQC title, output directory, `nextflow.config` | Titles asked; config written only if absent (literal `resourceLimits`, report overwrite enabled) |
 | 11 | Params file and submission script | Generated |

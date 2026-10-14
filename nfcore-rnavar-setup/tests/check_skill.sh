@@ -445,4 +445,15 @@ forbidr "production-ready"
 forbidr "validated genome-wide"
 # --- end Real-data fix round
 
+# --- Intended-use question
+need "**Intended use (ask first).**"
+need "Store the picks as \`{INTENDED_USE}\`"
+need "If \`{INTENDED_USE}\` contains 3, make option 2 the default"
+need "If \`{INTENDED_USE}\` contains 2, first say that SnpEff and VEP caches are large"
+need "Then add the lines that match \`{INTENDED_USE}\`"
+need "bcftools gtcheck"
+need "continue with /ase-pipeline"
+need "If the user picks none or answers \"not sure\", change nothing."
+# --- end Intended-use question
+
 [ $fail -eq 0 ] && echo "PASS" || exit 1
