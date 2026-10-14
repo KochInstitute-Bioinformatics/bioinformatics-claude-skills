@@ -165,6 +165,12 @@ Store the result as `{KNOWN_SITES_PARAMS}`: the four key lines for option 1, or 
 
 ## Step 8 — Variant calling options
 
+**Intended use (ask first).** Ask (numbered, several allowed, for example `1,3`): "What will the variant calls be used for?" 1. Identity / genotype QC (sample swaps, relatedness, concordance with another genotype set) · 2. Coding variants (consequence and impact of variants in genes) · 3. Allele-specific expression, or genotypes as a covariate in an expression model. Store the picks as `{INTENDED_USE}`; it only changes defaults and notes, never a key's value without the user's confirmation:
+- 1 → the hand-off (Step 13) names the filtered SNV VCF per sample and points to a genotype-concordance comparison against an independent genotype set (for example `bcftools gtcheck`).
+- 2 → Step 9 offers SnpEff as the default and warns about cache size and location before asking for anything else.
+- 3 → Step 8f defaults to yes and the hand-off points to `/ase-pipeline`.
+If the user picks none or answers "not sure", change nothing.
+
 Ask each as a numbered choice. **Omit any key whose value equals the pipeline default** — only write a key to the params file when the user changes it. Every option below is written as a key-value line.
 
 **a) Duplicates.** 1. Keep duplicates marked (default — omit) · 2. Remove duplicates — write `remove_duplicates: true`.
@@ -177,7 +183,7 @@ Ask each as a numbered choice. **Omit any key whose value equals the pipeline de
 
 **e) Large chromosomes.** Only if the genome has chromosomes longer than 512 Mb (not human or mouse): write `bam_csi_index: true` and tell the user it disables variant filtration.
 
-**f) Save intermediates.** 1. No (omit) · 2. Yes — write `save_align_intermeds: true` (recommended if the BAMs will feed allele-specific expression analysis).
+**f) Save intermediates.** 1. No (omit) · 2. Yes — write `save_align_intermeds: true` (recommended if the BAMs will feed allele-specific expression analysis). If `{INTENDED_USE}` contains 3, make option 2 the default and say why; otherwise option 1 is the default.
 
 Collect the emitted key lines as `{VARIANT_PARAMS}`.
 
@@ -185,7 +191,9 @@ Collect the emitted key lines as `{VARIANT_PARAMS}`.
 
 ## Step 9 — Optional variant annotation
 
-Ask (numbered): 1. No annotation (default — omit `tools`) · 2. SnpEff · 3. VEP · 4. Both merged. Write the key `tools: "snpeff"`, `tools: "vep"`, or `tools: "merge"` respectively. Set `{ANNOTATION_TOOL}`.
+If `{INTENDED_USE}` contains 2, first say that SnpEff and VEP caches are large, that the size depends on the genome and release, and that the cache must already be on disk before submission (see below); then make option 2 (SnpEff) the default instead of option 1. Otherwise option 1 is the default.
+
+Ask (numbered): 1. No annotation (default unless set above — omit `tools`) · 2. SnpEff · 3. VEP · 4. Both merged. Write the key `tools: "snpeff"`, `tools: "vep"`, or `tools: "merge"` respectively. Set `{ANNOTATION_TOOL}`.
 
 If annotation is chosen, the caches must be on disk **before** submission:
 - Ask for existing cache directories → the keys `snpeff_cache: "{DIR}"` and/or `vep_cache: "{DIR}"`, plus the matching identifiers `snpeff_db: "{SNPEFF_DB}"`, `vep_genome: "{VEP_GENOME}"`, `vep_species: "{VEP_SPECIES}"`, `vep_cache_version: "{VEP_CACHE_VERSION}"` (all quoted strings; ask; do not guess versions).
@@ -447,6 +455,13 @@ Outputs under {OUTDIR}/ :
   reports/           FastQC, samtools, Picard and STAR reports; MultiQC at reports/multiqc/{MULTIQC_TITLE}_multiqc_report.html
   pipeline_info/     execution report, timeline, trace, DAG
 These VCFs and BAMs are the inputs expected by the ase-pipeline skill (allele-specific expression).
+```
+Then add the lines that match `{INTENDED_USE}` (print only those):
+```
+Identity / genotype QC: use the soft-filtered SNV calls variant_calling/{SAMPLE}.haplotypecaller.filtered.vcf.gz (records with FILTER = PASS).
+  Compare them with an independent genotype set at shared sites (for example bcftools gtcheck); RNA-seq calls only cover expressed regions.
+Coding variants: annotated VCFs are under annotation/ (Step 9). Treat A>G / T>C calls as possible RNA editing, see the note below.
+Allele-specific expression: intermediates were kept (Step 8f); continue with /ase-pipeline.
 ```
 Before printing, confirm the actual directory names against the pipeline's `docs/output` page for `{VERSION}` with `WebFetch`, and use the real names.
 
