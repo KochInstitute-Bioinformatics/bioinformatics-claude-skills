@@ -24,7 +24,7 @@ Then invoke it in Claude Code:
 
 | Requirement | Notes |
 |-------------|-------|
-| SLURM scheduler | Partition set via `SLURM_PARTITION` in the site config |
+| SLURM scheduler | Partition set via `QUEUE` in the site config |
 | Singularity/Apptainer | Loaded via `SINGULARITY_LOAD` in the site config (tested with 3.10) |
 | Nextflow | Available in a conda environment (e.g. `nf-env`) |
 | Internet access | Required from login node for GitHub API + Ensembl downloads |
@@ -159,7 +159,7 @@ sbatch nf-core_rnaseq_3.26.0.sh
 
 ## Cluster-specific notes
 
-- **Partition**: `SLURM_PARTITION` (set `SLURM_PARTITION_ON_CLI=yes` if your cluster ignores the `#SBATCH -p` header)
+- **Partition**: `QUEUE` (set `QUEUE_ON_CLI=yes` if your cluster ignores the `#SBATCH -p` header)
 - **Singularity/Apptainer**: loaded with the `SINGULARITY_LOAD` line from the site config
 - **Conda**: initialised with the `CONDA_SETUP` line from the site config
 - **No `gh` CLI needed** - the skill uses the GitHub REST API over HTTP

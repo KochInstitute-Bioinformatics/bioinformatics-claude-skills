@@ -38,7 +38,7 @@ wizard-email-nofill	check	skill	s|Do not pre-fill any address\.|REMOVED|g	missin
 wizard-email-store	check	skill	s|Store `{EMAIL}`|REMOVED|g	missing required text: Store `{EMAIL}`
 wizard-sif-store	check	skill	s|Store `{SIF}`|REMOVED|g	missing required text: Store `{SIF}`
 wizard-pull-sbatch	check	skill	s|The image is pulled on a compute node, never on the login node|REMOVED|g	missing required text: The image is pulled on a compute node, never on the login node
-wizard-sbatch-part	check	skill	s|#SBATCH -p {SLURM_PARTITION}|REMOVED|g	missing required text: #SBATCH -p {SLURM_PARTITION}
+wizard-sbatch-part	check	skill	s|#SBATCH -p {QUEUE}|REMOVED|g	missing required text: #SBATCH -p {QUEUE}
 wizard-module-sing	check	skill	s|{SINGULARITY_LOAD} \|\| exit 1|REMOVED|g	missing required text: {SINGULARITY_LOAD} || exit 1
 wizard-pkg-mandatory	check	skill	s|"DEXSeq", "edgeR", "stageR", "ggplot2", "dplyr", "tidyr", "readr", "knitr", "rmarkdown"|REMOVED|g	missing required text: "DEXSeq", "edgeR", "stageR", "ggplot2", "dplyr", "tidyr", "readr", "knitr", "rmarkdown"
 wizard-pkg-reactome	check	skill	s|"ReactomePA", "KEGG\.db", "reactome\.db"|REMOVED|g	missing required text: "ReactomePA", "KEGG.db", "reactome.db"
@@ -659,6 +659,6 @@ readme-full-time	check	readme	s/took about 9 h 52 min on 2026-10-07/took several
 readme-default-time	check	readme	s/it took about 17 min on a compute node/it took a few minutes/	README missing required text: With the current mutation rows it took about 17 min
 readme-dotted-ids	check	readme	s/such DTU genes do not overlap with the genes of the other tools/such DTU genes overlap/	README missing required text: are cut at the first dot for DTU
 readme-other-organism	check	readme	s/ Nor a run on an organism other than human or mouse (Rmd 06 has an R test with the organism zebrafish only)\.//	README missing required text: Nor a run on an organism other than human or mouse
-site-partition-tpl	check	skill	s|#SBATCH -p __PARTITION__|REMOVED|g	missing required text: #SBATCH -p __PARTITION__
+site-partition-tpl	check	skill	s|#SBATCH -p __QUEUE__|REMOVED|g	missing required text: #SBATCH -p __QUEUE__
 site-load-tpl	check	skill	s|__SINGULARITY_LOAD__ \|\| exit 1|REMOVED|g	missing required text: __SINGULARITY_LOAD__ || exit 1
 site-partition-drop	render	skill	/sed -i '\/^#SBATCH -p \/d'/d	FAIL nopart: no partition line

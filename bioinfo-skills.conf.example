@@ -3,12 +3,13 @@
 # Skills read this file at startup; any missing key is asked interactively.
 # Leave a key empty to mean "not needed on my system".
 
-# --- SLURM ---
+# --- Scheduler queue ---
+# (SLURM_PARTITION and SLURM_PARTITION_ON_CLI from earlier versions are still read when QUEUE and QUEUE_ON_CLI are absent.)
 # Partition/queue. Empty = omit -p everywhere.
-SLURM_PARTITION=
+QUEUE=
 # Set to yes if your cluster ignores "#SBATCH -p" in the script header and
 # needs "sbatch -p <partition> script.sh" on the command line.
-SLURM_PARTITION_ON_CLI=no
+QUEUE_ON_CLI=no
 
 # --- Software environment (shell lines placed in generated scripts) ---
 # Run before `conda activate <env>` (e.g. `module load miniconda3` or `source ~/miniconda3/etc/profile.d/conda.sh`).

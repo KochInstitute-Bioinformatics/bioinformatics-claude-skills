@@ -574,8 +574,8 @@ done
 # no pull, and NXF_OFFLINE is neither set nor unset by the script (it may be set in ~/.bashrc; the first download works anyway).
 ! printf '%s\n' "$SUB" | grep -q 'NXF_OFFLINE' || { echo "FAIL: the submission script must not set or unset NXF_OFFLINE"; fail=1; }
 printf '%s\n' "$SUB" | grep -qxF "NF_MIN=\"$(gv NEXTFLOW_MIN)\"; NF_MAX_EXCL=\"$(gv NEXTFLOW_MAX_EXCL)\"" || { echo "FAIL: the submission script must carry the verified Nextflow range"; fail=1; }
-printf '%s\n' "$SUB" | grep -qxF '#SBATCH -n 2' && printf '%s\n' "$SUB" | grep -qxF '#SBATCH --mem=8G' && printf '%s\n' "$SUB" | grep -qxF '#SBATCH -p {SLURM_PARTITION}' \
-  || { echo "FAIL: the head job must request -n 2, --mem=8G and -p {SLURM_PARTITION} (the head job only coordinates the pipeline)"; fail=1; }
+printf '%s\n' "$SUB" | grep -qxF '#SBATCH -n 2' && printf '%s\n' "$SUB" | grep -qxF '#SBATCH --mem=8G' && printf '%s\n' "$SUB" | grep -qxF '#SBATCH -p {QUEUE}' \
+  || { echo "FAIL: the head job must request -n 2, --mem=8G and -p {QUEUE} (the head job only coordinates the pipeline)"; fail=1; }
 # nextflow.config: the selector table checked against every process name of the verification runs and the
 # resources the runs requested and used. A row gives '.*:ROW' when every real process name ending in a component that starts
 # with ROW ends in exactly ROW; '.*:ROW[XY]' when every such component is ROW plus one letter (SUPPA2: DIFFSPLICE_IOE,
@@ -711,7 +711,7 @@ types_ok "$BASEY"
 HELP=$(bash "$CUT" "$SKILL" "**Genome download helper.**" 2>/dev/null)
 [ -n "$HELP" ] || { echo "FAIL: genome download helper not found"; fail=1; }
 printf '%s\n' "$HELP" | grep -qx 'set -u' || { echo "FAIL: the download helper must run with set -u"; fail=1; }
-printf '%s\n' "$HELP" | grep -qF '#SBATCH -p {SLURM_PARTITION}' || { echo "FAIL: the download helper must be an sbatch script for partition {SLURM_PARTITION}"; fail=1; }
+printf '%s\n' "$HELP" | grep -qF '#SBATCH -p {QUEUE}' || { echo "FAIL: the download helper must be an sbatch script for partition {QUEUE}"; fail=1; }
 ! printf '%s\n' "$HELP" | grep -qE '(^|[^A-Za-z_])rm( |$)' || { echo "FAIL: the download helper must not remove files (no rm with variable paths)"; fail=1; }
 ! printf '%s\n' "$HELP" | grep -q 'gunzip -k' || { echo "FAIL: gunzip -k is not available on CentOS 7; use gunzip -c file.gz > file"; fail=1; }
 printf '%s\n' "$HELP" | grep -q 'wget -c ' && printf '%s\n' "$HELP" | grep -q 'gunzip -c ' || { echo "FAIL: the download helper must use wget -c and gunzip -c"; fail=1; }
@@ -732,13 +732,13 @@ done
   || { echo "FAIL: cd \"{CWD}\" must be the first command of the submission script"; fail=1; }
 need "it changes to \`{CWD}\` first, so it works wherever it is submitted from"
 # I2: executor, queue, Singularity, mail and node lines of the config and both scripts; --parsable in the dependency line.
-for l in "            executor = 'slurm'" "            queue = '{SLURM_PARTITION}'" "            enabled = true" "            autoMounts = true"; do
+for l in "            executor = 'slurm'" "            queue = '{QUEUE}'" "            enabled = true" "            autoMounts = true"; do
   printf '%s\n' "$CFG" | grep -qxF -- "$l" || { echo "FAIL: the nextflow.config template must contain the line: $l"; fail=1; }
 done
 printf '%s\n' "$CFG" | awk '/^    singularity \{$/ {s = 1} s && /^            enabled = true$/ {e = 1} s && /^            autoMounts = true$/ {a = 1} s && /^    \}$/ {exit} END {exit !(e && a)}' \
   || { echo "FAIL: the singularity profile must set enabled = true and autoMounts = true"; fail=1; }
-printf '%s\n' "$CFG" | awk '/^    slurm \{$/ {s = 1} s && /^            executor = .slurm.$/ {e = 1} s && /^            queue = .\{SLURM_PARTITION\}.$/ {q = 1} s && /^    \}$/ {exit} END {exit !(e && q)}' \
-  || { echo "FAIL: the slurm profile must set executor = 'slurm' and queue = '{SLURM_PARTITION}'"; fail=1; }
+printf '%s\n' "$CFG" | awk '/^    slurm \{$/ {s = 1} s && /^            executor = .slurm.$/ {e = 1} s && /^            queue = .\{QUEUE\}.$/ {q = 1} s && /^    \}$/ {exit} END {exit !(e && q)}' \
+  || { echo "FAIL: the slurm profile must set executor = 'slurm' and queue = '{QUEUE}'"; fail=1; }
 for l in '#SBATCH -N 1' '#SBATCH --mail-type=END,FAIL' '#SBATCH --mail-user={USER_EMAIL}'; do
   printf '%s\n' "$SUB" | grep -qxF -- "$l" || { echo "FAIL: the submission script must contain the line: $l"; fail=1; }
   printf '%s\n' "$HELP" | grep -qxF -- "$l" || { echo "FAIL: the download helper must contain the line: $l"; fail=1; }
@@ -1222,7 +1222,7 @@ need "salmon_strandedness() {"
 need "verify the container URL of the script in this session with a HEAD request"
 STRH_FULL=$(bash "$CUT" "$SKILL" "**Strandedness helper script.**" 2>/dev/null)
 [ -n "$STRH_FULL" ] || { echo "FAIL: strandedness helper script block not found"; fail=1; }
-for l in '#!/bin/bash' '#SBATCH -N 1' '#SBATCH -n 8' '#SBATCH --mem=32G' '#SBATCH -t 2:00:00' '#SBATCH -p {SLURM_PARTITION}' '#SBATCH --mail-type=END,FAIL' '#SBATCH --mail-user={USER_EMAIL}' \
+for l in '#!/bin/bash' '#SBATCH -N 1' '#SBATCH -n 8' '#SBATCH --mem=32G' '#SBATCH -t 2:00:00' '#SBATCH -p {QUEUE}' '#SBATCH --mail-type=END,FAIL' '#SBATCH --mail-user={USER_EMAIL}' \
          '#SBATCH -o infer_strandedness_salmon_{WD_NAME}.%j.log' 'set -u' 'IDX="{STRAND_INDEX}"' \
          '{SINGULARITY_LOAD} || { echo "ERROR: cannot load singularity" >&2; exit 1; }' \
          'command -v singularity >/dev/null || { echo "ERROR: singularity is not on PATH" >&2; exit 1; }' \

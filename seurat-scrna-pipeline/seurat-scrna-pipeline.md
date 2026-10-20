@@ -8,15 +8,15 @@ You are helping the user run single-cell RNA-seq downstream analysis on an HPC c
 
 Before Step 0, read `~/.claude/bioinfo-skills.conf` with `cat` (plain `KEY=value` lines; template: `bioinfo-skills.conf.example` in the skills repo). Do not `source` it. Keys used by this skill:
 
-- `SLURM_PARTITION` — partition/queue; empty = omit
-- `SLURM_PARTITION_ON_CLI` — `yes` = also pass `-p` on the `sbatch` command line (some clusters ignore the `#SBATCH -p` header)
+- `QUEUE` — partition/queue; empty = omit
+- `QUEUE_ON_CLI` — `yes` = also pass `-p` on the `sbatch` command line (some clusters ignore the `#SBATCH -p` header)
 - `SINGULARITY_LOAD` — `;`-separated shell statements that make Singularity/Apptainer available
 - `SIF_DIR` — where `.sif` images live
 - `SC_IMAGE` — Docker URI of the single-cell image (default `docker://yannvrb56/r4_6_0_python3_singlecell_visium:latest`)
 - `AZIMUTH_REFS_DIR` — Azimuth reference packages; empty = skip Azimuth
 - `WEB_URL_PREFIX` — optional URL prefix for report links
 
-If the file or a needed key is missing, ask the user for the value (an empty answer means "not needed on my system"), use it for this run, and offer to save it to `~/.claude/bioinfo-skills.conf`. Never assume values from another site. Wherever this skill shows `{SLURM_PARTITION}` etc., substitute the configured value; if `SLURM_PARTITION` is empty, omit every `-p` / `queue` line. `{PCLI_FLAG}` means `-p {SLURM_PARTITION} ` when `SLURM_PARTITION_ON_CLI=yes` and nothing otherwise; use it in every `sbatch` command you show the user. Where a line shows `{CONDA_SETUP}`, `{SINGULARITY_LOAD}` or `{RNASEQ_TOOLS_LOAD}`, write each `;`-separated statement on its own line, ending with the guard shown on that line; omit the line when the key is empty.
+If the file or a needed key is missing, ask the user for the value (an empty answer means "not needed on my system"), use it for this run, and offer to save it to `~/.claude/bioinfo-skills.conf`. Never assume values from another site. Wherever this skill shows `{QUEUE}` etc., substitute the configured value; if `QUEUE` is empty, omit every `-p` / `queue` line. `{PCLI_FLAG}` means `-p {QUEUE} ` when `QUEUE_ON_CLI=yes` and nothing otherwise; use it in every `sbatch` command you show the user. Where a line shows `{CONDA_SETUP}`, `{SINGULARITY_LOAD}` or `{RNASEQ_TOOLS_LOAD}`, write each `;`-separated statement on its own line, ending with the guard shown on that line; omit the line when the key is empty.
 
 **Safety notice — tell the user once at the start:** "These are unofficial, AI-agent instructions and are not endorsed by nf-core. Review every generated samplesheet, config and script before submitting anything."
 
@@ -462,7 +462,7 @@ One script per Rmd. SLURM template:
 #SBATCH -n {CPUS}
 #SBATCH --mem={MEM}
 #SBATCH -t {TIME}
-#SBATCH -p {SLURM_PARTITION}
+#SBATCH -p {QUEUE}
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user={USER_EMAIL}
 #SBATCH -o {LOG_FILE}
@@ -639,7 +639,7 @@ Submission order:
 - Tool versions for methods text: Cell Ranger in `pipeline_info/nf_core_scrnaseq_software_mqc_versions.yml`; CellBender only in `cellrangermulti/*/cellbender_removebackground/*.log`.
 
 ### SLURM
-- If `SLURM_PARTITION_ON_CLI=yes`, always submit with `sbatch -p {SLURM_PARTITION} script.sh` (the header alone is ignored on that cluster); otherwise plain `sbatch script.sh`.
+- If `QUEUE_ON_CLI=yes`, always submit with `sbatch -p {QUEUE} script.sh` (the header alone is ignored on that cluster); otherwise plain `sbatch script.sh`.
 - Never run R, Singularity, or heavy computation on the login node.
 - Load Singularity with the configured `SINGULARITY_LOAD` line.
 

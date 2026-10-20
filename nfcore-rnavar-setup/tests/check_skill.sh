@@ -312,7 +312,7 @@ need '`Homo_sapiens_assembly38.dbsnp138.vcf.gz` (dbSNP, 1,560,889,937 bytes)'
 need '`Mills_and_1000G_gold_standard.indels.hg38.vcf.gz` (known indels, 20,685,880 bytes)'
 need 'Do NOT use the plain `Homo_sapiens_assembly38.dbsnp138.vcf`'
 # D8: head-job resources
-need '#SBATCH -N 1 -n 2 --mem=8G -t 2-00:00:00 -p {SLURM_PARTITION}'
+need '#SBATCH -N 1 -n 2 --mem=8G -t 2-00:00:00 -p {QUEUE}'
 forbid '#SBATCH -n 32'
 need 'a deliberate exception to the usual 4 h default'
 sub_block=$(awk '/^```bash/{f=1;b="";next} /^```/{if(f&&b~/nextflow run nf-core\/rnavar/)print b; f=0;next} f{b=b $0 "\n"}' "$SKILL")

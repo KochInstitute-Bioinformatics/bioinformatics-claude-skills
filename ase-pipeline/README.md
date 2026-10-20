@@ -49,7 +49,7 @@ Then invoke it in Claude Code:
 
 | Requirement | Notes |
 |-------------|-------|
-| SLURM scheduler | Every job is submitted with `sbatch`, using the partition from the [site config](../README.md#configure-your-site) (`SLURM_PARTITION`, `SLURM_PARTITION_ON_CLI`); nothing heavy runs on the login node |
+| SLURM scheduler | Every job is submitted with `sbatch`, using the partition from the [site config](../README.md#configure-your-site) (`QUEUE`, `QUEUE_ON_CLI`); nothing heavy runs on the login node |
 | Singularity/Apptainer | Loaded via `SINGULARITY_LOAD` in the site config for every tool (tested with 3.10); the only other load line is `CONDA_SETUP`, in the one-time phASER installation job |
 | Cached biocontainers | In `$NXF_SINGULARITY_CACHEDIR` (or `~/.singularity/cache`): STAR 2.7.10b, GATK 4.4.0.0, bcftools 1.20, samtools 1.21, Picard 3.1.1 (`depot.galaxyproject.org-singularity-*.img`); a missing image is downloaded by the prep job (it fetches all five, Picard included, so the per-sample array job only checks for them), never in the foreground on the login node |
 | `bulkrnaseq` image | `bulkrnaseq_latest.sif` in `SIF_DIR` (built from `BULK_IMAGE`, Dockerfile in [`containers/bulkrnaseq`](../containers/bulkrnaseq)), the only place R is available; needs `openxlsx`, `tidyverse`, `GenomicRanges`, `rtracklayer` (checked by a tiny `sbatch` job in Step 2) |

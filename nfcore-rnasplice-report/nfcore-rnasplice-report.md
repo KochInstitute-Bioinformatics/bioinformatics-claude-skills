@@ -15,13 +15,13 @@ Rules that hold for every step:
 
 Before Step 0, read `~/.claude/bioinfo-skills.conf` with `cat` (plain `KEY=value` lines; template: `bioinfo-skills.conf.example` in the skills repo). Do not `source` it. Keys used by this skill:
 
-- `SLURM_PARTITION` — partition/queue; empty = omit
+- `QUEUE` — partition/queue; empty = omit
 - `SINGULARITY_LOAD` — `;`-separated shell statements that make Singularity/Apptainer available
 - `SINGULARITY_BIND` — comma-separated host directories always bound into containers (e.g. a network filesystem root); empty = none
 - `SIF_DIR` — where `.sif` images live
 - `BULK_IMAGE` — Docker URI of the R image (default `docker://yannvrb56/bulkrnaseq:latest`)
 
-If the file or a needed key is missing, ask the user for the value (an empty answer means "not needed on my system"), use it for this run, and offer to save it to `~/.claude/bioinfo-skills.conf`. Never assume values from another site. Wherever this skill shows `{SLURM_PARTITION}` etc., substitute the configured value; if `SLURM_PARTITION` is empty, omit every `-p` / `queue` line. `{PCLI_FLAG}` means `-p {SLURM_PARTITION} ` when `SLURM_PARTITION_ON_CLI=yes` and nothing otherwise; use it in every `sbatch` command you show the user. Where a line shows `{CONDA_SETUP}`, `{SINGULARITY_LOAD}` or `{RNASEQ_TOOLS_LOAD}`, write each `;`-separated statement on its own line, ending with the guard shown on that line; omit the line when the key is empty. In the generated job templates the statements are joined into one value: `{SINGULARITY_LOAD}` is the configured statements joined with ` || exit 1; ` and the template line adds the last ` || exit 1` (`true` when the key is empty).
+If the file or a needed key is missing, ask the user for the value (an empty answer means "not needed on my system"), use it for this run, and offer to save it to `~/.claude/bioinfo-skills.conf`. Never assume values from another site. Wherever this skill shows `{QUEUE}` etc., substitute the configured value; if `QUEUE` is empty, omit every `-p` / `queue` line. `{PCLI_FLAG}` means `-p {QUEUE} ` when `QUEUE_ON_CLI=yes` and nothing otherwise; use it in every `sbatch` command you show the user. Where a line shows `{CONDA_SETUP}`, `{SINGULARITY_LOAD}` or `{RNASEQ_TOOLS_LOAD}`, write each `;`-separated statement on its own line, ending with the guard shown on that line; omit the line when the key is empty. In the generated job templates the statements are joined into one value: `{SINGULARITY_LOAD}` is the configured statements joined with ` || exit 1; ` and the template line adds the last ` || exit 1` (`true` when the key is empty).
 
 **Safety notice — tell the user once at the start:** "These are unofficial, AI-agent instructions and are not endorsed by nf-core. Review every generated samplesheet, config and script before submitting anything."
 
@@ -77,7 +77,7 @@ The reports run R inside the Singularity image `{SIF}`. Ask (default 1): "Which 
 mkdir -p '{REPORT_DIR}/image_check'
 cat > '{REPORT_DIR}/image_check/pull_image.sbatch' <<'EOF'
 #!/bin/bash
-#SBATCH -p {SLURM_PARTITION}
+#SBATCH -p {QUEUE}
 #SBATCH -c 2
 #SBATCH --mem=8G
 #SBATCH -t 1:00:00
@@ -105,7 +105,7 @@ for (p in opt)  cat(sprintf("OPTIONAL %s %s\n", p, requireNamespace(p, quietly =
 EOF
 cat > '{REPORT_DIR}/image_check/check_packages.sbatch' <<'EOF'
 #!/bin/bash
-#SBATCH -p {SLURM_PARTITION}
+#SBATCH -p {QUEUE}
 #SBATCH -c 1
 #SBATCH --mem=4G
 #SBATCH -t 0:20:00
@@ -306,7 +306,7 @@ Ask one question per value and state the default:
 
 A typed memory or time is accepted only in its form (the rule on free-text values in Step 0 applies): memory digits followed by `G` or `M` (`32G`), time `H:MM:SS` or `D-H:MM:SS` (`4:00:00`); any other answer is asked again.
 
-Every generated script uses partition `{SLURM_PARTITION}` (no partition line when it is empty), one node, one task and four CPUs (`-N 1 -n 1 -c 4`). A value above 64G or 4:00:00 is written only when the user asks for it by name; the generator then prints a note that the value is above the default limits. Tell the user the values in one line.
+Every generated script uses partition `{QUEUE}` (no partition line when it is empty), one node, one task and four CPUs (`-N 1 -n 1 -c 4`). A value above 64G or 4:00:00 is written only when the user asks for it by name; the generator then prints a note that the value is above the default limits. Tell the user the values in one line.
 
 ---
 
@@ -395,7 +395,7 @@ echo "JOBS=$(printf '%s\n' $JOBS | cut -d: -f1 | tr '\n' ' ' | sed 's/ $//')"
 ```
 #!/bin/bash
 #SBATCH -J __JOBNAME_____N__
-#SBATCH -p __PARTITION__
+#SBATCH -p __QUEUE__
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -c 4
@@ -442,7 +442,7 @@ for p in "$R" '{OUTDIR_RNASPLICE}' '{CWD}' '{SIF}' '{GTF}' '{CONTRASTS_CSV}' '{S
   case "$p" in *[[:space:],]*) echo "ERROR: $p holds a space or a comma and cannot be bound into the container"; exit 1 ;; esac
   case "$p" in /*) q=$(dirname "$p"); case ",$BIND," in *",$q,"*) ;; *) BIND="${BIND:+$BIND,}$q" ;; esac ;; esac
 done
-set -- R "$R" OUT '{OUTDIR_RNASPLICE}' SIF '{SIF}' PARTITION '{SLURM_PARTITION}' EMAIL '{EMAIL}' JOBNAME '{PROJECT}_report' MEM '{MEM}' TIME '{TIME}' \
+set -- R "$R" OUT '{OUTDIR_RNASPLICE}' SIF '{SIF}' QUEUE '{QUEUE}' EMAIL '{EMAIL}' JOBNAME '{PROJECT}_report' MEM '{MEM}' TIME '{TIME}' \
   SINGULARITY_LOAD "$SL" CONTRASTS '{CONTRASTS_CSV}' SAMPLESHEET '{SAMPLESHEET}' MODULES '{MODULES}' RMATS_TYPE '{RMATS_TYPE}' \
   FDR '{FDR}' DPSI '{DPSI}' MIN_READS '{MIN_READS}' ORGANISM '{ORGANISM}' GTF '{GTF}' ENRICH_DBS '{ENRICH_DBS}' BIND "$BIND" \
   EVENTS "$(b events)" CROSS "$(b cross)" TOPGENE "$(b topgene)" ENRICH "$(b enrich)" \
@@ -458,7 +458,7 @@ echo "wrote $T/settings.sed"
 
 **Rendering the scripts.** It writes one `run_NN.sbatch` per job of the list and `run_all.sh`, which only calls sbatch:
 ```bash
-R='{REPORT_DIR}'; T="$R/templates"; EMAIL='{EMAIL}'; PARTITION='{SLURM_PARTITION}'
+R='{REPORT_DIR}'; T="$R/templates"; EMAIL='{EMAIL}'; QUEUE='{QUEUE}'
 for f in jobs.txt settings.sed run_job.sbatch.tpl run_all.tpl; do
   [ -s "$T/$f" ] || { echo "ERROR: $T/$f is missing or empty: run the earlier blocks and write the templates first"; exit 1; }
 done
@@ -471,7 +471,7 @@ while IFS=: read -r n rmd; do
   OUTF=""; if [ "$n" = 07 ]; then OUTF='output_file = "report_summary.html", '; fi
   sed -f "$T/settings.sed" -e "s|__N__|$n|g" -e "s|__RMD__|$rmd|g" -e "s|__OUTFILE__|$OUTF|g" "$T/run_job.sbatch.tpl" > "$R/run_$n.sbatch"
   case "$EMAIL" in ""|none) sed -i '/^#SBATCH ..mail-/d' "$R/run_$n.sbatch" ;; esac
-  case "$PARTITION" in "") sed -i '/^#SBATCH -p /d' "$R/run_$n.sbatch" ;; esac
+  case "$QUEUE" in "") sed -i '/^#SBATCH -p /d' "$R/run_$n.sbatch" ;; esac
   case "$n" in 01) l=$first ;; 07) l=$last ;; *) l=$after ;; esac
   printf '%s\n' "$l" | sed -e "s|__N__|$n|g" -e "s|__DEPS__|$ALLDEP|" >> "$R/run_all.sh"
   case "$n" in 07) ;; *) ALLDEP="${ALLDEP:+$ALLDEP:}\$JOB$n" ;; esac
@@ -479,7 +479,7 @@ while IFS=: read -r n rmd; do
 done < "$T/jobs.txt"
 grep '^echo' "$T/run_all.tpl" | sed "s|__ALLJ__|$ALLJ|" >> "$R/run_all.sh"
 MK='__R__|__OUT__|__SIF__|__EMAIL__|__JOBNAME__|__MEM__|__TIME__|__CONTRASTS__|__SAMPLESHEET__|__MODULES__|__RMATS_TYPE__|__FDR__|__DPSI__|__MIN_READS__'
-MK="$MK|__ORGANISM__|__GTF__|__ENRICH_DBS__|__BIND__|__EVENTS__|__CROSS__|__TOPGENE__|__ENRICH__|__PAIRED_RMATS__|__PAIRED_SUPPA__|__N__|__RMD__|__OUTFILE__|__DEPS__|__ALLJ__|__PARTITION__|__SINGULARITY_LOAD__"
+MK="$MK|__ORGANISM__|__GTF__|__ENRICH_DBS__|__BIND__|__EVENTS__|__CROSS__|__TOPGENE__|__ENRICH__|__PAIRED_RMATS__|__PAIRED_SUPPA__|__N__|__RMD__|__OUTFILE__|__DEPS__|__ALLJ__|__QUEUE__|__SINGULARITY_LOAD__"
 for f in "$R"/run_[0-9][0-9].sbatch "$R/run_all.sh"; do
   if [ ! -s "$f" ] || grep -Eq "($MK)" "$f"; then echo "ERROR: $f is empty or still holds a template marker"; exit 1; fi
 done

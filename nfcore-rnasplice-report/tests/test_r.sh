@@ -1,7 +1,7 @@
 #!/bin/bash
 # Usage: test_r.sh <skill.md>
 # Runs the R tests of the skill (the five scripts tests/r/test_*.R, see tests/r/run_r_tests.sh) in the R image on a compute node: submits tests/r/run_r_tests.sh
-# with sbatch --wait on the site partition (RSR_PARTITION, else SLURM_PARTITION of ~/.claude/bioinfo-skills.conf, else none) and prints the job's log. This script itself only calls sbatch; R never runs here.
+# with sbatch --wait on the site partition (RSR_PARTITION, else QUEUE of ~/.claude/bioinfo-skills.conf, else none) and prints the job's log. This script itself only calls sbatch; R never runs here.
 # Refuses to run when sbatch is not on the PATH. The skill file must be on the shared file system (the job reads it).
 # The job log goes to a fresh directory under RSR_SHARED_TMP (required: a scratch directory visible from the compute nodes),
 # removed at exit.
@@ -15,7 +15,7 @@ type -P sbatch > /dev/null || { echo "R SUITE FAIL: sbatch not found on the PATH
 [ -s "$SKILL" ] || { echo "R SUITE FAIL: skill file missing or empty: $SKILL"; exit 1; }
 BASE=${RSR_SHARED_TMP:-}
 [ -n "$BASE" ] || { echo "R SUITE FAIL: set RSR_SHARED_TMP to a scratch directory that the compute nodes can see"; exit 1; }
-PART=${RSR_PARTITION:-$(sed -n 's/^SLURM_PARTITION=//p' "${BIOINFO_SKILLS_CONF:-$HOME/.claude/bioinfo-skills.conf}" 2>/dev/null | tail -n 1)}
+PART=${RSR_PARTITION:-$(sed -n 's/^QUEUE=//p' "${BIOINFO_SKILLS_CONF:-$HOME/.claude/bioinfo-skills.conf}" 2>/dev/null | tail -n 1)}
 mkdir -p "$BASE" || exit 1
 T=$(mktemp -d "$BASE/rsr.XXXXXXXXXX") || exit 1
 trap 'rm -f "$T"/rsr_r_*.out "$T/submit.out"; rmdir "$T"' EXIT

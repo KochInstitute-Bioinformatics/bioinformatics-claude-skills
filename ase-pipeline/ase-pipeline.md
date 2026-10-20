@@ -17,14 +17,14 @@ Two experimental designs share one wizard:
 
 Before Step 0, read `~/.claude/bioinfo-skills.conf` with `cat` (plain `KEY=value` lines; template: `bioinfo-skills.conf.example` in the skills repo). Do not `source` it. Keys used by this skill:
 
-- `SLURM_PARTITION` — partition/queue; empty = omit
-- `SLURM_PARTITION_ON_CLI` — `yes` = also pass `-p` on the `sbatch` command line (some clusters ignore the `#SBATCH -p` header)
+- `QUEUE` — partition/queue; empty = omit
+- `QUEUE_ON_CLI` — `yes` = also pass `-p` on the `sbatch` command line (some clusters ignore the `#SBATCH -p` header)
 - `SINGULARITY_LOAD` — `;`-separated shell statements that make Singularity/Apptainer available
 - `CONDA_SETUP` — `;`-separated shell statements run before `conda activate`
 - `SIF_DIR` — where `.sif` images live
 - `BULK_IMAGE` — Docker URI of the R image (`bulkrnaseq`)
 
-If the file or a needed key is missing, ask the user for the value (an empty answer means "not needed on my system"), use it for this run, and offer to save it to `~/.claude/bioinfo-skills.conf`. Never assume values from another site. Wherever this skill shows `{SLURM_PARTITION}` etc., substitute the configured value; if `SLURM_PARTITION` is empty, omit every `-p` / `queue` line. `{PCLI_FLAG}` means `-p {SLURM_PARTITION} ` when `SLURM_PARTITION_ON_CLI=yes` and nothing otherwise; use it in every `sbatch` command you show the user. Where a line shows `{CONDA_SETUP}`, `{SINGULARITY_LOAD}` or `{RNASEQ_TOOLS_LOAD}`, write each `;`-separated statement on its own line, ending with the guard shown on that line; omit the line when the key is empty.
+If the file or a needed key is missing, ask the user for the value (an empty answer means "not needed on my system"), use it for this run, and offer to save it to `~/.claude/bioinfo-skills.conf`. Never assume values from another site. Wherever this skill shows `{QUEUE}` etc., substitute the configured value; if `QUEUE` is empty, omit every `-p` / `queue` line. `{PCLI_FLAG}` means `-p {QUEUE} ` when `QUEUE_ON_CLI=yes` and nothing otherwise; use it in every `sbatch` command you show the user. Where a line shows `{CONDA_SETUP}`, `{SINGULARITY_LOAD}` or `{RNASEQ_TOOLS_LOAD}`, write each `;`-separated statement on its own line, ending with the guard shown on that line; omit the line when the key is empty.
 
 **Safety notice — tell the user once at the start:** "These are unofficial, AI-agent instructions and are not endorsed by nf-core. Review every generated samplesheet, config and script before submitting anything."
 
@@ -85,7 +85,7 @@ Tell the user which containers are already cached and which the helper will down
 ```bash
 #!/bin/bash
 #SBATCH -J ase_rpkgs
-#SBATCH -p {SLURM_PARTITION}
+#SBATCH -p {QUEUE}
 #SBATCH -n 1 --mem=4G -t 0:10:00
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user={USER_EMAIL}
@@ -95,7 +95,7 @@ singularity exec --bind {CWD} {R_SIF} \
   Rscript -e 'for (p in c("openxlsx","tidyverse","GenomicRanges","rtracklayer")) cat(p, requireNamespace(p, quietly = TRUE), "\n")'
 ```
 
-Mandatory packages: `openxlsx`, `tidyverse`, `GenomicRanges`, `rtracklayer` (the beta-binomial models are base R; `aod` is used only by the unit tests and `lme4` is not used). Submit it with `sbatch {PCLI_FLAG}check_r_packages.sh` (every job is submitted with the partition flag when `SLURM_PARTITION_ON_CLI=yes`), wait for the job to finish, then read the result from the job output file `check_r_packages_<jobid>.out`. If any mandatory package prints `FALSE`, **stop** and ask the user to rebuild the `bulkrnaseq` image; do not substitute another model or package. (`VGAM`, `glmmTMB`, `MBASED` and `VariantAnnotation` are absent from the image and must never be required.)
+Mandatory packages: `openxlsx`, `tidyverse`, `GenomicRanges`, `rtracklayer` (the beta-binomial models are base R; `aod` is used only by the unit tests and `lme4` is not used). Submit it with `sbatch {PCLI_FLAG}check_r_packages.sh` (every job is submitted with the partition flag when `QUEUE_ON_CLI=yes`), wait for the job to finish, then read the result from the job output file `check_r_packages_<jobid>.out`. If any mandatory package prints `FALSE`, **stop** and ask the user to rebuild the `bulkrnaseq` image; do not substitute another model or package. (`VGAM`, `glmmTMB`, `MBASED` and `VariantAnnotation` are absent from the image and must never be required.)
 
 ---
 
@@ -269,14 +269,14 @@ What is verified and what is not: on the synthetic test (small genome, about 100
 
 Measured on real data with this pinned environment (chr22 only, two GEUVADIS RNA-seq samples, GRCh37, about 29,000 heterozygous sites each): `phaser.py` took 2-3.6 s and about 117 MB per sample, `phaser_gene_ae` about 1.5 s. A separate run with a VCF of 2.57 million heterozygous sites (the chr22 sites copied onto the other chromosomes, with the same chr22 reads) took 32 s and 1.59 GB, so memory grows mainly with the number of heterozygous sites. **Projected, not measured:** a whole-genome sample like these (about 30 million read pairs) needs about 3-5 min and 2-3 GB. This projection uses an **assumed** genome-wide heterozygous-site count (chr22's share of the genome length, about 1.75 million per sample; no measured count was available) and scales the read part linearly from chr22 (2.36% of the mapped reads); it agrees with the upstream benchmark's 88 s for NA06986 (its tuned setting, one thread), but no whole-genome sample was run. The large tier keeps headroom for that uncertainty and for deeper samples or more heterozygous sites: 16 GB is about 5 times the upper projected memory (3 GB) and 2 h about 24 times the upper projected time (5 min), within the 64 GB and 4 h defaults. The synthetic timings above say nothing for real data. If a task stops with `due to time limit` or `out of memory` (`wait_chain.sh` prints it, Step 15), raise `-t` or `--mem` for `phaser_count.sh` and re-submit only that job (Step 15, Re-submitting part of the chain, recipe C); after the first real run, `seff <jobid>` (when available) shows what the tasks used. The installation job requests `-n 4 --mem=16G -t 2:00:00` (Step 18).
 
-The prep jobs (index build, reference and VCF preparation) are scaled by genome size (approximate it from `stat -c %s FASTA` or an existing `.fai`, never by reading the FASTA on the login node): over 1 Gb `-n 8 --mem=64G -t 4:00:00`; under 100 Mb `-n 4 --mem=8G -t 0:30:00`; in between `-n 8 --mem=32G -t 2:00:00`. Never request more than 64 G or 4 h unless the user asks. Every job is submitted with `sbatch -p {SLURM_PARTITION}`.
+The prep jobs (index build, reference and VCF preparation) are scaled by genome size (approximate it from `stat -c %s FASTA` or an existing `.fai`, never by reading the FASTA on the login node): over 1 Gb `-n 8 --mem=64G -t 4:00:00`; under 100 Mb `-n 4 --mem=8G -t 0:30:00`; in between `-n 8 --mem=32G -t 2:00:00`. Never request more than 64 G or 4 h unless the user asks. Every job is submitted with `sbatch -p {QUEUE}`.
 
 
 ---
 
 ## Step 10 — Reference and genotype preparation scripts
 
-Write every script below into `{RESULTS_DIR}/scripts/` (create `{RESULTS_DIR}/scripts`, `{RESULTS_DIR}/logs`, `{RESULTS_DIR}/tmp` first: `sbatch` silently drops output when the `-o` directory is missing, and `/tmp` is node-local, so job outputs and temporary files always go under `{RESULTS_DIR}`). Substitute the placeholders from Steps 0-9; never leave a `{...}` in a script. Every generated script starts with `set -uo pipefail` and checks the exit code of every step itself (`|| { echo "ERROR: ..." >&2; exit 1; }`), never a blind `set -e`. The prep jobs use the prep tier from Step 9 (`{PREP_RESOURCES}`, for example `-n 4 --mem=8G -t 0:30:00`) and the array jobs use `{ARRAY_RESOURCES}` (the `-n/--mem/-t` triple chosen in Step 9); every job is submitted with `sbatch -p {SLURM_PARTITION}`.
+Write every script below into `{RESULTS_DIR}/scripts/` (create `{RESULTS_DIR}/scripts`, `{RESULTS_DIR}/logs`, `{RESULTS_DIR}/tmp` first: `sbatch` silently drops output when the `-o` directory is missing, and `/tmp` is node-local, so job outputs and temporary files always go under `{RESULTS_DIR}`). Substitute the placeholders from Steps 0-9; never leave a `{...}` in a script. Every generated script starts with `set -uo pipefail` and checks the exit code of every step itself (`|| { echo "ERROR: ..." >&2; exit 1; }`), never a blind `set -e`. The prep jobs use the prep tier from Step 9 (`{PREP_RESOURCES}`, for example `-n 4 --mem=8G -t 0:30:00`) and the array jobs use `{ARRAY_RESOURCES}` (the `-n/--mem/-t` triple chosen in Step 9); every job is submitted with `sbatch -p {QUEUE}`.
 
 | Script | Mode | Purpose |
 |---|---|---|
@@ -382,7 +382,7 @@ STAR prints "Could not move Log.out" for the index build when `--outFileNamePref
 
 ### `prep_f1_reference.sh` (F1 mode)
 
-Header: `#!/bin/bash`, `#SBATCH -N 1 -p {SLURM_PARTITION}`, `#SBATCH {PREP_RESOURCES}`, `#SBATCH --mail-type=END,FAIL`, `#SBATCH --mail-user={USER_EMAIL}`, `#SBATCH -o {RESULTS_DIR}/logs/prep_f1_reference_%j.out`, `set -uo pipefail`, block C with the prep container fetch below (all five wrappers are defined; plus `add_bind "$(dirname "{PARENTAL_VCF}")"`), then:
+Header: `#!/bin/bash`, `#SBATCH -N 1 -p {QUEUE}`, `#SBATCH {PREP_RESOURCES}`, `#SBATCH --mail-type=END,FAIL`, `#SBATCH --mail-user={USER_EMAIL}`, `#SBATCH -o {RESULTS_DIR}/logs/prep_f1_reference_%j.out`, `set -uo pipefail`, block C with the prep container fetch below (all five wrappers are defined; plus `add_bind "$(dirname "{PARENTAL_VCF}")"`), then:
 
 ```bash
 REF_DIR="{RESULTS_DIR}/reference"; mkdir -p "$REF_DIR" || exit 1
@@ -600,7 +600,7 @@ For the two named strains (`{STRAIN_A}` = the reference strain, for example `C57
 curl -sI "https://ftp.ebi.ac.uk/pub/databases/mousegenomes/REL-2112-v8-SNPs_Indels/mgp_REL2021_snps.vcf.gz" | head -1
 ```
 
-The release is GRCm39 and its contigs are `1`, `2`, ... (no `chr` prefix), so the FASTA must be GRCm39 with the same names. **The helper needs neither the FASTA nor its `.fai`**: it runs before the prep job, which is the job that downloads or decompresses the FASTA and writes the `.fai`, so the helper must never read them (and the wizard never reads the FASTA on the login node). The wizard writes `{RESULTS_DIR}/mgp/chromosomes.txt` from the fixed GRCm39 list, one name per line: `1` ... `19`, `X` (20 lines; Y and MT are not queried), and sets `{N_CHROM}` = 20. Each array task checks on its compute node that its chromosome is a contig of the Mouse Genomes Project VCF header; the comparison of the parental VCF's contigs with the FASTA happens in the prep job (contig guard, step 1 of `prep_f1_reference.sh`), on a compute node, once the FASTA and `.fai` exist and before any alignment. Header: `#SBATCH -N 1 -p {SLURM_PARTITION}`, `#SBATCH --array=1-{N_CHROM}`, `#SBATCH -n 2 --mem=8G -t 4:00:00`, mail lines, `#SBATCH -o {RESULTS_DIR}/logs/extract_mgp_%A_%a.out`, `set -uo pipefail`, block C with the helper's bind line (see the table in block C: `add_bind "{CWD}"` only, never the genome folder), plus `add_bind "{RESULTS_DIR}"`, then:
+The release is GRCm39 and its contigs are `1`, `2`, ... (no `chr` prefix), so the FASTA must be GRCm39 with the same names. **The helper needs neither the FASTA nor its `.fai`**: it runs before the prep job, which is the job that downloads or decompresses the FASTA and writes the `.fai`, so the helper must never read them (and the wizard never reads the FASTA on the login node). The wizard writes `{RESULTS_DIR}/mgp/chromosomes.txt` from the fixed GRCm39 list, one name per line: `1` ... `19`, `X` (20 lines; Y and MT are not queried), and sets `{N_CHROM}` = 20. Each array task checks on its compute node that its chromosome is a contig of the Mouse Genomes Project VCF header; the comparison of the parental VCF's contigs with the FASTA happens in the prep job (contig guard, step 1 of `prep_f1_reference.sh`), on a compute node, once the FASTA and `.fai` exist and before any alignment. Header: `#SBATCH -N 1 -p {QUEUE}`, `#SBATCH --array=1-{N_CHROM}`, `#SBATCH -n 2 --mem=8G -t 4:00:00`, mail lines, `#SBATCH -o {RESULTS_DIR}/logs/extract_mgp_%A_%a.out`, `set -uo pipefail`, block C with the helper's bind line (see the table in block C: `add_bind "{CWD}"` only, never the genome folder), plus `add_bind "{RESULTS_DIR}"`, then:
 
 ```bash
 URL="https://ftp.ebi.ac.uk/pub/databases/mousegenomes/REL-2112-v8-SNPs_Indels/mgp_REL2021_snps.vcf.gz"
@@ -627,7 +627,7 @@ echo "Chromosome $CHR: $(bcftools view -H "$RAW" | wc -l) PASS SNPs, $(bcftools 
 
 Submit the array job first, then the concat job as its own script (`concat_mgp_parental_vcf.sh` has no `--array` header, so exactly one task runs and nothing races on `{PARENTAL_VCF}`): `J=$(sbatch {PCLI_FLAG}--parsable extract_mgp_parental_vcf.sh)`, `C=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$J concat_mgp_parental_vcf.sh)`, and `prep_f1_reference.sh` only after the concat job (`--dependency=afterok:$C`).
 
-**`concat_mgp_parental_vcf.sh`** header: `#SBATCH -N 1 -p {SLURM_PARTITION}`, `#SBATCH -n 1 --mem=4G -t 1:00:00`, mail lines, `#SBATCH -o {RESULTS_DIR}/logs/concat_mgp_%j.out`, `set -uo pipefail`, block C with the helper's bind line (`add_bind "{CWD}"` only), plus `add_bind "{RESULTS_DIR}"`, then:
+**`concat_mgp_parental_vcf.sh`** header: `#SBATCH -N 1 -p {QUEUE}`, `#SBATCH -n 1 --mem=4G -t 1:00:00`, mail lines, `#SBATCH -o {RESULTS_DIR}/logs/concat_mgp_%j.out`, `set -uo pipefail`, block C with the helper's bind line (`add_bind "{CWD}"` only), plus `add_bind "{RESULTS_DIR}"`, then:
 
 ```bash
 MGP_DIR="{RESULTS_DIR}/mgp"; OUT_VCF="{PARENTAL_VCF}"
@@ -649,7 +649,7 @@ Sites where strain A carries the alternative allele (the reference genome is C57
 
 ## Step 11 — Per-sample array scripts
 
-Both scripts are SLURM array jobs (`#SBATCH --array=1-{ARRAY_N}`, `#SBATCH {ARRAY_RESOURCES}`), take row `SLURM_ARRAY_TASK_ID` of `{SAMPLES_CSV}` (data row 1 = task 1), and write the outputs below. Header: `#!/bin/bash`, `#SBATCH -N 1 -p {SLURM_PARTITION}`, `#SBATCH --array=1-{ARRAY_N}`, `#SBATCH {ARRAY_RESOURCES}`, `#SBATCH --mail-type=END,FAIL`, `#SBATCH --mail-user={USER_EMAIL}`, and one log per array task, `%A` = array job id and `%a` = task id: `#SBATCH -o {RESULTS_DIR}/logs/align_count_f1_%A_%a.out` (F1) or `#SBATCH -o {RESULTS_DIR}/logs/align_wasp_count_%A_%a.out` (outbred). They use block C, but the containers must already be cached by the prep job (it fetches all five, see "Prep container fetch" in Step 10), so parallel tasks never download the same file: in these scripts define `fetch_sif` as a check only, `fetch_sif() { [ -s "$1" ] || { echo "ERROR: missing container $1 (run the prep job first)" >&2; exit 1; }; }`, and **call** it for each container the script uses, on the lines right after block C (see "Per-script fetch lines" in Step 10): `fetch_sif "$STAR_SIF"; fetch_sif "$GATK_SIF"; fetch_sif "$SAMTOOLS_SIF"; fetch_sif "$PICARD_SIF"`. The wrapper functions are `star`, `gatk`, `samtools` and `picard` (the table in Step 10, block C). `{MIN_MAPQ}` and `{MIN_BASEQ}` are the ASEReadCounter thresholds recorded in Step 8.
+Both scripts are SLURM array jobs (`#SBATCH --array=1-{ARRAY_N}`, `#SBATCH {ARRAY_RESOURCES}`), take row `SLURM_ARRAY_TASK_ID` of `{SAMPLES_CSV}` (data row 1 = task 1), and write the outputs below. Header: `#!/bin/bash`, `#SBATCH -N 1 -p {QUEUE}`, `#SBATCH --array=1-{ARRAY_N}`, `#SBATCH {ARRAY_RESOURCES}`, `#SBATCH --mail-type=END,FAIL`, `#SBATCH --mail-user={USER_EMAIL}`, and one log per array task, `%A` = array job id and `%a` = task id: `#SBATCH -o {RESULTS_DIR}/logs/align_count_f1_%A_%a.out` (F1) or `#SBATCH -o {RESULTS_DIR}/logs/align_wasp_count_%A_%a.out` (outbred). They use block C, but the containers must already be cached by the prep job (it fetches all five, see "Prep container fetch" in Step 10), so parallel tasks never download the same file: in these scripts define `fetch_sif` as a check only, `fetch_sif() { [ -s "$1" ] || { echo "ERROR: missing container $1 (run the prep job first)" >&2; exit 1; }; }`, and **call** it for each container the script uses, on the lines right after block C (see "Per-script fetch lines" in Step 10): `fetch_sif "$STAR_SIF"; fetch_sif "$GATK_SIF"; fetch_sif "$SAMTOOLS_SIF"; fetch_sif "$PICARD_SIF"`. The wrapper functions are `star`, `gatk`, `samtools` and `picard` (the table in Step 10, block C). `{MIN_MAPQ}` and `{MIN_BASEQ}` are the ASEReadCounter thresholds recorded in Step 8.
 
 | Output | Content |
 |---|---|
@@ -1008,7 +1008,7 @@ The template below shows the second case:
 ```bash
 #!/bin/bash
 #SBATCH -J ase_01_import_qc
-#SBATCH -N 1 -p {SLURM_PARTITION}
+#SBATCH -N 1 -p {QUEUE}
 #SBATCH -n 1 --mem=16G -t 1:00:00
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user={USER_EMAIL}
@@ -2520,7 +2520,7 @@ Written to `{RESULTS_DIR}/scripts/setup_phaser_env.sh` (substitute the placehold
 ```bash
 #!/bin/bash
 #SBATCH -J ase_phaser_setup
-#SBATCH -N 1 -p {SLURM_PARTITION}
+#SBATCH -N 1 -p {QUEUE}
 #SBATCH -n 4 --mem=16G -t 2:00:00
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user={USER_EMAIL}
@@ -2597,7 +2597,7 @@ Change the version list of `environment.phaser.yml` the same way, after a test i
 
 ### `phaser_count.sh`
 
-A SLURM array job, one task per data row of `{SAMPLES_CSV}`, submitted by `submit_chain.sh` (Step 15) after the per-sample array job (Step 11) and, when it runs, the installation job. Write it to `{RESULTS_DIR}/scripts/phaser_count.sh` and substitute all of its placeholders: `{ARRAY_N}`, `{PHASER_RESOURCES}` (Step 9), `{USER_EMAIL}`, `{SLURM_PARTITION}`, `{RESULTS_DIR}`, `{SAMPLES_CSV}`, `{MIN_BASEQ}` (Step 8), and `{PHASED_GT}` and `{PHASER_HOME}` (Step 7).
+A SLURM array job, one task per data row of `{SAMPLES_CSV}`, submitted by `submit_chain.sh` (Step 15) after the per-sample array job (Step 11) and, when it runs, the installation job. Write it to `{RESULTS_DIR}/scripts/phaser_count.sh` and substitute all of its placeholders: `{ARRAY_N}`, `{PHASER_RESOURCES}` (Step 9), `{USER_EMAIL}`, `{QUEUE}`, `{RESULTS_DIR}`, `{SAMPLES_CSV}`, `{MIN_BASEQ}` (Step 8), and `{PHASED_GT}` and `{PHASER_HOME}` (Step 7).
 
 **`{ARRAY_N}`** is the number of data rows of `{SAMPLES_CSV}` when the chain is submitted, as for the alignment array (Step 9); array task N reads data row N. After a sample is dropped (Step 15, Dropping a failed sample) the old range is stale: a re-submission with it runs a task for a row that no longer exists, which stops with "no row N", and Rmd 05 is then cancelled. Never re-submit `phaser_count.sh` with the old range: before recipe C or D of Step 15 re-submits it, rewrite `{ARRAY_N}` in `{RESULTS_DIR}/scripts/phaser_count.sh` to the new number of data rows (the outputs of the remaining samples need no re-run: recipe E).
 
@@ -2636,7 +2636,7 @@ The script loads no module and activates no conda environment: it puts `{PHASER_
 ```bash
 #!/bin/bash
 #SBATCH -J ase_phaser
-#SBATCH -N 1 -p {SLURM_PARTITION}
+#SBATCH -N 1 -p {QUEUE}
 #SBATCH --array=1-{ARRAY_N}
 #SBATCH {PHASER_RESOURCES}
 #SBATCH --mail-type=END,FAIL
