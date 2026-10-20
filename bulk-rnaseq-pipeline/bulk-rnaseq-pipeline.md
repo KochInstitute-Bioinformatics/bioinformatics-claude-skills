@@ -476,6 +476,9 @@ After the reports are rendered, write a standalone `{WD_NAME}_summary_report.htm
 
 ## Final submission instructions
 
+**Scheduler adaptation.** The stage scripts in this skill are written in SLURM form. When `SCHEDULER` is not `slurm`, write each stage script with the header lines of the scheduler table above, and print the submit commands with that scheduler's submit command and the order below. For `local`, write the stage scripts without header lines, run nothing yourself, and print `bash run_01_... && bash run_02_... && ...` in stage order (stopping at the first failure); the `singularity exec` lines stay as they are. Never run R or Singularity on the login node of a cluster.
+
+
 ```
 Submission order:
   sbatch {PCLI_FLAG}run_01_import_qc.sh

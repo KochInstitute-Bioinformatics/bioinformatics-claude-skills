@@ -540,6 +540,9 @@ Ask: "Is there a web-accessible URL prefix for the results directory (e.g. https
 
 ## Final submission instructions
 
+**Scheduler adaptation.** The stage scripts in this skill are written in SLURM form. When `SCHEDULER` is not `slurm`, write each stage script with the header lines of the scheduler table above, and print the submit commands with that scheduler's submit command and the order below. For `local`, write the stage scripts without header lines, run nothing yourself, and print `bash run_01_... && bash run_02_... && ...` in stage order (stopping at the first failure); the `singularity exec` lines stay as they are. Never run R or Singularity on the login node of a cluster.
+
+
 Display after all files are written:
 
 ```
