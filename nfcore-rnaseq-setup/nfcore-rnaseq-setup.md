@@ -39,6 +39,8 @@ If the file or a needed key is missing, ask the user for the value (an empty ans
 | `sbatch SCRIPT` | `qsub SCRIPT` | `qsub SCRIPT` | `bsub < SCRIPT` | `bash SCRIPT` |
 | `sbatch --parsable SCRIPT` (prints the job id) | `qsub SCRIPT` (prints the id) | `qsub -terse SCRIPT` | `bsub < SCRIPT`, id from `sed -n 's/^Job <\([0-9]*\)>.*/\1/p'` | not applicable |
 | `sbatch --dependency=afterok:ID SCRIPT` | `qsub -W depend=afterok:ID SCRIPT` | `qsub -hold_jid ID SCRIPT` | `bsub -w "done(ID)" < SCRIPT` | run after the previous script succeeded (`&&`) |
+| `sbatch --dependency=afterany:ID1:ID2 SCRIPT` (runs when the jobs ended, whatever their status) | `qsub -W depend=afterany:ID1:ID2 SCRIPT` | `qsub -hold_jid ID1,ID2 SCRIPT` | `bsub -w "ended(ID1) && ended(ID2)" < SCRIPT` | run after the previous scripts, whatever their status (`;`) |
+| `--kill-on-invalid-dep=yes` | omit | omit | omit | omit |
 | `squeue -u $USER` | `qstat -u $USER` | `qstat -u $USER` | `bjobs` | `jobs` |
 | `scancel ID` | `qdel ID` | `qdel ID` | `bkill ID` | `kill` |
 | `sacct` | `qstat -x` | `qacct -j ID` | `bhist -l ID` | not applicable |
@@ -520,6 +522,8 @@ nextflow run nf-core/rnaseq -r {VERSION} -c nextflow.config -profile slurm,singu
 **Other substitutions:**
 - Omit any flag that matches its pipeline default (e.g. `--umi_dedup_tool umitools`, `--umitools_grouping_method directional`, `--min_trimmed_reads 10000`).
 - `{UMI_LINES}`: `--with_umi` + one of `--umi_discard_read 1` or `--umitools_bc_pattern '{PATTERN}'` + `--skip_markduplicates` + optional tool/method flags. Omit entirely if no UMIs.
+
+**Scheduler adaptation.** When `SCHEDULER` is not `slurm`, the `nextflow.config` profile (its name, `executor` and queue lines), the profile name in the launch line, the script's header lines and the submit command in the message below follow the scheduler table above; `queueSize` and `submitRateLimit` stay as written. For `local`, the profile sets `executor = 'local'`, the script has no header lines, and the message tells the user to start it with `bash <script>` (or the `nohup` form in the rules above) instead of the submit command. The launch script requests no walltime; the genome index script's `-t` is clamped to `MAX_TIME` as the rules say.
 
 After writing, show the full file contents and instruct:
 ```

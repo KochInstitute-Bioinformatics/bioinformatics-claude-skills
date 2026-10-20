@@ -41,6 +41,8 @@ If the file or a needed key is missing, ask the user for the value (an empty ans
 | `sbatch SCRIPT` | `qsub SCRIPT` | `qsub SCRIPT` | `bsub < SCRIPT` | `bash SCRIPT` |
 | `sbatch --parsable SCRIPT` (prints the job id) | `qsub SCRIPT` (prints the id) | `qsub -terse SCRIPT` | `bsub < SCRIPT`, id from `sed -n 's/^Job <\([0-9]*\)>.*/\1/p'` | not applicable |
 | `sbatch --dependency=afterok:ID SCRIPT` | `qsub -W depend=afterok:ID SCRIPT` | `qsub -hold_jid ID SCRIPT` | `bsub -w "done(ID)" < SCRIPT` | run after the previous script succeeded (`&&`) |
+| `sbatch --dependency=afterany:ID1:ID2 SCRIPT` (runs when the jobs ended, whatever their status) | `qsub -W depend=afterany:ID1:ID2 SCRIPT` | `qsub -hold_jid ID1,ID2 SCRIPT` | `bsub -w "ended(ID1) && ended(ID2)" < SCRIPT` | run after the previous scripts, whatever their status (`;`) |
+| `--kill-on-invalid-dep=yes` | omit | omit | omit | omit |
 | `squeue -u $USER` | `qstat -u $USER` | `qstat -u $USER` | `bjobs` | `jobs` |
 | `scancel ID` | `qdel ID` | `qdel ID` | `bkill ID` | `kill` |
 | `sacct` | `qstat -x` | `qacct -j ID` | `bhist -l ID` | not applicable |

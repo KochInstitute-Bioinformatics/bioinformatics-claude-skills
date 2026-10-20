@@ -46,6 +46,8 @@ If the file or a needed key is missing, ask the user for the value (an empty ans
 | `sbatch SCRIPT` | `qsub SCRIPT` | `qsub SCRIPT` | `bsub < SCRIPT` | `bash SCRIPT` |
 | `sbatch --parsable SCRIPT` (prints the job id) | `qsub SCRIPT` (prints the id) | `qsub -terse SCRIPT` | `bsub < SCRIPT`, id from `sed -n 's/^Job <\([0-9]*\)>.*/\1/p'` | not applicable |
 | `sbatch --dependency=afterok:ID SCRIPT` | `qsub -W depend=afterok:ID SCRIPT` | `qsub -hold_jid ID SCRIPT` | `bsub -w "done(ID)" < SCRIPT` | run after the previous script succeeded (`&&`) |
+| `sbatch --dependency=afterany:ID1:ID2 SCRIPT` (runs when the jobs ended, whatever their status) | `qsub -W depend=afterany:ID1:ID2 SCRIPT` | `qsub -hold_jid ID1,ID2 SCRIPT` | `bsub -w "ended(ID1) && ended(ID2)" < SCRIPT` | run after the previous scripts, whatever their status (`;`) |
+| `--kill-on-invalid-dep=yes` | omit | omit | omit | omit |
 | `squeue -u $USER` | `qstat -u $USER` | `qstat -u $USER` | `bjobs` | `jobs` |
 | `scancel ID` | `qdel ID` | `qdel ID` | `bkill ID` | `kill` |
 | `sacct` | `qstat -x` | `qacct -j ID` | `bhist -l ID` | not applicable |
@@ -519,6 +521,8 @@ echo "SUBMIT=bash $R/run_all.sh"
 ```
 
 The last block prints the files written, `JOBS=` with the job numbers, and `SUBMIT=` with the one command that submits everything.
+
+**Scheduler adaptation.** The rendering block always writes SLURM-form `run_NN.sbatch` and `run_all.sh`. When `SCHEDULER` is not `slurm`, after the block has passed, rewrite those files in place through the scheduler table above (the header lines, and the `sbatch` commands and dependencies of `run_all.sh`), keeping the file names. For `local`, remove the header lines and make `run_all.sh` run the scripts in order with `bash run_NN.sbatch || exit 1` instead of submitting them. Then show `run_all.sh` to the user. The final instructions below stay the same.
 
 **Final instructions.** Print this to the user, with `{REPORT_DIR}` replaced, and nothing else to run:
 ```

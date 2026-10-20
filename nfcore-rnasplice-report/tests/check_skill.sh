@@ -784,5 +784,7 @@ need '<!-- SCHEDULER:BEGIN table -->'
 need 'No row for <construct> in the scheduler table'
 need 'resubmit with `-resume`'
 need 'Never assume `slurm`.'
+need '**Scheduler adaptation.**'
+need 'rewrite those files in place through the scheduler table'
 # --- end Scheduler support
 [ $fail -eq 0 ] && echo "PASS" || exit 1

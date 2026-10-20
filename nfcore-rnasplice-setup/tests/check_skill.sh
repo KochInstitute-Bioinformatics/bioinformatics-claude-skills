@@ -102,7 +102,7 @@ allow="mail-type mail-user mem dependency parsable variable-read-length allow-cl
 # STAR options of the STAR_ALIGN ext.args override (Step 10) and its explanation (copied from the pinned conf/modules.config)
 allow="$allow quantMode quantTranscriptomeSAMoutput twopassMode outSAMtype readFilesCommand runRNGseed outFilterMultimapNmax alignSJDBoverhangMin outSAMattributes outSAMattrRGline outReadsUnmapped"
 for a in $allow; do ! echo "$schema_names" | grep -qx -- "$a" || { echo "allowlist contains a pipeline parameter: $a"; exit 2; }; done
-for flag in $(grep -oE '(^|[^A-Za-z0-9_-])--[A-Za-z_][A-Za-z_0-9-]*' "$SKILL" | sed -E 's/^[^-]*--//' | sort -u); do
+for flag in $(grep -oE '(^|[^A-Za-z0-9_-])--[A-Za-z_][A-Za-z_0-9-]*' "$LINT_SKILL" | sed -E 's/^[^-]*--//' | sort -u); do
   echo "$allow" | tr ' ' '\n' | grep -qx -- "$flag" || { echo "FAIL: --$flag is not an allowlisted tool flag (pipeline parameters go in the params file, never as --flags)"; fail=1; }
 done
 # (b) every key in a fenced yaml block is a parameter of the recorded schema. Fences are 3 or more backticks; an info
@@ -1346,5 +1346,7 @@ need '<!-- SCHEDULER:BEGIN table -->'
 need 'No row for <construct> in the scheduler table'
 need 'resubmit with `-resume`'
 need 'Never assume `slurm`.'
+need '**Scheduler adaptation.**'
+need "executor = 'local'"
 # --- end Scheduler support
 [ $fail -eq 0 ] && echo "PASS" || exit 1
