@@ -11,6 +11,11 @@ SKILL=${1:?usage: check_skill.sh <skill.md>}
 HERE=$(cd "$(dirname "$0")" && pwd); FIX="$HERE/fixtures"; CUT="$HERE/cut_block.sh"
 README="$(dirname "$SKILL")/README.md"
 fail=0
+# The embedded scheduler rules and table (tools/embed-scheduler.sh) name flags such as --parsable and -resume for other
+# schedulers; the flag lints read a copy without them.
+LINT_SKILL=$(mktemp /tmp/tmp.XXXXXXXXXX) || exit 1
+trap 'rm -f "$LINT_SKILL"' EXIT
+awk '/^<!-- SCHEDULER:BEGIN/ {skip = 1} !skip {print} /^<!-- SCHEDULER:END/ {skip = 0}' "$SKILL" > "$LINT_SKILL" 2>/dev/null
 [ -s "$SKILL" ] || { echo "FAIL: skill file missing or empty: $SKILL"; exit 1; }
 for f in rnasplice_schema.json config_params.txt gate_values.tsv trace_process_names.txt trace_resources_g3.tsv output_tree.txt test_samplesheet.csv test_contrastsheet.csv schema_input.json schema_input_genome_bam.json modules.config realdata_star_align_args.txt realdata_resource_table.txt; do
   [ -s "$FIX/$f" ] || { echo "cannot read fixture $FIX/$f"; exit 2; }
@@ -762,7 +767,7 @@ need "Fixed \`withName\` resources do not grow when the pipeline retries a task"
 need "raise that selector's \`memory\` or \`time\` in nextflow.config (up to the \`resourceLimits\` caps) and resubmit as described under **Resuming a run**"
 anchor_once "**Resuming a run.**"
 need "\`-resume\` is a Nextflow option, not a pipeline parameter; the wizard never writes it into the generated script."
-resume_out=$(grep -n -- '-resume' "$SKILL" | grep -v '^[0-9]*:\*\*Resuming a run\.\*\*' | cut -d: -f1 | tr '\n' ' ')
+resume_out=$(grep -n -- '-resume' "$LINT_SKILL" | grep -v '^[0-9]*:\*\*Resuming a run\.\*\*' | cut -d: -f1 | tr '\n' ' ')
 [ -z "$resume_out" ] || { echo "FAIL: -resume appears outside the **Resuming a run.** paragraph (line $resume_out)"; fail=1; }
 ! printf '%s\n' "$SUB" | grep -q -- '-resume' || { echo "FAIL: the generated submission script must not carry -resume"; fail=1; }
 # M8: the helper reports the move of an invalid download only when the move succeeded
@@ -1335,4 +1340,11 @@ need "If it has no \`STAR_ALIGN\` \`ext.args\` block like the template's, tell t
 needr "a hand-written job with the same Salmon command"
 forbidr "an equivalent hand-written job"
 # --- end Fix round 2
+# --- Scheduler support: the shared rules and table are embedded (tools/embed-scheduler.sh) and the key rules are present
+need '<!-- SCHEDULER:BEGIN rules -->'
+need '<!-- SCHEDULER:BEGIN table -->'
+need 'No row for <construct> in the scheduler table'
+need 'resubmit with `-resume`'
+need 'Never assume `slurm`.'
+# --- end Scheduler support
 [ $fail -eq 0 ] && echo "PASS" || exit 1
