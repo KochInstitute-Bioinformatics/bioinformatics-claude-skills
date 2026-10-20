@@ -2,6 +2,8 @@
 
 An interactive Claude Code skill that walks you through setting up and submitting an [nf-core/rnaseq](https://nf-co.re/rnaseq) bulk RNA-seq pipeline on an HPC cluster running SLURM and Singularity.
 
+> **Unofficial, AI-agent instructions - not endorsed by nf-core. Review every generated file before submitting. Cluster settings are read from `~/.claude/bioinfo-skills.conf` (see the [root README](../README.md#configure-your-site)).**
+
 ---
 
 ## Installation
@@ -22,8 +24,8 @@ Then invoke it in Claude Code:
 
 | Requirement | Notes |
 |-------------|-------|
-| SLURM scheduler | Tested on bcc queue |
-| Singularity ≥ 3.10 | Loaded via `module add singularity/3.10.4` |
+| SLURM scheduler | Partition set via `SLURM_PARTITION` in the site config |
+| Singularity/Apptainer | Loaded via `SINGULARITY_LOAD` in the site config (tested with 3.10) |
 | Nextflow | Available in a conda environment (e.g. `nf-env`) |
 | Internet access | Required from login node for GitHub API + Ensembl downloads |
 
@@ -122,7 +124,7 @@ Writes `nf-core_rnaseq_{version}.sh` — a ready-to-submit SLURM script with all
 ### Step 14b — Genome index build script *(only when indexes are missing)*
 Writes `build_genome_index_{assembly}_ens{version}.sh`, which:
 1. Downloads FASTA, GTF, and cDNA from Ensembl via `wget -c`
-2. Decompresses with `gunzip -c` (compatible with CentOS 7 — no `-k` flag)
+2. Decompresses with `gunzip -c` (works on older systems such as CentOS 7 - no `-k` flag)
 3. Builds a STAR index with the correct `sjdbOverhang` (= read length − 1, auto-detected)
 4. Strips Ensembl version suffixes from cDNA transcript IDs
 5. Filters cDNA to GTF-annotated transcripts only (prevents tximport failures)
@@ -157,11 +159,11 @@ sbatch nf-core_rnaseq_3.26.0.sh
 
 ## Cluster-specific notes
 
-- **Queue**: `bcc`
-- **Singularity module**: `singularity/3.10.4`
-- **Conda init**: `source /home/software/conda/miniconda3/bin/condainit`
-- **`gh` CLI is not available** — the skill uses the GitHub REST API via HTTP instead
-- **`gunzip -k` is not available** on CentOS 7 — use `gunzip -c file.gz > file`
+- **Partition**: `SLURM_PARTITION` (set `SLURM_PARTITION_ON_CLI=yes` if your cluster ignores the `#SBATCH -p` header)
+- **Singularity/Apptainer**: loaded with the `SINGULARITY_LOAD` line from the site config
+- **Conda**: initialised with the `CONDA_SETUP` line from the site config
+- **No `gh` CLI needed** - the skill uses the GitHub REST API over HTTP
+- **`gunzip -k` avoided** (unavailable on older systems such as CentOS 7) — use `gunzip -c file.gz > file`
 
 ---
 

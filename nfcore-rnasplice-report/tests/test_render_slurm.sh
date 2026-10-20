@@ -19,8 +19,9 @@ bad()   { echo "FAIL $1"; fail=1; }
 check() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1: expected '$2' got '$3'"; fi; }
 has()   { if grep -qF -- "$2" "$3" 2>/dev/null; then ok "$1"; else bad "$1: '$2' not found in $3"; fi; }
 hasnt() { if grep -qF -- "$2" "$3" 2>/dev/null; then bad "$1: '$2' found in $3"; else ok "$1"; fi; }
-SIFP=/net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif
+SIFP=/srv/site_root/images/bulkrnaseq_latest.sif
 SYS=/usr/bin:/bin
+PART=testpart; SINGL='module add singularity/3.10.4'; SBIND=/srv/site_root; BIMG=docker://example/bulkrnaseq:latest
 blk() { bash "$here/cut_block.sh" "$skill" "$1"; }
 B_CHECK=$(blk '**Checks and job list.**') && B_SET=$(blk '**Settings.**') && B_REND=$(blk '**Rendering the scripts.**') \
   && blk '**Job script template.**' > "$tmp/run_job.sbatch.tpl" && blk '**Submit script template.**' > "$tmp/run_all.tpl" \
@@ -48,6 +49,7 @@ subst() {
   printf '%s\n' "$1" | sed \
     -e "s|{REPORT_DIR}|$RD|g" -e "s|{OUTDIR_RNASPLICE}|${OUTX:-$tmp/wd/out}|g" -e "s|{CWD}|$(se "$CWDP")|g" \
     -e "s|{SIF}|$(se "$SIFP")|g" -e "s|{EMAIL}|$(se "$EMAIL")|g" \
+    -e "s|{SLURM_PARTITION}|$PART|g" -e "s|{SINGULARITY_LOAD}|$SINGL|g" -e "s|{SINGULARITY_BIND}|$SBIND|g" -e "s|{BULK_IMAGE}|$BIMG|g" \
     -e "s|{PROJECT}|$(se "$PROJP")|g" -e "s|{MEM}|$MEM|g" -e "s|{TIME}|$TIME|g" -e "s|{MODULES}|$mods|g" -e "s|{SECTIONS}|$secs|g" \
     -e "s|{FDR}|0.05|g" -e "s|{DPSI}|0.1|g" -e "s|{RMATS_TYPE}|JC|g" -e "s|{MIN_READS}|10|g" -e "s|{ORGANISM}|human|g" \
     -e "s|{ENRICH_DBS}|GO KEGG|g" -e "s|{GTF}|$(se "$GTFP")|g" -e "s|{CONTRASTS_CSV}|$(se "$CSVP")|g" \
@@ -60,7 +62,7 @@ runb() { env -i PATH="$SYS" /bin/bash --noprofile --norc -c "$1"; }
 render() {
   local name=$1 mods=$2 secs=$3; shift 3
   local R="$tmp/wd/results/2026-10-05_wd_report_$name"
-  local MEM=32G TIME=4:00:00 EMAIL=x@y.z RD=$R DROP="" OUTX=$tmp/wd/out kv f prog rc=0 PROJP=$PROJP CWDP=$tmp/wd GTFP=$tmp/wd/genes.gtf CSVP=$tmp/wd/contrasts.csv SIFP=$SIFP
+  local MEM=32G TIME=4:00:00 EMAIL=x@y.z RD=$R DROP="" OUTX=$tmp/wd/out kv f prog rc=0 PROJP=$PROJP CWDP=$tmp/wd GTFP=$tmp/wd/genes.gtf CSVP=$tmp/wd/contrasts.csv SIFP=$SIFP PART=$PART SINGL="$SINGL" SBIND=$SBIND
   for kv in "$@"; do printf -v "${kv%%=*}" %s "${kv#*=}"; done
   for prog in "$B_CHECK" "$B_SET" "$B_REND"; do
     subst "$prog" | grep -o "[^$]{[A-Z][A-Z_]*}" | sort -u
@@ -98,7 +100,7 @@ for n in 01 02 03 04 05 06 07; do
   f="$tmp/all/run_$n.sbatch"
   has "run_$n: shebang" '#!/bin/bash' "$f"
   has "run_$n: job name" "#SBATCH -J wd_report_$n" "$f"
-  has "run_$n: partition" '#SBATCH -p bcc' "$f"
+  has "run_$n: partition" '#SBATCH -p testpart' "$f"
   has "run_$n: one node, one task, four cpus" '#SBATCH -N 1' "$f"; has "run_$n: tasks" '#SBATCH -n 1' "$f"; has "run_$n: cpus" '#SBATCH -c 4' "$f"
   has "run_$n: memory" '#SBATCH --mem=32G' "$f"
   has "run_$n: time" '#SBATCH -t 4:00:00' "$f"
@@ -106,7 +108,7 @@ for n in 01 02 03 04 05 06 07; do
   has "run_$n: mail user" '#SBATCH --mail-user=x@y.z' "$f"
   has "run_$n: mail type" '#SBATCH --mail-type=END,FAIL' "$f"
   has "run_$n: module guarded" 'module add singularity/3.10.4 || exit 1' "$f"
-  has "run_$n: container" "singularity exec --bind '/net/bmc-lab3" "$f"
+  has "run_$n: container" "singularity exec --bind '/srv/site_root" "$f"
   has "run_$n: Rscript render" "Rscript -e 'rmarkdown::render(" "$f"
   has "run_$n: output_dir under results" "output_dir = \"$tmp/wd/results/2026-10-05_wd_report_all\"" "$f"
   bash -n "$f" && ok "run_$n: bash -n" || bad "run_$n: bash -n"
@@ -129,6 +131,14 @@ has "params: pairing" 'paired_suppa = TRUE' "$tmp/all/run_03.sbatch"
 render nomail "rmats" "events" EMAIL=none
 hasnt "nomail: no mail-user" 'mail-user' "$tmp/nomail/run_01.sbatch"
 hasnt "nomail: no mail-type" 'mail-type' "$tmp/nomail/run_01.sbatch"
+# --- no partition line without a partition, and an empty Singularity load becomes `true`
+render nopart "rmats" "events" PART=
+check "nopart: exit status" 0 "$(cat "$tmp/nopart.rc")"
+hasnt "nopart: no partition line" '#SBATCH -p' "$tmp/nopart/run_01.sbatch"
+has "nopart: the job script is otherwise complete" '#SBATCH -N 1' "$tmp/nopart/run_01.sbatch"
+render nosing "rmats" "events" SINGL=
+check "nosing: exit status" 0 "$(cat "$tmp/nosing.rc")"
+has "nosing: empty SINGULARITY_LOAD becomes true" 'true || exit 1' "$tmp/nosing/run_01.sbatch"
 # --- other module sets
 render rm "rmats" "events cross topgene enrich"
 check "rmats only: jobs (one tool: no cross-tool job)" "01 02 06 07" "$(jobs_of rm)"
@@ -203,13 +213,13 @@ has "outside: the message" 'not under a results/ directory' "$tmp/outside.out"
 render inside "rmats" "events" RD="$tmp/wd/out/results/r"
 check "report directory inside the pipeline output is refused" 1 "$(cat "$tmp/inside.rc")"
 has "inside: the message" "is inside the pipeline output $tmp/wd/out" "$tmp/inside.out"
-# --- a path outside /net/bmc-lab3 is bound into the container: its directory is in the --bind list of every script
+# --- a path outside /srv/site_root is bound into the container: its directory is in the --bind list of every script
 render bindx "rmats" "events" GTFP=/opt/rsr_ext/genes.gtf
-check "bind outside /net/bmc-lab3: exit status" 0 "$(cat "$tmp/bindx.rc")"
+check "bind outside /srv/site_root: exit status" 0 "$(cat "$tmp/bindx.rc")"
 for n in 01 02 07; do
   bl=$(sed -n "s/.*--bind '\([^']*\)'.*/\1/p" "$tmp/bindx/run_$n.sbatch")
-  case ",$bl," in *",/opt/rsr_ext,"*) ok "run_$n: the directory of a gtf outside /net/bmc-lab3 is bound ($bl)" ;; *) bad "run_$n: /opt/rsr_ext is not in the --bind list '$bl'" ;; esac
-  case "$bl" in /net/bmc-lab3,*|/net/bmc-lab3) ok "run_$n: /net/bmc-lab3 is bound first" ;; *) bad "run_$n: the --bind list '$bl' does not start with /net/bmc-lab3" ;; esac
+  case ",$bl," in *",/opt/rsr_ext,"*) ok "run_$n: the directory of a gtf outside /srv/site_root is bound ($bl)" ;; *) bad "run_$n: /opt/rsr_ext is not in the --bind list '$bl'" ;; esac
+  case "$bl" in /srv/site_root,*|/srv/site_root) ok "run_$n: /srv/site_root is bound first" ;; *) bad "run_$n: the --bind list '$bl' does not start with /srv/site_root" ;; esac
 done
 # --- the final line names the one submit command, and the pipeline output is unchanged
 has "ev: one submit command" "SUBMIT=bash $tmp/wd/results/2026-10-05_wd_report_ev/run_all.sh" "$tmp/ev.out"
@@ -250,7 +260,7 @@ printf '#!/bin/bash\nprintf "%%s\\n" "$@" > "$SLOG"\n' > "$tmp/stub/singularity"
 chmod +x "$tmp/stub/module" "$tmp/stub/singularity"
 for t in module singularity sbatch; do [ "$(env -i PATH="$tmp/stub:$SYS" /bin/bash -c "type -P $t")" = "$tmp/stub/$t" ] || bad "stub $t is not first on the PATH"; done
 XRD="$tmp/wd/results/r\$HOME\`>$tmp/CANARY4\`"
-XSIF="/net/bmc-lab3/s\$HOME\$(>$tmp/CANARY5).sif"
+XSIF="/srv/site_root/s\$HOME\$(>$tmp/CANARY5).sif"
 XGTF="$tmp/wd/g\`>$tmp/CANARY6\`&|.gtf"
 XCSV="$tmp/wd/\$(>$tmp/CANARY7).csv"
 render exec "rmats suppa" "events" RD="$XRD" SIFP="$XSIF" GTFP="$XGTF" CSVP="$XCSV"
@@ -377,7 +387,7 @@ check "checks block: inside the pipeline output: no logs, templates or scripts w
 # --- the marker list of the rendering block names every marker of the templates
 mk=$(printf '%s\n' "$B_REND" | sed -n "s/^MK='\(.*\)'\$/\1/p; s/^MK=\"\$MK|\(.*\)\"\$/|\1/p" | tr -d '\n')
 tplm=$(cat "$tmp/run_job.sbatch.tpl" "$tmp/run_all.tpl" | grep -oE '__[A-Z]+(_[A-Z]+)*__' | sort -u)
-check "the templates hold markers (the list is not empty)" 29 "$(printf "%s\n" $tplm | wc -l)"
+check "the templates hold markers (the list is not empty)" 31 "$(printf "%s\n" $tplm | wc -l)"
 miss=""; for m in $tplm; do case "|$mk|" in *"|$m|"*) ;; *) miss="$miss $m" ;; esac; done
 check "every template marker is in the marker list of the rendering block" "" "$miss"
 # --- no __PLACEHOLDER__ of the templates is left in a generated script

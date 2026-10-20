@@ -3,7 +3,7 @@
 # Tests the R test runner without R and without SLURM: test_r.sh and prove_mutations.sh (modes static and rtest) run under
 # env -i against a stub sbatch (type-checked to resolve to the stub) that writes a fake job log where -o says and fails when the
 # skill it is given contains STUB_MAKE_FAIL. R, Singularity and the other heavy commands are failing stubs (test_env.sh).
-# Checks: test_r.sh submits run_r_tests.sh with sbatch --wait on partition bcc, its log inside a fresh scratch directory that is
+# Checks: test_r.sh submits run_r_tests.sh with sbatch --wait on the site partition, its log inside a fresh scratch directory that is
 # removed afterwards, passes and fails with the job, and refuses to run without sbatch; prove_mutations.sh skips rtest rows in
 # the default mode, runs them (more than 4: two batches) in mode rtest on copies inside the shared scratch, reports a row whose
 # job passes, refuses mode rtest without sbatch, and rejects an unknown mode.
@@ -31,7 +31,7 @@ OKPATH="$TEST_TMP/okbin:$STUBS:/usr/bin:/bin"; MINPATH="$TEST_TMP/minbin"
 n=0; bad=0
 # runit <expected exit> <PATH> <command...>: under env -i with RSR_SHARED_TMP=$BASE; output in $TEST_TMP/out
 runit() { local want=$1 p=$2 rc; shift 2; n=$((n + 1)); : > "$CALLS"
-  env -i HOME="$HOME" PATH="$p" RSR_SHARED_TMP="$BASE" /bin/bash --noprofile --norc "$@" > "$TEST_TMP/out" 2>&1; rc=$?
+  env -i HOME="$HOME" PATH="$p" RSR_SHARED_TMP="$BASE" RSR_PARTITION=testpart /bin/bash --noprofile --norc "$@" > "$TEST_TMP/out" 2>&1; rc=$?
   [ $rc -eq "$want" ] || { echo "FAIL: case $n ($*): exit $rc, expected $want"; tail -8 "$TEST_TMP/out"; bad=1; return 1; }; }
 has() { grep -qF -- "$1" "$TEST_TMP/out" || { echo "FAIL: case $n: output lacks: $1"; tail -8 "$TEST_TMP/out"; bad=1; }; }
 clean() { [ -z "$(ls -A "$BASE")" ] || { echo "FAIL: case $n: scratch left behind in $BASE: $(ls -A "$BASE")"; bad=1; }; }
@@ -45,9 +45,9 @@ cp "$SRC/../README.md" "$TEST_TMP/tree/README.md" || exit 1
 cp "$HERE"/fixtures/*.tsv "$D/tests/fixtures/"; cp "$HERE/r/run_r_tests.sh" "$D/tests/r/"
 SK="$D/nfcore-rnasplice-report.md"; FAILSK="$TEST_TMP/fail_skill.md"; { cat "$SK"; echo STUB_MAKE_FAIL; } > "$FAILSK"
 
-# 1. test_r.sh: passes with the job; sbatch --wait -p bcc, the log in a fresh scratch directory, the job script and its arguments
+# 1. test_r.sh: passes with the job; sbatch --wait -p testpart, the log in a fresh scratch directory, the job script and its arguments
 runit 0 "$OKPATH" "$D/tests/test_r.sh" "$SK" && { has "R SUITE PASS"; has "R TESTS PASS (1)"
-  grep -qE "^--wait -p bcc -o $BASE/rsr\.[A-Za-z0-9]{10}/rsr_r_%j\.out $D/tests/r/run_r_tests\.sh $SK $D/tests\$" "$CALLS" \
+  grep -qE "^--wait -p testpart -o $BASE/rsr\.[A-Za-z0-9]{10}/rsr_r_%j\.out $D/tests/r/run_r_tests\.sh $SK $D/tests\$" "$CALLS" \
     || { echo "FAIL: case $n: sbatch was not called as expected: $(cat "$CALLS")"; bad=1; }; }
 clean
 # 2. test_r.sh: fails with the job and prints its log

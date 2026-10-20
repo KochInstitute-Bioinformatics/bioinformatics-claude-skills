@@ -11,8 +11,7 @@
 #   static  the rows of the runners check, runtest and render (bash, awk and sed only; seconds). Rows of runner rtest are skipped and
 #           counted in the last line. This is the mode of the default run_all_tests.sh.
 #   rtest   only the rows of runner rtest, which are exercised only by run_all_tests.sh --full (or by hand): each row's mutated
-#           skill is written to a fresh directory under RSR_SHARED_TMP (default
-#           /net/bmc-lab3/data/bcc/ase_scratch/rnasplice_report/tmp, shared with the compute nodes) and test_r.sh submits the R
+#           skill is written to a fresh directory under RSR_SHARED_TMP (required, a scratch directory the compute nodes can see) and test_r.sh submits the R
 #           tests on it with sbatch --wait (R runs only on a compute node). At most 4 jobs run at a time. Refuses to run without
 #           sbatch. Minutes per row.
 # Prints "MUTATIONS PASS (<n>...)" or exits 1.
@@ -31,7 +30,8 @@ in_mode() { if [ "$MODE" = rtest ]; then [ "$1" = rtest ]; else [ "$1" != rtest 
 
 if [ "$MODE" = rtest ]; then
   type -P sbatch > /dev/null || { echo "ERROR: sbatch not found on the PATH; rtest rows run the R tests only through sbatch"; exit 1; }
-  BASE=${RSR_SHARED_TMP:-/net/bmc-lab3/data/bcc/ase_scratch/rnasplice_report/tmp}
+  BASE=${RSR_SHARED_TMP:-}
+  [ -n "$BASE" ] || { echo "ERROR: set RSR_SHARED_TMP to a scratch directory that the compute nodes can see"; exit 1; }
   mkdir -p "$BASE" || exit 1
   T=$(mktemp -d "$BASE/rsrmut.XXXXXXXXXX") || exit 1
   trap 'for d in "$T"/row[0-9]*; do [ -d "$d" ] || continue; rm -f "$d/nfcore-rnasplice-report.md" "$d/README.md" "$d/ROOT_README.md" "$d/run_all_tests.sh" "$d/out" "$d/rc"; rmdir "$d"; done; rm -f "$T/out"; rmdir "$T"' EXIT

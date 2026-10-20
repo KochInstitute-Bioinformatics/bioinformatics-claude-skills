@@ -2,7 +2,7 @@
 # Usage: assemble_outbred_from_skill.sh <skill.md> <values.tsv> <genotype_map.tsv>
 # Builds every outbred-mode script and Rmd 01/02/05 of a project from the skill's code blocks (cut by headings or anchor lines,
 # never by line numbers), as the wizard would: placeholders substituted from values.tsv (NAME<TAB>value; must define CWD,
-# RESULTS_DIR, TODAY and WD_NAME); the genotype map (individual<TAB>vcf<TAB>sample in vcf) written into prep_genotypes.sh; the test-data
+# RESULTS_DIR, TODAY, WD_NAME and the site keys SLURM_PARTITION, SINGULARITY_LOAD, PCLI_FLAG, CONDA_SETUP); the genotype map (individual<TAB>vcf<TAB>sample in vcf) written into prep_genotypes.sh; the test-data
 # settings FILTER_EXPR='' and MIN_SITES_WARN=20; the GTF bind dropped from the run scripts (the test genome lies inside CWD); the
 # four mouse-helper lines of submit_chain.sh deleted. Stops on any unsubstituted placeholder.
 # Every block is cut inside a pipeline, so each pipeline's status is checked (a missing block stops the assembly instead of
@@ -19,7 +19,7 @@ blk() { bash "$HERE/cut_block.sh" "$SKILL" "$1" || die "no code block after: $1"
 sub() { awk -F'\t' 'NR == FNR { v[$1] = $2; next }
   { for (k in v) { t = "{" k "}"; while ((i = index($0, t)) > 0) $0 = substr($0, 1, i - 1) v[k] substr($0, i + length(t)) } print }' "$VALS" -; }
 hdr() {   # $1 log name, $2 resources placeholder, $3 "array" or ""
-  echo '#!/bin/bash'; echo '#SBATCH -N 1 -p bcc'; [ -n "$3" ] && echo '#SBATCH --array=1-{ARRAY_N}'; echo "#SBATCH $2"
+  echo '#!/bin/bash'; echo '#SBATCH -N 1 -p {SLURM_PARTITION}'; [ -n "$3" ] && echo '#SBATCH --array=1-{ARRAY_N}'; echo "#SBATCH $2"
   echo '#SBATCH --mail-type=END,FAIL'; echo '#SBATCH --mail-user={USER_EMAIL}'; echo "#SBATCH -o {RESULTS_DIR}/logs/$1"; echo 'set -uo pipefail'; }
 # prep_genotypes.sh: header, block C, prep fetch, genotype VCF binds, block R, genotype loop, gene spans, block I
 { hdr 'prep_genotypes_%j.out' '{PREP_RESOURCES}' ''

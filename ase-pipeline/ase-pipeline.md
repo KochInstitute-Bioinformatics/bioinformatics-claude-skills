@@ -13,6 +13,23 @@ Two experimental designs share one wizard:
 
 ---
 
+## Site configuration (read first)
+
+Before Step 0, read `~/.claude/bioinfo-skills.conf` with `cat` (plain `KEY=value` lines; template: `bioinfo-skills.conf.example` in the skills repo). Do not `source` it. Keys used by this skill:
+
+- `SLURM_PARTITION` — partition/queue; empty = omit
+- `SLURM_PARTITION_ON_CLI` — `yes` = also pass `-p` on the `sbatch` command line (some clusters ignore the `#SBATCH -p` header)
+- `SINGULARITY_LOAD` — `;`-separated shell statements that make Singularity/Apptainer available
+- `CONDA_SETUP` — `;`-separated shell statements run before `conda activate`
+- `SIF_DIR` — where `.sif` images live
+- `BULK_IMAGE` — Docker URI of the R image (`bulkrnaseq`)
+
+If the file or a needed key is missing, ask the user for the value (an empty answer means "not needed on my system"), use it for this run, and offer to save it to `~/.claude/bioinfo-skills.conf`. Never assume values from another site. Wherever this skill shows `{SLURM_PARTITION}` etc., substitute the configured value; if `SLURM_PARTITION` is empty, omit every `-p` / `queue` line. `{PCLI_FLAG}` means `-p {SLURM_PARTITION} ` when `SLURM_PARTITION_ON_CLI=yes` and nothing otherwise; use it in every `sbatch` command you show the user. Where a line shows `{CONDA_SETUP}`, `{SINGULARITY_LOAD}` or `{RNASEQ_TOOLS_LOAD}`, write each `;`-separated statement on its own line, ending with the guard shown on that line; omit the line when the key is empty.
+
+**Safety notice — tell the user once at the start:** "These are unofficial, AI-agent instructions and are not endorsed by nf-core. Review every generated samplesheet, config and script before submitting anything."
+
+---
+
 ## Step 0 — Establish working directory
 
 Before anything else, run `pwd` to record the current working directory (`{CWD}`). All scripts, the sample sheet, the Rmd files and the results are written here. Inform the user: "Working directory: `{CWD}`"
@@ -38,10 +55,10 @@ Do **not** pre-suggest or pre-fill any email address. Wait for the answer before
 
 No conda environment is needed for this skill, except for the optional phASER analysis (Steps 18-19), which installs its own pinned environment in a compute job; nothing of it runs on the login node. Check the three things below; run them silently and report a one-line result for each.
 
-**(a) Singularity.** All tools except R run from cached Singularity biocontainers. Load the module with a checked `module add` and confirm the command exists:
+**(a) Singularity.** All tools except R run from cached Singularity biocontainers. Load Singularity with the configured `SINGULARITY_LOAD` line, checked, and confirm the command exists:
 
 ```bash
-module add singularity/3.10.4 || { echo "ERROR: cannot load singularity" >&2; exit 1; }
+{SINGULARITY_LOAD} || { echo "ERROR: cannot load singularity" >&2; exit 1; }
 command -v singularity || { echo "ERROR: singularity not on PATH" >&2; exit 1; }
 ```
 
@@ -63,22 +80,22 @@ All five URLs were verified (HTTP 200) on 2026-09-29 (`ase-pipeline/tests/fixtur
 
 Tell the user which containers are already cached and which the helper will download.
 
-**(c) R packages.** R is only available in the `bulkrnaseq` image, `/net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif` (`{R_SIF}`). Do not start R on the login node. Write `check_r_packages.sh` and submit it as a tiny `sbatch` job (`-n 1 --mem=4G -t 0:10:00`):
+**(c) R packages.** R is only available in the `bulkrnaseq` image, `{SIF_DIR}/bulkrnaseq_latest.sif` (`{R_SIF}`; built from `{BULK_IMAGE}`; `SIF_DIR` and `BULK_IMAGE` come from the site config, ask when `SIF_DIR` is empty). Do not start R on the login node. Write `check_r_packages.sh` and submit it as a tiny `sbatch` job (`-n 1 --mem=4G -t 0:10:00`):
 
 ```bash
 #!/bin/bash
 #SBATCH -J ase_rpkgs
-#SBATCH -p bcc
+#SBATCH -p {SLURM_PARTITION}
 #SBATCH -n 1 --mem=4G -t 0:10:00
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user={USER_EMAIL}
 #SBATCH -o check_r_packages_%j.out
-module add singularity/3.10.4 || { echo "ERROR: cannot load singularity" >&2; exit 1; }
+{SINGULARITY_LOAD} || { echo "ERROR: cannot load singularity" >&2; exit 1; }
 singularity exec --bind {CWD} {R_SIF} \
   Rscript -e 'for (p in c("openxlsx","tidyverse","GenomicRanges","rtracklayer")) cat(p, requireNamespace(p, quietly = TRUE), "\n")'
 ```
 
-Mandatory packages: `openxlsx`, `tidyverse`, `GenomicRanges`, `rtracklayer` (the beta-binomial models are base R; `aod` is used only by the unit tests and `lme4` is not used). Submit it with `sbatch -p bcc check_r_packages.sh` (every job is submitted with `-p bcc`), wait for the job to finish, then read the result from the job output file `check_r_packages_<jobid>.out`. If any mandatory package prints `FALSE`, **stop** and ask the user to rebuild the `bulkrnaseq` image; do not substitute another model or package. (`VGAM`, `glmmTMB`, `MBASED` and `VariantAnnotation` are absent from the image and must never be required.)
+Mandatory packages: `openxlsx`, `tidyverse`, `GenomicRanges`, `rtracklayer` (the beta-binomial models are base R; `aod` is used only by the unit tests and `lme4` is not used). Submit it with `sbatch {PCLI_FLAG}check_r_packages.sh` (every job is submitted with the partition flag when `SLURM_PARTITION_ON_CLI=yes`), wait for the job to finish, then read the result from the job output file `check_r_packages_<jobid>.out`. If any mandatory package prints `FALSE`, **stop** and ask the user to rebuild the `bulkrnaseq` image; do not substitute another model or package. (`VGAM`, `glmmTMB`, `MBASED` and `VariantAnnotation` are absent from the image and must never be required.)
 
 ---
 
@@ -252,14 +269,14 @@ What is verified and what is not: on the synthetic test (small genome, about 100
 
 Measured on real data with this pinned environment (chr22 only, two GEUVADIS RNA-seq samples, GRCh37, about 29,000 heterozygous sites each): `phaser.py` took 2-3.6 s and about 117 MB per sample, `phaser_gene_ae` about 1.5 s. A separate run with a VCF of 2.57 million heterozygous sites (the chr22 sites copied onto the other chromosomes, with the same chr22 reads) took 32 s and 1.59 GB, so memory grows mainly with the number of heterozygous sites. **Projected, not measured:** a whole-genome sample like these (about 30 million read pairs) needs about 3-5 min and 2-3 GB. This projection uses an **assumed** genome-wide heterozygous-site count (chr22's share of the genome length, about 1.75 million per sample; no measured count was available) and scales the read part linearly from chr22 (2.36% of the mapped reads); it agrees with the upstream benchmark's 88 s for NA06986 (its tuned setting, one thread), but no whole-genome sample was run. The large tier keeps headroom for that uncertainty and for deeper samples or more heterozygous sites: 16 GB is about 5 times the upper projected memory (3 GB) and 2 h about 24 times the upper projected time (5 min), within the 64 GB and 4 h defaults. The synthetic timings above say nothing for real data. If a task stops with `due to time limit` or `out of memory` (`wait_chain.sh` prints it, Step 15), raise `-t` or `--mem` for `phaser_count.sh` and re-submit only that job (Step 15, Re-submitting part of the chain, recipe C); after the first real run, `seff <jobid>` (when available) shows what the tasks used. The installation job requests `-n 4 --mem=16G -t 2:00:00` (Step 18).
 
-The prep jobs (index build, reference and VCF preparation) are scaled by genome size (approximate it from `stat -c %s FASTA` or an existing `.fai`, never by reading the FASTA on the login node): over 1 Gb `-n 8 --mem=64G -t 4:00:00`; under 100 Mb `-n 4 --mem=8G -t 0:30:00`; in between `-n 8 --mem=32G -t 2:00:00`. Never request more than 64 G or 4 h unless the user asks. Every job is submitted with `sbatch -p bcc`.
+The prep jobs (index build, reference and VCF preparation) are scaled by genome size (approximate it from `stat -c %s FASTA` or an existing `.fai`, never by reading the FASTA on the login node): over 1 Gb `-n 8 --mem=64G -t 4:00:00`; under 100 Mb `-n 4 --mem=8G -t 0:30:00`; in between `-n 8 --mem=32G -t 2:00:00`. Never request more than 64 G or 4 h unless the user asks. Every job is submitted with `sbatch -p {SLURM_PARTITION}`.
 
 
 ---
 
 ## Step 10 — Reference and genotype preparation scripts
 
-Write every script below into `{RESULTS_DIR}/scripts/` (create `{RESULTS_DIR}/scripts`, `{RESULTS_DIR}/logs`, `{RESULTS_DIR}/tmp` first: `sbatch` silently drops output when the `-o` directory is missing, and `/tmp` is node-local, so job outputs and temporary files always go under `{RESULTS_DIR}`). Substitute the placeholders from Steps 0-9; never leave a `{...}` in a script. Every generated script starts with `set -uo pipefail` and checks the exit code of every step itself (`|| { echo "ERROR: ..." >&2; exit 1; }`), never a blind `set -e`. The prep jobs use the prep tier from Step 9 (`{PREP_RESOURCES}`, for example `-n 4 --mem=8G -t 0:30:00`) and the array jobs use `{ARRAY_RESOURCES}` (the `-n/--mem/-t` triple chosen in Step 9); every job is submitted with `sbatch -p bcc`.
+Write every script below into `{RESULTS_DIR}/scripts/` (create `{RESULTS_DIR}/scripts`, `{RESULTS_DIR}/logs`, `{RESULTS_DIR}/tmp` first: `sbatch` silently drops output when the `-o` directory is missing, and `/tmp` is node-local, so job outputs and temporary files always go under `{RESULTS_DIR}`). Substitute the placeholders from Steps 0-9; never leave a `{...}` in a script. Every generated script starts with `set -uo pipefail` and checks the exit code of every step itself (`|| { echo "ERROR: ..." >&2; exit 1; }`), never a blind `set -e`. The prep jobs use the prep tier from Step 9 (`{PREP_RESOURCES}`, for example `-n 4 --mem=8G -t 0:30:00`) and the array jobs use `{ARRAY_RESOURCES}` (the `-n/--mem/-t` triple chosen in Step 9); every job is submitted with `sbatch -p {SLURM_PARTITION}`.
 
 | Script | Mode | Purpose |
 |---|---|---|
@@ -271,7 +288,7 @@ Write every script below into `{RESULTS_DIR}/scripts/` (create `{RESULTS_DIR}/sc
 
 ### Shared block C — container wrappers (start of every script, after the `#SBATCH` header and `set -uo pipefail`)
 
-Tools come from cached Singularity biocontainers (`{STAR_SIF}`, `{GATK_SIF}`, `{BCFTOOLS_SIF}`, `{SAMTOOLS_SIF}`, `{PICARD_SIF}` from Step 2); never `module add` anything except singularity. `bcftools`, `bgzip` and `tabix` all come from the bcftools 1.20 container. Keep only the wrappers a script uses; the wrapper lines below are one per tool, so choose them by the function name at the start of the line (never by position), with exactly these sets per script:
+Tools come from cached Singularity biocontainers (`{STAR_SIF}`, `{GATK_SIF}`, `{BCFTOOLS_SIF}`, `{SAMTOOLS_SIF}`, `{PICARD_SIF}` from Step 2); never load a module for a tool; the only load line is the configured `{SINGULARITY_LOAD}`. `bcftools`, `bgzip` and `tabix` all come from the bcftools 1.20 container. Keep only the wrappers a script uses; the wrapper lines below are one per tool, so choose them by the function name at the start of the line (never by position), with exactly these sets per script:
 
 | Script | Wrapper functions kept (block C) | `fetch_sif` |
 |---|---|---|
@@ -279,10 +296,10 @@ Tools come from cached Singularity biocontainers (`{STAR_SIF}`, `{GATK_SIF}`, `{
 | `align_count_f1.sh`, `align_wasp_count.sh` | `star`, `gatk`, `samtools`, `picard` | check-only version, called for each of the four (Step 11) |
 | `extract_mgp_parental_vcf.sh`, `concat_mgp_parental_vcf.sh` | `bcftools`, `tabix` | downloading version, called for `$BCFTOOLS_SIF` only (the helper line in "Per-script fetch lines" below); the `add_bind` line is reduced to `add_bind "{CWD}"`, because the helper reads no genome file and the genome folder may not exist yet when it runs (Singularity stops on a missing bind source) |
 
-`--bind` is required because `/net/...` paths are not auto-bound; `BIND` lists each directory once (Singularity prints "destination is already in the mount point list" for a repeated one), so add directories with `add_bind`:
+`--bind` is required because directories outside the home and working directory (for example on network filesystems) are not always auto-bound; `BIND` lists each directory once (Singularity prints "destination is already in the mount point list" for a repeated one), so add directories with `add_bind`:
 
 ```bash
-module add singularity/3.10.4 || exit 1
+{SINGULARITY_LOAD} || exit 1
 command -v singularity >/dev/null || { echo "ERROR: singularity not on PATH" >&2; exit 1; }
 STAR_SIF="{STAR_SIF}"; GATK_SIF="{GATK_SIF}"; BCFTOOLS_SIF="{BCFTOOLS_SIF}"; SAMTOOLS_SIF="{SAMTOOLS_SIF}"; PICARD_SIF="{PICARD_SIF}"
 fetch_sif() {   # $1 = local path, $2 = verified URL (Step 2); downloads only when the file is missing
@@ -365,7 +382,7 @@ STAR prints "Could not move Log.out" for the index build when `--outFileNamePref
 
 ### `prep_f1_reference.sh` (F1 mode)
 
-Header: `#!/bin/bash`, `#SBATCH -N 1 -p bcc`, `#SBATCH {PREP_RESOURCES}`, `#SBATCH --mail-type=END,FAIL`, `#SBATCH --mail-user={USER_EMAIL}`, `#SBATCH -o {RESULTS_DIR}/logs/prep_f1_reference_%j.out`, `set -uo pipefail`, block C with the prep container fetch below (all five wrappers are defined; plus `add_bind "$(dirname "{PARENTAL_VCF}")"`), then:
+Header: `#!/bin/bash`, `#SBATCH -N 1 -p {SLURM_PARTITION}`, `#SBATCH {PREP_RESOURCES}`, `#SBATCH --mail-type=END,FAIL`, `#SBATCH --mail-user={USER_EMAIL}`, `#SBATCH -o {RESULTS_DIR}/logs/prep_f1_reference_%j.out`, `set -uo pipefail`, block C with the prep container fetch below (all five wrappers are defined; plus `add_bind "$(dirname "{PARENTAL_VCF}")"`), then:
 
 ```bash
 REF_DIR="{RESULTS_DIR}/reference"; mkdir -p "$REF_DIR" || exit 1
@@ -583,7 +600,7 @@ For the two named strains (`{STRAIN_A}` = the reference strain, for example `C57
 curl -sI "https://ftp.ebi.ac.uk/pub/databases/mousegenomes/REL-2112-v8-SNPs_Indels/mgp_REL2021_snps.vcf.gz" | head -1
 ```
 
-The release is GRCm39 and its contigs are `1`, `2`, ... (no `chr` prefix), so the FASTA must be GRCm39 with the same names. **The helper needs neither the FASTA nor its `.fai`**: it runs before the prep job, which is the job that downloads or decompresses the FASTA and writes the `.fai`, so the helper must never read them (and the wizard never reads the FASTA on the login node). The wizard writes `{RESULTS_DIR}/mgp/chromosomes.txt` from the fixed GRCm39 list, one name per line: `1` ... `19`, `X` (20 lines; Y and MT are not queried), and sets `{N_CHROM}` = 20. Each array task checks on its compute node that its chromosome is a contig of the Mouse Genomes Project VCF header; the comparison of the parental VCF's contigs with the FASTA happens in the prep job (contig guard, step 1 of `prep_f1_reference.sh`), on a compute node, once the FASTA and `.fai` exist and before any alignment. Header: `#SBATCH -N 1 -p bcc`, `#SBATCH --array=1-{N_CHROM}`, `#SBATCH -n 2 --mem=8G -t 4:00:00`, mail lines, `#SBATCH -o {RESULTS_DIR}/logs/extract_mgp_%A_%a.out`, `set -uo pipefail`, block C with the helper's bind line (see the table in block C: `add_bind "{CWD}"` only, never the genome folder), plus `add_bind "{RESULTS_DIR}"`, then:
+The release is GRCm39 and its contigs are `1`, `2`, ... (no `chr` prefix), so the FASTA must be GRCm39 with the same names. **The helper needs neither the FASTA nor its `.fai`**: it runs before the prep job, which is the job that downloads or decompresses the FASTA and writes the `.fai`, so the helper must never read them (and the wizard never reads the FASTA on the login node). The wizard writes `{RESULTS_DIR}/mgp/chromosomes.txt` from the fixed GRCm39 list, one name per line: `1` ... `19`, `X` (20 lines; Y and MT are not queried), and sets `{N_CHROM}` = 20. Each array task checks on its compute node that its chromosome is a contig of the Mouse Genomes Project VCF header; the comparison of the parental VCF's contigs with the FASTA happens in the prep job (contig guard, step 1 of `prep_f1_reference.sh`), on a compute node, once the FASTA and `.fai` exist and before any alignment. Header: `#SBATCH -N 1 -p {SLURM_PARTITION}`, `#SBATCH --array=1-{N_CHROM}`, `#SBATCH -n 2 --mem=8G -t 4:00:00`, mail lines, `#SBATCH -o {RESULTS_DIR}/logs/extract_mgp_%A_%a.out`, `set -uo pipefail`, block C with the helper's bind line (see the table in block C: `add_bind "{CWD}"` only, never the genome folder), plus `add_bind "{RESULTS_DIR}"`, then:
 
 ```bash
 URL="https://ftp.ebi.ac.uk/pub/databases/mousegenomes/REL-2112-v8-SNPs_Indels/mgp_REL2021_snps.vcf.gz"
@@ -608,9 +625,9 @@ bcftools view -G -i "FMT/FI[$IA]=1 && FMT/FI[$IB]=1 && GT[$IA]=\"0/0\" && GT[$IB
 echo "Chromosome $CHR: $(bcftools view -H "$RAW" | wc -l) PASS SNPs, $(bcftools view -H "$MGP_DIR/$CHR.parental.vcf.gz" | wc -l) kept"
 ```
 
-Submit the array job first, then the concat job as its own script (`concat_mgp_parental_vcf.sh` has no `--array` header, so exactly one task runs and nothing races on `{PARENTAL_VCF}`): `J=$(sbatch -p bcc --parsable extract_mgp_parental_vcf.sh)`, `C=$(sbatch -p bcc --parsable --dependency=afterok:$J concat_mgp_parental_vcf.sh)`, and `prep_f1_reference.sh` only after the concat job (`--dependency=afterok:$C`).
+Submit the array job first, then the concat job as its own script (`concat_mgp_parental_vcf.sh` has no `--array` header, so exactly one task runs and nothing races on `{PARENTAL_VCF}`): `J=$(sbatch {PCLI_FLAG}--parsable extract_mgp_parental_vcf.sh)`, `C=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$J concat_mgp_parental_vcf.sh)`, and `prep_f1_reference.sh` only after the concat job (`--dependency=afterok:$C`).
 
-**`concat_mgp_parental_vcf.sh`** header: `#SBATCH -N 1 -p bcc`, `#SBATCH -n 1 --mem=4G -t 1:00:00`, mail lines, `#SBATCH -o {RESULTS_DIR}/logs/concat_mgp_%j.out`, `set -uo pipefail`, block C with the helper's bind line (`add_bind "{CWD}"` only), plus `add_bind "{RESULTS_DIR}"`, then:
+**`concat_mgp_parental_vcf.sh`** header: `#SBATCH -N 1 -p {SLURM_PARTITION}`, `#SBATCH -n 1 --mem=4G -t 1:00:00`, mail lines, `#SBATCH -o {RESULTS_DIR}/logs/concat_mgp_%j.out`, `set -uo pipefail`, block C with the helper's bind line (`add_bind "{CWD}"` only), plus `add_bind "{RESULTS_DIR}"`, then:
 
 ```bash
 MGP_DIR="{RESULTS_DIR}/mgp"; OUT_VCF="{PARENTAL_VCF}"
@@ -632,7 +649,7 @@ Sites where strain A carries the alternative allele (the reference genome is C57
 
 ## Step 11 — Per-sample array scripts
 
-Both scripts are SLURM array jobs (`#SBATCH --array=1-{ARRAY_N}`, `#SBATCH {ARRAY_RESOURCES}`), take row `SLURM_ARRAY_TASK_ID` of `{SAMPLES_CSV}` (data row 1 = task 1), and write the outputs below. Header: `#!/bin/bash`, `#SBATCH -N 1 -p bcc`, `#SBATCH --array=1-{ARRAY_N}`, `#SBATCH {ARRAY_RESOURCES}`, `#SBATCH --mail-type=END,FAIL`, `#SBATCH --mail-user={USER_EMAIL}`, and one log per array task, `%A` = array job id and `%a` = task id: `#SBATCH -o {RESULTS_DIR}/logs/align_count_f1_%A_%a.out` (F1) or `#SBATCH -o {RESULTS_DIR}/logs/align_wasp_count_%A_%a.out` (outbred). They use block C, but the containers must already be cached by the prep job (it fetches all five, see "Prep container fetch" in Step 10), so parallel tasks never download the same file: in these scripts define `fetch_sif` as a check only, `fetch_sif() { [ -s "$1" ] || { echo "ERROR: missing container $1 (run the prep job first)" >&2; exit 1; }; }`, and **call** it for each container the script uses, on the lines right after block C (see "Per-script fetch lines" in Step 10): `fetch_sif "$STAR_SIF"; fetch_sif "$GATK_SIF"; fetch_sif "$SAMTOOLS_SIF"; fetch_sif "$PICARD_SIF"`. The wrapper functions are `star`, `gatk`, `samtools` and `picard` (the table in Step 10, block C). `{MIN_MAPQ}` and `{MIN_BASEQ}` are the ASEReadCounter thresholds recorded in Step 8.
+Both scripts are SLURM array jobs (`#SBATCH --array=1-{ARRAY_N}`, `#SBATCH {ARRAY_RESOURCES}`), take row `SLURM_ARRAY_TASK_ID` of `{SAMPLES_CSV}` (data row 1 = task 1), and write the outputs below. Header: `#!/bin/bash`, `#SBATCH -N 1 -p {SLURM_PARTITION}`, `#SBATCH --array=1-{ARRAY_N}`, `#SBATCH {ARRAY_RESOURCES}`, `#SBATCH --mail-type=END,FAIL`, `#SBATCH --mail-user={USER_EMAIL}`, and one log per array task, `%A` = array job id and `%a` = task id: `#SBATCH -o {RESULTS_DIR}/logs/align_count_f1_%A_%a.out` (F1) or `#SBATCH -o {RESULTS_DIR}/logs/align_wasp_count_%A_%a.out` (outbred). They use block C, but the containers must already be cached by the prep job (it fetches all five, see "Prep container fetch" in Step 10), so parallel tasks never download the same file: in these scripts define `fetch_sif` as a check only, `fetch_sif() { [ -s "$1" ] || { echo "ERROR: missing container $1 (run the prep job first)" >&2; exit 1; }; }`, and **call** it for each container the script uses, on the lines right after block C (see "Per-script fetch lines" in Step 10): `fetch_sif "$STAR_SIF"; fetch_sif "$GATK_SIF"; fetch_sif "$SAMTOOLS_SIF"; fetch_sif "$PICARD_SIF"`. The wrapper functions are `star`, `gatk`, `samtools` and `picard` (the table in Step 10, block C). `{MIN_MAPQ}` and `{MIN_BASEQ}` are the ASEReadCounter thresholds recorded in Step 8.
 
 | Output | Content |
 |---|---|
@@ -981,7 +998,7 @@ sessionInfo()
 ```
 ````
 
-Render each Rmd from its own `sbatch -p bcc` script, written to `{RESULTS_DIR}/scripts/` (like every other script of this skill). `run_01_import_qc.sh` is the template; `run_02_imbalance.sh` (Step 13) is identical except for the job name, the log name and the Rmd file. Requests: `-n 1 --mem=16G -t 1:00:00` (both Rmds run single-threaded). The log goes to the shared filesystem under `{RESULTS_DIR}/logs` (never `/tmp`, which is node-local). `{GTF_DIR}` is the directory of `{GTF_PATH}` (`dirname`); bind each directory once. **`--bind` line, two cases** (use exactly one; comma, no space, never a path glued to another):
+Render each Rmd from its own `sbatch` script, written to `{RESULTS_DIR}/scripts/` (like every other script of this skill). `run_01_import_qc.sh` is the template; `run_02_imbalance.sh` (Step 13) is identical except for the job name, the log name and the Rmd file. Requests: `-n 1 --mem=16G -t 1:00:00` (both Rmds run single-threaded). The log goes to the shared filesystem under `{RESULTS_DIR}/logs` (never `/tmp`, which is node-local). `{GTF_DIR}` is the directory of `{GTF_PATH}` (`dirname`); bind each directory once. **`--bind` line, two cases** (use exactly one; comma, no space, never a path glued to another):
 
 - `{GTF_DIR}` inside `{CWD}`: `singularity exec --bind {CWD} {R_SIF} \` (for example `--bind /data/proj` when the GTF is `/data/proj/genome/genes.gtf`);
 - `{GTF_DIR}` outside `{CWD}`: `singularity exec --bind {CWD},{GTF_DIR} {R_SIF} \` (for example `--bind /data/proj,/refs/mouse/mm39_ens112`).
@@ -991,13 +1008,13 @@ The template below shows the second case:
 ```bash
 #!/bin/bash
 #SBATCH -J ase_01_import_qc
-#SBATCH -N 1 -p bcc
+#SBATCH -N 1 -p {SLURM_PARTITION}
 #SBATCH -n 1 --mem=16G -t 1:00:00
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user={USER_EMAIL}
 #SBATCH -o {RESULTS_DIR}/logs/run_01_import_qc_%j.out
 set -uo pipefail
-module add singularity/3.10.4 || exit 1
+{SINGULARITY_LOAD} || exit 1
 singularity exec --bind {CWD},{GTF_DIR} {R_SIF} \
   Rscript -e "rmarkdown::render('{CWD}/{TODAY}_{WD_NAME}_01_import_qc.Rmd', output_dir = '{RESULTS_DIR}', knit_root_dir = '{CWD}')" \
   || { echo "ERROR: Rmd 01 failed" >&2; exit 1; }
@@ -1657,7 +1674,7 @@ hap_gene_test <- function(a, b, sample, rho_min, min_genes = 20) {
 - **`bb_estimate_rho` is the naive H0 fit (p = 0.5) on all filtered sites.** When real imbalance exists, the between-site spread it causes is absorbed into `rho`, which inflates it; on the synthetic acceptance data (binomial truth, about a third of the sites imbalanced) it gave 0.08-0.10, and testing with it detected 0 of 16 planted outbred genes. It is therefore only a diagnostic (`rho_h0_naive`), the upper bound of the trimmed fit, and the F1 fallback. It is estimated by maximum likelihood on the logistic scale (`optimize`), and a value below 1e-4 is reported as 0 (pure binomial). Fewer than 20 sites gives `NA` and the sample is not tested.
 - **Outbred `rho`: `bb_estimate_rho_trim` (central sites, truncation-corrected).** Unphased data give no free mean per gene (the SNP orientation is unknown), so imbalanced sites are handled by trimming. Each site's counts are folded around n/2; its central region is the set of counts closest to n/2 that holds `keep` = 90 percent of the H0 beta-binomial probability under the current `rho`. Sites whose observed count falls outside their region are set aside, and `rho` is re-fitted on the kept sites with a **truncated likelihood**: each kept site's H0 density is divided by the H0 probability of its region. That division is the correction for the truncation: without it, cutting the tails would shrink `rho` and make the tests anti-conservative. Region and `rho` are iterated upward from a small start (0.001) to a fixed point, the lowest self-consistent value and so the one least contaminated by imbalanced sites (if the discrete regions make the iteration cycle, the largest value of the cycle is kept), and `rho_trim` is bounded above by the all-sites fit (trimming tails cannot make the data more overdispersed, and an unbounded fit on very few sites can run to a U-shaped distribution under which central counts look significant). `central_frac` is the fraction of sites kept. Rmd 02 tests with `max(rho_trim, RHO_MIN)`. Unit-test results: 10 seeds x 300 genes of 1-4 SNPs, unphased, depth 30-200, `bb_pvalue` per SNP and `acat` per gene. With a third of the genes imbalanced (0.85/0.70/0.30) on binomial data, as in the acceptance data, `rho_trim` is 0.0007 (naive fit 0.093), the null size is 0.004 (SNP) / 0.003 (gene) and the power is 1.00 for 0.85 genes and 0.88 for 0.70/0.30 genes, against 0 with the naive fit; with a true `rho` of 0.01 the power is 1.00 / 0.74 (null gene size 0.016). Without imbalance `rho_trim` recovers the truth (0.0196 for 0.02, 0.0497 for 0.05) and the pooled null gene size is 0.040 / 0.053 (worst seed 0.083). On samples the size of the synthetic acceptance data (about 30 sites, 4 of 12 genes planted, 100 seeds) 3.3 of 4 planted genes are detected with a null false-positive rate of 0.003; in about one sample in ten the fit cannot separate the few imbalanced sites and stays near the naive value (conservative). On the acceptance count tables themselves Rmd 02 now detects 10 of 16 planted gene x sample tests (before: 0) with 0 of 28 null false positives. The remaining limitation: with real overdispersion and many imbalanced sites, imbalanced sites that fall inside the central regions keep `rho_trim` above the truth (0.039 for a true 0.02 with a third of the genes imbalanced), which lowers the power for moderate imbalance (0.23 for 0.70/0.30 genes) but adds no false positives.
 - `acat` is the Cauchy combination test with equal weights; it is valid for correlated p-values, which is why it is used for the SNPs of one gene. It carries no direction. P-values are capped at 0.99 before the transform: `bb_pvalue` returns exactly 1 at the modal count, and `tan((0.5 - 1) * pi)` is about -1.6e16, which would swamp any signal and make the combined p-value 1. Values are also clipped at 1e-15 from below.
-- The unit tests check the null size and uniformity of the p-values, power, recovery of `rho` (including `rho` near 0), the edge cases (`n = 0`, `x = 0`, `x = n`), `acat`, and the full outbred path (trimmed `rho`, floor, per-SNP test, ACAT per gene) on simulated unphased data with planted 0.85/0.70/0.30 genes. Run them from the repository root with `singularity exec --bind /net/bmc-lab3 <bulkrnaseq sif> Rscript ase-pipeline/tests/r/test_ase_stats.R ase-pipeline/ase-pipeline.md` inside an `sbatch -p bcc` job.
+- The unit tests check the null size and uniformity of the p-values, power, recovery of `rho` (including `rho` near 0), the edge cases (`n = 0`, `x = 0`, `x = n`), `acat`, and the full outbred path (trimmed `rho`, floor, per-SNP test, ACAT per gene) on simulated unphased data with planted 0.85/0.70/0.30 genes. Run them from the repository root with `singularity exec --bind <repository root> <bulkrnaseq sif> Rscript ase-pipeline/tests/r/test_ase_stats.R ase-pipeline/ase-pipeline.md` inside an `sbatch` job (see `tests/r/run_stats_tests.sh`).
 - **F1 gene level uses `bb_estimate_rho_gene` and `bb_gene_lrt`, not summed counts.** `bb_estimate_rho` (H0, p = 0.5 everywhere) treats the between-SNP spread caused by true imbalance as overdispersion, so with many imbalanced genes it is inflated (in the unit test about four times the true value), and applying it to counts summed over a gene multiplies the variance by about `1 + (n - 1) * rho`. `bb_estimate_rho_gene` maximises the likelihood with a free mean for every gene (genes with at least 2 SNPs; `NA` below 5 such genes) and returns `c(free, corrected)`. The free estimate is biased low: a free mean per gene shrinks the whole variance factor `1 + (n - 1) * rho` by `(k - 1) / k` (Neyman-Scott), which for 4-SNP genes gives 0.0115 for a true 0.02. The corrected value undoes that shrinkage, `rho_corrected = cf * rho_free + (cf - 1) / m` with `cf = sum(k) / sum(k - 1)` and `m` the mean of `n - 1` (0.021 in the same test). Rmd 02 then uses `rho_gene = max(rho_corrected, RHO_MIN)` for the gene tests (`RHO_MIN`, default 0.01, from Step 8), so a noisy or zero estimate can never make them anti-conservative. `bb_gene_lrt` tests `p = 0.5` against a shared free `p` per gene on the SNP-level counts and returns `phat`. Outbred mode uses `bb_estimate_rho_trim`, `bb_pvalue` and `acat`.
 - **Thinned SNPs (F1 gene LRT and `bb_estimate_rho_gene`).** ASEReadCounter counts a fragment at every SNP it overlaps, so when several SNPs of a gene lie within one fragment (common in divergent F1 haplotype blocks) their counts share read pairs; a likelihood that treats them as independent draws lets the LRT statistic grow with the number of SNPs per fragment, and the free-mean `rho` estimate cannot compensate (SNPs that share reads agree with each other). The Rmd 02 F1 gene LRT therefore uses only the SNPs kept by `thin_snps`: at most one SNP per `THIN_BP` window of each gene in exon coordinates (exon union of the gene), the deepest first (ties: lower position), so no read pair is counted twice; this is approximate, because alternative splicing can bring distant exons into one fragment. The gene table reports `n_snps` (the gene's SNPs in the sample) and `n_snps_used` (the thinned SNPs the test used). **Fallback chain of `rho_gene`.** The gene LRT has its own `rho_gene`: (1) `bb_estimate_rho_gene` on the thinned SNPs, bias-corrected and floored at `RHO_MIN`; (2) if that is `NA` (fewer than 5 genes with 2 or more thinned SNPs, as on the synthetic acceptance data, where 2 of 12 genes keep 2 SNPs), the unthinned free-mean value that the SNP tests use, `max(rho_corrected, RHO_MIN)`; (3) only if both are `NA`, `max(rho_h0, RHO_MIN)`; the Summary column `rho_gene_source` records which. Measured in the fragment-level simulation of `test_ase_stats_stage2.R` (see "SNPs sharing read pairs" below; 10 seeds x 1500 null genes, 6 samples, 30 percent SNP-dense genes), the size of the Rmd 02 F1 gene LRT at a nominal 0.05 was 0.1450 unthinned and 0.0497 thinned (genes with 2 or more SNPs left; worst seed 0.0551); in the SNP-dense genes it was 0.2084 unthinned, and thinned these genes keep a single SNP, so they have no multi-SNP gene test (a gene with one SNP left is tested on that SNP alone). The same thinned test with the unthinned `rho` gave 0.0497 (worst seed 0.0551). In a fallback scenario (10 seeds x 300 null genes, 6 samples, all but 3 genes SNP-dense, so step (2) is taken in every sample) the size was 0.0467 (worst seed 0.0556), 0.0462 in the SNP-dense genes (worst seed 0.0550). In both simulations the free-mean estimate is 0 and `rho_gene` sits at the `RHO_MIN` floor (the simulated animal-level spread, 0.005, is below it), so they do not show how an unthinned estimate above the floor would behave: the fallback with the unthinned dispersion has not been verified when the true overdispersion is above RHO_MIN; because SNPs that share reads push that estimate low, the gene test may be anti-conservative in that case. A correct gene test costs power in genes whose SNPs are close together: on the synthetic acceptance F1 data most genes keep a single SNP, the thinned test finds 21 of 24 planted gene x sample tests with 0 of 42 null false positives (the three misses are 0.70 genes whose single kept SNP gives padj 0.051-0.19), and the Stage 1 figure of 24 of 24 planted gene x sample tests no longer applies (it relied on counting shared read pairs several times). Stated property of the thinning: to choose the kept SNP, the depth is pooled over all samples of the project, so every sample uses the same choice of SNPs, a kept SNP that is below `MIN_DEPTH` in one sample leaves that sample's gene test with fewer SNPs (or none), and adding samples or conditions to the project can change which SNP is kept in a dense gene (and so the gene p-values of the samples already analysed). The SNP-level tests are unchanged: the same `bb_pvalue` per SNP with the Stage 1 `rho` (free-mean estimate on all SNPs, fallback `rho_h0`), and so is the outbred path (per-SNP tests and the ACAT gene test, which is valid under dependence).
 - Boundary handling: the `rho` estimators return exactly 0 when the optimum sits at the lower boundary (or below 1e-4), `bb_estimate_rho` and `bb_estimate_rho_gene` emit a warning when it sits at the upper boundary, and `bb_estimate_rho_trim` warns if it does not converge; Rmd 02 prints such warnings per sample and writes them to the Summary (`rho_warning`). `bb_pvalue` returns `NA` for `x` below 0, above `n`, non-integer or missing.
@@ -1697,7 +1714,7 @@ hap_gene_test <- function(a, b, sample, rho_min, min_genes = 20) {
 
 ## Step 15 — Submission order and summary report
 
-### Submission order (one block, every job `sbatch -p bcc`)
+### Submission order (one block, every job `sbatch {PCLI_FLAG}`)
 
 Write all scripts to `{RESULTS_DIR}/scripts/` (Steps 10-13, and Steps 16-19 for the selected analyses), run `mkdir -p {RESULTS_DIR}/logs {RESULTS_DIR}/tmp`, then submit the whole chain with `--parsable` job ids and `--dependency=afterok` so that no job starts before its inputs exist and none starts after a failure. Write the block below to `{RESULTS_DIR}/scripts/submit_chain.sh`, substitute the placeholders, keep or delete the optional mouse helper lines, show it to the user, and run it once from `{CWD}` with `bash {RESULTS_DIR}/scripts/submit_chain.sh` (it only calls `sbatch`, so it may run on the login node). It stops with an error, and submits nothing more, when a script it needs is missing or empty (`NEED`) or when `sbatch` returns no job id (`got`); it also stops when `{ANALYSES}` is empty or holds any word other than `per-sample`, `reciprocal`, `differential`, `phaser` (for example menu numbers), when `phaser` is selected in F1 mode, when phASER's `{PHASER_HOME}` is not an absolute path or a phASER script pins another commit or another `{PHASER_HOME}`, and when `{RESULTS_DIR}/logs/chain_job_ids.tsv` already exists (a chain has been submitted from this results directory). It records every job id in `{RESULTS_DIR}/logs/chain_job_ids.tsv` (script name, job id), which `wait_chain.sh` below reads.
 
@@ -1743,31 +1760,31 @@ DEP=""; R3="not selected"; R4="not selected"; R5="not selected"; PS=""   # DEP s
 # which downloads/decompresses the FASTA, writes the .fai and compares the parental VCF's contigs with it.
 # Without the helper, delete the next four lines; the scripts do not exist and sbatch would fail.
 NEED="$NEED extract_mgp_parental_vcf.sh concat_mgp_parental_vcf.sh"; MISSING=$(for f in $NEED; do [ -s "$S/$f" ] || echo "$f"; done); [ -z "$MISSING" ] || die "MISSING in $S: $(echo $MISSING) - nothing submitted"
-X=$(sbatch -p bcc --parsable $S/extract_mgp_parental_vcf.sh); got extract_mgp_parental_vcf.sh "$X"
-C=$(sbatch -p bcc --parsable --dependency=afterok:$X $S/concat_mgp_parental_vcf.sh); got concat_mgp_parental_vcf.sh "$C"
+X=$(sbatch {PCLI_FLAG}--parsable $S/extract_mgp_parental_vcf.sh); got extract_mgp_parental_vcf.sh "$X"
+C=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$X $S/concat_mgp_parental_vcf.sh); got concat_mgp_parental_vcf.sh "$C"
 DEP="--dependency=afterok:$C"
 # 1. prep job (PREP_SCRIPT was set from MODE above)
-P=$(sbatch -p bcc --parsable $DEP $S/$PREP_SCRIPT); got $PREP_SCRIPT "$P"
+P=$(sbatch {PCLI_FLAG}--parsable $DEP $S/$PREP_SCRIPT); got $PREP_SCRIPT "$P"
 # 2. per-sample array job (ARRAY_SCRIPT was set from MODE above)
-A=$(sbatch -p bcc --parsable --dependency=afterok:$P $S/$ARRAY_SCRIPT); got $ARRAY_SCRIPT "$A"
+A=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$P $S/$ARRAY_SCRIPT); got $ARRAY_SCRIPT "$A"
 # 3. Rmd 01 (import, filters, reference-bias QC) after every array task succeeded
-R1=$(sbatch -p bcc --parsable --dependency=afterok:$A $S/run_01_import_qc.sh); got run_01_import_qc.sh "$R1"
+R1=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$A $S/run_01_import_qc.sh); got run_01_import_qc.sh "$R1"
 # 4. Rmd 02 (per-sample imbalance, xlsx, summary_numbers.tsv) after Rmd 01
-R2=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_02_imbalance.sh); got run_02_imbalance.sh "$R2"
+R2=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$R1 $S/run_02_imbalance.sh); got run_02_imbalance.sh "$R2"
 # 5. Rmd 03 only when reciprocal F1 was selected (Step 7): after Rmd 01 (it reads only the Rmd 01 checkpoint; runs beside Rmd 02)
 case " $ANALYSES " in *reciprocal*)
-  R3=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_03_reciprocal.sh); got run_03_reciprocal.sh "$R3" ;;
+  R3=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$R1 $S/run_03_reciprocal.sh); got run_03_reciprocal.sh "$R3" ;;
 esac
 # 6. Rmd 04 only when differential ASE was selected (Step 7): after Rmd 01 (runs beside Rmd 02 and Rmd 03)
 case " $ANALYSES " in *differential*)
-  R4=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_04_differential.sh); got run_04_differential.sh "$R4" ;;
+  R4=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$R1 $S/run_04_differential.sh); got run_04_differential.sh "$R4" ;;
 esac
 # 7. phASER only when selected (Step 7, outbred): the installation when needed (above; it runs beside the prep job), the per-sample
 #    phASER array after the alignment array and the installation, then Rmd 05 after phASER and Rmd 02 (it compares with Rmd 02)
 case " $ANALYSES " in *" phaser "*)
-  case "$INSTALL" in yes) PS=$(sbatch -p bcc --parsable $S/setup_phaser_env.sh); got setup_phaser_env.sh "$PS" ;; esac
-  PH=$(sbatch -p bcc --parsable --dependency=afterok:$A${PS:+:$PS} $S/phaser_count.sh); got phaser_count.sh "$PH"
-  R5=$(sbatch -p bcc --parsable --dependency=afterok:$PH:$R2 $S/run_05_phaser.sh); got run_05_phaser.sh "$R5" ;;
+  case "$INSTALL" in yes) PS=$(sbatch {PCLI_FLAG}--parsable $S/setup_phaser_env.sh); got setup_phaser_env.sh "$PS" ;; esac
+  PH=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$A${PS:+:$PS} $S/phaser_count.sh); got phaser_count.sh "$PH"
+  R5=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$PH:$R2 $S/run_05_phaser.sh); got run_05_phaser.sh "$R5" ;;
 esac
 echo "submitted (script, job id):"; cat "$IDS"
 echo "Rmd 03: $R3; Rmd 04: $R4; Rmd 05: $R5"
@@ -1833,51 +1850,51 @@ Write the summary page only after `wait_chain.sh` has returned. A failure of the
 **Recipe A — Rmd 05 alone** (Rmd 02 and every `phaser_count.sh` task succeeded; only Rmd 05 failed, and its cause is fixed). Rmd 05 gets no dependency, because its inputs already exist: check first that `{RESULTS_DIR}/ase_imbalance_checkpoint.rds` exists and that `ls {RESULTS_DIR}/phaser/*.gene_ae.txt | wc -l` equals the number of samples. Never use `afterok` on the job ids of the old chain: a finished job id is no valid dependency.
 
 ```bash
-R5=$(sbatch -p bcc --parsable $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"
+R5=$(sbatch {PCLI_FLAG}--parsable $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"
 ```
 
 **Recipe B — Rmd 02, then Rmd 05** (Rmd 02 failed and is fixed; Rmd 01 and `phaser_count.sh` succeeded, so `phaser_count.sh` is not re-run and Rmd 05 depends on the new Rmd 02 only).
 
 ```bash
-R2=$(sbatch -p bcc --parsable $S/run_02_imbalance.sh); got run_02_imbalance.sh "$R2"
-R5=$(sbatch -p bcc --parsable --dependency=afterok:$R2 $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"
+R2=$(sbatch {PCLI_FLAG}--parsable $S/run_02_imbalance.sh); got run_02_imbalance.sh "$R2"
+R5=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$R2 $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"
 ```
 
 **Recipe C — `phaser_count.sh`, then Rmd 05** (the BAMs exist and Rmd 02 succeeded; `phaser_count.sh` or the installation failed, timed out or ran out of memory, and the cause is fixed, for example a larger `--mem` in `phaser_count.sh`). `phaser_count.sh` has no dependency on the alignment array; it waits only for an installation job, which the installation test of part (1) submits only when `{PHASER_HOME}` is not installed.
 
 ```bash
-case "$INSTALL" in yes) PS=$(sbatch -p bcc --parsable $S/setup_phaser_env.sh); got setup_phaser_env.sh "$PS" ;; esac
-PH=$(sbatch -p bcc --parsable ${PS:+--dependency=afterok:$PS} $S/phaser_count.sh); got phaser_count.sh "$PH"
-R5=$(sbatch -p bcc --parsable --dependency=afterok:$PH $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"
+case "$INSTALL" in yes) PS=$(sbatch {PCLI_FLAG}--parsable $S/setup_phaser_env.sh); got setup_phaser_env.sh "$PS" ;; esac
+PH=$(sbatch {PCLI_FLAG}--parsable ${PS:+--dependency=afterok:$PS} $S/phaser_count.sh); got phaser_count.sh "$PH"
+R5=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$PH $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"
 ```
 
 **Recipe D — Rmd 01 onwards after a fixed array task** (the failed alignment task was re-submitted and has succeeded, so every BAM and count table exists): Rmd 01 without a dependency, Rmd 02, the selected Rmd 04 after Rmd 01, and `phaser_count.sh` and Rmd 05 as in recipe C, with Rmd 05 also after the new Rmd 02 (phASER is outbred only, so there is no Rmd 03 line).
 
 ```bash
-R1=$(sbatch -p bcc --parsable $S/run_01_import_qc.sh); got run_01_import_qc.sh "$R1"
-R2=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_02_imbalance.sh); got run_02_imbalance.sh "$R2"
+R1=$(sbatch {PCLI_FLAG}--parsable $S/run_01_import_qc.sh); got run_01_import_qc.sh "$R1"
+R2=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$R1 $S/run_02_imbalance.sh); got run_02_imbalance.sh "$R2"
 case " $ANALYSES " in *differential*)
-  R4=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_04_differential.sh); got run_04_differential.sh "$R4" ;;
+  R4=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$R1 $S/run_04_differential.sh); got run_04_differential.sh "$R4" ;;
 esac
-case "$INSTALL" in yes) PS=$(sbatch -p bcc --parsable $S/setup_phaser_env.sh); got setup_phaser_env.sh "$PS" ;; esac
-PH=$(sbatch -p bcc --parsable ${PS:+--dependency=afterok:$PS} $S/phaser_count.sh); got phaser_count.sh "$PH"
-R5=$(sbatch -p bcc --parsable --dependency=afterok:$PH:$R2 $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"
+case "$INSTALL" in yes) PS=$(sbatch {PCLI_FLAG}--parsable $S/setup_phaser_env.sh); got setup_phaser_env.sh "$PS" ;; esac
+PH=$(sbatch {PCLI_FLAG}--parsable ${PS:+--dependency=afterok:$PS} $S/phaser_count.sh); got phaser_count.sh "$PH"
+R5=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$PH:$R2 $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"
 ```
 
 Recipes C and D re-submit the whole `phaser_count.sh` array with its `#SBATCH --array=1-{ARRAY_N}`: when rows of `{SAMPLES_CSV}` were removed since the chain was submitted, rewrite `{ARRAY_N}` in `phaser_count.sh` first (Step 18), or use recipe E.
 
-**Recipe E — after dropping a sample, with phASER selected** (Dropping a failed sample, below: the row is removed from `{SAMPLES_CSV}`; `phaser_count.sh` is not re-run, because the phASER outputs of the remaining samples do not depend on the other samples): Rmd 01 without a dependency, Rmd 02 after Rmd 01, the selected Rmd 04 after Rmd 01 (as in recipe D; phASER is outbred only, so there is no Rmd 03 line), and Rmd 05 after Rmd 02 only. Check first that every remaining sample has its finished phASER table: `awk -F, 'NR > 1 {print $1}' {SAMPLES_CSV} | tr -d '\r' | while read -r s; do [ -s {RESULTS_DIR}/phaser/$s.gene_ae.txt ] || echo "missing $s"; done` must print nothing (otherwise re-run that sample's task first, with the task number of its row in the edited sheet: `sbatch -p bcc --array=<task> $S/phaser_count.sh`, and wait until it has succeeded). Never re-submit `phaser_count.sh` with its old `--array` range here.
+**Recipe E — after dropping a sample, with phASER selected** (Dropping a failed sample, below: the row is removed from `{SAMPLES_CSV}`; `phaser_count.sh` is not re-run, because the phASER outputs of the remaining samples do not depend on the other samples): Rmd 01 without a dependency, Rmd 02 after Rmd 01, the selected Rmd 04 after Rmd 01 (as in recipe D; phASER is outbred only, so there is no Rmd 03 line), and Rmd 05 after Rmd 02 only. Check first that every remaining sample has its finished phASER table: `awk -F, 'NR > 1 {print $1}' {SAMPLES_CSV} | tr -d '\r' | while read -r s; do [ -s {RESULTS_DIR}/phaser/$s.gene_ae.txt ] || echo "missing $s"; done` must print nothing (otherwise re-run that sample's task first, with the task number of its row in the edited sheet: `sbatch {PCLI_FLAG}--array=<task> $S/phaser_count.sh`, and wait until it has succeeded). Never re-submit `phaser_count.sh` with its old `--array` range here.
 
 ```bash
-R1=$(sbatch -p bcc --parsable $S/run_01_import_qc.sh); got run_01_import_qc.sh "$R1"
-R2=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_02_imbalance.sh); got run_02_imbalance.sh "$R2"
+R1=$(sbatch {PCLI_FLAG}--parsable $S/run_01_import_qc.sh); got run_01_import_qc.sh "$R1"
+R2=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$R1 $S/run_02_imbalance.sh); got run_02_imbalance.sh "$R2"
 case " $ANALYSES " in *differential*)
-  R4=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_04_differential.sh); got run_04_differential.sh "$R4" ;;
+  R4=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$R1 $S/run_04_differential.sh); got run_04_differential.sh "$R4" ;;
 esac
-R5=$(sbatch -p bcc --parsable --dependency=afterok:$R2 $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"
+R5=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$R2 $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"
 ```
 
-A sample whose `phaser_count.sh` task alone failed can also be re-run as one array task (`sbatch -p bcc --array=<task> $S/phaser_count.sh`, with the task number of its row), followed by recipe A once it has succeeded.
+A sample whose `phaser_count.sh` task alone failed can also be re-run as one array task (`sbatch {PCLI_FLAG}--array=<task> $S/phaser_count.sh`, with the task number of its row), followed by recipe A once it has succeeded.
 
 **Dropping a failed sample.** If a sample cannot be fixed (for example it has no counted sites, or no sites left after filtering in Rmd 01), the supported way out is to remove it from the analysis, never to edit the Rmds: with the user's confirmation, remove that sample's row from `{SAMPLES_CSV}` (keep a copy of the original sheet next to it), cancel every pending Rmd job (see "Re-submitting part of the chain"), and re-run from Rmd 01 with `submit_rmds.sh` (Rmd 01 without a dependency on the old array job, then Rmd 02, and the selected Rmd 03 / Rmd 04 after Rmd 01; when phASER was selected, build `submit_rmds.sh` from recipe E above, which adds Rmd 05 after Rmd 02 and does not re-run `phaser_count.sh`), whether an array task or only an Rmd failed (only Rmd 01 reads `{SAMPLES_CSV}`; Rmd 02, 03, 04 and 05 read its checkpoint, so they see the dropped sample until Rmd 01 has run again). The Rmds read the tables by the sample names in `{SAMPLES_CSV}`, so the dropped sample's files are simply ignored (if its table exists, Rmd 01 lists it as a table of a sample not in the sheet). Re-submitting the array job is not needed, because the other samples' tables already exist; if the array job is re-run anyway, `{ARRAY_N}` must be updated to the new number of rows (task numbers follow the rows of the edited sheet). Rmd 03 and Rmd 04 are re-run after Rmd 01 in the same way (a dropped sample can change whether a design is still valid, so re-check Step 7's preconditions first). Rmd 02 is always re-run too, even when it had succeeded: the thinning pools the depth over all samples of the project, so removing a sample can change which SNP a dense gene keeps, and with it the gene p-values of the remaining samples. When phASER was selected, Rmd 05 (Step 19) is re-run after Rmd 02 for a similar reason: its dispersion uses the median over all samples (`rho_cohort`), so removing a sample can change the p-values of the remaining samples. Rmd 05 reads the checkpoints of Rmd 01 and Rmd 02 and the phASER table of every sample in `samples.csv`; re-run it after Rmd 02 (recipe E, which also says how to check that every remaining sample has its phASER table). `phaser_count.sh` need not run again for the remaining samples, and its stale `--array=1-{ARRAY_N}` range must never be re-submitted: task numbers follow the rows of the edited sheet, so a task beyond the new last row stops with "no row N" and Rmd 05 is cancelled; if `phaser_count.sh` must run again later (recipe C or D), first rewrite `{ARRAY_N}` in it to the new number of data rows (Step 18). Say in the summary page which sample was dropped and why.
 
@@ -2494,7 +2511,7 @@ phASER phases each sample's heterozygous SNPs from the reads themselves: a read 
 
 `{PHASER_HOME}` must be an absolute path to a new or empty directory that holds nothing but phASER. The script deletes and rebuilds `env`, `src/phaser` and `pkgs` inside it, so it refuses a directory that is not empty and has no `.ase_pipeline_phaser` marker. The installation needs about 2.6 GB free while it runs: the conda package cache `pkgs` (about 1.9 GB) is removed at the end, and about 650 MB stay (the environment and the 22 MB clone).
 
-The installation is a compute job: conda and `git` need the internet, which the compute nodes have, and the job takes 10 to 20 minutes, mostly conda's classic solver. `module add miniconda3/v4` in this job is the only module besides `singularity/3.10.4` that the skill ever loads. The phASER scripts of a project load no module and do not activate the environment: they put `{PHASER_HOME}/env/bin` first on `PATH`, and `samtools`, `bcftools`, `tabix` and `python` come from it. Every script that runs the environment's Python exports `PYTHONNOUSERSITE=1` and unsets `PYTHONPATH` and `PYTHONHOME`. Otherwise the user site-packages directory of the same Python version (`~/.local/lib/python3.14`, filled by pip's per-user installs) would shadow the environment's packages (it fails with `GLIBC_2.27 not found` on this cluster), and an inherited Python search path would do the same.
+The installation is a compute job: conda and `git` need the internet, which the compute nodes have, and the job takes 10 to 20 minutes, mostly conda's classic solver. The configured `{CONDA_SETUP}` line in this job is the only load line besides `{SINGULARITY_LOAD}` that the skill ever uses. The phASER scripts of a project load no module and do not activate the environment: they put `{PHASER_HOME}/env/bin` first on `PATH`, and `samtools`, `bcftools`, `tabix` and `python` come from it. Every script that runs the environment's Python exports `PYTHONNOUSERSITE=1` and unsets `PYTHONPATH` and `PYTHONHOME`. Otherwise the user site-packages directory of the same Python version (`~/.local/lib/python3.14`, filled by pip's per-user installs) would shadow the environment's packages (on some clusters it fails with `GLIBC_2.27 not found`), and an inherited Python search path would do the same.
 
 ### `setup_phaser_env.sh`
 
@@ -2503,7 +2520,7 @@ Written to `{RESULTS_DIR}/scripts/setup_phaser_env.sh` (substitute the placehold
 ```bash
 #!/bin/bash
 #SBATCH -J ase_phaser_setup
-#SBATCH -N 1 -p bcc
+#SBATCH -N 1 -p {SLURM_PARTITION}
 #SBATCH -n 4 --mem=16G -t 2:00:00
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user={USER_EMAIL}
@@ -2552,8 +2569,7 @@ git clone -q "$PHASER_REPO" "$PHASER_HOME/src/phaser" || die "git clone of $PHAS
 git -C "$PHASER_HOME/src/phaser" checkout -q "$PHASER_COMMIT" || die "commit $PHASER_COMMIT not found"
 [ "$(git -C "$PHASER_HOME/src/phaser" rev-parse HEAD)" = "$PHASER_COMMIT" ] || die "the checked-out commit differs from $PHASER_COMMIT"
 printf '%s\n' "$ENV_YML" > "$PHASER_HOME/environment.phaser.yml" || die "cannot write $PHASER_HOME/environment.phaser.yml"
-module add miniconda3/v4 || die "cannot load the miniconda3/v4 module"
-source /home/software/conda/miniconda3/bin/condainit || die "cannot initialise conda"
+{CONDA_SETUP} || die "cannot set up conda"
 export CONDA_PKGS_DIRS="$PHASER_HOME/pkgs"
 conda env create -p "$PHASER_HOME/env" -f "$PHASER_HOME/environment.phaser.yml" || die "conda env create failed"
 rm -rf "$PHASER_HOME/pkgs"     # the package cache (about 1.9 GB) is not needed after the installation
@@ -2581,7 +2597,7 @@ Change the version list of `environment.phaser.yml` the same way, after a test i
 
 ### `phaser_count.sh`
 
-A SLURM array job, one task per data row of `{SAMPLES_CSV}`, submitted by `submit_chain.sh` (Step 15) after the per-sample array job (Step 11) and, when it runs, the installation job. Write it to `{RESULTS_DIR}/scripts/phaser_count.sh` and substitute all of its placeholders: `{ARRAY_N}`, `{PHASER_RESOURCES}` (Step 9), `{USER_EMAIL}`, `{RESULTS_DIR}`, `{SAMPLES_CSV}`, `{MIN_BASEQ}` (Step 8), and `{PHASED_GT}` and `{PHASER_HOME}` (Step 7).
+A SLURM array job, one task per data row of `{SAMPLES_CSV}`, submitted by `submit_chain.sh` (Step 15) after the per-sample array job (Step 11) and, when it runs, the installation job. Write it to `{RESULTS_DIR}/scripts/phaser_count.sh` and substitute all of its placeholders: `{ARRAY_N}`, `{PHASER_RESOURCES}` (Step 9), `{USER_EMAIL}`, `{SLURM_PARTITION}`, `{RESULTS_DIR}`, `{SAMPLES_CSV}`, `{MIN_BASEQ}` (Step 8), and `{PHASED_GT}` and `{PHASER_HOME}` (Step 7).
 
 **`{ARRAY_N}`** is the number of data rows of `{SAMPLES_CSV}` when the chain is submitted, as for the alignment array (Step 9); array task N reads data row N. After a sample is dropped (Step 15, Dropping a failed sample) the old range is stale: a re-submission with it runs a task for a row that no longer exists, which stops with "no row N", and Rmd 05 is then cancelled. Never re-submit `phaser_count.sh` with the old range: before recipe C or D of Step 15 re-submits it, rewrite `{ARRAY_N}` in `{RESULTS_DIR}/scripts/phaser_count.sh` to the new number of data rows (the outputs of the remaining samples need no re-run: recipe E).
 
@@ -2620,7 +2636,7 @@ The script loads no module and activates no conda environment: it puts `{PHASER_
 ```bash
 #!/bin/bash
 #SBATCH -J ase_phaser
-#SBATCH -N 1 -p bcc
+#SBATCH -N 1 -p {SLURM_PARTITION}
 #SBATCH --array=1-{ARRAY_N}
 #SBATCH {PHASER_RESOURCES}
 #SBATCH --mail-type=END,FAIL
@@ -3025,10 +3041,10 @@ If the job stops with "phASER gene counts missing for sample(s)", the named samp
 
 ## Notes for the assistant
 
-- **Containers, not modules.** Tools come from the cached Singularity images of Step 2; the only module loaded for the tools is `singularity/3.10.4`, always with a checked `|| exit 1`; the one exception is `module add miniconda3/v4` in the one-time phASER installation job (`setup_phaser_env.sh`, Step 18), because conda is not available as a container here. The phASER scripts of a project load no module. R exists only in the `bulkrnaseq` image (`{R_SIF}`).
-- **No R and no heavy work on the login node.** STAR, GATK, Picard, samtools, bcftools, R, the phASER installation and counting, the unit tests and the Rmd renders all run as `sbatch -p bcc` jobs; the login node only writes text, reads small files, submits and waits. The summary page is written from the summary TSVs (`summary_numbers.tsv`, and `summary_numbers_reciprocal.tsv` / `summary_numbers_differential.tsv` / `summary_numbers_phaser.tsv` when Rmd 03 / 04 / 05 ran), not from R.
+- **Containers, not modules.** Tools come from the cached Singularity images of Step 2; the only load line for the tools is the configured `{SINGULARITY_LOAD}`, always with a checked `|| exit 1`; the one exception is the configured `{CONDA_SETUP}` line in the one-time phASER installation job (`setup_phaser_env.sh`, Step 18), because conda is not available as a container here. The phASER scripts of a project load no module. R exists only in the `bulkrnaseq` image (`{R_SIF}`).
+- **No R and no heavy work on the login node.** STAR, GATK, Picard, samtools, bcftools, R, the phASER installation and counting, the unit tests and the Rmd renders all run as `sbatch` jobs; the login node only writes text, reads small files, submits and waits. The summary page is written from the summary TSVs (`summary_numbers.tsv`, and `summary_numbers_reciprocal.tsv` / `summary_numbers_differential.tsv` / `summary_numbers_phaser.tsv` when Rmd 03 / 04 / 05 ran), not from R.
 - **`/tmp` is node-local.** Logs, temporary files (`--tmp-dir`, Picard `TMP_DIR`, `_STARtmp`) and every output live under `{RESULTS_DIR}` on the shared filesystem; create `{RESULTS_DIR}/logs` before submitting because `sbatch` silently drops output when the `-o` directory is missing.
-- **Every job is submitted with `sbatch -p bcc`**, and chained jobs use `--parsable` and `--dependency=afterok`.
+- **Every job is submitted with `sbatch {PCLI_FLAG}...`**, and chained jobs use `--parsable` and `--dependency=afterok`.
 - **Unverified URLs are never embedded.** The five container URLs of Step 2 were verified; Ensembl and Mouse Genomes Project locations are resolved at run time and shown to the user first, never typed from memory.
 - **Duplicates are marked, not removed** (`REMOVE_DUPLICATES=false`); ASEReadCounter skips flagged duplicates itself. The read group is written by STAR (`--outSAMattrRGline`) and the het VCF must be bgzipped, tabix-indexed and carry a genotype column, otherwise ASEReadCounter silently counts nothing (the empty-table guard catches it).
 - **Orientation.** F1: REF = strain A (the reference assembly's allele) and ALT = strain B; every table and figure says which strain is "higher". Outbred: REF and ALT, gene calls "unphased, no direction".

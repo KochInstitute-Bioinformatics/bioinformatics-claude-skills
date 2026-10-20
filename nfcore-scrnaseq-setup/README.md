@@ -4,6 +4,8 @@ An interactive Claude Code skill that walks you through setting up and submittin
 
 It sets up **one aligner per run**. To compare aligners, run the skill once per aligner from a separate launch directory (see *Cluster-specific notes*).
 
+> **Unofficial, AI-agent instructions - not endorsed by nf-core. Review every generated file before submitting. Cluster settings are read from `~/.claude/bioinfo-skills.conf` (see the [root README](../README.md#configure-your-site)).**
+
 ---
 
 ## Installation
@@ -24,8 +26,8 @@ Then invoke it in Claude Code:
 
 | Requirement | Notes |
 |-------------|-------|
-| SLURM scheduler | Tested on `bcc` queue |
-| Singularity ≥ 3.10 | Loaded via `module add singularity/3.10.4` |
+| SLURM scheduler | Partition set via `SLURM_PARTITION` in the site config |
+| Singularity/Apptainer | Loaded via `SINGULARITY_LOAD` in the site config (tested with 3.10) |
 | Nextflow | Available in a conda environment (e.g. `nf-env`) |
 | nf-core/scrnaseq ≥ 3.0.0 | **Required for 10x 3' v4 (GEM-X)** and for the `simpleaf` aligner name |
 | Internet access | Required from login node for GitHub API + Ensembl downloads |
@@ -70,7 +72,7 @@ Auto-detects 10x chemistry, then asks you to confirm:
 Each option carries a one-line "when to use it" note.
 
 ### Step 7 — CellBender
-Ambient-RNA removal, **enabled by default**. Because this cluster has no GPUs it runs on CPU (~9–14 h/sample); the generated config gives it a 24 h budget with OOM retries. Choose *No* to add `--skip_cellbender`.
+Ambient-RNA removal, **enabled by default**. Without a GPU it runs on CPU (~9–14 h/sample); the generated config gives it a 24 h budget with OOM retries. Choose *No* to add `--skip_cellbender`.
 
 ### Step 8 — Organism and reference
 Supports **mouse** (GRCm39) and **human** (GRCh38) with automatic Ensembl version detection. No pre-built index is required — the pipeline builds the aligner reference internally from FASTA + GTF and caches it with `--save_reference`. If the FASTA/GTF are missing, the skill writes a small `download_reference_*.sh` script.
@@ -118,12 +120,12 @@ sbatch nf-core_scrnaseq_4.1.0_cellranger.sh
 
 ## Cluster-specific notes
 
-- **Queue**: `bcc`
-- **Singularity module**: `singularity/3.10.4`
-- **Conda init**: `source /home/software/conda/miniconda3/bin/condainit`
-- **`gh` CLI is not available** — the skill uses the GitHub REST API via HTTP instead
-- **`gunzip -k` is not available** on CentOS 7 — use `gunzip -c file.gz > file`
-- **No GPUs** — CellBender runs on CPU (~9–14 h/sample)
+- **Partition**: `SLURM_PARTITION` (set `SLURM_PARTITION_ON_CLI=yes` if your cluster ignores the `#SBATCH -p` header)
+- **Singularity/Apptainer**: loaded with the `SINGULARITY_LOAD` line from the site config
+- **Conda**: initialised with the `CONDA_SETUP` line from the site config
+- **No `gh` CLI needed** - the skill uses the GitHub REST API over HTTP
+- **`gunzip -k` avoided** (unavailable on older systems such as CentOS 7) — use `gunzip -c file.gz > file`
+- **No GPU assumed** - CellBender runs on CPU (~9–14 h/sample)
 - **Comparing aligners?** Run the skill once per aligner and launch each from its **own directory** (e.g. `runs/{aligner}/`) so concurrent Nextflow runs don't collide on the shared `.nextflow` session lock.
 
 ---

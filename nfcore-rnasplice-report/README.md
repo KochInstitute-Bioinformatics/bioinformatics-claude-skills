@@ -18,9 +18,9 @@ Then invoke it in Claude Code with `/nfcore-rnasplice-report`, from the project 
 
 | Requirement | Notes |
 |-------------|-------|
-| SLURM scheduler | Scripts target the `bcc` partition; R runs only on compute nodes |
-| Singularity | Loaded with `module add singularity/3.10.4` |
-| R image | `/net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif`. Mandatory packages: DEXSeq, edgeR, stageR, ggplot2, dplyr, tidyr, readr, knitr, rmarkdown. Optional, used when present: UpSetR or ComplexUpset (cross-tool plot), clusterProfiler with org.Hs.eg.db or org.Mm.eg.db (GO enrichment), enrichplot, ggrepel, scales. The wizard checks the packages in a compute-node job and stops when a mandatory one is missing; packages are never installed at run time |
+| SLURM scheduler | Partition set via `SLURM_PARTITION` in the [site config](../README.md#configure-your-site); R runs only on compute nodes |
+| Singularity/Apptainer | Loaded via `SINGULARITY_LOAD` in the site config (tested with 3.10) |
+| R image | `bulkrnaseq_latest.sif` in `SIF_DIR` (built from `BULK_IMAGE`, Dockerfile in [`containers/bulkrnaseq`](../containers/bulkrnaseq)). Mandatory packages: DEXSeq, edgeR, stageR, ggplot2, dplyr, tidyr, readr, knitr, rmarkdown. Optional, used when present: UpSetR or ComplexUpset (cross-tool plot), clusterProfiler with org.Hs.eg.db or org.Mm.eg.db (GO enrichment), enrichplot, ggrepel, scales. The wizard checks the packages in a compute-node job and stops when a mandatory one is missing; packages are never installed at run time |
 | Internet | Not needed for the report: the Rmd files make no network call and install nothing, and the HTML pages load nothing from the internet (MathJax is switched off in every Rmd header). Only pulling a missing image (a compute-node job) needs it |
 | A finished nf-core/rnasplice run | At least one of rMATS, SUPPA2, DEXSeq exon, edgeR exon or DEXSeq DTU output with more than a header line |
 

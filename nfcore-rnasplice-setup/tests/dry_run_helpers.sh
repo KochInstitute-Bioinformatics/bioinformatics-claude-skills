@@ -38,7 +38,7 @@ bash "$HERE/cut_block.sh" "$SKILL" "**Genome download helper.**" > "$TEST_TMP/he
 G="$TEST_TMP/genome"; FU=https://example.invalid/genome.fa.gz; GU=https://example.invalid/genes.gtf.gz
 mk_helper() { # mk_helper <GENOME_DIR as written into the script> [FASTA_PATH as written into the script]
   sed -e "s#{GENOME_DIR}#$1#g; s#{FASTA_PATH}#${2:-$G/genome.fa}#g; s#{GTF_PATH}#$G/genes.gtf#g" \
-      -e "s#{ENSEMBL_FASTA_URL}#$FU#g; s#{ENSEMBL_GTF_URL}#$GU#g; s#{USER_EMAIL}#test@example.org#g; s#{REF_TAG}#test#g" \
+      -e "s#{ENSEMBL_FASTA_URL}#$FU#g; s#{ENSEMBL_GTF_URL}#$GU#g; s#{USER_EMAIL}#test@example.org#g; s#{REF_TAG}#test#g; s#{SLURM_PARTITION}#testpart#g" \
       "$TEST_TMP/helper.tmpl" > "$TEST_TMP/helper.sh"
   ! grep -nE '(^|[^$])\{[A-Z_]+\}' "$TEST_TMP/helper.sh" || { echo "FAIL: placeholder left in the helper"; exit 1; }
 }
@@ -70,7 +70,7 @@ mk_helper genome_rel; runh; rc=$?
 mk_helper "$G" genome_rel.fa; runh; rc=$?
 { [ $rc -ne 0 ] && grep -q "the target must be an absolute path" "$TEST_TMP/out" && [ "$(nwget)" -eq 0 ] && [ ! -e "$TEST_TMP/genome_rel.fa" ]; } || { echo "FAIL: case relative_target"; cat "$TEST_TMP/out"; fail=1; }
 sed -e "s#{GENOME_DIR}#$G#g; s#{FASTA_PATH}#$G/empty#g; s#{GTF_PATH}#$G/genes.gtf#g; s#{ENSEMBL_FASTA_URL}#https://example.invalid/empty.gz#g" \
-    -e "s#{ENSEMBL_GTF_URL}#$GU#g; s#{USER_EMAIL}#test@example.org#g; s#{REF_TAG}#test#g" "$TEST_TMP/helper.tmpl" > "$TEST_TMP/helper.sh"
+    -e "s#{ENSEMBL_GTF_URL}#$GU#g; s#{USER_EMAIL}#test@example.org#g; s#{REF_TAG}#test#g; s#{SLURM_PARTITION}#testpart#g" "$TEST_TMP/helper.tmpl" > "$TEST_TMP/helper.sh"
 runh; rc=$?
 { [ $rc -ne 0 ] && grep -q "decompression failed" "$TEST_TMP/out" && [ ! -e "$G/empty" ]; } || { echo "FAIL: case empty_download"; cat "$TEST_TMP/out"; fail=1; }
 [ -s "$G/sentinel" ] || { echo "FAIL: a file the helper did not create was removed"; fail=1; }

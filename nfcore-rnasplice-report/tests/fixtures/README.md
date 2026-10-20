@@ -4,7 +4,7 @@ The files in `real_testdata/` are copies of the output of one nf-core/rnasplice 
 chrX samples; contrast `GBR_vs_YRI`, treatment GBR, control YRI), taken on 2026-10-03. All are unmodified except one:
 `salmon/dexseq_dtu/results/dexseq/DEXSeqDataSet.GBR-YRI.rds` was reduced to its first two rows (see the table below).
 
-Run directory: `/net/bmc-lab3/data/bcc/yannvrb/rnasplice_accept4/a/`. The results directory of the run is `results/2026-10-03_a/`;
+Run directory: `/path/to/work/rnasplice_accept4/a/`. The results directory of the run is `results/2026-10-03_a/`;
 every path below is relative to it unless it says "run directory". `real_testdata/` mirrors the same relative layout.
 
 Size rule: no file over 2 MB is stored; a larger file would be cut to its header, its first 300 rows and every row with
@@ -37,7 +37,7 @@ Format notes taken from these files:
 
 Trimmed copies of the output of one nf-core/rnasplice run on real data: human hiPSC-derived cardiomyocytes, contrast `KO_vs_WT`
 (treatment KO, control WT), 3 versus 3 samples, reverse-stranded, STAR and Salmon, all five modules; finished on 2026-10-06.
-Run directory: `/net/bmc-lab3/data/bcc/yannvrb/realdata_test/rnasplice_hipscm_rerun/project/`; results directory
+Run directory: `/path/to/work/realdata_test/rnasplice_hipscm_rerun/project/`; results directory
 `results/2026-10-06_project/`; every path below is relative to the results directory unless it says "run directory", and
 `real_hipscm/` mirrors that layout. The source files were only read. Used by `tests/r/test_real_hipscm.R`.
 
@@ -100,7 +100,7 @@ run again on 2026-10-06.
 # the first 200 in file order; rMATS: plus 100 low-support rows (min group mean of IJC+SJC < 10) drawn with awk srand(42)
 # from the rows not kept otherwise. Rows keep their file order.
 set -u
-RUN=/net/bmc-lab3/data/bcc/yannvrb/realdata_test/rnasplice_hipscm_rerun/project
+RUN=/path/to/work/realdata_test/rnasplice_hipscm_rerun/project
 SRC=$RUN/results/2026-10-06_project
 OUT=${1:?out dir}; SCR=$(cd "$(dirname "$0")" && pwd)
 GENES="ENSG00000166831 ENSG00000066468 ENSG00000003436 ENSG00000143393 ENSG00000007866 ENSG00000171603 ENSG00000100330 ENSG00000124588 ENSG00000103187 ENSG00000186480 ENSG00000129422 ENSG00000163931 ENSG00000204681 ENSG00000006831 ENSG00000164754 ENSG00000187244 ENSG00000197565 ENSG00000006704 ENSG00000055813 ENSG00000091513 ENSG00000163362 ENSG00000180694 ENSG00000183087 ENSG00000282278 ENSG00000134853 ENSG00000145216 ENSG00000166831"

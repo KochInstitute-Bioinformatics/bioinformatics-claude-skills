@@ -2,6 +2,8 @@
 
 An interactive Claude Code skill that generates a complete single-cell RNA-seq downstream analysis pipeline (Seurat v5 / Harmony) as a series of R Markdown reports and SLURM submission scripts, designed to run inside a Singularity container on an HPC cluster.
 
+> **Unofficial, AI-agent instructions - not endorsed by nf-core. Review every generated file before submitting. Cluster settings are read from `~/.claude/bioinfo-skills.conf` (see the [root README](../README.md#configure-your-site)).**
+
 ---
 
 ## Installation
@@ -22,9 +24,9 @@ Then invoke it in Claude Code:
 
 | Requirement | Notes |
 |-------------|-------|
-| SLURM scheduler | Tested on `bcc` queue |
-| Singularity ≥ 3.5 | Loaded via `module load singularity/3.5.0` |
-| Container image | `yannvrb56/r4_6_0_python3_singlecell_visium:latest` (SIF on shared storage) |
+| SLURM scheduler | Partition set via `SLURM_PARTITION` in the site config |
+| Singularity/Apptainer | Loaded via `SINGULARITY_LOAD` in the site config (tested with 3.5) |
+| Container image | `SC_IMAGE` (default `yannvrb56/r4_6_0_python3_singlecell_visium:latest`), SIF stored in `SIF_DIR`; Azimuth references in `AZIMUTH_REFS_DIR` |
 | Starting data | Per-sample Seurat RDS, CellRanger output, or a merged/integrated RDS |
 | Internet access | Required from compute node for scType, Azimuth references, and msigdbr |
 
@@ -80,26 +82,26 @@ A self-contained Bootstrap page summarising study design, QC, integration, and a
 ## Typical workflow
 
 ```bash
-sbatch -p bcc run_01_dataImport.sh
-sbatch -p bcc run_02_qc.sh                 # review QC plots, verify cell counts
-sbatch -p bcc run_03_integration.sh        # then submit ACT input to thecellvision.org
-sbatch -p bcc run_04_celltypeAssignment.sh # review annotation_consensus_per_cluster.xlsx
+# (add `-p <partition>` to each command if SLURM_PARTITION_ON_CLI=yes)
+sbatch run_01_dataImport.sh
+sbatch run_02_qc.sh                 # review QC plots, verify cell counts
+sbatch run_03_integration.sh        # then submit ACT input to thecellvision.org
+sbatch run_04_celltypeAssignment.sh # review annotation_consensus_per_cluster.xlsx
 # fill in consensus cell type labels, then:
-sbatch -p bcc run_05_finalAnnotation.sh
+sbatch run_05_finalAnnotation.sh
 # optional downstream analyses:
-sbatch -p bcc run_06_DEG.sh
-sbatch -p bcc run_07_<celltype>_GSEA.sh
-sbatch -p bcc run_08_LR_LIANA.sh
+sbatch run_06_DEG.sh
+sbatch run_07_<celltype>_GSEA.sh
+sbatch run_08_LR_LIANA.sh
 ```
 
 ---
 
 ## Cluster-specific notes
 
-- **Queue**: `bcc` — always submit with `sbatch -p bcc script.sh`; the `#SBATCH -p bcc` header alone silently fails on this cluster.
-- **Singularity module**: `module load singularity/3.5.0`.
+- **Partition**: `SLURM_PARTITION`. If your cluster ignores the `#SBATCH -p` header, set `SLURM_PARTITION_ON_CLI=yes` and the skill prints `sbatch -p <partition> script.sh`.
+- **Singularity/Apptainer**: loaded with the `SINGULARITY_LOAD` line from the site config
 - **Never run R or heavy computation on the login node** — use `sbatch` (or `srun`/`salloc` for debugging).
-- **`gh` CLI is not available**.
 - Packages are baked into the container image — never `install.packages()` at runtime.
 
 ---

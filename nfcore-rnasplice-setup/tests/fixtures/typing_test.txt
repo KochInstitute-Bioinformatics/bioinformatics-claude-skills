@@ -2,13 +2,13 @@
 # Launch: nextflow run nf-core/rnasplice -r 1b447239488097651d8eac44bca2c1556865eb0f -profile slurm,singularity -c nextflow.config -params-file g3.yaml
 
 ## 1. Positive run G3 (SLURM job 11379745, log jobs/g3.log): params file g3.yaml
-input: "/net/bmc-lab3/data/bcc/yannvrb/rnasplice_gate/g3_samplesheet.csv"
-contrasts: "/net/bmc-lab3/data/bcc/yannvrb/rnasplice_gate/g3_contrasts.csv"
+input: "/path/to/work/rnasplice_gate/g3_samplesheet.csv"
+contrasts: "/path/to/work/rnasplice_gate/g3_contrasts.csv"
 source: "fastq"
 outdir: "results/2026-10-01_g3_typed"
 multiqc_title: "261001"
-fasta: "/net/bmc-lab3/data/bcc/yannvrb/rnasplice_gate/data/X.fa.gz"
-gtf: "/net/bmc-lab3/data/bcc/yannvrb/rnasplice_gate/data/genes_chrX.gtf"
+fasta: "/path/to/work/rnasplice_gate/data/X.fa.gz"
+gtf: "/path/to/work/rnasplice_gate/data/genes_chrX.gtf"
 gencode: false
 save_reference: false
 aligner: "star"
@@ -72,12 +72,12 @@ clusterevents_method: "DBSCAN"
 (none)
 
 ## Parameter summary printed by the pipeline (only values that differ from the pipeline defaults)
-  input                       : /net/bmc-lab3/data/bcc/yannvrb/rnasplice_gate/g3_samplesheet.csv
-  contrasts                   : /net/bmc-lab3/data/bcc/yannvrb/rnasplice_gate/g3_contrasts.csv
+  input                       : /path/to/work/rnasplice_gate/g3_samplesheet.csv
+  contrasts                   : /path/to/work/rnasplice_gate/g3_contrasts.csv
   outdir                      : results/2026-10-01_g3_typed
   multiqc_title               : 261001
-  fasta                       : /net/bmc-lab3/data/bcc/yannvrb/rnasplice_gate/data/X.fa.gz
-  gtf                         : /net/bmc-lab3/data/bcc/yannvrb/rnasplice_gate/data/genes_chrX.gtf
+  fasta                       : /path/to/work/rnasplice_gate/data/X.fa.gz
+  gtf                         : /path/to/work/rnasplice_gate/data/genes_chrX.gtf
   trace_report_suffix         : 2026-10-01_21-26-56
   aligner                     : star
   rmats_splice_diff_cutoff    : 1.0E-4
@@ -87,12 +87,12 @@ clusterevents_method: "DBSCAN"
   isoformswitchanalyzer       : false
   runName                     : golden_jones
   containerEngine             : singularity
-  launchDir                   : /net/bmc-lab3/data/bcc/yannvrb/rnasplice_gate
-  workDir                     : /net/bmc-lab3/data/bcc/yannvrb/rnasplice_gate/work
-  projectDir                  : /home/yannvrb/.nextflow/assets/.repos/nf-core/rnasplice/clones/1b447239488097651d8eac44bca2c1556865eb0f
-  userName                    : yannvrb
+  launchDir                   : /path/to/work/rnasplice_gate
+  workDir                     : /path/to/work/rnasplice_gate/work
+  projectDir                  : /home/user/.nextflow/assets/.repos/nf-core/rnasplice/clones/1b447239488097651d8eac44bca2c1556865eb0f
+  userName                    : user
   profile                     : slurm,singularity
-  configFiles                 : /home/yannvrb/.nextflow/assets/.repos/nf-core/rnasplice/clones/1b447239488097651d8eac44bca2c1556865eb0f/nextflow.config, /net/bmc-lab3/data/bcc/yannvrb/rnasplice_gate/nextflow.config, /net/bmc-lab3/data/bcc/yannvrb/rnasplice_gate/nextflow.config
+  configFiles                 : /home/user/.nextflow/assets/.repos/nf-core/rnasplice/clones/1b447239488097651d8eac44bca2c1556865eb0f/nextflow.config, /path/to/work/rnasplice_gate/nextflow.config, /path/to/work/rnasplice_gate/nextflow.config
 
 ## Verdict G3: ACCEPTED. 'Pipeline completed successfully', g3 EXIT 0, 80/80 tasks COMPLETED. multiqc_title shown as 261001 (quoted string kept), rmats_read_len 75, booleans false. rmats_splice_diff_cutoff is listed as 1.0E-4 (same value, shown in Java notation; reaches rMATS as '--cstat 1.0E-4').
 

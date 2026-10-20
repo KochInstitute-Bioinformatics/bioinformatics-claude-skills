@@ -1,6 +1,24 @@
 # scRNAseq Downstream Analysis Skill (Seurat v5 / Harmony / HPC)
 
-You are helping the user run single-cell RNA-seq downstream analysis on an HPC cluster using SLURM and Singularity. The container is `yannvrb56/r4_6_0_python3_singlecell_visium:latest` (SIF at `/net/bmc-lab3/data/bcc/shared/singularity_images/r4_6_0_python3_singlecell_visium_latest.sif`). Generate R Markdown files (one per processing stage) and a SLURM submission script for each. Walk through the steps below in order. Perform all automated steps (file scans, directory detection) silently before presenting results.
+You are helping the user run single-cell RNA-seq downstream analysis on an HPC cluster using SLURM and Singularity. The container is `{SC_IMAGE}` (default `docker://yannvrb56/r4_6_0_python3_singlecell_visium:latest`), stored as a SIF in `{SIF_DIR}` (`{SIF}` = `{SIF_DIR}/<image name>_<tag>.sif`). Generate R Markdown files (one per processing stage) and a SLURM submission script for each. Walk through the steps below in order. Perform all automated steps (file scans, directory detection) silently before presenting results.
+
+---
+
+## Site configuration (read first)
+
+Before Step 0, read `~/.claude/bioinfo-skills.conf` with `cat` (plain `KEY=value` lines; template: `bioinfo-skills.conf.example` in the skills repo). Do not `source` it. Keys used by this skill:
+
+- `SLURM_PARTITION` — partition/queue; empty = omit
+- `SLURM_PARTITION_ON_CLI` — `yes` = also pass `-p` on the `sbatch` command line (some clusters ignore the `#SBATCH -p` header)
+- `SINGULARITY_LOAD` — `;`-separated shell statements that make Singularity/Apptainer available
+- `SIF_DIR` — where `.sif` images live
+- `SC_IMAGE` — Docker URI of the single-cell image (default `docker://yannvrb56/r4_6_0_python3_singlecell_visium:latest`)
+- `AZIMUTH_REFS_DIR` — Azimuth reference packages; empty = skip Azimuth
+- `WEB_URL_PREFIX` — optional URL prefix for report links
+
+If the file or a needed key is missing, ask the user for the value (an empty answer means "not needed on my system"), use it for this run, and offer to save it to `~/.claude/bioinfo-skills.conf`. Never assume values from another site. Wherever this skill shows `{SLURM_PARTITION}` etc., substitute the configured value; if `SLURM_PARTITION` is empty, omit every `-p` / `queue` line. `{PCLI_FLAG}` means `-p {SLURM_PARTITION} ` when `SLURM_PARTITION_ON_CLI=yes` and nothing otherwise; use it in every `sbatch` command you show the user. Where a line shows `{CONDA_SETUP}`, `{SINGULARITY_LOAD}` or `{RNASEQ_TOOLS_LOAD}`, write each `;`-separated statement on its own line, ending with the guard shown on that line; omit the line when the key is empty.
+
+**Safety notice — tell the user once at the start:** "These are unofficial, AI-agent instructions and are not endorsed by nf-core. Review every generated samplesheet, config and script before submitting anything."
 
 ---
 
@@ -28,11 +46,11 @@ Ask: "What email address should SLURM use for job notifications?"
 ## Step 2 — Verify Singularity image
 
 ```bash
-ls /net/bmc-lab3/data/bcc/shared/singularity_images/r4_6_0_python3_singlecell_visium_latest.sif 2>/dev/null
+ls {SIF} 2>/dev/null
 ```
 
 - **Found**: proceed silently.
-- **Not found**: stop and tell the user to pull it on a compute node first.
+- **Not found**: stop and tell the user to pull it on a compute node first (`singularity pull {SIF} {SC_IMAGE}`).
 
 ---
 
@@ -444,18 +462,18 @@ One script per Rmd. SLURM template:
 #SBATCH -n {CPUS}
 #SBATCH --mem={MEM}
 #SBATCH -t {TIME}
-#SBATCH -p bcc
+#SBATCH -p {SLURM_PARTITION}
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user={USER_EMAIL}
 #SBATCH -o {LOG_FILE}
 
 CWD={CWD}
 OUT={RESULTS_DIR}
-SIF=/net/bmc-lab3/data/bcc/shared/singularity_images/r4_6_0_python3_singlecell_visium_latest.sif
-R_LIBS=/net/bmc-lab3/data/bcc/shared/azimuth_refs
+SIF={SIF}
+R_LIBS={AZIMUTH_REFS_DIR}   # omit R_LIBS lines and the extra --bind if AZIMUTH_REFS_DIR is empty
 
 mkdir -p ${OUT}
-module load singularity/3.5.0
+{SINGULARITY_LOAD}
 export SINGULARITYENV_R_LIBS_USER=${R_LIBS}
 
 singularity exec \
@@ -484,7 +502,7 @@ After all Rmds are written, also generate a standalone `{WD_NAME}_summary_report
 - Describes the final Seurat object in detail: all `@meta.data` columns with types/values, assays (RNA + SCT), reductions (pca, harmony, umap.harmony), and a quick-start R code block
 - Links to each individual HTML report and to `seurat.annotated.rds` using the base URL pattern provided by the user (or ask if not known)
 
-Ask: "Is there a web-accessible URL prefix for the results directory (e.g. https://bmc-data.mit.edu/BCC/Oli/{project}/)? This will be used to create clickable links in the summary report."
+Ask: "Is there a web-accessible URL prefix for the results directory (e.g. https://myserver.example.org/results/{project}/)? This will be used to create clickable links in the summary report."
 
 ---
 
@@ -504,23 +522,23 @@ Files written:
   run_04_celltypeAssignment.sh
 
 Submission order:
-  sbatch -p bcc run_01_dataImport.sh
+  sbatch {PCLI_FLAG}run_01_dataImport.sh
   # Wait for completion, then:
-  sbatch -p bcc run_02_qc.sh
+  sbatch {PCLI_FLAG}run_02_qc.sh
   # Review 02_qc.html — check QC plots, verify cell counts look right
   # Then:
-  sbatch -p bcc run_03_integration.sh
+  sbatch {PCLI_FLAG}run_03_integration.sh
   # While 03 runs: submit ACT_cluster_input_harmony.txt to
   #   https://www.thecellvision.org/celltype/
   # Save ACT result as ACT_Annotationresults_top10.txt in results dir
-  sbatch -p bcc run_04_celltypeAssignment.sh
+  sbatch {PCLI_FLAG}run_04_celltypeAssignment.sh
   # Review annotation_consensus_per_cluster.xlsx
   # Fill in harmony.clusters_consensus.txt with your final cell type labels
-  sbatch -p bcc run_05_finalAnnotation.sh
+  sbatch {PCLI_FLAG}run_05_finalAnnotation.sh
   # Review propeller_results.xlsx and the annotated UMAP. Then any requested:
-  sbatch -p bcc run_06_DEG.sh
-  sbatch -p bcc run_07_<celltype>_GSEA.sh
-  sbatch -p bcc run_08_LR_LIANA.sh
+  sbatch {PCLI_FLAG}run_06_DEG.sh
+  sbatch {PCLI_FLAG}run_07_<celltype>_GSEA.sh
+  sbatch {PCLI_FLAG}run_08_LR_LIANA.sh
 ```
 
 ---
@@ -621,9 +639,9 @@ Submission order:
 - Tool versions for methods text: Cell Ranger in `pipeline_info/nf_core_scrnaseq_software_mqc_versions.yml`; CellBender only in `cellrangermulti/*/cellbender_removebackground/*.log`.
 
 ### SLURM
-- Always submit with `sbatch -p bcc script.sh` on the command line. The `#SBATCH -p bcc` header alone silently fails on this cluster.
+- If `SLURM_PARTITION_ON_CLI=yes`, always submit with `sbatch -p {SLURM_PARTITION} script.sh` (the header alone is ignored on that cluster); otherwise plain `sbatch script.sh`.
 - Never run R, Singularity, or heavy computation on the login node.
-- `module load singularity/3.5.0` (not `module add`).
+- Load Singularity with the configured `SINGULARITY_LOAD` line.
 
 ### General
 - R line continuation: never use `\` — R expressions continue when a line ends with an open operator (`+`, `,`, `|>`, `(`). Keep `if/else` on one line.

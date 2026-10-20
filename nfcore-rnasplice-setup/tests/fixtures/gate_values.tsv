@@ -31,4 +31,4 @@ MISO_GENES_IN_TEST_GTF	3/3 (MISOPY_* all COMPLETED in G2a test profile)
 OFFLINE_PULL_NEEDED	no
 COMPUTE_INTERNET	yes
 VALIDATOR_REJECTED	none
-RUN_DIRS	/net/bmc-lab3/data/bcc/yannvrb/rnasplice_gate/results/{2026-10-01_g2a_dev,2026-10-01_g3_typed,2026-10-01_g4_rmats_reverse,2026-10-01_g4o_order_paired,2026-10-01_g5_bam,2026-10-01_g5b_bam_nocols,2026-10-01_g3s_save_reference}
+RUN_DIRS	/path/to/work/rnasplice_gate/results/{2026-10-01_g2a_dev,2026-10-01_g3_typed,2026-10-01_g4_rmats_reverse,2026-10-01_g4o_order_paired,2026-10-01_g5_bam,2026-10-01_g5b_bam_nocols,2026-10-01_g3s_save_reference}

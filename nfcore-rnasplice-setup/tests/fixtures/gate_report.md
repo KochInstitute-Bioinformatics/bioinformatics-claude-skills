@@ -16,17 +16,16 @@ At the mid-gate checkpoint the user chose B (2026-10-01): dev commit `1b44723948
 - rMATS bamlists follow samplesheet order; b1 = treatment.
 - Every container URL answers HTTP 200.
 
-Evidence directory: `/net/bmc-lab3/data/bcc/yannvrb/rnasplice_gate/` (`src/`, `data/`, `jobs/*.sh|*.log`, `g*.yaml`, `g*_samplesheet.csv`, `results/2026-10-01_*`, `work/`).
+Evidence directory: `/path/to/work/rnasplice_gate/` (`src/`, `data/`, `jobs/*.sh|*.log`, `g*.yaml`, `g*_samplesheet.csv`, `results/2026-10-01_*`, `work/`).
 
 ## Environment
 
 - Nextflow 26.04.6 build 12646 (env `nf-env`); plugin nf-schema 2.7.2 (dev manifest `nextflowVersion = '!>=26.04.0'`, `version = '1.1.0dev'`; the summary prints `nf-core/rnasplice: v1.1.0dev-g1b44723`).
 - Module lines in every job, each guarded with `|| { echo "ERROR: ..."; exit 1; }`:
-  - `module add miniconda3/v4`
-  - `source /home/software/conda/miniconda3/bin/condainit`
+  - conda setup lines of the site (`CONDA_SETUP`)
   - `conda activate nf-env`
-  - `module add singularity/3.10.4`
-- `NXF_*` seen in the jobs: `NXF_OFFLINE=TRUE NXF_SINGULARITY_CACHEDIR=/home/yannvrb/.singularity/cache`, inherited from the login shell's `~/.bashrc`.
+  - Singularity load line of the site (`SINGULARITY_LOAD`)
+- `NXF_*` seen in the jobs: `NXF_OFFLINE=TRUE NXF_SINGULARITY_CACHEDIR=/home/user/.singularity/cache`, inherited from the login shell's `~/.bashrc`.
 - Compute-node internet: yes.
   - G0b `wget` from raw.githubusercontent.com in job 11379423.
   - The runs pulled the pipeline from GitHub.
@@ -322,5 +321,5 @@ MISO_GENES_IN_TEST_GTF	3/3 (MISOPY_* all COMPLETED in G2a test profile)
 OFFLINE_PULL_NEEDED	no
 COMPUTE_INTERNET	yes
 VALIDATOR_REJECTED	none
-RUN_DIRS	/net/bmc-lab3/data/bcc/yannvrb/rnasplice_gate/results/{2026-10-01_g2a_dev,2026-10-01_g3_typed,2026-10-01_g4_rmats_reverse,2026-10-01_g4o_order_paired,2026-10-01_g5_bam,2026-10-01_g5b_bam_nocols,2026-10-01_g3s_save_reference}
+RUN_DIRS	/path/to/work/rnasplice_gate/results/{2026-10-01_g2a_dev,2026-10-01_g3_typed,2026-10-01_g4_rmats_reverse,2026-10-01_g4o_order_paired,2026-10-01_g5_bam,2026-10-01_g5b_bam_nocols,2026-10-01_g3s_save_reference}
 ```

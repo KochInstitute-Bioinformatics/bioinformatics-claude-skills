@@ -1,6 +1,6 @@
 # Bulk RNAseq Downstream Analysis Skill (tximport / DESeq2 / edgeR / HPC)
 
-You are helping the user run **bulk RNA-seq downstream analysis** on an HPC cluster using SLURM and Singularity, starting from **nf-core/rnaseq `star_salmon` output** (`quant.sf` files). The container is `docker://yannvrb56/bulkrnaseq` (pull to SIF at `/net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif`). Generate R Markdown files (one per processing stage) and a SLURM submission script for each. Walk through the steps below in order. Perform all automated steps (file scans, mode detection, QC parsing) silently before presenting results.
+You are helping the user run **bulk RNA-seq downstream analysis** on an HPC cluster using SLURM and Singularity, starting from **nf-core/rnaseq `star_salmon` output** (`quant.sf` files). The container is `{BULK_IMAGE}` (default `docker://yannvrb56/bulkrnaseq:latest`; Dockerfile in the skills repo under `containers/bulkrnaseq/`), stored as a SIF at `{SIF}` = `{SIF_DIR}/bulkrnaseq_latest.sif`. Generate R Markdown files (one per processing stage) and a SLURM submission script for each. Walk through the steps below in order. Perform all automated steps (file scans, mode detection, QC parsing) silently before presenting results.
 
 **This pipeline supports two library types and the difference between them is the single most error-prone part of the workflow — get the mode right before generating anything:**
 
@@ -12,6 +12,23 @@ You are helping the user run **bulk RNA-seq downstream analysis** on an HPC clus
 | edgeR used? | No | Yes (`DGEList` → `cpm`) |
 
 **Violating this distinction silently corrupts every downstream result.** A 3′ DGE dataset analysed with length-aware tximport offsets will produce wrong fold changes; a paired-end dataset analysed as CPM-only loses the length correction. See the **Notes for the assistant → Library mode** section.
+
+---
+
+## Site configuration (read first)
+
+Before Step 0, read `~/.claude/bioinfo-skills.conf` with `cat` (plain `KEY=value` lines; template: `bioinfo-skills.conf.example` in the skills repo). Do not `source` it. Keys used by this skill:
+
+- `SLURM_PARTITION` — partition/queue; empty = omit
+- `SLURM_PARTITION_ON_CLI` — `yes` = also pass `-p` on the `sbatch` command line (some clusters ignore the `#SBATCH -p` header)
+- `SINGULARITY_LOAD` — `;`-separated shell statements that make Singularity/Apptainer available
+- `SIF_DIR` — where `.sif` images live
+- `BULK_IMAGE` — Docker URI of the bulk RNA-seq image (default `docker://yannvrb56/bulkrnaseq:latest`)
+- `WEB_URL_PREFIX` — optional URL prefix for report links
+
+If the file or a needed key is missing, ask the user for the value (an empty answer means "not needed on my system"), use it for this run, and offer to save it to `~/.claude/bioinfo-skills.conf`. Never assume values from another site. Wherever this skill shows `{SLURM_PARTITION}` etc., substitute the configured value; if `SLURM_PARTITION` is empty, omit every `-p` / `queue` line. `{PCLI_FLAG}` means `-p {SLURM_PARTITION} ` when `SLURM_PARTITION_ON_CLI=yes` and nothing otherwise; use it in every `sbatch` command you show the user. Where a line shows `{CONDA_SETUP}`, `{SINGULARITY_LOAD}` or `{RNASEQ_TOOLS_LOAD}`, write each `;`-separated statement on its own line, ending with the guard shown on that line; omit the line when the key is empty.
+
+**Safety notice — tell the user once at the start:** "These are unofficial, AI-agent instructions and are not endorsed by nf-core. Review every generated samplesheet, config and script before submitting anything."
 
 ---
 
@@ -39,20 +56,20 @@ Ask: "What email address should SLURM use for job notifications?"
 ## Step 2 — Verify / pull Singularity image
 
 ```bash
-ls /net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif 2>/dev/null
+ls {SIF} 2>/dev/null
 ```
 
 - **Found**: verify it has the required packages (run silently inside the SIF):
   ```bash
-  module load singularity/3.5.0
-  singularity exec /net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif \
+  {SINGULARITY_LOAD}
+  singularity exec {SIF} \
     Rscript -e 'for (p in c("tximport","DESeq2","edgeR","apeglm","fgsea","msigdbr","GseaVis","DRIMSeq","DEXSeq","stageR","openxlsx","tidyverse","matrixStats","ggrepel","showtext")) cat(sprintf("%-12s %s\n", p, requireNamespace(p, quietly=TRUE)))'
   ```
   `tximport`, `DESeq2`, `edgeR`, `apeglm`, `fgsea` are mandatory. `msigdbr` is needed only if GSEA is requested; `GseaVis` only for `gseaNb` enrichment curves; `DRIMSeq`, `DEXSeq` and `stageR` only if the DTU module is requested; `showtext` only for unicode-label PCA figures. (`rtracklayer` is no longer required — annotation is staged as TSVs, not parsed from the GTF in R.) If a mandatory one is `FALSE`, stop and tell the user the image must be rebuilt (packages go in the Docker image, never `install.packages()` at runtime).
 - **Not found**: tell the user to pull it on a compute node first (not the login node):
   ```bash
-  cd /net/bmc-lab3/data/bcc/shared/singularity_images
-  singularity pull bulkrnaseq_latest.sif docker://yannvrb56/bulkrnaseq:latest
+  cd {SIF_DIR}
+  singularity pull bulkrnaseq_latest.sif {BULK_IMAGE}
   ```
 
 ---
@@ -383,17 +400,17 @@ One script per Rmd. Template:
 #SBATCH -n {CPUS}
 #SBATCH --mem={MEM}
 #SBATCH -t {TIME}
-#SBATCH -p bcc
+#SBATCH -p {SLURM_PARTITION}
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user={USER_EMAIL}
 #SBATCH -o {LOG_FILE}
 
 CWD={CWD}
 OUT={RESULTS_DIR}
-SIF=/net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif
+SIF={SIF}
 
 mkdir -p ${OUT}
-module load singularity/3.5.0
+{SINGULARITY_LOAD}
 
 singularity exec \
     --bind ${CWD}:${CWD} \
@@ -417,7 +434,7 @@ After the reports are rendered, write a standalone `{WD_NAME}_summary_report.htm
 - **Card links to each stage HTML** (`_01_import_qc.html`, `_02_deg.html`, `_03_gsea.html`, `_04_dtu.html`) and to the data deliverables (supplemental/DEG-summary/GSEA/DTU xlsx, GEO matrices).
 - Headline results: DEG up/down counts, top GSEA programs, and (if run) DTU gene/transcript counts.
 
-**Use relative links** (bare filenames) so the page works both over a web mount and from the local filesystem as long as it sits in `{RESULTS_DIR}` beside the reports — no need to know a web URL prefix. If the user has a web-accessible prefix (e.g. `https://bmc-data.mit.edu/BCC/...`) and wants absolute links, ask for it; otherwise default to relative. Verify every `href` target exists before finishing.
+**Use relative links** (bare filenames) so the page works both over a web mount and from the local filesystem as long as it sits in `{RESULTS_DIR}` beside the reports — no need to know a web URL prefix. If the user has a web-accessible prefix (e.g. `https://myserver.example.org/results/...`; `WEB_URL_PREFIX` in the config) and wants absolute links, ask for it; otherwise default to relative. Verify every `href` target exists before finishing.
 
 **Two report flavours — pick by audience:**
 - *Summary index* (above) — a lightweight page that **links out** to the three stage HTMLs. For the analyst / internal use.
@@ -429,12 +446,12 @@ After the reports are rendered, write a standalone `{WD_NAME}_summary_report.htm
 
 ```
 Submission order:
-  sbatch -p bcc run_01_import_qc.sh
+  sbatch {PCLI_FLAG}run_01_import_qc.sh
   # Review 01_import_qc.html — check boxplots, PCA (biology vs QC overlays), sample grouping
-  sbatch -p bcc run_02_deg.sh
+  sbatch {PCLI_FLAG}run_02_deg.sh
   # Review volcano plots and *_assembled.xlsx
-  sbatch -p bcc run_03_gsea.sh     # if requested
-  sbatch -p bcc run_04_dtu.sh      # if requested (paired-end only; needs only the 01 checkpoint)
+  sbatch {PCLI_FLAG}run_03_gsea.sh     # if requested
+  sbatch {PCLI_FLAG}run_04_dtu.sh      # if requested (paired-end only; needs only the 01 checkpoint)
 ```
 
 ---
@@ -499,9 +516,9 @@ Submission order:
 - `ggsave(..., dpi = 300)` for figures destined for slides/supplements.
 
 ### SLURM / environment
-- Always submit with `sbatch -p bcc script.sh` — the `#SBATCH -p bcc` header alone silently fails on this cluster.
-- `module load singularity/3.5.0` (not `module add`). Never run R or Singularity on the login node.
-- Packages live in the `yannvrb56/bulkrnaseq` Docker image — never `install.packages()` at runtime; rebuild the image to add packages.
+- If `SLURM_PARTITION_ON_CLI=yes`, always submit with `sbatch -p {SLURM_PARTITION} script.sh` (the header alone is ignored on that cluster); otherwise plain `sbatch script.sh`.
+- Load Singularity with the configured `SINGULARITY_LOAD` line. Never run R or Singularity on the login node.
+- Packages live in the `{BULK_IMAGE}` Docker image — never `install.packages()` at runtime; rebuild the image to add packages.
 - Raw `quant.sf` and nf-core outputs are read-only. Write all outputs to `{RESULTS_DIR}`.
 
 ### General

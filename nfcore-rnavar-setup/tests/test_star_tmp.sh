@@ -18,10 +18,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-block=$(awk '/^```bash/{f=1;b="";next} /^```/{if(f&&b~/module add star\//)print b; f=0;next} f{b=b $0 "\n"}' "$SKILL")
-[ -n "$block" ] || { echo "FAIL: no STAR helper block (with 'module add star/') found in $SKILL"; exit 1; }
+block=$(awk '/^```bash/{f=1;b="";next} /^```/{if(f&&b~/\{RNASEQ_TOOLS_LOAD\}/)print b; f=0;next} f{b=b $0 "\n"}' "$SKILL")
+[ -n "$block" ] || { echo "FAIL: no STAR helper block (with '{RNASEQ_TOOLS_LOAD}') found in $SKILL"; exit 1; }
 mkdir -p "$W/bin" "$W/cwd"
-printf '%s' "$block" | sed "s|{GENOME_DIR}|$GD|g; s|{SJDB_OVERHANG}|150|g; s|{GTF_PATH}|$GD/g.gtf|g" > "$W/helper.sh"
+printf '%s' "$block" | sed "s|{GENOME_DIR}|$GD|g; s|{SJDB_OVERHANG}|150|g; s|{GTF_PATH}|$GD/g.gtf|g; s|{RNASEQ_TOOLS_LOAD}|module add star/test|g" > "$W/helper.sh"
 
 cat > "$W/bin/module" <<'EOF'
 #!/bin/bash
