@@ -266,15 +266,15 @@ T5f-bulk	check	skill	s/, and differential expression plus DTU on the Salmon outp
 T6-flag	check	skill	s/-params-file {PARAMS_YAML}$/-params-file {PARAMS_YAML} --rmats_read_len 101/	launch line must be exactly
 T6-cont	check	skill	s/^nextflow run nf-core\/rnasplice -r {VERSION} -c nextflow.config -profile slurm,singularity -params-file {PARAMS_YAML}$/nextflow run nf-core\/rnasplice -r {VERSION} -c nextflow.config -profile slurm,singularity \\\n  --input x.csv -params-file {PARAMS_YAML}/	launch line must be exactly
 T6-last	check	skill	s/^\(nextflow run nf-core\/rnasplice .*{PARAMS_YAML}\)$/\1\necho "pipeline finished"/	the launch line must be the last command of the submission script
-T6-lmod	check	skill	s/^module add singularity\/3.10.4 || .*$/module add singularity\/3.10.4/	unguarded module load
+T6-lmod	check	skill	s/^{SINGULARITY_LOAD} || .*$/{SINGULARITY_LOAD}/	unguarded module load
 T6-confine	check	skill	$s/$/\nnextflow -version/	nextflow is invoked outside the submission script
 T6-pull	check	skill	s/^\(nextflow run nf-core\/rnasplice \)/nextflow pull nf-core\/rnasplice -r {VERSION}\n\1/	forbidden text present: nextflow pull
 T6-pullrun	submit	skill	s/^\(nextflow run nf-core\/rnasplice \)/nextflow pull nf-core\/rnasplice -r {VERSION}\n\1/	nextflow pull was called
 T6-offline	check	skill	s/^NF_MIN="/export NXF_OFFLINE=false\nNF_MIN="/	the submission script must not set or unset NXF_OFFLINE
 T6-condaline	check	skill	s/^conda activate {CONDA_ENV} || .*$/conda activate {CONDA_ENV} || exit 1/	the submission script must contain the line: conda activate {CONDA_ENV}
 T6-head	check	skill	s/^#SBATCH -t 48:00:00$/#SBATCH -t 4:00:00/	missing required text: #SBATCH -t 48:00:00
-T6-headn	check	skill	s/^#SBATCH -n 2$/#SBATCH -n 32/	the head job must request -n 2, --mem=8G and -p bcc
-T6-dep	check	skill	s/sbatch --dependency=afterok:\$jid /sbatch /	missing required text: sbatch --dependency=afterok:
+T6-headn	check	skill	s/^#SBATCH -n 2$/#SBATCH -n 32/	the head job must request -n 2, --mem=8G and -p {SLURM_PARTITION}
+T6-dep	check	skill	s/sbatch {PCLI_FLAG}--dependency=afterok:\$jid /sbatch {PCLI_FLAG}/	missing required text: sbatch {PCLI_FLAG}--dependency=afterok:
 T6-sel	check	skill	s/withName: '\.\*:RMATS_POST' {/withName: '.*:RMATS_POSTX' {/	has no withName selector '.*:RMATS_POST'
 T6-selmiss	check	skill	/withName: '\.\*:STAR_ALIGN' {/,+4d	process STAR_ALIGN ran in the verification runs but has no withName selector '.*:STAR_ALIGN'
 T6-salsel	check	skill	s/withName: '\.\*:SALMON_QUANT\.\*' {/withName: '.*:SALMON_QUANT' {/	selector .*:SALMON_QUANT matches no process of the verification runs (75 names)
@@ -298,7 +298,7 @@ T6-vercheck	submit	skill	/^ver_ge "\$NF_VER" "\$NF_MIN" ||/d	FAIL: case below_mi
 T6-noread	submit	skill	/^\[ -n "\$NF_VER" \] ||/d	FAIL: case no_version
 T6-nfmissing	submit	skill	/^command -v nextflow /d	FAIL: case nextflow_missing
 T6-guard	submit	skill	s/^conda activate {CONDA_ENV} || .*$/conda activate {CONDA_ENV}/	FAIL: case conda_fails
-T6-order	submit	skill	/^module add singularity\/3.10.4 ||/d; s/^module add miniconda3\/v4 || /module add singularity\/3.10.4 || { exit 1; }\n&/	FAIL: case order
+T6-order	submit	skill	/^{SINGULARITY_LOAD} ||/d; s/^{CONDA_SETUP} || /{SINGULARITY_LOAD} || { exit 1; }\n&/	FAIL: case order
 T6-cachedir	submit	skill	/^export NXF_SINGULARITY_CACHEDIR=/d	FAIL: case cache_default
 T6-cachekeep	submit	skill	s/^export NXF_SINGULARITY_CACHEDIR=.*$/export NXF_SINGULARITY_CACHEDIR="$HOME\/.singularity\/cache"/	FAIL: case cache_preset
 T6-gzipt	helper	skill	/gzip -t "\$out.gz.part" 2>\/dev\/null ||/d	FAIL: case truncated_download
@@ -311,7 +311,7 @@ T6-rm	check	skill	s/^  echo "ready: \$out"$/  rm -f "$out.gz"\n&/	the download h
 T6-nfrange	check	skill	s/NF_MIN="@NEXTFLOW_MIN@"/NF_MIN="1.0.0"/	the submission script must carry the verified Nextflow range
 T6-modline	check	skill	/^{MODULE_PARAMS}$/d	the params template must contain one {MODULE_PARAMS} line
 T6-saveref	check	skill	s/^save_reference: false$/save_reference: true/	key save_reference = true differs from the pipeline config default
-T6-hpart	check	skill	s/^#SBATCH -p bcc$/#SBATCH -p normal/	the download helper must be an sbatch script for partition bcc
+T6-hpart	check	skill	s/^#SBATCH -p {SLURM_PARTITION}$/#SBATCH -p normal/	the download helper must be an sbatch script for partition {SLURM_PARTITION}
 T6-wgetcs	check	skill	s/wget -c -O/wget -O/	the download helper must use wget -c and gunzip -c
 T6-envhelper	check	skill	$s/$/\nWrite create_nextflow_env_26.04.6.sh first./	forbidden text present: create_nextflow_env_
 T6-indexhelper	check	skill	$s/$/\nWrite build_star_index_x.sh first./	forbidden text present: build_star_index
@@ -321,15 +321,15 @@ T6f-cdline	check	skill	/^cd "{CWD}" || /d	the submission script must contain the
 T6f-cdfirst	check	skill	s/^cd "{CWD}" || /echo start\n&/	cd "{CWD}" must be the first command of the submission script
 T6f-cdtext	check	skill	s/: it changes to `{CWD}` first, so it works wherever it is submitted from,/,/	missing required text: it changes to `{CWD}` first, so it works wherever it is submitted from
 T6f-preflight	submit	skill	/^for f in nextflow.config /d	FAIL: case missing_T_params.yaml
-T6f-preorder	submit	skill	/^for f in nextflow.config /{h;d}; /^module add singularity\/3.10.4 || /G	the file check must come before the module lines
+T6f-preorder	submit	skill	/^for f in nextflow.config /{h;d}; /^{SINGULARITY_LOAD} || /G	the file check must come before the module lines
 T6f-preline	check	skill	s/^for f in nextflow.config {PARAMS_YAML} {SAMPLESHEET_CSV} {CONTRASTS_CSV}; do/for f in nextflow.config {PARAMS_YAML}; do/	the submission script must contain the line: for f in nextflow.config
 T6f-singcheck	submit	skill	/^command -v singularity /d	FAIL: case singularity_missing
 T6f-executor	check	skill	/^            executor = 'slurm'$/d	the nextflow.config template must contain the line:             executor = 'slurm'
-T6f-queue	check	skill	/^            queue = 'bcc'$/d	the nextflow.config template must contain the line:             queue = 'bcc'
+T6f-queue	check	skill	/^            queue = '{SLURM_PARTITION}'$/d	the nextflow.config template must contain the line:             queue = '{SLURM_PARTITION}'
 T6f-singoff	check	skill	s/^            enabled = true$/            enabled = false/	the nextflow.config template must contain the line:             enabled = true
 T6f-automount	check	skill	/^            autoMounts = true$/d	the nextflow.config template must contain the line:             autoMounts = true
 T6f-singscope	check	skill	s/^    singularity {$/    apptainer {/	the singularity profile must set enabled = true and autoMounts = true
-T6f-slurmscope	check	skill	s/^    slurm {$/    cluster {/	the slurm profile must set executor = 'slurm' and queue = 'bcc'
+T6f-slurmscope	check	skill	s/^    slurm {$/    cluster {/	the slurm profile must set executor = 'slurm' and queue = '{SLURM_PARTITION}'
 T6f-mailtype	check	skill	/^\*\*Submission script\.\*\*/,/^nextflow run/{/^#SBATCH --mail-type=END,FAIL$/d}	the submission script must contain the line: #SBATCH --mail-type=END,FAIL
 T6f-mailtypeh	check	skill	0,/^#SBATCH --mail-type=END,FAIL$/!{/^#SBATCH --mail-type=END,FAIL$/d}	the download helper must contain the line: #SBATCH --mail-type=END,FAIL
 T6f-mailuser	check	skill	/^\*\*Submission script\.\*\*/,/^nextflow run/{/^#SBATCH --mail-user={USER_EMAIL}$/d}	the submission script must contain the line: #SBATCH --mail-user={USER_EMAIL}
@@ -338,12 +338,12 @@ T6f-n1	check	skill	/^\*\*Submission script\.\*\*/,/^nextflow run/{/^#SBATCH -N 1
 T6f-n1h	check	skill	0,/^#SBATCH -N 1$/!{/^#SBATCH -N 1$/d}	the download helper must contain the line: #SBATCH -N 1
 T6f-helpt	check	skill	s/^#SBATCH -t 4:00:00$/#SBATCH -t 1:00:00/	the download helper must contain the line: #SBATCH -t 4:00:00
 T6f-helpmem	check	skill	0,/^#SBATCH --mem=8G$/!{s/^#SBATCH --mem=8G$/#SBATCH --mem=4G/}	the download helper must contain the line: #SBATCH --mem=8G
-T6f-parsable	check	skill	s/sbatch --parsable download_genome/sbatch download_genome/	missing required text: jid=$(sbatch --parsable download_genome_{REF_TAG}.sh)
+T6f-parsable	check	skill	s/sbatch {PCLI_FLAG}--parsable download_genome/sbatch {PCLI_FLAG}download_genome/	missing required text: jid=$(sbatch {PCLI_FLAG}--parsable download_genome_{REF_TAG}.sh)
 T6f-mqc	check	skill	s/ · 2. `{TODAY_YYMMDD}_{WD_NAME}` · 3. Custom. Store `{MULTIQC_TITLE}`/ · 2. Custom. Store `{MULTIQC_TITLE}`/	missing required text: **MultiQC title** (numbered)
 T6f-out2	check	skill	s/· 2. `results\/{TODAY_ISO}_{SHEET_PREFIX}`/· 2. `{SHEET_PREFIX}`/	missing required text: · 2. `results/{TODAY_ISO}_{SHEET_PREFIX}`
 T6f-outq	check	skill	s/if it exists and is not empty, ask (numbered): 1. use it anyway/if it exists, use it anyway/	missing required text: if it exists and is not empty, ask (numbered)
 T6f-lscfg	check	skill	s/`ls "{CWD}\/nextflow.config"`/`ls nextflow.config`/	missing required text: Check for an existing config: `ls "{CWD}/nextflow.config"`.
-T6f-tosubmit	check	skill	s/^To submit:  sbatch /To submit:  bash /	missing required text: To submit:  sbatch nf-core_rnasplice_{VERSION_TAG}.sh
+T6f-tosubmit	check	skill	s/^To submit:  sbatch /To submit:  bash /	missing required text: To submit:  sbatch {PCLI_FLAG}nf-core_rnasplice_{VERSION_TAG}.sh
 T6f-showall	check	skill	s/Show every written file in full\. //	missing required text: Show every written file in full.
 T6f-chars	check	skill	s/may contain only letters, digits/may contain letters, digits/	missing required text: A custom title or output directory may contain only letters, digits
 T6f-charmsg	check	skill	s/contains a character the params file cannot hold/is unusual/	missing required text: contains a character the params file cannot hold
@@ -442,7 +442,7 @@ T8-gatedate	check	readme	s/Verification gate (@GATE_DATE@)/Verification gate/	RE
 T8-tiny	check	readme	s/nf-core's tiny test dataset/a test dataset/	README missing required text: nf-core's tiny test dataset
 T8-readlen	check	readme	s/@TEST_READ_LENGTH@ bp reads/100 bp reads/	README missing required text: @TEST_READ_LENGTH@ bp reads
 T8-rundir	check	readme	s/`2026-10-01_g5b_bam_nocols`/G5b/	README missing required text: `2026-10-01_g5b_bam_nocols`
-T8-runroot	check	readme	s/in `\/net\/bmc-lab3\/data\/bcc\/yannvrb\/rnasplice_gate\/results\/`/in the gate directory/	README missing required text: `/net/bmc-lab3/data/bcc/yannvrb/rnasplice_gate/results/`
+T8-runroot	check	readme	s/in `\/path\/to\/work\/rnasplice_gate\/results\/`/in the gate directory/	README missing required text: `/path/to/work/rnasplice_gate/results/`
 T8-miso	check	readme	s/MISO (dropped: see Key design points)/MISO/	README missing required text: MISO (dropped: see Key design points)
 T8-misowhy	check	readme	s/MISO itself is unmaintained Python 2 software/MISO is slow/	README missing required text: MISO itself is unmaintained Python 2 software
 T8-report	check	readme	s/there is no downstream report skill for the splicing tables yet (planned later)/see the report skill/	README missing required text: there is no downstream report skill
@@ -559,7 +559,7 @@ F-salmonprobe	check	skill	s/^\*\*Resuming a run\.\*\*/To check the index, run `s
 F-m1	check	skill	s/At this revision rMATS prepares each sample once and runs one post step per contrast/rMATS runs one prep\/post pair per contrast/	forbidden text present: rMATS runs one prep/post pair per contrast
 F-m2-call	check	skill	s/`shopt -s nullglob; fastq_layout /`fastq_layout /	missing required text: `shopt -s nullglob; fastq_layout
 F-m2-subdir	check	skill	s/Only the files directly in `{FASTQ_DIR}` are used, not its subdirectories/All files are used/	missing required text: Only the files directly in `{FASTQ_DIR}` are used, not its subdirectories
-F-m2-bash	check	skill	s/ (block below; it needs bash 4 or newer, the cluster has 4\.2)/ (block below)/	missing required text: it needs bash 4 or newer
+F-m2-bash	check	skill	s/ (block below; it needs bash 4 or newer)/ (block below)/	missing required text: it needs bash 4 or newer
 F-m2-noargs	names	skill	s/^  \[ \$# -gt 0 \] || { echo "ERROR: no FASTQ file given"; return 1; }$/  :/	FAIL: layout case no file
 F-m2-notfile	names	skill	s/^  for f in "\$@"; do \[ -f "\$f" \] || .*$/  :/	FAIL: layout case unmatched glob
 F-m4-skill7	check	skill	s/The FASTA and the GTF must use the same contig names/The contig names do not matter/	missing required text: The FASTA and the GTF must use the same contig names
@@ -616,7 +616,7 @@ RS-lA-chk	check	skill	s/salmon quant -i "\$IDX" -l A -1 /salmon quant -i "$IDX" 
 RS-single	salmonstrand	skill	s/ -l A -r "\$OUT\/\${s}_sub_1.fq.gz"/ -l A -1 "$OUT\/${s}_sub_1.fq.gz"/	FAIL: case single: Salmon call
 RS-cd	check	skill	/^set -u$/{n;/^cd "{CWD}" || { echo "ERROR: cannot change to {CWD}" >&2; exit 1; }$/d}	must be the first command of the strandedness helper
 RS-cd-run	salmonstrand	skill	/^set -u$/{n;/^cd "{CWD}" || { echo "ERROR: cannot change to {CWD}" >&2; exit 1; }$/d}	FAIL: case paired
-RS-modguard	check	skill	s/^module add singularity\/3\.10\.4 || { echo "ERROR: cannot load module singularity\/3\.10\.4" >&2; exit 1; }$/module add singularity\/3.10.4/	unguarded module load
+RS-modguard	check	skill	s/^{SINGULARITY_LOAD} || { echo "ERROR: cannot load singularity" >&2; exit 1; }$/{SINGULARITY_LOAD}/	unguarded module load
 RS-rm	check	skill	s/^mkdir -p "\$OUT" || { echo "ERROR: cannot create \$OUT" >&2; exit 1; }$/&\nrm -f "$OUT"\/*_sub_1.fq.gz/	the strandedness helper must not remove files
 RS-url	check	skill	s#https://depot.galaxyproject.org/singularity/salmon:1.10.3--h6dccd9a_2#https://depot.galaxyproject.org/singularity/salmon:1.10.1--h7e5ed60_0#	the strandedness helper must download one Salmon 1.10.3 container
 RS-sif	check	skill	s/singularity-salmon-1\.10\.3--h6dccd9a_2\.img"/singularity-salmon-latest.img"/	the strandedness helper must look for the cached image

@@ -6,12 +6,27 @@ This skill sets up **one aligner per run** (like the bulk nf-core/rnaseq skill).
 
 ---
 
+## Site configuration (read first)
+
+Before Step 0, read `~/.claude/bioinfo-skills.conf` with `cat` (plain `KEY=value` lines; template: `bioinfo-skills.conf.example` in the skills repo). Do not `source` it. Keys used by this skill:
+
+- `SLURM_PARTITION` — partition/queue; empty = omit
+- `SLURM_PARTITION_ON_CLI` — `yes` = also pass `-p` on the `sbatch` command line (some clusters ignore the `#SBATCH -p` header)
+- `CONDA_SETUP` — `;`-separated shell statements run before `conda activate`
+- `SINGULARITY_LOAD` — `;`-separated shell statements that make Singularity/Apptainer available
+
+If the file or a needed key is missing, ask the user for the value (an empty answer means "not needed on my system"), use it for this run, and offer to save it to `~/.claude/bioinfo-skills.conf`. Never assume values from another site. Wherever this skill shows `{SLURM_PARTITION}` etc., substitute the configured value; if `SLURM_PARTITION` is empty, omit every `-p` / `queue` line. `{PCLI_FLAG}` means `-p {SLURM_PARTITION} ` when `SLURM_PARTITION_ON_CLI=yes` and nothing otherwise; use it in every `sbatch` command you show the user. Where a line shows `{CONDA_SETUP}`, `{SINGULARITY_LOAD}` or `{RNASEQ_TOOLS_LOAD}`, write each `;`-separated statement on its own line, ending with the guard shown on that line; omit the line when the key is empty.
+
+**Safety notice — tell the user once at the start:** "These are unofficial, AI-agent instructions and are not endorsed by nf-core. Review every generated samplesheet, config and script before submitting anything."
+
+---
+
 ## Step 0 — Establish working directory
 
 Before anything else, run `pwd` to record the current working directory (`{CWD}`). All scripts, the samplesheet CSV, `nextflow.config`, and the output directory will be written here. Inform the user: "Working directory: `{CWD}`"
 
 Also derive:
-- `{WD_NAME}` = basename of `{CWD}` (e.g. `Test3` from `/data/bcc/user/Test3`)
+- `{WD_NAME}` = basename of `{CWD}` (e.g. `Test3` from `/path/to/Test3`)
 - `{TODAY_YYMMDD}` = today's date formatted as `YYMMDD` (e.g. `260707` for 2026-07-07)
 
 ---
@@ -217,7 +232,7 @@ Unlike the bulk skill, **you do not pre-build aligner indexes** — nf-core/scrn
 #SBATCH -n 1
 #SBATCH --mem=4G
 #SBATCH -t 2:00:00
-#SBATCH -p bcc
+#SBATCH -p {SLURM_PARTITION}
 #SBATCH -o download_reference_{assembly}_ens{version}.log
 
 GENOME_DIR="{genome_base}/{organism}/{assembly}_ens{version}"
@@ -250,7 +265,7 @@ profiles {
     slurm {
         process {
             executor = 'slurm'
-            queue    = 'bcc'
+            queue    = '{SLURM_PARTITION}'   // omit this line if SLURM_PARTITION is empty
             cpus     = 2
             memory   = '8 GB'
             time     = '4h'
@@ -351,15 +366,14 @@ Write `nf-core_scrnaseq_{version}_{aligner}.sh` in the current working directory
 #SBATCH -n 1
 #SBATCH --mem=4G
 #SBATCH -t 2-00:00:00
-#SBATCH -p bcc
+#SBATCH -p {SLURM_PARTITION}
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user={USER_EMAIL}
 #SBATCH -o nf-core_scrnaseq_{version}_{aligner}.log
 
-module add miniconda3/v4
-source /home/software/conda/miniconda3/bin/condainit
+{CONDA_SETUP}
 conda activate {CONDA_ENV}
-module add singularity/3.10.4
+{SINGULARITY_LOAD}
 
 nextflow run nf-core/scrnaseq -r {VERSION} \
 -profile slurm,singularity \
@@ -384,12 +398,12 @@ nextflow run nf-core/scrnaseq -r {VERSION} \
 After writing, show the full file and instruct:
 ```
 Script written: nf-core_scrnaseq_{version}_{aligner}.sh
-To submit:  sbatch nf-core_scrnaseq_{version}_{aligner}.sh
+To submit:  sbatch {PCLI_FLAG}nf-core_scrnaseq_{version}_{aligner}.sh
 ```
 If the reference still needs downloading (Step 8):
 ```
 NOTE: Reference FASTA/GTF not present yet. Download it first:
-  sbatch download_reference_{assembly}_ens{version}.sh
+  sbatch {PCLI_FLAG}download_reference_{assembly}_ens{version}.sh
 ```
 
 ---

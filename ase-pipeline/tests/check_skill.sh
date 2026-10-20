@@ -41,8 +41,11 @@ forbid "module add htslib"
 forbid "module add bcftools"
 need "singularity exec --bind"
 need "|| { echo"
-need "#SBATCH -p bcc"
-need "sbatch -p bcc"
+need "#SBATCH -p {SLURM_PARTITION}"
+need "sbatch {PCLI_FLAG}"
+forbid "bcc"
+forbid "/net/"
+forbid "condainit"
 forbid "module add samtools"
 forbid "module add star"
 forbid "module add gatk"
@@ -459,8 +462,8 @@ need "Which condition is the reference (baseline)?"
 need "Store it as \`{REF_CONDITION}\`"
 need "condition and cross direction are confounded"
 need "at least 2 individuals sampled in both"
-need 'R3=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_03_reciprocal.sh)'
-need 'R4=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_04_differential.sh)'
+need 'R3=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$R1 $S/run_03_reciprocal.sh)'
+need 'R4=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$R1 $S/run_04_differential.sh)'
 need "### Reciprocal F1 section"
 need "### Differential ASE section"
 need "pasted verbatim into Rmd 02, 03, 04 and 05"   # Stage 3 Task 4 (M11): Rmd 05 added to the Notes line
@@ -511,13 +514,13 @@ blockC_calls=$(awk '/^### Shared block C/ {b=1} b && /^```bash$/ {f=1; next} f &
 blockC_def=$(awk '/^### Shared block C/ {b=1} b && /^```bash$/ {f=1; next} f && /^```$/ {exit} f && /^fetch_sif\(\) \{/ {n++} END {print n+0}' "$SKILL")
 [ "$blockC_def" = 1 ] || { echo "FAIL: block C code fence must hold the fetch_sif definition"; fail=1; }
 # T2: Step 11 points to Step 15, no duplicate submission block
-forbid 'P=$(sbatch -p bcc --parsable {RESULTS_DIR}/scripts/prep_f1_reference.sh)'
+forbid 'P=$(sbatch {PCLI_FLAG}--parsable {RESULTS_DIR}/scripts/prep_f1_reference.sh)'
 need "do not submit these scripts by hand"
 # T3: mode-neutral submit_chain.sh
 need 'f1)      PREP_SCRIPT=prep_f1_reference.sh; ARRAY_SCRIPT=align_count_f1.sh ;;'
 need 'outbred) PREP_SCRIPT=prep_genotypes.sh;    ARRAY_SCRIPT=align_wasp_count.sh ;;'
-need 'P=$(sbatch -p bcc --parsable $DEP $S/$PREP_SCRIPT); got $PREP_SCRIPT "$P"'
-need 'A=$(sbatch -p bcc --parsable --dependency=afterok:$P $S/$ARRAY_SCRIPT); got $ARRAY_SCRIPT "$A"'
+need 'P=$(sbatch {PCLI_FLAG}--parsable $DEP $S/$PREP_SCRIPT); got $PREP_SCRIPT "$P"'
+need 'A=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$P $S/$ARRAY_SCRIPT); got $ARRAY_SCRIPT "$A"'
 need 'case " $ANALYSES " in *reciprocal*)'
 need 'case " $ANALYSES " in *differential*)'
 need 'NEED="$PREP_SCRIPT $ARRAY_SCRIPT run_01_import_qc.sh run_02_imbalance.sh"'
@@ -590,8 +593,8 @@ need 'holds the words, separated by spaces, never the menu numbers'
 need 'case "$ANALYSES" in "") die "ANALYSES is empty: write the Step 7 words'
 # M1: the Rmd 03 / Rmd 04 submission must sit directly under its case line (the NEED line cannot satisfy this)
 pair_need() { awk -v a="$1" -v b="$2" 'index($0,b) && p {f=1} {p = index($0,a) > 0} END {exit !f}' "$SKILL" || { echo "FAIL: line not directly under its case line: $2"; fail=1; }; }
-pair_need 'case " $ANALYSES " in *reciprocal*)' '  R3=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_03_reciprocal.sh); got run_03_reciprocal.sh "$R3" ;;'
-pair_need 'case " $ANALYSES " in *differential*)' '  R4=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_04_differential.sh); got run_04_differential.sh "$R4" ;;'
+pair_need 'case " $ANALYSES " in *reciprocal*)' '  R3=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$R1 $S/run_03_reciprocal.sh); got run_03_reciprocal.sh "$R3" ;;'
+pair_need 'case " $ANALYSES " in *differential*)' '  R4=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$R1 $S/run_04_differential.sh); got run_04_differential.sh "$R4" ;;'
 # M3: one sample per animal in F1 mode, duplicated individual stops
 need "one sample per animal"
 need "merge the FASTQ files of the technical replicates of an animal before the wizard"
@@ -669,7 +672,7 @@ need "  - python=3.14.7"
 need "export PYTHONNOUSERSITE=1"
 need "never the bioconda package"
 need "**Bumping the pinned commit.**"
-[ "$(grep -c '^module add miniconda3/v4' "$SKILL")" = 1 ] || { echo "FAIL: exactly one line may load miniconda3/v4 (setup_phaser_env.sh)"; fail=1; }
+[ "$(grep -c '^{CONDA_SETUP} ' "$SKILL")" = 1 ] || { echo "FAIL: exactly one line may run {CONDA_SETUP} (setup_phaser_env.sh)"; fail=1; }
 forbid "conda install -c bioconda phaser"
 forbid "bioconda::phaser"
 for f in phaser_help.txt phaser_gene_ae_help.txt phaser_env.txt; do [ -s "$FIX/$f" ] || { echo "FAIL: missing fixture $f"; fail=1; }; done
@@ -705,13 +708,13 @@ sline '[ -e "$PHASER_HOME/$MARK" ] || [ -z "$L" ] || die "$PHASER_HOME is not em
 sline 'touch "$PHASER_HOME/$MARK" || die "cannot write $PHASER_HOME/$MARK"'
 sline 'mkdir "$PHASER_HOME/.installing" 2>/dev/null || die "another installation is running in $PHASER_HOME (if not, remove $PHASER_HOME/.installing)"'
 sline '[ "$(git -C "$PHASER_HOME/src/phaser" rev-parse HEAD)" = "$PHASER_COMMIT" ] || die "the checked-out commit differs from $PHASER_COMMIT"'
-sline 'module add miniconda3/v4 || die "cannot load the miniconda3/v4 module"'
+sline '{CONDA_SETUP} || die "cannot set up conda"'
 sline 'unset PYTHONPATH PYTHONHOME    # an inherited Python search path would shadow the environment the same way'
 sline '"$PY" -c "import numpy, scipy, pysam, pandas, intervaltree" || die "the environment'"'"'s Python packages do not import"'
 sline 'for t in python samtools bcftools bgzip tabix bedtools; do [ -x "$PHASER_HOME/env/bin/$t" ] || die "$t is missing from $PHASER_HOME/env/bin"; done'
 sline '{ echo "commit $PHASER_COMMIT"; echo "env_sha256 $ENV_SHA"; "$PY" -c '"'"'import sys; print("python", sys.version.split()[0])'"'"'; date -u; } > "$PHASER_HOME/install_ok.txt" \'
 printf '%s\n' "$SETUP" | grep -qE '^export PYTHONNOUSERSITE=1( |$)' || { echo "FAIL: setup_phaser_env.sh does not export PYTHONNOUSERSITE=1"; fail=1; }
-[ "$(printf '%s\n' "$SETUP" | grep -c '^module add miniconda3/v4')" = 1 ] || { echo "FAIL: the miniconda3/v4 line must be inside setup_phaser_env.sh"; fail=1; }
+[ "$(printf '%s\n' "$SETUP" | grep -c '^{CONDA_SETUP} ')" = 1 ] || { echo "FAIL: the {CONDA_SETUP} line must be inside setup_phaser_env.sh"; fail=1; }
 # every pinned package of phaser_env.txt is pinned to the same version in the block (python first, then the others)
 while read -r p v _; do sline "  - $p=$v"; done < <(grep -E '^(python|numpy|scipy|pandas|pysam|intervaltree|samtools|bcftools|htslib|bedtools) ' "$FIX/phaser_env.txt")
 # M1: the commit named in the prose is the commit pinned in the block
@@ -902,7 +905,7 @@ need "### phASER section (only when Rmd 05 ran)"
 need "\`{TODAY}_{WD_NAME}_ASE_phaser_gene.tsv.gz\` and \`{TODAY}_{WD_NAME}_ASE_phaser_comparison.tsv.gz\` (the full tables"
 need "a direction (haplotype A or B higher) is given only for genome-wide phased genes"
 need "run_05_phaser_<jobid>.out"
-need "the one exception is \`module add miniconda3/v4\`"
+need "the one exception is the configured \`{CONDA_SETUP}\` line"
 need "- **phASER.** Always the repository https://github.com/secastel/phaser at the pinned commit"
 # {PHASER_RESOURCES}: one core (phaser.py runs with --threads 1); no tier of that list asks for more
 ! grep -qE -- '`-n ([2-9]|[1-9][0-9]+) --mem=' <(sed -n '/^`{PHASER_RESOURCES}` for/,/^$/p' "$SKILL") ||
@@ -921,11 +924,11 @@ cline '  ESHA=$(awk '"'"'index($0, "ENV_YML=$(cat <<") == 1 {f = 1; next} f && $
 cline '  [ "$(sed -n 1p "$PHASER_HOME/install_ok.txt" 2>/dev/null)" = "commit $PHASER_COMMIT" ] && [ "$(sed -n 2p "$PHASER_HOME/install_ok.txt" 2>/dev/null)" = "env_sha256 $ESHA" ] || INSTALL=yes ;;'
 cline 'DEP=""; R3="not selected"; R4="not selected"; R5="not selected"; PS=""   # DEP stays empty unless the mouse helper below is used'
 cline 'echo "Rmd 03: $R3; Rmd 04: $R4; Rmd 05: $R5"'
-pair_need '  case "$INSTALL" in yes) PS=$(sbatch -p bcc --parsable $S/setup_phaser_env.sh); got setup_phaser_env.sh "$PS" ;; esac' \
-          '  PH=$(sbatch -p bcc --parsable --dependency=afterok:$A${PS:+:$PS} $S/phaser_count.sh); got phaser_count.sh "$PH"'
-pair_need '  PH=$(sbatch -p bcc --parsable --dependency=afterok:$A${PS:+:$PS} $S/phaser_count.sh); got phaser_count.sh "$PH"' \
-          '  R5=$(sbatch -p bcc --parsable --dependency=afterok:$PH:$R2 $S/run_05_phaser.sh); got run_05_phaser.sh "$R5" ;;'
-pair_need 'case " $ANALYSES " in *" phaser "*)' '  case "$INSTALL" in yes) PS=$(sbatch -p bcc --parsable $S/setup_phaser_env.sh); got setup_phaser_env.sh "$PS" ;; esac'
+pair_need '  case "$INSTALL" in yes) PS=$(sbatch {PCLI_FLAG}--parsable $S/setup_phaser_env.sh); got setup_phaser_env.sh "$PS" ;; esac' \
+          '  PH=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$A${PS:+:$PS} $S/phaser_count.sh); got phaser_count.sh "$PH"'
+pair_need '  PH=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$A${PS:+:$PS} $S/phaser_count.sh); got phaser_count.sh "$PH"' \
+          '  R5=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$PH:$R2 $S/run_05_phaser.sh); got run_05_phaser.sh "$R5" ;;'
+pair_need 'case " $ANALYSES " in *" phaser "*)' '  case "$INSTALL" in yes) PS=$(sbatch {PCLI_FLAG}--parsable $S/setup_phaser_env.sh); got setup_phaser_env.sh "$PS" ;; esac'
 # the commit of the install test in submit_chain.sh is the commit pinned by setup_phaser_env.sh ($pc, Task 3 review block)
 sc=$(printf '%s\n' "$SUBC" | sed -n 's/^PHASER_COMMIT=\([0-9a-f]\{40\}\); INSTALL=no$/\1/p')
 [ -n "$sc" ] && [ "$sc" = "${pc:-}" ] || { echo "FAIL: submit_chain.sh PHASER_COMMIT (${sc:-none}) differs from setup_phaser_env.sh (${pc:-none})"; fail=1; }
@@ -948,22 +951,22 @@ need "**Re-submitting the phASER part (exact recipes).**"
 need "under \`set -u\` an unset variable inside \`\$(...)\` aborts only that substitution"
 rblock() { local got; got=$(bash "$HERE/synthetic/cut_block.sh" "$SKILL" "**Recipe $1 " 2>/dev/null)
   [ "$got" = "$2" ] || { echo "FAIL: recipe $1 block differs from the tested lines"; fail=1; }; }
-L_PS='case "$INSTALL" in yes) PS=$(sbatch -p bcc --parsable $S/setup_phaser_env.sh); got setup_phaser_env.sh "$PS" ;; esac'
-L_PH='PH=$(sbatch -p bcc --parsable ${PS:+--dependency=afterok:$PS} $S/phaser_count.sh); got phaser_count.sh "$PH"'
-rblock A 'R5=$(sbatch -p bcc --parsable $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"'
-rblock B 'R2=$(sbatch -p bcc --parsable $S/run_02_imbalance.sh); got run_02_imbalance.sh "$R2"
-R5=$(sbatch -p bcc --parsable --dependency=afterok:$R2 $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"'
+L_PS='case "$INSTALL" in yes) PS=$(sbatch {PCLI_FLAG}--parsable $S/setup_phaser_env.sh); got setup_phaser_env.sh "$PS" ;; esac'
+L_PH='PH=$(sbatch {PCLI_FLAG}--parsable ${PS:+--dependency=afterok:$PS} $S/phaser_count.sh); got phaser_count.sh "$PH"'
+rblock A 'R5=$(sbatch {PCLI_FLAG}--parsable $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"'
+rblock B 'R2=$(sbatch {PCLI_FLAG}--parsable $S/run_02_imbalance.sh); got run_02_imbalance.sh "$R2"
+R5=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$R2 $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"'
 rblock C "$L_PS
 $L_PH"'
-R5=$(sbatch -p bcc --parsable --dependency=afterok:$PH $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"'
-rblock D 'R1=$(sbatch -p bcc --parsable $S/run_01_import_qc.sh); got run_01_import_qc.sh "$R1"
-R2=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_02_imbalance.sh); got run_02_imbalance.sh "$R2"
+R5=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$PH $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"'
+rblock D 'R1=$(sbatch {PCLI_FLAG}--parsable $S/run_01_import_qc.sh); got run_01_import_qc.sh "$R1"
+R2=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$R1 $S/run_02_imbalance.sh); got run_02_imbalance.sh "$R2"
 case " $ANALYSES " in *differential*)
-  R4=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_04_differential.sh); got run_04_differential.sh "$R4" ;;
+  R4=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$R1 $S/run_04_differential.sh); got run_04_differential.sh "$R4" ;;
 esac'"
 $L_PS
 $L_PH"'
-R5=$(sbatch -p bcc --parsable --dependency=afterok:$PH:$R2 $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"'
+R5=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$PH:$R2 $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"'
 for r in A B C D E; do grep -q "RECIPE=$r scenario" "$HERE/chain/dry_run_chain.sh" || { echo "FAIL: the dry run does not run recipe $r"; fail=1; }; done
 # M1, M2: runtime citation and the large-tier memory
 forbid "phASER's authors report"
@@ -984,8 +987,8 @@ need "the job that starts second fails at once with \"another installation is ru
 # M8: nothing-tested note of the phASER section
 need "Mark a sample with \`genes_tested\` = 0 as \"nothing tested\""
 # M11: the dry run deletes its scratch argument only under the shared scratch area
-[ "$(grep -c 'rm -rf "$W"' "$HERE/chain/dry_run_chain.sh")" = 1 ] && grep -qF '  /net/bmc-lab3/data/bcc/ase_scratch/?*) rm -rf "$W" && mkdir -p "$W" || exit 1 ;;' "$HERE/chain/dry_run_chain.sh" ||
-  { echo "FAIL: dry_run_chain.sh may delete its scratch argument only under /net/bmc-lab3/data/bcc/ase_scratch/"; fail=1; }
+[ "$(grep -c 'rm -rf "$W"' "$HERE/chain/dry_run_chain.sh")" = 1 ] && grep -qF '  "${ASE_SCRATCH_ROOT:-/nonexistent_scratch_root}"/?*) rm -rf "$W" && mkdir -p "$W" || exit 1 ;;' "$HERE/chain/dry_run_chain.sh" ||
+  { echo "FAIL: dry_run_chain.sh may delete its scratch argument only under $ASE_SCRATCH_ROOT"; fail=1; }
 # --- end Stage 3 chain integration review fixes
 # --- Stage 3 README and registration; each check fails on the 11162ea README and root README
 RD="$HERE/../README.md"
@@ -1003,7 +1006,7 @@ rneed "haplotype labels are arbitrary"
 rneed "most-covered haplotype block"
 rneed "not verified on real data"
 rneed "Fast Beta"
-rneed "module add miniconda3/v4"
+rneed "CONDA_SETUP"
 rforbid "phASER (Stage 3) is not implemented"
 rforbid "the only module the skill ever loads"
 grep -qE "Stage 3 synthetic acceptance run: DONE \(2026-[0-9-]+\)" "$RD" && ! grep -qF "Stage 3 synthetic acceptance run: PENDING" "$RD" || { echo "FAIL: README must state Stage 3 synthetic acceptance DONE"; fail=1; }
@@ -1141,12 +1144,12 @@ for m in "9 partial phasing under PHASED_GT=0" "10 PS tag under PHASED_GT=1" "ca
 need "**One answer for the whole cohort:** \`{PHASED_GT}\` applies to every individual."
 # I2: recipe E (a sample dropped with phASER selected: Rmd 01, 02, 04, then Rmd 05 after Rmd 02, no phaser_count.sh), the drop
 #     paragraph points to it, and the stale --array range of phaser_count.sh is never re-submitted
-rblock E 'R1=$(sbatch -p bcc --parsable $S/run_01_import_qc.sh); got run_01_import_qc.sh "$R1"
-R2=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_02_imbalance.sh); got run_02_imbalance.sh "$R2"
+rblock E 'R1=$(sbatch {PCLI_FLAG}--parsable $S/run_01_import_qc.sh); got run_01_import_qc.sh "$R1"
+R2=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$R1 $S/run_02_imbalance.sh); got run_02_imbalance.sh "$R2"
 case " $ANALYSES " in *differential*)
-  R4=$(sbatch -p bcc --parsable --dependency=afterok:$R1 $S/run_04_differential.sh); got run_04_differential.sh "$R4" ;;
+  R4=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$R1 $S/run_04_differential.sh); got run_04_differential.sh "$R4" ;;
 esac
-R5=$(sbatch -p bcc --parsable --dependency=afterok:$R2 $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"'
+R5=$(sbatch {PCLI_FLAG}--parsable --dependency=afterok:$R2 $S/run_05_phaser.sh); got run_05_phaser.sh "$R5"'
 need "**Recipe E — after dropping a sample, with phASER selected**"
 need "Check first that every remaining sample has its finished phASER table:"
 need "when phASER was selected, build \`submit_rmds.sh\` from recipe E above"

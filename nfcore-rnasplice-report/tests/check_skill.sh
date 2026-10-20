@@ -77,7 +77,7 @@ need 'one Bash call per procedure'
 need 'R, Nextflow, Java and every other heavy tool run only on compute nodes'
 need 'never on a login node'
 need 'Default SLURM requests are at most 64 GB and 4 hours'
-need 'Every `module add` is guarded with `|| exit 1`'
+need 'Every site-config load line (`{SINGULARITY_LOAD}`) is guarded with `|| exit 1`'
 need '`{WD_NAME}` = basename of `{CWD}`'
 need '`{TODAY_ISO}` = today'\''s date as `YYYY-MM-DD`'
 need '`{REPORT_DIR}` = `{CWD}/results/{TODAY_ISO}_{WD_NAME}_report`'
@@ -88,8 +88,12 @@ need 'Do not pre-fill any address.'
 need 'Store `{EMAIL}`'
 need 'Store `{SIF}`'
 need 'The image is pulled on a compute node, never on the login node'
-need '#SBATCH -p bcc'
-need 'module add singularity/3.10.4 || exit 1'
+need '#SBATCH -p {SLURM_PARTITION}'
+need '#SBATCH -p __PARTITION__'
+need '{SINGULARITY_LOAD} || exit 1'
+need '__SINGULARITY_LOAD__ || exit 1'
+forbid 'bcc'
+forbid '/net/'
 need '"DEXSeq", "edgeR", "stageR", "ggplot2", "dplyr", "tidyr", "readr", "knitr", "rmarkdown"'
 need '"ReactomePA", "KEGG.db", "reactome.db"'
 need 'the image must be rebuilt by them'
@@ -132,7 +136,7 @@ forbid_re 'install\.packages|BiocManager|install_github|conda install|pip instal
 # The FASTQ or BAM files of the sample sheet are never opened.
 forbid_re 'zcat[^|]*(fastq|fq)' 'a FASTQ file is opened'
 # Every module add is guarded.
-if grep 'module add' "$SKILL" | grep -qv '|| exit 1'; then echo "FAIL: a module add without || exit 1"; fail=1; fi
+if grep -E '^(module add |\{SINGULARITY_LOAD\}|__SINGULARITY_LOAD__)' "$SKILL" | grep -qv '|| exit 1'; then echo "FAIL: a module add or site-config load line without || exit 1"; fail=1; fi
 # --- end wizard checks
 # --- wizard checks (Steps 7-10, thresholds, menu, SLURM)
 for s in 7 8 9 10; do

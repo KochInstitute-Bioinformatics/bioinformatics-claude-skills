@@ -1,6 +1,6 @@
 #!/bin/bash
-# Usage: dry_run_chain.sh <skill.md> <scratch dir>  (deleted and re-created only under /net/bmc-lab3/data/bcc/ase_scratch/;
-# anywhere else the run uses a new mktemp -d directory inside it and removes only that)
+# Usage: dry_run_chain.sh <skill.md> <scratch dir>  (deleted and re-created only under $ASE_SCRATCH_ROOT, a directory you name
+# for this purpose; anywhere else the run uses a new mktemp -d directory inside it and removes only that)
 # Cuts submit_chain.sh and wait_chain.sh out of Step 15 (cut_block.sh), edits them as the wizard would (placeholders; the four
 # mouse-helper lines deleted unless a scenario keeps them), and runs them against stub sbatch / squeue / scancel / sleep. Each
 # submission scenario compares the submitted jobs and their afterok dependencies (as script names) with the expected list, or
@@ -28,7 +28,7 @@ ENV_SHA_INSTALLED=ef6e8597e66a4e6c23c27fee56181c0ae37810c1e94370a375de44974f6507
 case "$W" in */../*|*/..|*/./*) echo "FAIL: scratch dir '$W' must be a plain absolute path"; exit 1 ;; esac
 W=${W%/}; OWN_TMP=""
 case "$W" in
-  /net/bmc-lab3/data/bcc/ase_scratch/?*) rm -rf "$W" && mkdir -p "$W" || exit 1 ;;
+  "${ASE_SCRATCH_ROOT:-/nonexistent_scratch_root}"/?*) rm -rf "$W" && mkdir -p "$W" || exit 1 ;;
   ""|/) echo "FAIL: refusing scratch dir '/'"; exit 1 ;;
   *) mkdir -p "$W" && OWN_TMP=$(mktemp -d "$W/dry_run_chain.XXXXXX") || exit 1; W=$OWN_TMP ;;
 esac
@@ -40,7 +40,7 @@ cat > "$B/sbatch" <<'EOF'
 # dependency; prints no id for the script named in $STUB_DIR/empty_for
 n=$(( $(cat "$STUB_DIR/n" 2>/dev/null || echo 100) + 1 )); echo "$n" > "$STUB_DIR/n"
 dep=-; script=""
-for a in "$@"; do case "$a" in --dependency=*) dep=${a#--dependency=} ;; -p|bcc|--parsable) ;; *) script=$a ;; esac; done
+for a in "$@"; do case "$a" in --dependency=*) dep=${a#--dependency=} ;; -p|testpart|--parsable) ;; *) script=$a ;; esac; done
 case "$dep" in *afterok:|*::*|*:) echo "stub sbatch: empty id in dependency '$dep'" >&2; exit 1 ;; esac
 [ -s "$script" ] || { echo "stub sbatch: no such script $script" >&2; exit 1; }
 [ "$(cat "$STUB_DIR/empty_for" 2>/dev/null)" = "$(basename "$script")" ] && exit 0
@@ -100,12 +100,12 @@ scenario() {
   [ -n "${PRE_IDS:-}" ] && printf 'old.sh\t1\n' > "$D/res/logs/chain_job_ids.tsv"
   if [ -n "${KEEP_HELPER:-}" ]; then printf '%s\n' "$SUB"
   else printf '%s\n' "$SUB" | awk '/^# Without the helper, delete the next four lines/ {print; skip = 4; next} skip > 0 {skip--; next} {print}'
-  fi | sed -e "s|{RESULTS_DIR}|$D/res|g" -e "s|{CWD}|$D|g" -e "s|{MODE}|$2|g" -e "s|{ANALYSES}|$3|g" -e "s|{PHASER_HOME}|$home|g" > "$D/full_chain.sh"
+  fi | sed -e "s|{RESULTS_DIR}|$D/res|g" -e "s|{CWD}|$D|g" -e "s|{MODE}|$2|g" -e "s|{ANALYSES}|$3|g" -e "s|{PHASER_HOME}|$home|g" -e "s|{PCLI_FLAG}|-p testpart |g" > "$D/full_chain.sh"
   case "${RECIPE:-}" in
     "") cp "$D/full_chain.sh" "$D/submit_chain.sh" ;;
     naive) grep -v "^  PH=" "$D/full_chain.sh" > "$D/submit_chain.sh" ;;   # the copy-and-delete hazard the recipes avoid
     *) { awk '{print} /^DEP=""; R3="not selected"; R4="not selected"; R5="not selected"; PS=""/ {exit}' "$D/full_chain.sh"
-         bash "$CUT" "$SKILL" "**Recipe $RECIPE " || echo "echo MISSING RECIPE $RECIPE; exit 3"; tail -n 2 "$D/full_chain.sh"; } > "$D/submit_chain.sh" ;;
+         { r=$(bash "$CUT" "$SKILL" "**Recipe $RECIPE ") && printf '%s\n' "$r" | sed "s|{PCLI_FLAG}|-p testpart |g"; } || echo "echo MISSING RECIPE $RECIPE; exit 3"; tail -n 2 "$D/full_chain.sh"; } > "$D/submit_chain.sh" ;;
   esac
   grep -q '{[A-Z_]*}' "$D/submit_chain.sh" && { echo "FAIL: $1: placeholder left in submit_chain.sh"; fail=1; return; }
   out=$(run_stub "$D" "$D/submit_chain.sh"); rc=$?

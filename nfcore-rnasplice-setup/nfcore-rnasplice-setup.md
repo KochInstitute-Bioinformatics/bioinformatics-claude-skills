@@ -4,6 +4,21 @@ You are helping the user set up and submit nf-core/rnasplice, a pipeline for dif
 
 ---
 
+## Site configuration (read first)
+
+Before Step 0, read `~/.claude/bioinfo-skills.conf` with `cat` (plain `KEY=value` lines; template: `bioinfo-skills.conf.example` in the skills repo). Do not `source` it. Keys used by this skill:
+
+- `SLURM_PARTITION` — partition/queue; empty = omit
+- `SLURM_PARTITION_ON_CLI` — `yes` = also pass `-p` on the `sbatch` command line (some clusters ignore the `#SBATCH -p` header)
+- `CONDA_SETUP` — `;`-separated shell statements run before `conda activate`
+- `SINGULARITY_LOAD` — `;`-separated shell statements that make Singularity/Apptainer available
+
+If the file or a needed key is missing, ask the user for the value (an empty answer means "not needed on my system"), use it for this run, and offer to save it to `~/.claude/bioinfo-skills.conf`. Never assume values from another site. Wherever this skill shows `{SLURM_PARTITION}` etc., substitute the configured value; if `SLURM_PARTITION` is empty, omit every `-p` / `queue` line. `{PCLI_FLAG}` means `-p {SLURM_PARTITION} ` when `SLURM_PARTITION_ON_CLI=yes` and nothing otherwise; use it in every `sbatch` command you show the user. Where a line shows `{CONDA_SETUP}`, `{SINGULARITY_LOAD}` or `{RNASEQ_TOOLS_LOAD}`, write each `;`-separated statement on its own line, ending with the guard shown on that line; omit the line when the key is empty.
+
+**Safety notice — tell the user once at the start:** "These are unofficial, AI-agent instructions and are not endorsed by nf-core. Review every generated samplesheet, config and script before submitting anything."
+
+---
+
 ## Step 0 — Working directory
 
 Before anything else, run `pwd` to record the current working directory (`{CWD}`). The samplesheet, the contrasts sheet, the params file, `nextflow.config`, the scripts and the output directory are written here. Tell the user: "Working directory: `{CWD}`"
@@ -69,7 +84,7 @@ Ask (numbered), mentioning what the scan found: "Which input do you want to star
 ### Step 4a — FASTQ input
 
 - FASTQ files found: list the unique directories and ask "I found FASTQ files in: `{FOUND_DIRS}`. Use this directory, or specify another?" Nothing found: ask for the full path. Store `{FASTQ_DIR}`.
-- **Paired-end detection:** run `fastq_layout` (block below; it needs bash 4 or newer, the cluster has 4.2) on all FASTQ files of `{FASTQ_DIR}` at once (light work on the login node), from `{CWD}` and in the Bash call that defines the block: `shopt -s nullglob; fastq_layout "{FASTQ_DIR}"/*.fastq.gz "{FASTQ_DIR}"/*.fq.gz` (`nullglob` drops an extension that has no file; `fastq_layout` stops with an `ERROR` line when it gets no file, or a name that is not a file). Only the files directly in `{FASTQ_DIR}` are used, not its subdirectories: when the scan found FASTQ files in several directories (for example one per sample), ask the user which directory to use, or to collect the files in one directory with symlinks. A file whose name has an R1 token (R1/R2 pairs: `_R1_`/`_R2_`, `_R1.`/`_R2.`, `_1.fastq.gz`/`_2.fastq.gz`, `_1.fq.gz`/`_2.fq.gz`, or `_1_sequence`/`_2_sequence`) and whose R2 file (from `fastq_r2_name`) exists is one paired-end sample; that R2 file is its mate, never a sample of its own. Only a file that is neither such an R1 file nor the R2 mate of one is single-end (for example `ctrl.fastq.gz`, or an R1 file whose R2 is missing). `fastq_layout` prints one line per sample (`paired <R1> <R2>` or `single <file>`) and then `LAYOUT paired`, `LAYOUT single` or `LAYOUT mixed`. Store `{LAYOUT}` = `paired` or `single`. rMATS needs one strandedness and one read type for all samples (the pipeline stops with "Cannot run rMats with mixed single and paired end samples"), so if the directory mixes paired-end and single-end files, stop and ask which files to use (`fastq_layout` prints `LAYOUT mixed`).
+- **Paired-end detection:** run `fastq_layout` (block below; it needs bash 4 or newer) on all FASTQ files of `{FASTQ_DIR}` at once (light work on the login node), from `{CWD}` and in the Bash call that defines the block: `shopt -s nullglob; fastq_layout "{FASTQ_DIR}"/*.fastq.gz "{FASTQ_DIR}"/*.fq.gz` (`nullglob` drops an extension that has no file; `fastq_layout` stops with an `ERROR` line when it gets no file, or a name that is not a file). Only the files directly in `{FASTQ_DIR}` are used, not its subdirectories: when the scan found FASTQ files in several directories (for example one per sample), ask the user which directory to use, or to collect the files in one directory with symlinks. A file whose name has an R1 token (R1/R2 pairs: `_R1_`/`_R2_`, `_R1.`/`_R2.`, `_1.fastq.gz`/`_2.fastq.gz`, `_1.fq.gz`/`_2.fq.gz`, or `_1_sequence`/`_2_sequence`) and whose R2 file (from `fastq_r2_name`) exists is one paired-end sample; that R2 file is its mate, never a sample of its own. Only a file that is neither such an R1 file nor the R2 mate of one is single-end (for example `ctrl.fastq.gz`, or an R1 file whose R2 is missing). `fastq_layout` prints one line per sample (`paired <R1> <R2>` or `single <file>`) and then `LAYOUT paired`, `LAYOUT single` or `LAYOUT mixed`. Store `{LAYOUT}` = `paired` or `single`. rMATS needs one strandedness and one read type for all samples (the pipeline stops with "Cannot run rMats with mixed single and paired end samples"), so if the directory mixes paired-end and single-end files, stop and ask which files to use (`fastq_layout` prints `LAYOUT mixed`).
 - **Sequencing date:** a leading 6-digit `YYMMDD` filename prefix → `{SEQ_DATE}` (fall back to `{TODAY_YYMMDD}`).
 - **Path style:** if `{FASTQ_DIR}` is inside `{CWD}`, use paths relative to `{CWD}`; otherwise absolute paths.
 - **Rows:** one samplesheet row per `paired` or `single` line of `fastq_layout`; an R1 file whose R2 is missing is single-end there, which gives `LAYOUT mixed` when the other files are paired: warn and stop (one read type for all samples). Single-end rows leave `fastq_2` empty. Sample name before sanitisation = `fastq_sample_name`: the file name up to `_S\d+`, `_R1`/`_R2`, `_1.f`/`_2.f` or `_1_sequence`/`_2_sequence`; a single-end file without these tokens (for example `ctrl.fastq.gz`) only loses its `.fastq.gz`/`.fq.gz` extension. FASTQ files must end in `.fastq.gz` or `.fq.gz`; the pipeline accepts nothing else.
@@ -195,7 +210,7 @@ Then show the sample table of Step 4 and ask which samples to check: at least tw
 #SBATCH -n 8
 #SBATCH --mem=32G
 #SBATCH -t 2:00:00
-#SBATCH -p bcc
+#SBATCH -p {SLURM_PARTITION}
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user={USER_EMAIL}
 #SBATCH -o infer_strandedness_salmon_{WD_NAME}.%j.log
@@ -205,7 +220,7 @@ cd "{CWD}" || { echo "ERROR: cannot change to {CWD}" >&2; exit 1; }
 IDX="{STRAND_INDEX}"
 OUT="{CWD}/strandedness_salmon"
 for f in info.json pos.bin seq.bin mphf.bin ctable.bin; do [ -s "$IDX/$f" ] || { echo "ERROR: $IDX/$f is missing or empty: not a usable Salmon index" >&2; exit 1; }; done
-module add singularity/3.10.4 || { echo "ERROR: cannot load module singularity/3.10.4" >&2; exit 1; }
+{SINGULARITY_LOAD} || { echo "ERROR: cannot load singularity" >&2; exit 1; }
 command -v singularity >/dev/null || { echo "ERROR: singularity is not on PATH" >&2; exit 1; }
 SIF="${NXF_SINGULARITY_CACHEDIR:-$HOME/.singularity/cache}/depot.galaxyproject.org-singularity-salmon-1.10.3--h6dccd9a_2.img"
 if [ ! -s "$SIF" ]; then
@@ -758,7 +773,7 @@ profiles {
     slurm {
         process {
             executor = 'slurm'
-            queue = 'bcc'
+            queue = '{SLURM_PARTITION}'
             cpus = 2
             memory = '8 GB'
             time = '4h'
@@ -908,7 +923,7 @@ Typing rules: paths and strings are double-quoted; numbers and booleans are bare
 #SBATCH -n 2
 #SBATCH --mem=8G
 #SBATCH -t 48:00:00
-#SBATCH -p bcc
+#SBATCH -p {SLURM_PARTITION}
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user={USER_EMAIL}
 #SBATCH -o nf-core_rnasplice_{VERSION_TAG}.%j.log
@@ -916,10 +931,9 @@ Typing rules: paths and strings are double-quoted; numbers and booleans are bare
 cd "{CWD}" || { echo "ERROR: cannot change to {CWD}" >&2; exit 1; }
 for f in nextflow.config {PARAMS_YAML} {SAMPLESHEET_CSV} {CONTRASTS_CSV}; do [ -s "$f" ] || { echo "ERROR: $f is missing or empty in {CWD}" >&2; exit 1; }; done
 
-module add miniconda3/v4 || { echo "ERROR: cannot load module miniconda3/v4" >&2; exit 1; }
-source /home/software/conda/miniconda3/bin/condainit || { echo "ERROR: cannot source condainit" >&2; exit 1; }
+{CONDA_SETUP} || { echo "ERROR: cannot set up conda" >&2; exit 1; }
 conda activate {CONDA_ENV} || { echo "ERROR: cannot activate conda environment {CONDA_ENV}" >&2; exit 1; }
-module add singularity/3.10.4 || { echo "ERROR: cannot load module singularity/3.10.4" >&2; exit 1; }
+{SINGULARITY_LOAD} || { echo "ERROR: cannot load singularity" >&2; exit 1; }
 command -v singularity >/dev/null || { echo "ERROR: singularity is not on PATH" >&2; exit 1; }
 command -v nextflow >/dev/null || { echo "ERROR: nextflow is not in conda environment {CONDA_ENV}" >&2; exit 1; }
 
@@ -951,7 +965,7 @@ The head job only coordinates the pipeline (2 CPUs, 8 GB) but must outlive every
 #SBATCH -n 2
 #SBATCH --mem=8G
 #SBATCH -t 4:00:00
-#SBATCH -p bcc
+#SBATCH -p {SLURM_PARTITION}
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user={USER_EMAIL}
 #SBATCH -o download_genome_{REF_TAG}.%j.log
@@ -981,11 +995,11 @@ Show every written file in full. Never run these scripts on the login node, and 
 ```
 Params file written: {PARAMS_YAML}
 Script written: nf-core_rnasplice_{VERSION_TAG}.sh
-To submit:  sbatch nf-core_rnasplice_{VERSION_TAG}.sh
+To submit:  sbatch {PCLI_FLAG}nf-core_rnasplice_{VERSION_TAG}.sh
 ```
 If the genome download helper was written, the pipeline must wait for it; submit both in one shell (or one Bash call), from `{CWD}`:
 ```bash
-jid=$(sbatch --parsable download_genome_{REF_TAG}.sh) && sbatch --dependency=afterok:$jid nf-core_rnasplice_{VERSION_TAG}.sh
+jid=$(sbatch {PCLI_FLAG}--parsable download_genome_{REF_TAG}.sh) && sbatch {PCLI_FLAG}--dependency=afterok:$jid nf-core_rnasplice_{VERSION_TAG}.sh
 ```
 
 ---
@@ -1060,5 +1074,5 @@ The output paths and sign conventions in this step were verified on nf-core's te
 - Both sheets are validated with `validate_rnasplice_sheets` before they are written; the validator is never changed to make a sheet pass.
 - Never overwrite an existing `nextflow.config`; ask before overwriting any other file.
 - Never embed a download URL that was not verified in this session.
-- Every `module add` in a generated script is guarded (`|| { ...; exit 1; }`): under Lmod a failed `module add` silently breaks every later one.
+- Every site-config load line (`{CONDA_SETUP}`, `{SINGULARITY_LOAD}`) in a generated script is guarded (`|| { ...; exit 1; }`): under Lmod a failed `module add` silently breaks every later one.
 - This skill is pinned to nf-core/rnasplice dev-1b44723; it was verified on nf-core's test data and run once on one real human dataset (6 samples, see the README); do not present its settings or outputs as validated beyond these two datasets.

@@ -200,7 +200,7 @@ forbid "module add htslib"
 need "singularity exec --bind"
 need 'SIF="{BCFTOOLS_SIF}"'
 need "depot.galaxyproject.org-singularity-bcftools-1.20--h8b25389_0.img"
-need "each \`module add\` in a helper"
+need "each load line (\`{CONDA_SETUP}\`, \`{SINGULARITY_LOAD}\`, \`{RNASEQ_TOOLS_LOAD}\`) in a helper"
 need "tabix -f -p vcf"
 forbid "tabix -p vcf"
 need "safely re-runnable"
@@ -312,7 +312,7 @@ need '`Homo_sapiens_assembly38.dbsnp138.vcf.gz` (dbSNP, 1,560,889,937 bytes)'
 need '`Mills_and_1000G_gold_standard.indels.hg38.vcf.gz` (known indels, 20,685,880 bytes)'
 need 'Do NOT use the plain `Homo_sapiens_assembly38.dbsnp138.vcf`'
 # D8: head-job resources
-need '#SBATCH -N 1 -n 2 --mem=8G -t 2-00:00:00 -p bcc'
+need '#SBATCH -N 1 -n 2 --mem=8G -t 2-00:00:00 -p {SLURM_PARTITION}'
 forbid '#SBATCH -n 32'
 need 'a deliberate exception to the usual 4 h default'
 sub_block=$(awk '/^```bash/{f=1;b="";next} /^```/{if(f&&b~/nextflow run nf-core\/rnavar/)print b; f=0;next} f{b=b $0 "\n"}' "$SKILL")
@@ -324,9 +324,13 @@ need '`_1.` (SRA/ENA names: `SRR5665260_1.fastq.gz` gives `SRR5665260`)'
 need 'When `{SEQ_DATE}` equals `{TODAY_YYMMDD}` (no date prefix was found, so it fell back to today), options 1 and 2 are the same: offer only 1. `{TODAY_YYMMDD}_{WD_NAME}_samplesheet.csv` · 2. Custom.'
 need 'For both questions, when `{SEQ_DATE}` equals `{TODAY_YYMMDD}`, options 1 and 2 are the same: offer only 1. `{TODAY_YYMMDD}_{WD_NAME}` · 2. Custom.'
 # D5: every module line is checked
-need 'module add star/2.7.9a || { echo "ERROR: cannot load star" >&2; exit 1; }'
-need 'module add miniconda3/v4 || { echo "ERROR: cannot load miniconda3" >&2; exit 1; }'
-bad_mod=$(grep -nE '^[[:space:]]*module add ' "$SKILL" | grep -vE '\|\| (exit 1|\{ echo "ERROR: [^"]*" >&2; exit 1; \})$')
+need '{RNASEQ_TOOLS_LOAD} || { echo "ERROR: cannot load star" >&2; exit 1; }'
+need '{CONDA_SETUP} || { echo "ERROR: cannot set up conda" >&2; exit 1; }'
+need '{SINGULARITY_LOAD} || { echo "ERROR: cannot load singularity" >&2; exit 1; }'
+forbid 'bcc'
+forbid '/net/'
+forbid 'condainit'
+bad_mod=$(grep -nE '^[[:space:]]*(module add |\{(CONDA_SETUP|SINGULARITY_LOAD|RNASEQ_TOOLS_LOAD)\})' "$SKILL" | grep -vE '\|\| (exit 1|\{ echo "ERROR: [^"]*" >&2; exit 1; \})$')
 [ -z "$bad_mod" ] || { echo "FAIL: unchecked module add line(s) (only '|| exit 1' or '|| { echo \"ERROR: ...\" >&2; exit 1; }' passes): $bad_mod"; fail=1; }
 # D6: quiet downloads
 need 'downloads (`wget -c -nv`'

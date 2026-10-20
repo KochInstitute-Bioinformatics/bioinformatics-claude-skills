@@ -2,6 +2,8 @@
 
 An interactive Claude Code skill that generates a complete bulk RNA-seq downstream analysis pipeline (tximport → DESeq2 / edgeR → GSEA, optional DTU) as a series of R Markdown reports and SLURM submission scripts, starting from **nf-core/rnaseq `star_salmon` output** and running inside a Singularity container on an HPC cluster. It is the bulk companion to [`/seurat-scrna-pipeline`](../seurat-scrna-pipeline) and picks up where [`/nfcore-rnaseq-setup`](../nfcore-rnaseq-setup) leaves off.
 
+> **Unofficial, AI-agent instructions - not endorsed by nf-core. Review every generated file before submitting. Cluster settings are read from `~/.claude/bioinfo-skills.conf` (see the [root README](../README.md#configure-your-site)).**
+
 ---
 
 ## Installation
@@ -22,9 +24,9 @@ Then invoke it in Claude Code:
 
 | Requirement | Notes |
 |-------------|-------|
-| SLURM scheduler | Tested on `bcc` queue |
-| Singularity ≥ 3.5 | Loaded via `module load singularity/3.5.0` |
-| Container image | `yannvrb56/bulkrnaseq:latest` (SIF at `/net/bmc-lab3/data/bcc/shared/singularity_images/bulkrnaseq_latest.sif`) |
+| SLURM scheduler | Partition set via `SLURM_PARTITION` in the site config |
+| Singularity/Apptainer | Loaded via `SINGULARITY_LOAD` in the site config (tested with 3.5) |
+| Container image | `BULK_IMAGE` (default `yannvrb56/bulkrnaseq:latest`; Dockerfile in [`containers/bulkrnaseq`](../containers/bulkrnaseq)), SIF stored in `SIF_DIR` |
 | Starting data | nf-core/rnaseq `star_salmon` output — per-sample `quant.sf` + multiqc general stats |
 | Internet access | Required from compute node for `msigdbr` 26.x (fetches gene-set data at runtime) if GSEA is used |
 
@@ -84,23 +86,23 @@ Getting the mode wrong silently corrupts every downstream fold change, so it is 
 ## Typical workflow
 
 ```bash
-sbatch -p bcc run_01_import_qc.sh
+# (add `-p <partition>` to each command if SLURM_PARTITION_ON_CLI=yes)
+sbatch run_01_import_qc.sh
 # Review 01_import_qc.html — boxplots, PCA (biology vs QC overlays), sample grouping
-sbatch -p bcc run_02_deg.sh
+sbatch run_02_deg.sh
 # Review volcano plots and *_supplemental.xlsx
-sbatch -p bcc run_03_gsea.sh          # if requested
-sbatch -p bcc run_04_dtu.sh           # if requested (paired-end only)
+sbatch run_03_gsea.sh          # if requested
+sbatch run_04_dtu.sh           # if requested (paired-end only)
 ```
 
 ---
 
 ## Cluster-specific notes
 
-- **Queue**: `bcc` — always submit with `sbatch -p bcc script.sh`; the `#SBATCH -p bcc` header alone silently fails on this cluster.
-- **Singularity module**: `module load singularity/3.5.0`.
+- **Partition**: `SLURM_PARTITION`. If your cluster ignores the `#SBATCH -p` header, set `SLURM_PARTITION_ON_CLI=yes` and the skill prints `sbatch -p <partition> script.sh`.
+- **Singularity/Apptainer**: loaded with the `SINGULARITY_LOAD` line from the site config
 - **Never run R or Singularity on the login node** — use `sbatch` (or `srun`/`salloc` for debugging).
-- **`gh` CLI is not available**.
-- Packages are baked into the `yannvrb56/bulkrnaseq` image — never `install.packages()` at runtime; rebuild the image to add packages.
+- Packages are baked into the container image (`BULK_IMAGE`) — never `install.packages()` at runtime; rebuild the image to add packages.
 - Raw `quant.sf` and nf-core outputs are read-only; all outputs go to `results/{date}_{project}/`.
 
 ---
@@ -126,5 +128,5 @@ Hard-won lessons baked into the skill so you don't rediscover them:
 
 - Starts specifically from nf-core/rnaseq `star_salmon` output (`quant.sf`); other quantifiers require adapting the import step.
 - If no GTF is reachable, the `gene_biotype` protein-coding filter is skipped (with a warning).
-- GSEA on offline-compute clusters requires pre-seeding the `msigdbdf` cache (or baking it into the image) before submitting `run_03`.
+- GSEA on clusters with offline compute nodes requires pre-seeding the `msigdbdf` cache (or baking it into the image) before submitting `run_03`.
 - The mouse-native MSigDB is not bundled — GSEA uses human→mouse ortholog mapping.

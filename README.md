@@ -1,32 +1,16 @@
 # bioinformatics-claude-skills
 
-Claude Code custom skills (slash commands) for RNA-seq analysis at the Koch Institute, all wired for SLURM + Singularity on HPC. They cover:
+[Claude Code](https://claude.ai/code) skills that help you **set up and run RNA-seq analyses on a SLURM + Singularity HPC cluster**. They cover:
 
-- **Pipeline setup** — interactive wizards that configure and submit nf-core pipelines: nf-core/rnaseq (bulk), nf-core/scrnaseq (single-cell), nf-core/rnavar (RNA-seq variant calling) and nf-core/rnasplice (differential alternative splicing).
-- **Downstream analysis** — skills that generate R Markdown reports and SLURM scripts: bulk RNA-seq (DESeq2/edgeR, GSEA, optional differential transcript usage), alternative splicing (nf-core/rnasplice: rMATS, SUPPA2, DEXSeq/edgeR exon usage, DTU) and single-cell (Seurat).
-- **Allele-specific expression** — a wizard that runs its own alignment and counting jobs (no Nextflow) for F1 crosses and outbred/human samples: per-sample imbalance, reciprocal F1 (strain versus parent-of-origin effects) and differential ASE between conditions.
-- **Session handoff** — a structured end-of-session report so the next session can resume.
+- **Pipeline setup**: interactive wizards that configure and submit nf-core pipelines: rnaseq (bulk), scrnaseq (single-cell), rnavar (variant calling) and rnasplice (alternative splicing).
+- **Downstream analysis**: skills that generate R Markdown reports and SLURM scripts for bulk RNA-seq (DESeq2/edgeR, GSEA, optional DTU), alternative splicing (nf-core/rnasplice outputs) and single-cell (Seurat).
+- **Allele-specific expression**: a wizard that runs its own alignment and counting jobs (no Nextflow) for F1 crosses and outbred/human samples.
+- **Session handoff**: a structured end-of-session report so the next Claude Code session can resume.
 
-## What are skills?
-
-Skills are Markdown files placed in `~/.claude/commands/` that define reusable, interactive workflows for Claude Code. They are invoked with a `/` prefix in the Claude Code CLI (e.g. `/nfcore-rnaseq-setup`).
-
-## Installation
-
-Clone this repository and copy the desired skill file(s) to your Claude commands directory:
-
-```bash
-git clone https://github.com/KochInstitute-Bioinformatics/bioinformatics-claude-skills.git
-cp bioinformatics-claude-skills/nfcore-rnaseq-setup/nfcore-rnaseq-setup.md ~/.claude/commands/
-```
-
-The skill is immediately available — no restart required.
-
-Folder skills that bundle scripts (currently `handoff`) are copied as a whole folder into `~/.claude/skills/` instead:
-
-```bash
-cp -r bioinformatics-claude-skills/handoff ~/.claude/skills/
-```
+> **Please read first**
+> - These are **AI-agent instructions** (prompts for Claude Code). They are **unofficial and not endorsed by nf-core** or its maintainers.
+> - They generate samplesheets, `nextflow.config` files and SLURM scripts. **Review everything the agent writes before you submit it.** You are responsible for what you run on your cluster and your data.
+> - They were developed and tested on one cluster (Koch Institute, MIT). Cluster-specific settings live in one config file (see [Configure your site](#configure-your-site)), but expect to adapt things to your environment. Issues and pull requests are welcome.
 
 ## Available skills
 
@@ -42,19 +26,76 @@ cp -r bioinformatics-claude-skills/handoff ~/.claude/skills/
 | Allele-specific expression pipeline | `/ase-pipeline` | Interactive wizard for allele-specific expression from bulk RNA-seq (F1 cross with a third-allele masked reference, or outbred/human with STAR WASP): STAR alignment, GATK ASEReadCounter, per-sample beta-binomial tests, reference-bias diagnostic, R Markdown reports and a summary page on SLURM + Singularity. Analyses: per-sample imbalance, reciprocal F1 (strain and parent-of-origin effects) and differential ASE between conditions; in outbred mode, phASER haplotype counts reported next to the unphased results |
 | Session handoff | `/handoff` | Writes a structured, validated end-of-session report under `.claude/reports/` and indexes it in the project `CLAUDE.md` so the next session can resume. Folder skill: install to `~/.claude/skills/` |
 
+Each skill folder has its own README with the full step list and known limitations. The `nfcore-*-setup` skills fetch the **latest** nf-core release each time they run, so generated commands follow current pipeline parameters; still check them against the pipeline docs for the version you run.
+
+## Quick start
+
+```bash
+# 1. Get the skills and install the ones you want
+git clone https://github.com/KochInstitute-Bioinformatics/bioinformatics-claude-skills.git
+cd bioinformatics-claude-skills
+mkdir -p ~/.claude/commands
+cp nfcore-rnaseq-setup/nfcore-rnaseq-setup.md ~/.claude/commands/
+
+# 2. Configure your site (partition, modules, container paths) - see below
+cp bioinfo-skills.conf.example ~/.claude/bioinfo-skills.conf
+$EDITOR ~/.claude/bioinfo-skills.conf
+
+# 3. In your project directory, start Claude Code and run the skill
+cd /path/to/my/project && claude
+> /nfcore-rnaseq-setup
+```
+
+Skills are plain Markdown files; no restart is needed after copying. Folder skills that bundle scripts (currently `handoff`) are copied as a whole folder into `~/.claude/skills/` instead:
+
+```bash
+cp -r bioinformatics-claude-skills/handoff ~/.claude/skills/
+```
+
+### Configure your site
+
+Everything cluster-specific (SLURM partition, how to load conda/Singularity, where container images live, optional report URL prefix) is read from `~/.claude/bioinfo-skills.conf`. Any key you leave out is asked interactively, and the skill offers to save your answer. [`bioinfo-skills.conf.example`](bioinfo-skills.conf.example) documents every key; [`examples/koch-institute.conf`](examples/koch-institute.conf) is a filled-in example.
+
+## Example
+
+Prompt (in a directory containing paired-end `*.fastq.gz` files):
+
+```
+/nfcore-rnaseq-setup
+```
+
+The skill asks one question at a time (illustrative, abbreviated):
+
+```
+Working directory: /path/to/Project1
+Which email should SLURM notify?            > me@example.org
+Which conda environment has Nextflow?       > nf-env
+Latest nf-core/rnaseq release: 3.x.y
+Found 12 paired-end samples, sample sheet:  (table shown for review)
+Trimming?  1) already trimmed  2) fastp (recommended)  3) trimgalore   > 2
+Organism?  1) mouse  2) human  3) other                                > 1
+Aligner?   1) star_salmon (recommended) ...                            > 1
+```
+
+Result: `samplesheet.csv`, `nextflow.config`, and a launch script. **Open and read them**, then submit:
+
+```
+Script written: nf-core_rnaseq_3.x.y.sh
+To submit:  sbatch nf-core_rnaseq_3.x.y.sh
+```
+
 ## Requirements
 
 - [Claude Code](https://claude.ai/code) CLI installed and authenticated
-- HPC cluster with SLURM scheduler
-- Singularity/Apptainer available as a module
-- Nextflow available via a conda environment (for the `nfcore-*` setup skills; `/ase-pipeline` does not use Nextflow)
-- Internet access from login node (for fetching Ensembl files and container images); `/ase-pipeline` downloads any missing biocontainer image in its prep job, which runs on a compute node; `/nfcore-rnasplice-setup` needs internet on the compute nodes: its job downloads the pinned nf-core/rnasplice revision and the containers
-- R is not needed on the host: the analysis skills run R inside a Singularity container, and never on a login node
+- HPC cluster with SLURM and Singularity/Apptainer available
+- Nextflow in a conda environment (for the `nfcore-*` setup skills; `/ase-pipeline` does not use Nextflow)
+- Internet access from the login node (Ensembl files, container images); `/ase-pipeline` downloads any missing biocontainer image in its prep job on a compute node; `/nfcore-rnasplice-setup` needs internet on the compute nodes: its job downloads the pinned nf-core/rnasplice revision and the containers
+- R is not needed on the host: the analysis skills run R inside a Singularity container, never on a login node. The images used by default and their Dockerfiles are in [`containers/`](containers)
 
-## Contributing
+## Contributing and feedback
 
-Add new skills as folders named after the slash command, each containing:
-- `<skill-name>.md` — the skill definition
-- `README.md` — documentation
+Bug reports, missing options, and requests for other nf-core pipelines are welcome: please [open an issue](https://github.com/KochInstitute-Bioinformatics/bioinformatics-claude-skills/issues). See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-A skill that needs bundled scripts or reference files can instead be a folder skill: `SKILL.md` plus its supporting files and a `README.md`, installed to `~/.claude/skills/<skill-name>/`.
+## License
+
+[MIT](LICENSE)

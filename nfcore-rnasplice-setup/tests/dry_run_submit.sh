@@ -68,14 +68,17 @@ done
 [ -z "$(PATH="$TEST_TMP/nonf:/usr/bin:/bin" type -P nextflow)" ] || { echo "a real nextflow is on /usr/bin:/bin; the missing-nextflow case cannot be tested"; exit 1; }
 [ -z "$(PATH="$TEST_TMP/nosing:/usr/bin:/bin" type -P singularity)" ] || { echo "a real singularity is on /usr/bin:/bin; the missing-singularity case cannot be tested"; exit 1; }
 bash "$HERE/cut_block.sh" "$SKILL" "**Submission script.**" > "$TEST_TMP/tmpl.sh" || { echo "FAIL: submission script block not found"; exit 1; }
-[ "$(grep -c '^source /home/software/conda/miniconda3/bin/condainit ' "$TEST_TMP/tmpl.sh")" -eq 1 ] || { echo "FAIL: expected exactly one condainit source line"; exit 1; }
-[ "$(grep -c '^[[:space:]]*\(source\|\.\) ' "$TEST_TMP/tmpl.sh")" -eq 1 ] || { echo "FAIL: unexpected extra source line"; exit 1; }
-sed -e "s#^source /home/software/conda/miniconda3/bin/condainit #source \"$S/condainit\" #" \
+[ "$(grep -c '^{CONDA_SETUP} || ' "$TEST_TMP/tmpl.sh")" -eq 1 ] || { echo "FAIL: expected exactly one {CONDA_SETUP} line"; exit 1; }
+[ "$(grep -c '^{SINGULARITY_LOAD} || ' "$TEST_TMP/tmpl.sh")" -eq 1 ] || { echo "FAIL: expected exactly one {SINGULARITY_LOAD} line"; exit 1; }
+[ "$(grep -c '^[[:space:]]*\(source\|\.\) ' "$TEST_TMP/tmpl.sh")" -eq 0 ] || { echo "FAIL: unexpected source line in the template"; exit 1; }
+# The site-config lines are rendered as a site would: one guarded line per statement (the real condainit is replaced by a stub file).
+sed -e "s#^{CONDA_SETUP} || \(.*\)\$#module add miniconda3/v4 || \1\nsource \"$S/condainit\" || \1#" \
+    -e "s#^{SINGULARITY_LOAD} || #module add singularity/3.10.4 || #; s#{SLURM_PARTITION}#testpart#g" \
     -e "s#{USER_EMAIL}#test@example.org#g; s#{CONDA_ENV}#nf-test#g; s#{VERSION_TAG}#$TAG#g; s#{VERSION}#$REV#g; s#{PARAMS_YAML}#T_params.yaml#g" \
     -e "s#{CWD}#$R#g; s#{SAMPLESHEET_CSV}#T_samplesheet.csv#g; s#{CONTRASTS_CSV}#T_contrasts.csv#g" \
     "$TEST_TMP/tmpl.sh" > "$TEST_TMP/submit.sh"
 ! grep -nE '(^|[^$])\{[A-Z_]+\}' "$TEST_TMP/submit.sh" || { echo "FAIL: placeholder left in the submission script"; exit 1; }
-! grep -q '/home/software/conda' "$TEST_TMP/submit.sh" || { echo "FAIL: the real condainit would be sourced"; exit 1; }
+[ "$(grep -c '^source ' "$TEST_TMP/submit.sh")" -eq 1 ] && grep -q "^source \"$S/condainit\" || " "$TEST_TMP/submit.sh" || { echo "FAIL: the rendered script must source only the stub condainit"; exit 1; }
 for f in nextflow.config T_params.yaml T_samplesheet.csv T_contrasts.csv; do echo "test" > "$R/$f"; done
 LAUNCH="nextflow run nf-core/rnasplice -r $REV -c nextflow.config -profile slurm,singularity -params-file T_params.yaml"
 fail=0

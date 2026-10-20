@@ -1,0 +1,43 @@
+# Site settings for the bioinformatics Claude skills.
+# Copy to ~/.claude/bioinfo-skills.conf and edit. Plain KEY=value lines, no quotes needed.
+# Skills read this file at startup; any missing key is asked interactively.
+# Leave a key empty to mean "not needed on my system".
+
+# --- SLURM ---
+# Partition/queue. Empty = omit -p everywhere.
+SLURM_PARTITION=
+# Set to yes if your cluster ignores "#SBATCH -p" in the script header and
+# needs "sbatch -p <partition> script.sh" on the command line.
+SLURM_PARTITION_ON_CLI=no
+
+# --- Software environment (shell lines placed in generated scripts) ---
+# Run before `conda activate <env>` (e.g. `module load miniconda3` or `source ~/miniconda3/etc/profile.d/conda.sh`).
+CONDA_SETUP=
+# Make Singularity/Apptainer available (e.g. `module load singularity/3.10.4`). Empty if already on PATH.
+SINGULARITY_LOAD=
+# Make STAR and Salmon available for building genome indexes (nfcore-rnaseq-setup only).
+RNASEQ_TOOLS_LOAD=
+
+# --- Containers for the downstream skills ---
+# Directory where .sif images are stored (must be readable from compute nodes).
+SIF_DIR=
+# Images (Docker URI). Defaults are public images by the skill author; use your own if you prefer
+# (see containers/ for the Dockerfiles and the R packages each skill needs).
+BULK_IMAGE=docker://yannvrb56/bulkrnaseq:latest
+SC_IMAGE=docker://yannvrb56/r4_6_0_python3_singlecell_visium:latest
+# Directory holding Azimuth reference packages (seurat-scrna-pipeline). Empty = skip Azimuth.
+AZIMUTH_REFS_DIR=
+
+# --- Reports ---
+# Optional web-accessible prefix for results, e.g. https://myserver.org/results/. Empty = relative links.
+WEB_URL_PREFIX=
+
+# --- Bind mounts ---
+# Comma-separated host directories always bound into containers (e.g. the root of a network filesystem that
+# Singularity does not auto-bind). Empty = none; the skills then bind only the directories they use.
+SINGULARITY_BIND=
+
+# --- Only for running the skills' own test suites on a cluster (tests/ folders), not needed otherwise ---
+# Shell init script that defines `module` inside batch jobs (e.g. /usr/share/lmod/lmod/init/bash), and MODULEPATH.
+MODULE_INIT=
+MODULEPATH=

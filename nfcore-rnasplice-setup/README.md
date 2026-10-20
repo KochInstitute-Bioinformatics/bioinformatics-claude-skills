@@ -20,12 +20,12 @@ Then invoke it in Claude Code with `/nfcore-rnasplice-setup`.
 
 | Requirement | Notes |
 |-------------|-------|
-| SLURM scheduler | Scripts target the `bcc` partition |
-| Singularity | Loaded with `module add singularity/3.10.4` |
+| SLURM scheduler | Partition set via `SLURM_PARTITION` in the [site config](../README.md#configure-your-site) |
+| Singularity/Apptainer | Loaded via `SINGULARITY_LOAD` in the site config (tested with 3.10) |
 | Nextflow 26.04.0 or newer | In a conda environment; verified with Nextflow 26.04.6 (env `nf-env`). The submission script checks the version on the compute node |
 | Internet on compute nodes | The job downloads the pinned revision of the pipeline from GitHub and the containers (depot.galaxyproject.org and community-cr-prod.seqera.io) |
 | Internet on the login node | The wizard uses `WebFetch` (GitHub API, Ensembl) |
-| bash 4 or newer | The wizard's helper functions use associative arrays (the cluster has bash 4.2.46) |
+| bash 4 or newer | The wizard's helper functions use associative arrays (the test cluster has bash 4.2.46) |
 | Disk space | About 70 GB plus 18 GB per sample for `work/` and the results together (6 samples: about 175 GB; FASTQ files not counted), estimated from the disk use of the real-data test on one human dataset of about 38 M read pairs of 78 bp per sample, with the STAR_ALIGN override of the `nextflow.config` template (about 38 GB or more per sample without it); it grows with the reads. The fixed part is mostly the STAR index copy (28.5 GB), the Salmon index (about 22 GB), the transcript FASTA (about 7.4 GB) and the gene-filter step (about 4.4 GB). Nextflow's work directory is `work/` in the project directory: resuming a run needs it, and after a successful run it can be deleted; the skill never deletes it |
 
 ---
@@ -141,7 +141,7 @@ The job downloads the pinned pipeline revision the first time it runs it (also w
 ## Validation status
 
 - Static tests: `bash tests/run_all_tests.sh` runs, each under `env -i` with an explicit PATH: the checker (every parameter against the recorded schema of nf-core/rnasplice 1b447239488097651d8eac44bca2c1556865eb0f, module switches, defaults against the recorded pipeline configuration, process selectors against the processes of the verification runs, the launch line, guarded module loads, this README), the tests that run the skill's own code blocks (sample names, sheet validation, strandedness from RSeQC and from Salmon, including the real Salmon output of the real-data test, BAM rule, read length, params rendering), the stub dry runs of the submission script, the download helper and the Salmon strandedness helper, a test of the test runner itself on a fake tree (`test_run_all.sh`: failures propagate, every listed test runs, the git version check), and the mutation proofs of every structural check. The default run takes about 50 minutes (bash, awk and sed only; measured on 2026-10-02, it varies with the load of the login node) and skips the proof-tool self-test (`test_proof_tools.sh`, about 100 minutes), and says so; `bash tests/run_all_tests.sh --full` includes it (about 2 h 30 min in all). The self-test needs git 1.8.5 or newer (`/usr/bin/git` on the cluster is 1.8.3): set `RNASPLICE_TEST_GIT_DIR` to the directory of a newer git (for example `RNASPLICE_TEST_GIT_DIR=$HOME/.conda/envs/git-new/bin bash tests/run_all_tests.sh --full`).
-- Verification gate (2026-10-01): nf-core/rnasplice 1b447239488097651d8eac44bca2c1556865eb0f with Nextflow 26.04.6 on the cluster, on nf-core's tiny test dataset: 4 paired-end human chrX samples (about 30 MB of FASTQ, 75 bp reads, two conditions). Runs, in `/net/bmc-lab3/data/bcc/yannvrb/rnasplice_gate/results/` (on the author's cluster account; these run directories are not distributed, and the recorded evidence is in `tests/fixtures/`):
+- Verification gate (2026-10-01): nf-core/rnasplice 1b447239488097651d8eac44bca2c1556865eb0f with Nextflow 26.04.6 on the cluster, on nf-core's tiny test dataset: 4 paired-end human chrX samples (about 30 MB of FASTQ, 75 bp reads, two conditions). Runs, in `/path/to/work/rnasplice_gate/results/` (on the author's cluster account; these run directories are not distributed, and the recorded evidence is in `tests/fixtures/`):
   - `2026-10-01_g2a_dev`: the pipeline's own test profile;
   - `2026-10-01_g3_typed`: a fully typed params file with all modules (the reference run);
   - `2026-10-01_g4_rmats_reverse`: rMATS only, `reverse` strandedness;

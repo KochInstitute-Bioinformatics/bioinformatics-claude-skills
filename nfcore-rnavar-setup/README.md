@@ -22,8 +22,8 @@ Then invoke it in Claude Code:
 
 | Requirement | Notes |
 |-------------|-------|
-| SLURM scheduler | Script targets the bcc queue |
-| Singularity ≥ 3.10 | Loaded via `module add singularity/3.10.4` |
+| SLURM scheduler | Partition set via `SLURM_PARTITION` in the [site config](../README.md#configure-your-site) |
+| Singularity/Apptainer | Loaded via `SINGULARITY_LOAD` in the site config (tested with 3.10) |
 | bcftools biocontainer | `depot.galaxyproject.org-singularity-bcftools-1.20--h8b25389_0.img` in `$NXF_SINGULARITY_CACHEDIR` (or `~/.singularity/cache`); the `prepare_known_sites` helper runs `bcftools`, `tabix` and `bgzip` from it via Singularity (there is no htslib/tabix module), downloading it once if absent |
 | Nextflow ≥ 24.04 | Available in a conda environment; needed for the `resourceLimits` directive in the generated config (validated with 26.04.6) |
 | Internet access | Required from the login node (GitHub API, Ensembl, known-sites downloads); compute nodes may not have it |
@@ -109,7 +109,7 @@ sbatch --dependency=afterok:<star_jobid>:<known_sites_jobid> nf-core_rnavar_1.3.
 One end-to-end run on real data, with the skill at master 77bfb5d followed literally, on 2026-10-02. It is ONE dataset, one sample and one run; the numbers below hold for that dataset only.
 
 - **Dataset:** SRR5665260 (BioProject PRJNA389940, study accession from the ENA filereport API for SRR5665260, fetched 2026-10-02), GM12878 = GIAB HG001, a whole human RNA-seq sample, paired-end, 39,598,362 read pairs, NextSeq 500, reads pre-trimmed (151 bp mode). Library selection and strandedness are not stated by ENA.
-- **What was run:** nf-core/rnavar 1.3.0, Nextflow 26.04.6, SLURM partition `bcc`. Ensembl 116 GRCh38 primary assembly and GTF (already on disk), a STAR index built by the skill's helper for sjdbOverhang 150, GATK hg38 bundle dbSNP138 and Mills/1000G indels (contigs renamed `chrN`→`N` by the helper's guard), default calling and filtering, no annotation.
+- **What was run:** nf-core/rnavar 1.3.0, Nextflow 26.04.6, SLURM (Koch Institute cluster). Ensembl 116 GRCh38 primary assembly and GTF (already on disk), a STAR index built by the skill's helper for sjdbOverhang 150, GATK hg38 bundle dbSNP138 and Mills/1000G indels (contigs renamed `chrN`→`N` by the helper's guard), default calling and filtering, no annotation.
 - **Outcome:** 82/82 tasks completed, 0 failed, 0 retried. Pipeline wall time **3 h 10 min 42 s**; **22.9 CPU-hours** used by all tasks; 3 h 54 min end to end including the 43-minute STAR index build. STAR uniquely mapped 89.95%; Picard duplication 40.9%.
 
 ### Accuracy against the GIAB HG001 v4.2.1 truth (PASS calls)
@@ -158,7 +158,7 @@ Requested values are those the tasks received in that run (the skill at 77bfb5d)
 | STAR index helper (GRCh38) | 8 / 64G / 4 h | at least 43.1 GB (67%) | 42 min 27 s | n/a | unchanged |
 | Known-sites helper | 2 / 8G / 4 h | about 45 MB | about 7 min | n/a | unchanged |
 
-No task exceeded 80% of its memory or time. The head job's former 32-core request held about 101 core-hours against the 22.9 CPU-hours used by all tasks. The new 2-day head-job limit is a deliberate exception to the usual 4 h default: the job only coordinates, but it must outlive every task. Memory is not a consumable resource on the `bcc` partition, so memory requests and the SplitNCigarReads CPU oversubscription were advisory there; on a cluster that enforces memory they would be enforced.
+No task exceeded 80% of its memory or time. The head job's former 32-core request held about 101 core-hours against the 22.9 CPU-hours used by all tasks. The new 2-day head-job limit is a deliberate exception to the usual 4 h default: the job only coordinates, but it must outlive every task. Memory is not a consumable resource on the test cluster's partition, so memory requests and the SplitNCigarReads CPU oversubscription were advisory there; on a cluster that enforces memory they would be enforced.
 
 **Disk use:** about 67 GB under the test folder (FASTQ, truth and REDIportal 7.6 GB; project with `work/` and outputs 58 GB; evaluation 1.7 GB), plus 33 GB written to the shared genome folder: STAR index 30 GB and `known_sites/` 2.9 GB.
 
@@ -166,7 +166,7 @@ No task exceeded 80% of its memory or time. The head job's former 32-core reques
 
 - The GATK resource-bundle page returned HTTP 403, and the skill named no files. Step 7 now falls back to the public bucket listing and names the two `.vcf.gz` objects to use (not the 11 GB plain `.vcf`).
 - The head job requested 32 cores with no memory or time; now `-n 2 --mem=8G -t 2-00:00:00`.
-- The sample-name rule now covers `_1.fastq.gz` (SRA/ENA names). When no sequencing date is found, the identical date options are offered once. Every `module add` line in the helpers and the pipeline script is checked. `wget -nv` keeps helper logs short (the known-sites log had 30,922 lines). STAR's temporary directory goes next to the index (`--outTmpDir`) instead of the working directory, and is removed after the build. The generic `cpus`/`memory`/`time` lines in the config are kept as a fallback for unlabelled processes, and the comment now says so (no task in the run used them; every rnavar process carries a label).
+- The sample-name rule now covers `_1.fastq.gz` (SRA/ENA names). When no sequencing date is found, the identical date options are offered once. Every load line (conda, Singularity, STAR) in the helpers and the pipeline script is checked. `wget -nv` keeps helper logs short (the known-sites log had 30,922 lines). STAR's temporary directory goes next to the index (`--outTmpDir`) instead of the working directory, and is removed after the build. The generic `cpus`/`memory`/`time` lines in the config are kept as a fallback for unlabelled processes, and the comment now says so (no task in the run used them; every rnavar process carries a label).
 - Resource tiers updated as in the table above, with memory and time scaled by the retry attempt; the hand-off note gains the RNA-editing and missed-variant guidance.
 
 ### Not verified

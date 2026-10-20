@@ -1,5 +1,5 @@
 sample,fastq_1,fastq_2,strandedness,condition
-ERR188383_chrX,/net/bmc-lab3/data/bcc/yannvrb/rnasplice_accept4/data/ERR188383_chrX_1.fastq.gz,/net/bmc-lab3/data/bcc/yannvrb/rnasplice_accept4/data/ERR188383_chrX_2.fastq.gz,unstranded,GBR
-ERR188428_chrX,/net/bmc-lab3/data/bcc/yannvrb/rnasplice_accept4/data/ERR188428_chrX_1.fastq.gz,/net/bmc-lab3/data/bcc/yannvrb/rnasplice_accept4/data/ERR188428_chrX_2.fastq.gz,unstranded,GBR
-ERR188454_chrX,/net/bmc-lab3/data/bcc/yannvrb/rnasplice_accept4/data/ERR188454_chrX_1.fastq.gz,/net/bmc-lab3/data/bcc/yannvrb/rnasplice_accept4/data/ERR188454_chrX_2.fastq.gz,unstranded,YRI
-ERR204916_chrX,/net/bmc-lab3/data/bcc/yannvrb/rnasplice_accept4/data/ERR204916_chrX_1.fastq.gz,/net/bmc-lab3/data/bcc/yannvrb/rnasplice_accept4/data/ERR204916_chrX_2.fastq.gz,unstranded,YRI
+ERR188383_chrX,/path/to/work/rnasplice_accept4/data/ERR188383_chrX_1.fastq.gz,/path/to/work/rnasplice_accept4/data/ERR188383_chrX_2.fastq.gz,unstranded,GBR
+ERR188428_chrX,/path/to/work/rnasplice_accept4/data/ERR188428_chrX_1.fastq.gz,/path/to/work/rnasplice_accept4/data/ERR188428_chrX_2.fastq.gz,unstranded,GBR
+ERR188454_chrX,/path/to/work/rnasplice_accept4/data/ERR188454_chrX_1.fastq.gz,/path/to/work/rnasplice_accept4/data/ERR188454_chrX_2.fastq.gz,unstranded,YRI
+ERR204916_chrX,/path/to/work/rnasplice_accept4/data/ERR204916_chrX_1.fastq.gz,/path/to/work/rnasplice_accept4/data/ERR204916_chrX_2.fastq.gz,unstranded,YRI

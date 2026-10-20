@@ -1,5 +1,5 @@
 {
-    "read_files": "[ /net/bmc-lab3/data/bcc/yannvrb/realdata_test/rnasplice_hipscm/strand/SRR20021259_sub_1.fq.gz, /net/bmc-lab3/data/bcc/yannvrb/realdata_test/rnasplice_hipscm/strand/SRR20021259_sub_2.fq.gz]",
+    "read_files": "[ /path/to/work/realdata_test/rnasplice_hipscm/strand/SRR20021259_sub_1.fq.gz, /path/to/work/realdata_test/rnasplice_hipscm/strand/SRR20021259_sub_2.fq.gz]",
     "expected_format": "ISR",
     "compatible_fragment_ratio": 1.0,
     "num_compatible_fragments": 753196,

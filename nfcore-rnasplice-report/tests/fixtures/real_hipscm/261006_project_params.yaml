@@ -4,10 +4,10 @@ contrasts: "261006_project_contrasts.csv"
 source: "fastq"
 outdir: "results/2026-10-06_project"
 multiqc_title: "261006_project"
-fasta: "/net/bmc-lab3/data/bcc/yannvrb/genomes/human/hg38_ens116/Homo_sapiens.GRCh38.dna.primary_assembly.fa"
-gtf: "/net/bmc-lab3/data/bcc/yannvrb/genomes/human/hg38_ens116/Homo_sapiens.GRCh38.116.gtf"
+fasta: "/path/to/work/genomes/human/hg38_ens116/Homo_sapiens.GRCh38.dna.primary_assembly.fa"
+gtf: "/path/to/work/genomes/human/hg38_ens116/Homo_sapiens.GRCh38.116.gtf"
 gencode: false
-star_index: "/net/bmc-lab3/data/bcc/yannvrb/genomes/human/hg38_ens116/index/star"
+star_index: "/path/to/work/genomes/human/hg38_ens116/index/star"
 save_reference: false
 # alignment and quantification
 aligner: "star"

@@ -4,6 +4,22 @@ You are helping the user set up and submit an nf-core/rnavar RNA-seq variant-cal
 
 ---
 
+## Site configuration (read first)
+
+Before Step 0, read `~/.claude/bioinfo-skills.conf` with `cat` (plain `KEY=value` lines; template: `bioinfo-skills.conf.example` in the skills repo). Do not `source` it. Keys used by this skill:
+
+- `SLURM_PARTITION` — partition/queue; empty = omit
+- `SLURM_PARTITION_ON_CLI` — `yes` = also pass `-p` on the `sbatch` command line (some clusters ignore the `#SBATCH -p` header)
+- `CONDA_SETUP` — `;`-separated shell statements run before `conda activate`
+- `SINGULARITY_LOAD` — `;`-separated shell statements that make Singularity/Apptainer available
+- `RNASEQ_TOOLS_LOAD` — `;`-separated shell statements that make STAR (and Salmon) available
+
+If the file or a needed key is missing, ask the user for the value (an empty answer means "not needed on my system"), use it for this run, and offer to save it to `~/.claude/bioinfo-skills.conf`. Never assume values from another site. Wherever this skill shows `{SLURM_PARTITION}` etc., substitute the configured value; if `SLURM_PARTITION` is empty, omit every `-p` / `queue` line. `{PCLI_FLAG}` means `-p {SLURM_PARTITION} ` when `SLURM_PARTITION_ON_CLI=yes` and nothing otherwise; use it in every `sbatch` command you show the user. Where a line shows `{CONDA_SETUP}`, `{SINGULARITY_LOAD}` or `{RNASEQ_TOOLS_LOAD}`, write each `;`-separated statement on its own line, ending with the guard shown on that line; omit the line when the key is empty.
+
+**Safety notice — tell the user once at the start:** "These are unofficial, AI-agent instructions and are not endorsed by nf-core. Review every generated samplesheet, config and script before submitting anything."
+
+---
+
 ## Step 0 — Establish working directory
 
 Before anything else, run `pwd` to record the current working directory (`{CWD}`). All scripts, the samplesheet CSV, `nextflow.config`, and the output directory will be written here. Inform the user: "Working directory: `{CWD}`"
@@ -219,7 +235,7 @@ profiles {
     slurm {
         process {
             executor = 'slurm'
-            queue = 'bcc'
+            queue = '{SLURM_PARTITION}'   // omit this line if SLURM_PARTITION is empty
             // Fallback for unlabelled processes only: every rnavar 1.3.0 process carries a
             // resource label (process_single/low/medium/high), and labels outrank these values.
             cpus = 2
@@ -313,14 +329,13 @@ Typing rules: `seq_platform: "illumina"` is always written (always written, alth
 
 ```bash
 #!/bin/bash
-#SBATCH -N 1 -n 2 --mem=8G -t 2-00:00:00 -p bcc
+#SBATCH -N 1 -n 2 --mem=8G -t 2-00:00:00 -p {SLURM_PARTITION}
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user={USER_EMAIL}
 
-module add miniconda3/v4 || { echo "ERROR: cannot load miniconda3" >&2; exit 1; }
-source /home/software/conda/miniconda3/bin/condainit
+{CONDA_SETUP} || { echo "ERROR: cannot set up conda" >&2; exit 1; }
 conda activate {CONDA_ENV}
-module add singularity/3.10.4 || { echo "ERROR: cannot load singularity" >&2; exit 1; }
+{SINGULARITY_LOAD} || { echo "ERROR: cannot load singularity" >&2; exit 1; }
 
 nextflow run nf-core/rnavar -r {VERSION} -c nextflow.config -profile slurm,singularity -params-file {PARAMS_YAML}
 ```
@@ -331,7 +346,7 @@ Show both files in full and instruct:
 ```
 Params file written: {PARAMS_YAML}
 Script written: nf-core_rnavar_{VERSION}.sh
-To submit:  sbatch nf-core_rnavar_{VERSION}.sh
+To submit:  sbatch {PCLI_FLAG}nf-core_rnavar_{VERSION}.sh
 ```
 If any helper script (Step 12) was generated, list the order: helpers first, then the pipeline, so the pipeline never starts before its resources exist. If the STAR helper downloads the FASTA, submit the known-sites helper with `sbatch --dependency=afterok:<star_jobid>` (the known-sites guard reads `{FASTA_PATH}`). Submit the pipeline with `sbatch --dependency=afterok:<star_jobid>:<known_sites_jobid> nf-core_rnavar_{VERSION}.sh`, listing every generated helper.
 
@@ -339,7 +354,7 @@ If any helper script (Step 12) was generated, list the order: helpers first, the
 
 ## Step 12 — Helper scripts (only for missing resources)
 
-Generate only what is missing. Each is an `sbatch` script (`#SBATCH -N 1 -p bcc --mail-type=END,FAIL` plus resources scaled as below), run on a compute node — never on the login node. Always use `gunzip -c file.gz > file` (never `gunzip -k`; not available on CentOS 7).
+Generate only what is missing. Each is an `sbatch` script (`#SBATCH -N 1 -p {SLURM_PARTITION} --mail-type=END,FAIL` plus resources scaled as below), run on a compute node — never on the login node. Always use `gunzip -c file.gz > file` (never `gunzip -k`; not available on older systems such as CentOS 7).
 
 **`build_star_index_rnavar_{REF_TAG}.sh`** — downloads (`wget -c -nv`, which logs one line per file instead of a progress bar) and decompresses the FASTA and GTF if absent (never downloaded for a custom reference, whose files already exist; a `.gz` custom FASTA/GTF is decompressed as described in Step 6), then computes the genome length and the STAR suffix-array parameter itself, in shell, at run time (the FASTA may not exist yet when the wizard writes the script, so the wizard never substitutes these two values):
 
@@ -354,7 +369,7 @@ SA_INDEX_NBASES=$(awk -v L="$GENOME_LENGTH" 'BEGIN{n=int(log(L)/log(2)/2-1); if(
 **Resource tier — chosen by the wizard when it writes the script** (these respect the HPC defaults of at most 64 G and 4 h). If the FASTA already exists, do not read it with `grep | tr | wc` on the login node (no heavy work there); approximate `{GENOME_LENGTH}` from the file size (`stat -c %s FASTA`) or, if a `.fai` exists, the sum of its length column, and pick the tier; if it is an Ensembl human or mouse download (FASTA not yet on disk), use the over-1-Gb tier. Genome over 1 Gb: `-n 8 --mem=64G -t 4:00:00` (measured for GRCh38 in the real-data test: 42 min 27 s and at least 43.1 GB, so 64G stays and 4 h is ample); genome under 100 Mb: `-n 4 --mem=8G -t 00:30:00`; in between: `-n 8 --mem=32G -t 2:00:00`. The other helpers need little: `-n 2 --mem=8G -t 4:00:00` (a full dbSNP download plus `bcftools annotate` plus `tabix` may exceed 2 h).
 
 ```bash
-module add star/2.7.9a || { echo "ERROR: cannot load star" >&2; exit 1; }
+{RNASEQ_TOOLS_LOAD} || { echo "ERROR: cannot load star" >&2; exit 1; }
 mkdir -p "{GENOME_DIR}/index/star_rnavar_sjdb{SJDB_OVERHANG}" || exit 1
 # STAR refuses an existing --outTmpDir: remove a leftover of an interrupted run (literal path only)
 rm -rf -- "{GENOME_DIR}/index/_STARtmp_rnavar_sjdb{SJDB_OVERHANG}"
@@ -390,9 +405,9 @@ wget -c -nv -O "$FILE.vcf.part" "URL" && [ -s "$FILE.vcf.part" ] && mv "$FILE.vc
   || { echo "ERROR: download failed for $FILE.vcf" >&2; exit 1; }
 ```
 
-**Tools come from a container; never load an htslib module.** This cluster has no htslib or tabix module, and under Lmod a failed `module add` (unknown module) silently makes every later `module add` in the same shell fail (observed: bcftools and singularity were then not found). Take `bcftools`, `tabix` and `bgzip` from one Singularity biocontainer, the same mechanism the pipeline uses. The wizard sets `{BCFTOOLS_SIF}` to `${NXF_SINGULARITY_CACHEDIR:-$HOME/.singularity/cache}/depot.galaxyproject.org-singularity-bcftools-1.20--h8b25389_0.img` if that file exists; otherwise the helper downloads the container to that path before use (the SIF download branch is always emitted (the URL is embedded even when the image already exists), so the URL must be re-verified in the session either way), from `https://depot.galaxyproject.org/singularity/bcftools:1.20--h8b25389_0`. The wizard must re-verify the URL with a HEAD request (`curl -sI`) or `WebFetch` in the session before writing it into a script (never embed an unverified URL); if the download fails the helper exits 1 (the pipeline then never starts). `--bind` is needed because `/net/...` paths are not auto-bound. Module order matters and each `module add` in a helper and in the pipeline script must be checked (`|| exit 1`, or `|| { echo "ERROR: ..." >&2; exit 1; }`).
+**Tools come from a container; never load an htslib module.** Many clusters have no htslib or tabix module, and under Lmod a failed `module add` (unknown module) silently makes every later `module add` in the same shell fail (observed: bcftools and singularity were then not found). Take `bcftools`, `tabix` and `bgzip` from one Singularity biocontainer, the same mechanism the pipeline uses. The wizard sets `{BCFTOOLS_SIF}` to `${NXF_SINGULARITY_CACHEDIR:-$HOME/.singularity/cache}/depot.galaxyproject.org-singularity-bcftools-1.20--h8b25389_0.img` if that file exists; otherwise the helper downloads the container to that path before use (the SIF download branch is always emitted (the URL is embedded even when the image already exists), so the URL must be re-verified in the session either way), from `https://depot.galaxyproject.org/singularity/bcftools:1.20--h8b25389_0`. The wizard must re-verify the URL with a HEAD request (`curl -sI`) or `WebFetch` in the session before writing it into a script (never embed an unverified URL); if the download fails the helper exits 1 (the pipeline then never starts). `--bind` is needed because directories outside the home and working directory (for example on network filesystems) are not always auto-bound. Module order matters and each load line (`{CONDA_SETUP}`, `{SINGULARITY_LOAD}`, `{RNASEQ_TOOLS_LOAD}`) in a helper and in the pipeline script must be checked (`|| exit 1`, or `|| { echo "ERROR: ..." >&2; exit 1; }`).
 ```bash
-module add singularity/3.10.4 || { echo "ERROR: cannot load singularity" >&2; exit 1; }
+{SINGULARITY_LOAD} || { echo "ERROR: cannot load singularity" >&2; exit 1; }
 command -v singularity >/dev/null || { echo "ERROR: singularity not on PATH" >&2; exit 1; }
 SIF="{BCFTOOLS_SIF}"
 if [ ! -s "$SIF" ]; then
@@ -498,5 +513,5 @@ one 39.6 M-pair library, against the GIAB v4.2.1 truth):
 - `read_length` is always written to the params file; a STAR index made for a different read length is never reused.
 - Known sites are never assumed — either supply all four files or `skip_baserecalibration: true`.
 - Never embed a download URL that was not verified in this session.
-- Every `module add` line in every generated script (helpers and the pipeline script) ends with a check that stops the job (`|| exit 1` or `|| { echo ...; exit 1; }`).
+- Every site-config load line (`{CONDA_SETUP}`, `{SINGULARITY_LOAD}`, `{RNASEQ_TOOLS_LOAD}`) in every generated script (helpers and the pipeline script) ends with a check that stops the job (`|| exit 1` or `|| { echo ...; exit 1; }`).
 - Not rnavar parameters, never emit: `annotation_cache`, `gencode`, `strandedness`.

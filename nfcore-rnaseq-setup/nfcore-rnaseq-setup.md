@@ -4,12 +4,28 @@ You are helping the user set up and submit an nf-core/rnaseq bulk RNA-seq pipeli
 
 ---
 
+## Site configuration (read first)
+
+Before Step 0, read `~/.claude/bioinfo-skills.conf` with `cat` (plain `KEY=value` lines; template: `bioinfo-skills.conf.example` in the skills repo). Do not `source` it. Keys used by this skill:
+
+- `SLURM_PARTITION` — partition/queue; empty = omit
+- `SLURM_PARTITION_ON_CLI` — `yes` = also pass `-p` on the `sbatch` command line (some clusters ignore the `#SBATCH -p` header)
+- `CONDA_SETUP` — `;`-separated shell statements run before `conda activate`
+- `SINGULARITY_LOAD` — `;`-separated shell statements that make Singularity/Apptainer available
+- `RNASEQ_TOOLS_LOAD` — `;`-separated shell statements that make STAR and Salmon available (genome index build)
+
+If the file or a needed key is missing, ask the user for the value (an empty answer means "not needed on my system"), use it for this run, and offer to save it to `~/.claude/bioinfo-skills.conf`. Never assume values from another site. Wherever this skill shows `{SLURM_PARTITION}` etc., substitute the configured value; if `SLURM_PARTITION` is empty, omit every `-p` / `queue` line. `{PCLI_FLAG}` means `-p {SLURM_PARTITION} ` when `SLURM_PARTITION_ON_CLI=yes` and nothing otherwise; use it in every `sbatch` command you show the user. Where a line shows `{CONDA_SETUP}`, `{SINGULARITY_LOAD}` or `{RNASEQ_TOOLS_LOAD}`, write each `;`-separated statement on its own line, ending with the guard shown on that line; omit the line when the key is empty.
+
+**Safety notice — tell the user once at the start:** "These are unofficial, AI-agent instructions and are not endorsed by nf-core. Review every generated samplesheet, config and script before submitting anything."
+
+---
+
 ## Step 0 — Establish working directory
 
 Before anything else, run `pwd` to record the current working directory (`{CWD}`). All scripts, the samplesheet CSV, `nextflow.config`, and the output directory will be written here. Inform the user: "Working directory: `{CWD}`"
 
 Also derive:
-- `{WD_NAME}` = basename of `{CWD}` (e.g. `Test3` from `/data/bcc/user/Test3`)
+- `{WD_NAME}` = basename of `{CWD}` (e.g. `Test3` from `/path/to/Test3`)
 - `{TODAY_YYMMDD}` = today's date formatted as `YYMMDD` (e.g. `260513` for 2026-05-13)
 
 This also serves as the base for relative path resolution in Step 4.
@@ -299,7 +315,7 @@ profiles {
     slurm {
         process {
             executor = 'slurm'
-            queue = 'bcc'
+            queue = '{SLURM_PARTITION}'   // omit this line if SLURM_PARTITION is empty
             cpus = 2
             memory = '8 GB'
             time = '4h'
@@ -437,14 +453,13 @@ Write `nf-core_rnaseq_{version}.sh` in the current working directory:
 #!/bin/bash
 #SBATCH -N 1
 #SBATCH -n 32
-#SBATCH -p bcc
+#SBATCH -p {SLURM_PARTITION}
 #SBATCH --mail-type=END
 #SBATCH --mail-user={USER_EMAIL}
 
-module add miniconda3/v4
-source /home/software/conda/miniconda3/bin/condainit
+{CONDA_SETUP}
 conda activate {CONDA_ENV}
-module add singularity/3.10.4
+{SINGULARITY_LOAD}
 
 nextflow run nf-core/rnaseq -r {VERSION} -c nextflow.config -profile slurm,singularity \
 --input {SAMPLESHEET_CSV} \
@@ -479,13 +494,13 @@ nextflow run nf-core/rnaseq -r {VERSION} -c nextflow.config -profile slurm,singu
 After writing, show the full file contents and instruct:
 ```
 Script written: nf-core_rnaseq_{version}.sh
-To submit:  sbatch nf-core_rnaseq_{version}.sh
+To submit:  sbatch {PCLI_FLAG}nf-core_rnaseq_{version}.sh
 ```
 
 If indexes needed building:
 ```
 NOTE: Genome indexes are not yet built. Build them first:
-  sbatch build_genome_index_{assembly}_ens{version}.sh
+  sbatch {PCLI_FLAG}build_genome_index_{assembly}_ens{version}.sh
 ```
 
 ---
@@ -507,13 +522,12 @@ Generate `build_genome_index_{assembly}_ens{version}.sh`. Rules:
 #SBATCH -n 32
 #SBATCH --mem=64G
 #SBATCH -t 8:00:00
-#SBATCH -p bcc
+#SBATCH -p {SLURM_PARTITION}
 #SBATCH --mail-type=END
 #SBATCH --mail-user={USER_EMAIL}
 #SBATCH -o build_genome_index_{assembly}_ens{version}.log
 
-module add star/2.7.9a
-module add salmon/1.10.0
+{RNASEQ_TOOLS_LOAD}   # must make STAR and Salmon available
 # module add bowtie2/...  ← uncomment if using bowtie2_salmon
 # module add kallisto/... ← uncomment if using kallisto pseudo-aligner
 
