@@ -24,7 +24,7 @@ Then invoke it in Claude Code:
 
 | Requirement | Notes |
 |-------------|-------|
-| SLURM scheduler | Partition set via `SLURM_PARTITION` in the site config |
+| SLURM scheduler | Partition set via `QUEUE` in the site config |
 | Singularity/Apptainer | Loaded via `SINGULARITY_LOAD` in the site config (tested with 3.5) |
 | Container image | `SC_IMAGE` (default `yannvrb56/r4_6_0_python3_singlecell_visium:latest`), SIF stored in `SIF_DIR`; Azimuth references in `AZIMUTH_REFS_DIR` |
 | Starting data | Per-sample Seurat RDS, CellRanger output, or a merged/integrated RDS |
@@ -82,7 +82,7 @@ A self-contained Bootstrap page summarising study design, QC, integration, and a
 ## Typical workflow
 
 ```bash
-# (add `-p <partition>` to each command if SLURM_PARTITION_ON_CLI=yes)
+# (add `-p <partition>` to each command if QUEUE_ON_CLI=yes)
 sbatch run_01_dataImport.sh
 sbatch run_02_qc.sh                 # review QC plots, verify cell counts
 sbatch run_03_integration.sh        # then submit ACT input to thecellvision.org
@@ -99,7 +99,7 @@ sbatch run_08_LR_LIANA.sh
 
 ## Cluster-specific notes
 
-- **Partition**: `SLURM_PARTITION`. If your cluster ignores the `#SBATCH -p` header, set `SLURM_PARTITION_ON_CLI=yes` and the skill prints `sbatch -p <partition> script.sh`.
+- **Partition**: `QUEUE`. If your cluster ignores the `#SBATCH -p` header, set `QUEUE_ON_CLI=yes` and the skill prints `sbatch -p <partition> script.sh`.
 - **Singularity/Apptainer**: loaded with the `SINGULARITY_LOAD` line from the site config
 - **Never run R or heavy computation on the login node** — use `sbatch` (or `srun`/`salloc` for debugging).
 - Packages are baked into the container image — never `install.packages()` at runtime.

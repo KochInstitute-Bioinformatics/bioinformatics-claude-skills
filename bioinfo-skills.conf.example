@@ -3,12 +3,23 @@
 # Skills read this file at startup; any missing key is asked interactively.
 # Leave a key empty to mean "not needed on my system".
 
-# --- SLURM ---
-# Partition/queue. Empty = omit -p everywhere.
-SLURM_PARTITION=
-# Set to yes if your cluster ignores "#SBATCH -p" in the script header and
-# needs "sbatch -p <partition> script.sh" on the command line.
-SLURM_PARTITION_ON_CLI=no
+# --- Scheduler ---
+# One of: slurm, pbs, sge, lsf, local (no scheduler: plain bash scripts you run yourself). Empty = the skill asks.
+# slurm and local are tested; pbs, sge and lsf are translated from the schedulers' documentation and not yet run on a real cluster.
+SCHEDULER=
+# PBS only: pbspro (default) or torque.
+PBS_FLAVOR=
+# Queue (SLURM: partition). Empty = no queue line or option. (SLURM_PARTITION and SLURM_PARTITION_ON_CLI from earlier
+# versions are still read when QUEUE and QUEUE_ON_CLI are absent.)
+QUEUE=
+# Set to yes if your cluster ignores the queue line in the script header and needs the queue option on the submit
+# command (for example "sbatch -p <partition> script.sh").
+QUEUE_ON_CLI=no
+# Caps on what the skills request (empty = no cap). MAX_TIME is [D-]HH:MM:SS. A job that must run longer than MAX_TIME
+# (a Nextflow head job) is requested with MAX_TIME and resumed with -resume.
+MAX_TIME=
+MAX_MEM_GB=
+MAX_CPUS=
 
 # --- Software environment (shell lines placed in generated scripts) ---
 # Run before `conda activate <env>` (e.g. `module load miniconda3` or `source ~/miniconda3/etc/profile.d/conda.sh`).

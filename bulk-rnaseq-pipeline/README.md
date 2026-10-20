@@ -24,7 +24,7 @@ Then invoke it in Claude Code:
 
 | Requirement | Notes |
 |-------------|-------|
-| SLURM scheduler | Partition set via `SLURM_PARTITION` in the site config |
+| SLURM scheduler | Partition set via `QUEUE` in the site config |
 | Singularity/Apptainer | Loaded via `SINGULARITY_LOAD` in the site config (tested with 3.5) |
 | Container image | `BULK_IMAGE` (default `yannvrb56/bulkrnaseq:latest`; Dockerfile in [`containers/bulkrnaseq`](../containers/bulkrnaseq)), SIF stored in `SIF_DIR` |
 | Starting data | nf-core/rnaseq `star_salmon` output — per-sample `quant.sf` + multiqc general stats |
@@ -86,7 +86,7 @@ Getting the mode wrong silently corrupts every downstream fold change, so it is 
 ## Typical workflow
 
 ```bash
-# (add `-p <partition>` to each command if SLURM_PARTITION_ON_CLI=yes)
+# (add `-p <partition>` to each command if QUEUE_ON_CLI=yes)
 sbatch run_01_import_qc.sh
 # Review 01_import_qc.html — boxplots, PCA (biology vs QC overlays), sample grouping
 sbatch run_02_deg.sh
@@ -99,7 +99,7 @@ sbatch run_04_dtu.sh           # if requested (paired-end only)
 
 ## Cluster-specific notes
 
-- **Partition**: `SLURM_PARTITION`. If your cluster ignores the `#SBATCH -p` header, set `SLURM_PARTITION_ON_CLI=yes` and the skill prints `sbatch -p <partition> script.sh`.
+- **Partition**: `QUEUE`. If your cluster ignores the `#SBATCH -p` header, set `QUEUE_ON_CLI=yes` and the skill prints `sbatch -p <partition> script.sh`.
 - **Singularity/Apptainer**: loaded with the `SINGULARITY_LOAD` line from the site config
 - **Never run R or Singularity on the login node** — use `sbatch` (or `srun`/`salloc` for debugging).
 - Packages are baked into the container image (`BULK_IMAGE`) — never `install.packages()` at runtime; rebuild the image to add packages.

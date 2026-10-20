@@ -135,7 +135,7 @@ URL=https://depot.galaxyproject.org/singularity/salmon:1.10.3--h6dccd9a_2
 mk_helper() { # mk_helper <run_sample lines...>: fills the placeholders as the wizard would
   local l lines=""; for l in "$@"; do lines+="$l"$'\n'; done
   awk -v lines="$lines" '$0 == "run_sample \"{SAMPLE}\" \"{FASTQ_1}\" \"{FASTQ_2}\"" { printf "%s", lines; next } { print }' "$TEST_TMP/strand.tmpl" \
-    | sed -e "s#^{SINGULARITY_LOAD} || #module add singularity/3.10.4 || #; s#{SLURM_PARTITION}#testpart#g; s#{USER_EMAIL}#test@example.org#g; s#{WD_NAME}#project#g; s#{CWD}#$R#g; s#{STRAND_INDEX}#$IDX#g" > "$TEST_TMP/helper.sh"
+    | sed -e "s#^{SINGULARITY_LOAD} || #module add singularity/3.10.4 || #; s#{QUEUE}#testpart#g; s#{USER_EMAIL}#test@example.org#g; s#{WD_NAME}#project#g; s#{CWD}#$R#g; s#{STRAND_INDEX}#$IDX#g" > "$TEST_TMP/helper.sh"
   ! grep -nE '(^|[^$])\{[A-Z_0-9]+\}' "$TEST_TMP/helper.sh" || { echo "FAIL: placeholder left in the helper"; exit 1; }
 }
 runh() { # runh <name> <expected exit 0|1> [module_fail salmon_fail salmon_nojson wget_fail no_singularity no_sif]

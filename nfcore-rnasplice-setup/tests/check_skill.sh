@@ -11,6 +11,11 @@ SKILL=${1:?usage: check_skill.sh <skill.md>}
 HERE=$(cd "$(dirname "$0")" && pwd); FIX="$HERE/fixtures"; CUT="$HERE/cut_block.sh"
 README="$(dirname "$SKILL")/README.md"
 fail=0
+# The embedded scheduler rules and table (tools/embed-scheduler.sh) name flags such as --parsable and -resume for other
+# schedulers; the flag lints read a copy without them.
+LINT_SKILL=$(mktemp /tmp/tmp.XXXXXXXXXX) || exit 1
+trap 'rm -f "$LINT_SKILL"' EXIT
+awk '/^<!-- SCHEDULER:BEGIN/ {skip = 1} !skip {print} /^<!-- SCHEDULER:END/ {skip = 0}' "$SKILL" > "$LINT_SKILL" 2>/dev/null
 [ -s "$SKILL" ] || { echo "FAIL: skill file missing or empty: $SKILL"; exit 1; }
 for f in rnasplice_schema.json config_params.txt gate_values.tsv trace_process_names.txt trace_resources_g3.tsv output_tree.txt test_samplesheet.csv test_contrastsheet.csv schema_input.json schema_input_genome_bam.json modules.config realdata_star_align_args.txt realdata_resource_table.txt; do
   [ -s "$FIX/$f" ] || { echo "cannot read fixture $FIX/$f"; exit 2; }
@@ -97,7 +102,7 @@ allow="mail-type mail-user mem dependency parsable variable-read-length allow-cl
 # STAR options of the STAR_ALIGN ext.args override (Step 10) and its explanation (copied from the pinned conf/modules.config)
 allow="$allow quantMode quantTranscriptomeSAMoutput twopassMode outSAMtype readFilesCommand runRNGseed outFilterMultimapNmax alignSJDBoverhangMin outSAMattributes outSAMattrRGline outReadsUnmapped"
 for a in $allow; do ! echo "$schema_names" | grep -qx -- "$a" || { echo "allowlist contains a pipeline parameter: $a"; exit 2; }; done
-for flag in $(grep -oE '(^|[^A-Za-z0-9_-])--[A-Za-z_][A-Za-z_0-9-]*' "$SKILL" | sed -E 's/^[^-]*--//' | sort -u); do
+for flag in $(grep -oE '(^|[^A-Za-z0-9_-])--[A-Za-z_][A-Za-z_0-9-]*' "$LINT_SKILL" | sed -E 's/^[^-]*--//' | sort -u); do
   echo "$allow" | tr ' ' '\n' | grep -qx -- "$flag" || { echo "FAIL: --$flag is not an allowlisted tool flag (pipeline parameters go in the params file, never as --flags)"; fail=1; }
 done
 # (b) every key in a fenced yaml block is a parameter of the recorded schema. Fences are 3 or more backticks; an info
@@ -574,8 +579,8 @@ done
 # no pull, and NXF_OFFLINE is neither set nor unset by the script (it may be set in ~/.bashrc; the first download works anyway).
 ! printf '%s\n' "$SUB" | grep -q 'NXF_OFFLINE' || { echo "FAIL: the submission script must not set or unset NXF_OFFLINE"; fail=1; }
 printf '%s\n' "$SUB" | grep -qxF "NF_MIN=\"$(gv NEXTFLOW_MIN)\"; NF_MAX_EXCL=\"$(gv NEXTFLOW_MAX_EXCL)\"" || { echo "FAIL: the submission script must carry the verified Nextflow range"; fail=1; }
-printf '%s\n' "$SUB" | grep -qxF '#SBATCH -n 2' && printf '%s\n' "$SUB" | grep -qxF '#SBATCH --mem=8G' && printf '%s\n' "$SUB" | grep -qxF '#SBATCH -p {SLURM_PARTITION}' \
-  || { echo "FAIL: the head job must request -n 2, --mem=8G and -p {SLURM_PARTITION} (the head job only coordinates the pipeline)"; fail=1; }
+printf '%s\n' "$SUB" | grep -qxF '#SBATCH -n 2' && printf '%s\n' "$SUB" | grep -qxF '#SBATCH --mem=8G' && printf '%s\n' "$SUB" | grep -qxF '#SBATCH -p {QUEUE}' \
+  || { echo "FAIL: the head job must request -n 2, --mem=8G and -p {QUEUE} (the head job only coordinates the pipeline)"; fail=1; }
 # nextflow.config: the selector table checked against every process name of the verification runs and the
 # resources the runs requested and used. A row gives '.*:ROW' when every real process name ending in a component that starts
 # with ROW ends in exactly ROW; '.*:ROW[XY]' when every such component is ROW plus one letter (SUPPA2: DIFFSPLICE_IOE,
@@ -711,7 +716,7 @@ types_ok "$BASEY"
 HELP=$(bash "$CUT" "$SKILL" "**Genome download helper.**" 2>/dev/null)
 [ -n "$HELP" ] || { echo "FAIL: genome download helper not found"; fail=1; }
 printf '%s\n' "$HELP" | grep -qx 'set -u' || { echo "FAIL: the download helper must run with set -u"; fail=1; }
-printf '%s\n' "$HELP" | grep -qF '#SBATCH -p {SLURM_PARTITION}' || { echo "FAIL: the download helper must be an sbatch script for partition {SLURM_PARTITION}"; fail=1; }
+printf '%s\n' "$HELP" | grep -qF '#SBATCH -p {QUEUE}' || { echo "FAIL: the download helper must be an sbatch script for partition {QUEUE}"; fail=1; }
 ! printf '%s\n' "$HELP" | grep -qE '(^|[^A-Za-z_])rm( |$)' || { echo "FAIL: the download helper must not remove files (no rm with variable paths)"; fail=1; }
 ! printf '%s\n' "$HELP" | grep -q 'gunzip -k' || { echo "FAIL: gunzip -k is not available on CentOS 7; use gunzip -c file.gz > file"; fail=1; }
 printf '%s\n' "$HELP" | grep -q 'wget -c ' && printf '%s\n' "$HELP" | grep -q 'gunzip -c ' || { echo "FAIL: the download helper must use wget -c and gunzip -c"; fail=1; }
@@ -732,13 +737,13 @@ done
   || { echo "FAIL: cd \"{CWD}\" must be the first command of the submission script"; fail=1; }
 need "it changes to \`{CWD}\` first, so it works wherever it is submitted from"
 # I2: executor, queue, Singularity, mail and node lines of the config and both scripts; --parsable in the dependency line.
-for l in "            executor = 'slurm'" "            queue = '{SLURM_PARTITION}'" "            enabled = true" "            autoMounts = true"; do
+for l in "            executor = 'slurm'" "            queue = '{QUEUE}'" "            enabled = true" "            autoMounts = true"; do
   printf '%s\n' "$CFG" | grep -qxF -- "$l" || { echo "FAIL: the nextflow.config template must contain the line: $l"; fail=1; }
 done
 printf '%s\n' "$CFG" | awk '/^    singularity \{$/ {s = 1} s && /^            enabled = true$/ {e = 1} s && /^            autoMounts = true$/ {a = 1} s && /^    \}$/ {exit} END {exit !(e && a)}' \
   || { echo "FAIL: the singularity profile must set enabled = true and autoMounts = true"; fail=1; }
-printf '%s\n' "$CFG" | awk '/^    slurm \{$/ {s = 1} s && /^            executor = .slurm.$/ {e = 1} s && /^            queue = .\{SLURM_PARTITION\}.$/ {q = 1} s && /^    \}$/ {exit} END {exit !(e && q)}' \
-  || { echo "FAIL: the slurm profile must set executor = 'slurm' and queue = '{SLURM_PARTITION}'"; fail=1; }
+printf '%s\n' "$CFG" | awk '/^    slurm \{$/ {s = 1} s && /^            executor = .slurm.$/ {e = 1} s && /^            queue = .\{QUEUE\}.$/ {q = 1} s && /^    \}$/ {exit} END {exit !(e && q)}' \
+  || { echo "FAIL: the slurm profile must set executor = 'slurm' and queue = '{QUEUE}'"; fail=1; }
 for l in '#SBATCH -N 1' '#SBATCH --mail-type=END,FAIL' '#SBATCH --mail-user={USER_EMAIL}'; do
   printf '%s\n' "$SUB" | grep -qxF -- "$l" || { echo "FAIL: the submission script must contain the line: $l"; fail=1; }
   printf '%s\n' "$HELP" | grep -qxF -- "$l" || { echo "FAIL: the download helper must contain the line: $l"; fail=1; }
@@ -762,7 +767,7 @@ need "Fixed \`withName\` resources do not grow when the pipeline retries a task"
 need "raise that selector's \`memory\` or \`time\` in nextflow.config (up to the \`resourceLimits\` caps) and resubmit as described under **Resuming a run**"
 anchor_once "**Resuming a run.**"
 need "\`-resume\` is a Nextflow option, not a pipeline parameter; the wizard never writes it into the generated script."
-resume_out=$(grep -n -- '-resume' "$SKILL" | grep -v '^[0-9]*:\*\*Resuming a run\.\*\*' | cut -d: -f1 | tr '\n' ' ')
+resume_out=$(grep -n -- '-resume' "$LINT_SKILL" | grep -v '^[0-9]*:\*\*Resuming a run\.\*\*' | cut -d: -f1 | tr '\n' ' ')
 [ -z "$resume_out" ] || { echo "FAIL: -resume appears outside the **Resuming a run.** paragraph (line $resume_out)"; fail=1; }
 ! printf '%s\n' "$SUB" | grep -q -- '-resume' || { echo "FAIL: the generated submission script must not carry -resume"; fail=1; }
 # M8: the helper reports the move of an invalid download only when the move succeeded
@@ -1222,7 +1227,7 @@ need "salmon_strandedness() {"
 need "verify the container URL of the script in this session with a HEAD request"
 STRH_FULL=$(bash "$CUT" "$SKILL" "**Strandedness helper script.**" 2>/dev/null)
 [ -n "$STRH_FULL" ] || { echo "FAIL: strandedness helper script block not found"; fail=1; }
-for l in '#!/bin/bash' '#SBATCH -N 1' '#SBATCH -n 8' '#SBATCH --mem=32G' '#SBATCH -t 2:00:00' '#SBATCH -p {SLURM_PARTITION}' '#SBATCH --mail-type=END,FAIL' '#SBATCH --mail-user={USER_EMAIL}' \
+for l in '#!/bin/bash' '#SBATCH -N 1' '#SBATCH -n 8' '#SBATCH --mem=32G' '#SBATCH -t 2:00:00' '#SBATCH -p {QUEUE}' '#SBATCH --mail-type=END,FAIL' '#SBATCH --mail-user={USER_EMAIL}' \
          '#SBATCH -o infer_strandedness_salmon_{WD_NAME}.%j.log' 'set -u' 'IDX="{STRAND_INDEX}"' \
          '{SINGULARITY_LOAD} || { echo "ERROR: cannot load singularity" >&2; exit 1; }' \
          'command -v singularity >/dev/null || { echo "ERROR: singularity is not on PATH" >&2; exit 1; }' \
@@ -1335,4 +1340,13 @@ need "If it has no \`STAR_ALIGN\` \`ext.args\` block like the template's, tell t
 needr "a hand-written job with the same Salmon command"
 forbidr "an equivalent hand-written job"
 # --- end Fix round 2
+# --- Scheduler support: the shared rules and table are embedded (tools/embed-scheduler.sh) and the key rules are present
+need '<!-- SCHEDULER:BEGIN rules -->'
+need '<!-- SCHEDULER:BEGIN table -->'
+need 'No row for <construct> in the scheduler table'
+need 'resubmit with `-resume`'
+need 'Never assume `slurm`.'
+need '**Scheduler adaptation.**'
+need "executor = 'local'"
+# --- end Scheduler support
 [ $fail -eq 0 ] && echo "PASS" || exit 1

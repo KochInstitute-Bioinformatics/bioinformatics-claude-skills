@@ -73,7 +73,7 @@ bash "$HERE/cut_block.sh" "$SKILL" "**Submission script.**" > "$TEST_TMP/tmpl.sh
 [ "$(grep -c '^[[:space:]]*\(source\|\.\) ' "$TEST_TMP/tmpl.sh")" -eq 0 ] || { echo "FAIL: unexpected source line in the template"; exit 1; }
 # The site-config lines are rendered as a site would: one guarded line per statement (the real condainit is replaced by a stub file).
 sed -e "s#^{CONDA_SETUP} || \(.*\)\$#module add miniconda3/v4 || \1\nsource \"$S/condainit\" || \1#" \
-    -e "s#^{SINGULARITY_LOAD} || #module add singularity/3.10.4 || #; s#{SLURM_PARTITION}#testpart#g" \
+    -e "s#^{SINGULARITY_LOAD} || #module add singularity/3.10.4 || #; s#{QUEUE}#testpart#g" \
     -e "s#{USER_EMAIL}#test@example.org#g; s#{CONDA_ENV}#nf-test#g; s#{VERSION_TAG}#$TAG#g; s#{VERSION}#$REV#g; s#{PARAMS_YAML}#T_params.yaml#g" \
     -e "s#{CWD}#$R#g; s#{SAMPLESHEET_CSV}#T_samplesheet.csv#g; s#{CONTRASTS_CSV}#T_contrasts.csv#g" \
     "$TEST_TMP/tmpl.sh" > "$TEST_TMP/submit.sh"

@@ -11,6 +11,11 @@ SKILL=${1:?usage: check_skill.sh <skill.md>}
 HERE=$(cd "$(dirname "$0")" && pwd); FIX="$HERE/fixtures"
 README="$(dirname "$SKILL")/README.md"
 fail=0
+# The embedded scheduler rules and table (tools/embed-scheduler.sh) name flags such as --parsable and -resume for other
+# schedulers; the flag lints read a copy without them.
+LINT_SKILL=$(mktemp /tmp/tmp.XXXXXXXXXX) || exit 1
+trap 'rm -f "$LINT_SKILL"' EXIT
+awk '/^<!-- SCHEDULER:BEGIN/ {skip = 1} !skip {print} /^<!-- SCHEDULER:END/ {skip = 0}' "$SKILL" > "$LINT_SKILL" 2>/dev/null
 # Test hooks (CHECK_ROOT_README, CHECK_RUN_ALL) are honoured only for a file under a mktemp scratch directory (/tmp/tmp.XXXXXXXXXX, the
 # directory prove_mutations.sh makes); a hook set to any other path fails the run and is ignored. A honoured hook prints a NOTE line.
 for hv in CHECK_ROOT_README CHECK_RUN_ALL; do
@@ -54,7 +59,7 @@ if awk '
       if (s ~ /(^|[[:space:]`(])--[A-Za-z]/ && !lastok) found = 1
     }
     allowed = (lastok && ($0 ~ /\\$/)) }
-  END { exit !found }' "$SKILL"; then
+  END { exit !found }' "$LINT_SKILL"; then
   echo "FAIL: a --flag appears in prose or outside the allowed commands (singularity exec, sbatch, Rscript, srun, #SBATCH lines)"; fail=1
 fi
 # No process words in the skill or the README. "Task [0-9]" is case-sensitive (a lower-case "task 3" is ordinary prose).
@@ -88,8 +93,8 @@ need 'Do not pre-fill any address.'
 need 'Store `{EMAIL}`'
 need 'Store `{SIF}`'
 need 'The image is pulled on a compute node, never on the login node'
-need '#SBATCH -p {SLURM_PARTITION}'
-need '#SBATCH -p __PARTITION__'
+need '#SBATCH -p {QUEUE}'
+need '#SBATCH -p __QUEUE__'
 need '{SINGULARITY_LOAD} || exit 1'
 need '__SINGULARITY_LOAD__ || exit 1'
 forbid 'bcc'
@@ -773,4 +778,13 @@ if [ -s "$RUN_ALL" ]; then
 else
   echo "FAIL: tests/run_all_tests.sh is missing or empty"; fail=1
 fi
+# --- Scheduler support: the shared rules and table are embedded (tools/embed-scheduler.sh) and the key rules are present
+need '<!-- SCHEDULER:BEGIN rules -->'
+need '<!-- SCHEDULER:BEGIN table -->'
+need 'No row for <construct> in the scheduler table'
+need 'resubmit with `-resume`'
+need 'Never assume `slurm`.'
+need '**Scheduler adaptation.**'
+need 'rewrite those files in place through the scheduler table'
+# --- end Scheduler support
 [ $fail -eq 0 ] && echo "PASS" || exit 1

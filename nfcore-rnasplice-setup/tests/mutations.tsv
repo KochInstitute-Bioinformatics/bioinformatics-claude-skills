@@ -273,7 +273,7 @@ T6-pullrun	submit	skill	s/^\(nextflow run nf-core\/rnasplice \)/nextflow pull nf
 T6-offline	check	skill	s/^NF_MIN="/export NXF_OFFLINE=false\nNF_MIN="/	the submission script must not set or unset NXF_OFFLINE
 T6-condaline	check	skill	s/^conda activate {CONDA_ENV} || .*$/conda activate {CONDA_ENV} || exit 1/	the submission script must contain the line: conda activate {CONDA_ENV}
 T6-head	check	skill	s/^#SBATCH -t 48:00:00$/#SBATCH -t 4:00:00/	missing required text: #SBATCH -t 48:00:00
-T6-headn	check	skill	s/^#SBATCH -n 2$/#SBATCH -n 32/	the head job must request -n 2, --mem=8G and -p {SLURM_PARTITION}
+T6-headn	check	skill	s/^#SBATCH -n 2$/#SBATCH -n 32/	the head job must request -n 2, --mem=8G and -p {QUEUE}
 T6-dep	check	skill	s/sbatch {PCLI_FLAG}--dependency=afterok:\$jid /sbatch {PCLI_FLAG}/	missing required text: sbatch {PCLI_FLAG}--dependency=afterok:
 T6-sel	check	skill	s/withName: '\.\*:RMATS_POST' {/withName: '.*:RMATS_POSTX' {/	has no withName selector '.*:RMATS_POST'
 T6-selmiss	check	skill	/withName: '\.\*:STAR_ALIGN' {/,+4d	process STAR_ALIGN ran in the verification runs but has no withName selector '.*:STAR_ALIGN'
@@ -311,7 +311,7 @@ T6-rm	check	skill	s/^  echo "ready: \$out"$/  rm -f "$out.gz"\n&/	the download h
 T6-nfrange	check	skill	s/NF_MIN="@NEXTFLOW_MIN@"/NF_MIN="1.0.0"/	the submission script must carry the verified Nextflow range
 T6-modline	check	skill	/^{MODULE_PARAMS}$/d	the params template must contain one {MODULE_PARAMS} line
 T6-saveref	check	skill	s/^save_reference: false$/save_reference: true/	key save_reference = true differs from the pipeline config default
-T6-hpart	check	skill	s/^#SBATCH -p {SLURM_PARTITION}$/#SBATCH -p normal/	the download helper must be an sbatch script for partition {SLURM_PARTITION}
+T6-hpart	check	skill	s/^#SBATCH -p {QUEUE}$/#SBATCH -p normal/	the download helper must be an sbatch script for partition {QUEUE}
 T6-wgetcs	check	skill	s/wget -c -O/wget -O/	the download helper must use wget -c and gunzip -c
 T6-envhelper	check	skill	$s/$/\nWrite create_nextflow_env_26.04.6.sh first./	forbidden text present: create_nextflow_env_
 T6-indexhelper	check	skill	$s/$/\nWrite build_star_index_x.sh first./	forbidden text present: build_star_index
@@ -325,11 +325,11 @@ T6f-preorder	submit	skill	/^for f in nextflow.config /{h;d}; /^{SINGULARITY_LOAD
 T6f-preline	check	skill	s/^for f in nextflow.config {PARAMS_YAML} {SAMPLESHEET_CSV} {CONTRASTS_CSV}; do/for f in nextflow.config {PARAMS_YAML}; do/	the submission script must contain the line: for f in nextflow.config
 T6f-singcheck	submit	skill	/^command -v singularity /d	FAIL: case singularity_missing
 T6f-executor	check	skill	/^            executor = 'slurm'$/d	the nextflow.config template must contain the line:             executor = 'slurm'
-T6f-queue	check	skill	/^            queue = '{SLURM_PARTITION}'$/d	the nextflow.config template must contain the line:             queue = '{SLURM_PARTITION}'
+T6f-queue	check	skill	/^            queue = '{QUEUE}'$/d	the nextflow.config template must contain the line:             queue = '{QUEUE}'
 T6f-singoff	check	skill	s/^            enabled = true$/            enabled = false/	the nextflow.config template must contain the line:             enabled = true
 T6f-automount	check	skill	/^            autoMounts = true$/d	the nextflow.config template must contain the line:             autoMounts = true
 T6f-singscope	check	skill	s/^    singularity {$/    apptainer {/	the singularity profile must set enabled = true and autoMounts = true
-T6f-slurmscope	check	skill	s/^    slurm {$/    cluster {/	the slurm profile must set executor = 'slurm' and queue = '{SLURM_PARTITION}'
+T6f-slurmscope	check	skill	s/^    slurm {$/    cluster {/	the slurm profile must set executor = 'slurm' and queue = '{QUEUE}'
 T6f-mailtype	check	skill	/^\*\*Submission script\.\*\*/,/^nextflow run/{/^#SBATCH --mail-type=END,FAIL$/d}	the submission script must contain the line: #SBATCH --mail-type=END,FAIL
 T6f-mailtypeh	check	skill	0,/^#SBATCH --mail-type=END,FAIL$/!{/^#SBATCH --mail-type=END,FAIL$/d}	the download helper must contain the line: #SBATCH --mail-type=END,FAIL
 T6f-mailuser	check	skill	/^\*\*Submission script\.\*\*/,/^nextflow run/{/^#SBATCH --mail-user={USER_EMAIL}$/d}	the submission script must contain the line: #SBATCH --mail-user={USER_EMAIL}

@@ -22,7 +22,7 @@ Then invoke it in Claude Code:
 
 | Requirement | Notes |
 |-------------|-------|
-| SLURM scheduler | Partition set via `SLURM_PARTITION` in the [site config](../README.md#configure-your-site) |
+| SLURM scheduler | Partition set via `QUEUE` in the [site config](../README.md#configure-your-site) |
 | Singularity/Apptainer | Loaded via `SINGULARITY_LOAD` in the site config (tested with 3.10) |
 | bcftools biocontainer | `depot.galaxyproject.org-singularity-bcftools-1.20--h8b25389_0.img` in `$NXF_SINGULARITY_CACHEDIR` (or `~/.singularity/cache`); the `prepare_known_sites` helper runs `bcftools`, `tabix` and `bgzip` from it via Singularity (there is no htslib/tabix module), downloading it once if absent |
 | Nextflow ≥ 24.04 | Available in a conda environment; needed for the `resourceLimits` directive in the generated config (validated with 26.04.6) |

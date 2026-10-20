@@ -4,7 +4,7 @@
 # outbred smoke run (PHASED_GT 0) that holds values.tsv and genotype_map.tsv (as written for assemble_outbred_from_skill.sh) and
 # whose RESULTS_DIR holds bam/, genotypes/, reference/genes_span.bed and phaser/. The project is copied to <work dir>/proj (the
 # source is never modified), its scripts are regenerated from the skill with the assembler, and every case runs array task 1
-# through `sbatch --wait` on the site partition (SLURM_PARTITION of ~/.claude/bioinfo-skills.conf, or ASE_PARTITION) (phASER, samtools and bcftools only run in jobs; this script only edits text and calls sbatch).
+# through `sbatch --wait` on the site partition (QUEUE of ~/.claude/bioinfo-skills.conf, or ASE_PARTITION) (phASER, samtools and bcftools only run in jobs; this script only edits text and calls sbatch).
 # Cases (task 1 = first data row of the sheet, sample S1):
 #   1. s1.redo outputs survive: finished outputs of a sample "S1.redo" survive a successful re-run of S1 (no glob removal)
 #   2. contig mismatch with stale outputs: gene spans renamed -> "lies on a contig of the BAM", no S1 output left
@@ -44,7 +44,7 @@ bad=0
 # leftover count, taken on a compute node: the login node's NFS attribute cache can still show files that a job has just removed
 # (seen in the first run of this test: case 2 reported 8 outputs left that were already gone)
 NL=0
-PART=${ASE_PARTITION:-$(sed -n 's/^SLURM_PARTITION=//p' "${BIOINFO_SKILLS_CONF:-$HOME/.claude/bioinfo-skills.conf}" 2>/dev/null | tail -n 1)}
+PART=${ASE_PARTITION:-$(sed -n 's/^QUEUE=//p' "${BIOINFO_SKILLS_CONF:-$HOME/.claude/bioinfo-skills.conf}" 2>/dev/null | tail -n 1)}
 left() { NL=$((NL + 1)); helper "left_$NL" "n=0; for x in $SFX; do [ -e '$RD/phaser/$S1.'\$x ] && n=\$((n + 1)); done; echo \$n > '$WORK/left_$NL.txt'" > /dev/null 2>&1; LEFT=$(cat "$WORK/left_$NL.txt" 2>/dev/null); LEFT=${LEFT:-unknown}; }
 job() {   # $1 script: runs array task 1 and waits; sets J (job id) and ST (exit code); prints the task log path in LOGF
   J=$(sbatch ${PART:+-p "$PART"} --parsable --wait --array=1 "$1"); ST=$?; J=${J%%;*}; LOGF=$RD/logs/phaser_count_${J}_1.out; }

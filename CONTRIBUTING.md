@@ -39,7 +39,11 @@ A few tests run R or tools in a container on a compute node (`nfcore-rnasplice-r
 |----------|---------|---------|
 | `BIOINFO_SKILLS_CONF` | all of the above | alternative path of the site config |
 | `RSR_SHARED_TMP` | `nfcore-rnasplice-report` R tests and mutation proof | scratch directory visible from compute nodes (required) |
-| `RSR_PARTITION`, `ASE_PARTITION` | the same | override `SLURM_PARTITION` for the test jobs |
+| `RSR_PARTITION`, `ASE_PARTITION` | the same | override `QUEUE` for the test jobs |
 | `ASE_SCRATCH_ROOT` | `ase-pipeline/tests/chain/dry_run_chain.sh` | the only tree under which that test deletes and re-creates its scratch directory |
 
-When you change text that a test asserts (for example a generated script line), change the test in the same commit. The tests compare against the placeholders (`{SLURM_PARTITION}`, `{SINGULARITY_LOAD}`, `{CONDA_SETUP}`, `{PCLI_FLAG}`), never against site values.
+When you change text that a test asserts (for example a generated script line), change the test in the same commit. The tests compare against the placeholders (`{QUEUE}`, `{SINGULARITY_LOAD}`, `{CONDA_SETUP}`, `{PCLI_FLAG}`), never against site values.
+
+## Changing the scheduler table
+
+`docs/scheduler-table.md` is the source of the scheduler rules and table that every job-writing skill embeds. Edit the marked regions there, then run `bash tools/embed-scheduler.sh <the seven skill files>`; `bash tests/check_scheduler.sh` fails when a skill's copy differs.

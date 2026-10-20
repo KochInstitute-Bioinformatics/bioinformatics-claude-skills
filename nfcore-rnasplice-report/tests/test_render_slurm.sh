@@ -49,7 +49,7 @@ subst() {
   printf '%s\n' "$1" | sed \
     -e "s|{REPORT_DIR}|$RD|g" -e "s|{OUTDIR_RNASPLICE}|${OUTX:-$tmp/wd/out}|g" -e "s|{CWD}|$(se "$CWDP")|g" \
     -e "s|{SIF}|$(se "$SIFP")|g" -e "s|{EMAIL}|$(se "$EMAIL")|g" \
-    -e "s|{SLURM_PARTITION}|$PART|g" -e "s|{SINGULARITY_LOAD}|$SINGL|g" -e "s|{SINGULARITY_BIND}|$SBIND|g" -e "s|{BULK_IMAGE}|$BIMG|g" \
+    -e "s|{QUEUE}|$PART|g" -e "s|{SINGULARITY_LOAD}|$SINGL|g" -e "s|{SINGULARITY_BIND}|$SBIND|g" -e "s|{BULK_IMAGE}|$BIMG|g" \
     -e "s|{PROJECT}|$(se "$PROJP")|g" -e "s|{MEM}|$MEM|g" -e "s|{TIME}|$TIME|g" -e "s|{MODULES}|$mods|g" -e "s|{SECTIONS}|$secs|g" \
     -e "s|{FDR}|0.05|g" -e "s|{DPSI}|0.1|g" -e "s|{RMATS_TYPE}|JC|g" -e "s|{MIN_READS}|10|g" -e "s|{ORGANISM}|human|g" \
     -e "s|{ENRICH_DBS}|GO KEGG|g" -e "s|{GTF}|$(se "$GTFP")|g" -e "s|{CONTRASTS_CSV}|$(se "$CSVP")|g" \

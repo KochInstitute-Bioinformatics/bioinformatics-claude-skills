@@ -4,6 +4,11 @@ set -u
 SKILL=${1:?usage: check_skill.sh <skill.md> [schema.json]}
 SCHEMA=${2:-/tmp/rnavar_schema_1.3.0.json}
 fail=0
+# The embedded scheduler rules and table (tools/embed-scheduler.sh) name flags such as --parsable and -resume for other
+# schedulers; the flag lints read a copy without them.
+LINT_SKILL=$(mktemp /tmp/tmp.XXXXXXXXXX) || exit 1
+trap 'rm -f "$LINT_SKILL"' EXIT
+awk '/^<!-- SCHEDULER:BEGIN/ {skip = 1} !skip {print} /^<!-- SCHEDULER:END/ {skip = 0}' "$SKILL" > "$LINT_SKILL" 2>/dev/null
 
 if [ ! -s "$SKILL" ]; then echo "FAIL: skill file missing or empty: $SKILL"; exit 1; fi
 if [ ! -s "$SCHEMA" ]; then
@@ -17,7 +22,7 @@ forbid() { ! grep -qF -- "$1" "$SKILL" || { echo "FAIL: forbidden text present: 
 # (a) every --flag in the skill is a schema parameter or an allowlisted non-rnavar flag
 schema_names=$(grep -oE '"[a-z_0-9]+": *\{' "$SCHEMA" | sed -E 's/"([a-z_0-9]+)".*/\1/' | sort -u)
 allow="bind genomeSAindexNbases rename-chrs dependency runMode genomeDir genomeFastaFiles sjdbGTFfile sjdbOverhang runThreadN outTmpDir mail-type mail-user mem"
-for flag in $(grep -oE '(^|[ `(=])--[A-Za-z_][A-Za-z_0-9-]*' "$SKILL" | sed -E 's/^[^-]*--//' | sort -u); do
+for flag in $(grep -oE '(^|[ `(=])--[A-Za-z_][A-Za-z_0-9-]*' "$LINT_SKILL" | sed -E 's/^[^-]*--//' | sort -u); do
   if ! echo "$schema_names $allow" | tr ' ' '\n' | grep -qx -- "$flag"; then
     echo "FAIL: flag not in rnavar schema or allowlist: --$flag"; fail=1
   fi
@@ -312,7 +317,7 @@ need '`Homo_sapiens_assembly38.dbsnp138.vcf.gz` (dbSNP, 1,560,889,937 bytes)'
 need '`Mills_and_1000G_gold_standard.indels.hg38.vcf.gz` (known indels, 20,685,880 bytes)'
 need 'Do NOT use the plain `Homo_sapiens_assembly38.dbsnp138.vcf`'
 # D8: head-job resources
-need '#SBATCH -N 1 -n 2 --mem=8G -t 2-00:00:00 -p {SLURM_PARTITION}'
+need '#SBATCH -N 1 -n 2 --mem=8G -t 2-00:00:00 -p {QUEUE}'
 forbid '#SBATCH -n 32'
 need 'a deliberate exception to the usual 4 h default'
 sub_block=$(awk '/^```bash/{f=1;b="";next} /^```/{if(f&&b~/nextflow run nf-core\/rnavar/)print b; f=0;next} f{b=b $0 "\n"}' "$SKILL")
@@ -460,4 +465,13 @@ need "continue with /ase-pipeline"
 need "If the user picks none or answers \"not sure\", change nothing."
 # --- end Intended-use question
 
+# --- Scheduler support: the shared rules and table are embedded (tools/embed-scheduler.sh) and the key rules are present
+need '<!-- SCHEDULER:BEGIN rules -->'
+need '<!-- SCHEDULER:BEGIN table -->'
+need 'No row for <construct> in the scheduler table'
+need 'resubmit with `-resume`'
+need 'Never assume `slurm`.'
+need '**Scheduler adaptation.**'
+need "executor = 'local'"
+# --- end Scheduler support
 [ $fail -eq 0 ] && echo "PASS" || exit 1

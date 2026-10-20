@@ -20,7 +20,7 @@ Then invoke it in Claude Code with `/nfcore-rnasplice-setup`.
 
 | Requirement | Notes |
 |-------------|-------|
-| SLURM scheduler | Partition set via `SLURM_PARTITION` in the [site config](../README.md#configure-your-site) |
+| SLURM scheduler | Partition set via `QUEUE` in the [site config](../README.md#configure-your-site) |
 | Singularity/Apptainer | Loaded via `SINGULARITY_LOAD` in the site config (tested with 3.10) |
 | Nextflow 26.04.0 or newer | In a conda environment; verified with Nextflow 26.04.6 (env `nf-env`). The submission script checks the version on the compute node |
 | Internet on compute nodes | The job downloads the pinned revision of the pipeline from GitHub and the containers (depot.galaxyproject.org and community-cr-prod.seqera.io) |
