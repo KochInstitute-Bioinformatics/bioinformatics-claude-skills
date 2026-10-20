@@ -41,7 +41,7 @@ If the file or a needed key is missing, ask the user for the value (an empty ans
 | `#SBATCH -n N` or `-c N` | `#PBS -l select=1:ncpus=N:mem=Mgb` (one line with the memory) | `#$ -pe smp N` | `#BSUB -n N` and `#BSUB -R "span[hosts=1]"` | omit |
 | `#SBATCH --mem=MG` | `mem=Mgb` in the `select` line | `#$ -l h_vmem=XG` where X = M / N (per slot) | `#BSUB -M MB` and `#BSUB -R "rusage[mem=MB]"` where MB = M * 1024 (the unit is a site setting; say so) | omit |
 | `#SBATCH -t D-HH:MM:SS` | `#PBS -l walltime=HH:MM:SS` (hours = 24 * D + HH) | `#$ -l h_rt=HH:MM:SS` | `#BSUB -W HH:MM` | omit |
-| `#SBATCH -o FILE` | `#PBS -o FILE` and `#PBS -j oe` | `#$ -o FILE` and `#$ -j y` | `#BSUB -o FILE` | run as `bash script.sh > FILE 2>&1` |
+| `#SBATCH -o FILE` (`%j` in FILE is the job id) | `#PBS -o FILE` and `#PBS -j oe` (drop `%j`) | `#$ -o FILE` and `#$ -j y` (`%j` becomes `$JOB_ID`) | `#BSUB -o FILE` (`%j` becomes `%J`) | run as `bash script.sh > FILE 2>&1` (drop `%j`) |
 | `#SBATCH --mail-type=END,FAIL` with `--mail-user=A` | `#PBS -m ae` and `#PBS -M A` | `#$ -m ea` and `#$ -M A` | `#BSUB -N` and `#BSUB -u A` | omit |
 | `sbatch SCRIPT` | `qsub SCRIPT` | `qsub SCRIPT` | `bsub < SCRIPT` | `bash SCRIPT` |
 | `sbatch --parsable SCRIPT` (prints the job id) | `qsub SCRIPT` (prints the id) | `qsub -terse SCRIPT` | `bsub < SCRIPT`, id from `sed -n 's/^Job <\([0-9]*\)>.*/\1/p'` | not applicable |
