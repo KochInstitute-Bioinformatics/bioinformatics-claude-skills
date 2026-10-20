@@ -17,8 +17,8 @@ Two experimental designs share one wizard:
 
 Before Step 0, read `~/.claude/bioinfo-skills.conf` with `cat` (plain `KEY=value` lines; template: `bioinfo-skills.conf.example` in the skills repo). Do not `source` it. Keys used by this skill:
 
-- `QUEUE` — partition/queue; empty = omit
-- `QUEUE_ON_CLI` — `yes` = also pass `-p` on the `sbatch` command line (some clusters ignore the `#SBATCH -p` header)
+- `QUEUE` — queue (SLURM partition); empty = omit
+- `QUEUE_ON_CLI` — `yes` = also pass the queue option on the submit command (some clusters ignore the queue line in the script header)
 - `SINGULARITY_LOAD` — `;`-separated shell statements that make Singularity/Apptainer available
 - `CONDA_SETUP` — `;`-separated shell statements run before `conda activate`
 - `SIF_DIR` — where `.sif` images live

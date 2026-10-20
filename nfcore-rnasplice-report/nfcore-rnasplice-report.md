@@ -15,13 +15,13 @@ Rules that hold for every step:
 
 Before Step 0, read `~/.claude/bioinfo-skills.conf` with `cat` (plain `KEY=value` lines; template: `bioinfo-skills.conf.example` in the skills repo). Do not `source` it. Keys used by this skill:
 
-- `QUEUE` — partition/queue; empty = omit
+- `QUEUE` — queue (SLURM partition); empty = omit
 - `SINGULARITY_LOAD` — `;`-separated shell statements that make Singularity/Apptainer available
 - `SINGULARITY_BIND` — comma-separated host directories always bound into containers (e.g. a network filesystem root); empty = none
 - `SIF_DIR` — where `.sif` images live
 - `BULK_IMAGE` — Docker URI of the R image (default `docker://yannvrb56/bulkrnaseq:latest`)
 
-If the file or a needed key is missing, ask the user for the value (an empty answer means "not needed on my system"), use it for this run, and offer to save it to `~/.claude/bioinfo-skills.conf`. Never assume values from another site. Wherever this skill shows `{QUEUE}` etc., substitute the configured value; if `QUEUE` is empty, omit every `-p` / `queue` line. `{PCLI_FLAG}` means `-p {QUEUE} ` when `QUEUE_ON_CLI=yes` and nothing otherwise; use it in every `sbatch` command you show the user. Where a line shows `{CONDA_SETUP}`, `{SINGULARITY_LOAD}` or `{RNASEQ_TOOLS_LOAD}`, write each `;`-separated statement on its own line, ending with the guard shown on that line; omit the line when the key is empty. In the generated job templates the statements are joined into one value: `{SINGULARITY_LOAD}` is the configured statements joined with ` || exit 1; ` and the template line adds the last ` || exit 1` (`true` when the key is empty).
+If the file or a needed key is missing, ask the user for the value (an empty answer means "not needed on my system"), use it for this run, and offer to save it to `~/.claude/bioinfo-skills.conf`. Never assume values from another site. Wherever this skill shows `{QUEUE}` etc., substitute the configured value; if `QUEUE` is empty, omit every `-p` / `queue` line. `{PCLI_FLAG}` is defined in the scheduler rules below; use it in every submit command you show the user. Where a line shows `{CONDA_SETUP}`, `{SINGULARITY_LOAD}` or `{RNASEQ_TOOLS_LOAD}`, write each `;`-separated statement on its own line, ending with the guard shown on that line; omit the line when the key is empty. In the generated job templates the statements are joined into one value: `{SINGULARITY_LOAD}` is the configured statements joined with ` || exit 1; ` and the template line adds the last ` || exit 1` (`true` when the key is empty).
 
 <!-- SCHEDULER:BEGIN rules -->
 **Scheduler.** Besides the keys above, read `SCHEDULER` (`slurm`, `pbs`, `sge`, `lsf` or `local`), `QUEUE`, `QUEUE_ON_CLI`, `MAX_TIME`, `MAX_MEM_GB`, `MAX_CPUS` and `PBS_FLAVOR` (`pbspro`, the default, or `torque`). `SLURM_PARTITION` and `SLURM_PARTITION_ON_CLI` are older names: read them as `QUEUE` and `QUEUE_ON_CLI` when the new names are absent.
