@@ -1,0 +1,91 @@
+{
+  "name": "example_two_genes_tissue_stroma",
+  "question": "Does the fraction of GENE_A+ and/or GENE_B+ cells (or stromal GENE_A/GENE_B expression) go up or down in tumor versus normal TISSUE, in human and in mouse models?",
+  "gene_groups": {
+    "GENE_A": [
+      "GENE_A",
+      "full name of gene A",
+      "alias A"
+    ],
+    "GENE_B": [
+      "GENE_B",
+      "full name of gene B",
+      "alias B"
+    ]
+  },
+  "family_terms": [
+    "gene family name",
+    "family abbreviation"
+  ],
+  "context_terms": {
+    "tissue": [
+      "colon",
+      "colorectal",
+      "CRC",
+      "intestin*",
+      "bowel",
+      "rectal"
+    ],
+    "cell": [
+      "fibroblast*",
+      "stroma*",
+      "stromal",
+      "mesenchym*",
+      "myofibroblast*",
+      "niche",
+      "CAF",
+      "trophocyte*",
+      "telocyte*"
+    ],
+    "condition": [
+      "tumor",
+      "tumour",
+      "cancer",
+      "adenoma",
+      "carcinoma",
+      "normal",
+      "DSS",
+      "colitis",
+      "injury",
+      "inflamm*"
+    ],
+    "model": [
+      "Apc",
+      "Kras",
+      "Trp53",
+      "AOM",
+      "mouse",
+      "murine",
+      "mice"
+    ],
+    "method": [
+      "single-cell",
+      "single cell",
+      "scRNA",
+      "RNA-seq",
+      "RNA sequencing",
+      "spatial"
+    ],
+    "contrary": [
+      "decreased",
+      "reduced",
+      "loss",
+      "depleted",
+      "lower",
+      "increased",
+      "upregulated",
+      "elevated"
+    ]
+  },
+  "limit": 40,
+  "sources": [
+    "pubmed",
+    "europepmc",
+    "openalex",
+    "semanticscholar"
+  ],
+  "extra_queries": [],
+  "seed_pmids": [],
+  "fulltext_queue_max": 300,
+  "agent_queue_max": 400
+}
