@@ -1,0 +1,30 @@
+<!-- Narrative skeleton for a litmaster PDF report. Write the BODY only (no <html>, no <h1>: the title and subtitle are script arguments).
+     Placeholders, resolved by s6_make_pdf.py from evidence_table.json:
+       {{S:PMID,PMID}}  -> the source numbers of those papers, e.g. "3, 7"      {{N:PMID}} -> one number
+       {{SOURCES}}      -> the full sources section (authors, journal, DOI, read level, grade, exact quotes)
+     Rules: text taken from a source goes in CURLY quotes and must be part of an evidence quote; write for the reader (no "our", no "we");
+     every claim needs a source number; mark hypotheses as hypotheses; no claim without a quote in the table. -->
+
+<div class="box"><b>Key points</b><ul>
+<li><b>[Topic 1].</b> [One or two sentences: direction, strength, caveat.] (sources {{S:PMID1,PMID2}})</li>
+<li><b>[Topic 2].</b> [...] (sources {{S:PMID3}})</li>
+<li><b>No paper reports [the quantity the question asks for].</b> [State the gap in one sentence.]</li></ul></div>
+
+<h2>1. Direction of the evidence at a glance</h2>
+<p class="small">Grades: <b>T1</b> mechanistic, <b>T2</b> functional, <b>T3</b> association, <b>T4</b> mention or secondary source. Numbers refer to the sources in section 6.</p>
+<table><tr><th style="width:22%">Question</th><th style="width:12%">Direction</th><th>What was found</th><th style="width:15%">Sources, grade</th></tr>
+<tr><td>[...]</td><td class="up">&uarr; [...]</td><td>[...]</td><td>{{S:PMID1}} &middot; T3</td></tr>
+<tr><td>[...]</td><td class="none">no paper found</td><td>[Absence of retrieved papers is not proof of absence.]</td><td>&ndash;</td></tr></table>
+
+<h2>2. [Topic 1]</h2><p>[...] (source {{N:PMID1}})</p>
+<h2>3. [Topic 2]</h2><p>[...]</p>
+<h2>4. How this relates to [the reader's own data, if known]</h2>
+<div class="box gray">[Only statements the reader can check; state which dataset overlaps are verified and which were not checked.]</div>
+<h2>5. Suggested checks</h2><p class="small">Suggestions from the reading, not findings of the papers.</p><ul><li>[...]</li></ul>
+<div class="box warn"><b>Do not cite:</b> [retracted papers flagged at screening, with the reason and date].</div>
+<h2>6. Sources and verbatim quotes</h2>
+<p class="small">Each quote is an exact sentence from the source (cut at 40 words where marked with an ellipsis) and was re-checked against a freshly retrieved copy of the paper; the section it comes from is shown above it. Some databases store abstract section labels run into the text; quotes are shown exactly as retrieved.</p>
+{{SOURCES}}
+<h2>7. How this was produced, and its limits</h2>
+<div class="box gray small"><b>Method.</b> [Sources searched, number of candidates, how many read, how many cited; quotes cut by script; retraction check; who judged the grades.]
+<br/><b>Limits.</b> [Numbered list: the quantity not reported; absence of retrieved papers; unopened figures; abstract-only sources; one-sentence-per-claim risk.]</div>
